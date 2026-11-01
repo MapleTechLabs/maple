@@ -1,10 +1,12 @@
 /** Offline graph fixtures. Every external operation fails rather than reaching a real service. */
+import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 import { Effect, Layer, Option } from "effect"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
+	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
 	EmailSender,
 	MapleDbConnection,
@@ -21,10 +23,12 @@ export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(VcsSyncQueueProducer, queue),
 	Layer.succeed(PlanetScaleWebhookQueueProducer, queue),
 	Layer.succeed(AuditEventsQueueProducer, queue),
+	Layer.succeed(CancellationReviewQueueProducer, queue),
 	Layer.succeed(ApiV2RateLimit, limiter),
 	Layer.succeed(CliAuthRateLimit, limiter),
 	Layer.succeed(McpOAuthRateLimit, limiter),
 	Layer.succeed(ReplayBlobBucket, { getBytes: rejectIO }),
+	StatusPageStore.inMemory,
 	Layer.succeed(MapleDbConnection, Option.none()),
 	Layer.succeed(EmailSender, Option.none()),
 	Layer.succeed(SchemaApplyWorkflow, { create: rejectIO }),

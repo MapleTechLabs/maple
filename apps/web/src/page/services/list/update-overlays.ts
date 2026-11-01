@@ -110,6 +110,6 @@ export const copiedSha = (model: Model, rowUrl: string, isCopied: boolean): Retu
 		isReplace: false,
 		toast: isCopied
 			? { type: "success", title: "commit SHA copied", description: "" }
-			: { type: "error", title: "Failed to copy commit sha", description: "" },
+			: { type: "error", title: "Couldn't copy commit sha", description: "" },
 	}),
 })

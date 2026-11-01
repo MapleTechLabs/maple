@@ -61,8 +61,9 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
+/** No `?item=` opens the dialog, so the bare gallery still shows an overlay; an unknown one opens none. */
 export const decodeItem = (raw: string | null): Option.Option<OverlayItem> =>
-	Schema.decodeUnknownOption(OverlayItem)(raw)
+	raw === null ? Option.some("dialog") : Schema.decodeUnknownOption(OverlayItem)(raw)
 
 /** The `toast-<type>` items' toast type. */
 export const toastTypeOf = (item: OverlayItem): Option.Option<Toast.ToastType> =>
@@ -73,7 +74,7 @@ export const toastTypeOf = (item: OverlayItem): Option.Option<Toast.ToastType> =
 export const TOAST_COPY = {
 	default: { title: "Dashboard saved", description: "Checkout latency is up to date." },
 	success: { title: "Schema applied", description: "All 14 tables are on the latest version." },
-	error: { title: "Failed to delete rule", description: "The alert rule is referenced by a policy." },
+	error: { title: "Couldn't delete rule", description: "The alert rule is referenced by a policy." },
 	info: { title: "New version available", description: "Reload to get the latest Maple." },
 	warning: { title: "Approaching ingest quota", description: "82% of this month's spans are used." },
 	loading: { title: "Exporting logs", description: "Preparing 12,480 rows." },

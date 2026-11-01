@@ -55,7 +55,7 @@ export const metaStrip = (
 						h.a(
 							[
 								h.Class(
-									"inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 font-mono text-2xs text-primary hover:bg-primary/10 transition-colors",
+									"inline-flex shrink-0 items-center gap-1 rounded-sm border border-primary-a3 bg-primary-a1 px-1.5 py-0.5 font-mono text-2xs text-primary hover:bg-primary-a2 active:bg-primary-a2",
 								),
 								h.Href(
 									hrefOf(
@@ -67,7 +67,7 @@ export const metaStrip = (
 								),
 								h.Title(`View trace ${log.traceId}`),
 							],
-							[icon(h, "PulseIcon", { size: 10 }), "trace:", shortId(log.traceId, "trace")],
+							[icon(h, "PulseIcon", { size: 12 }), "trace:", shortId(log.traceId, "trace")],
 						),
 					]
 				: []),

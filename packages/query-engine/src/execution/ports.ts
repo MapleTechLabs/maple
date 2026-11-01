@@ -223,7 +223,7 @@ export interface WarehouseQueryServiceApi {
 	readonly rawSqlQuery: (
 		tenant: ExecutionTenant,
 		sql: string,
-		options?: Pick<SqlQueryOptions, "profile" | "context">,
+		options?: Pick<SqlQueryOptions, "profile" | "context" | "settings">,
 	) => Effect.Effect<
 		ReadonlyArray<Record<string, unknown>>,
 		WarehouseExecutionError | RawSqlValidationError

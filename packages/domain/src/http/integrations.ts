@@ -2,7 +2,6 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import {
 	AwsAccountId,
-	ExternalUserId,
 	GcpProjectId,
 	GcpResourceNumber,
 	GcpScopeType,
@@ -26,6 +25,7 @@ import {
 	VcsRepoStatus,
 	VcsRepoSyncStatus,
 	VcsRepositoryId,
+	VcsRepositoryDiscovery,
 } from "./vcs"
 
 const RETURN_PATH_MAX_LENGTH = 2048
@@ -65,66 +65,47 @@ export const validateIntegrationReturnPath = (raw: string | null | undefined): s
 		? raw
 		: null
 
-export class HazelIntegrationStatus extends Schema.Class<HazelIntegrationStatus>("HazelIntegrationStatus")({
-	connected: Schema.Boolean,
-	externalUserId: Schema.NullOr(ExternalUserId),
-	externalUserEmail: Schema.NullOr(Schema.String),
-	connectedByUserId: Schema.NullOr(UserId),
-	scope: Schema.NullOr(Schema.String),
-}) {}
+export class LinearIntegrationStatus extends Schema.Class<LinearIntegrationStatus>("LinearIntegrationStatus")(
+	{
+		connected: Schema.Boolean,
+		/** The Linear workspace the app is installed in. */
+		workspaceName: Schema.NullOr(Schema.String),
+		connectedByUserId: Schema.NullOr(UserId),
+		/** Set once Linear rejected the grant; the org must reconnect. */
+		revoked: Schema.Boolean,
+	},
+) {}
 
-export class HazelOrganizationSummary extends Schema.Class<HazelOrganizationSummary>(
-	"HazelOrganizationSummary",
-)({
+export class LinearTeamSummary extends Schema.Class<LinearTeamSummary>("LinearTeamSummary")({
 	id: Schema.String,
+	key: Schema.String,
 	name: Schema.String,
-	slug: Schema.NullOr(Schema.String),
-	logoUrl: Schema.NullOr(Schema.String),
 }) {}
 
-export class HazelOrganizationsListResponse extends Schema.Class<HazelOrganizationsListResponse>(
-	"HazelOrganizationsListResponse",
-)({
-	organizations: Schema.Array(HazelOrganizationSummary),
-}) {}
+export class LinearTeamsListResponse extends Schema.Class<LinearTeamsListResponse>("LinearTeamsListResponse")(
+	{
+		teams: Schema.Array(LinearTeamSummary),
+	},
+) {}
 
-export const HazelChannelType = Schema.Literals(["public", "private"]).annotate({
-	identifier: "@maple/HazelChannelType",
-	title: "Hazel Channel Type",
-})
-export type HazelChannelType = Schema.Schema.Type<typeof HazelChannelType>
-
-export class HazelChannelSummary extends Schema.Class<HazelChannelSummary>("HazelChannelSummary")({
-	id: Schema.String,
-	name: Schema.String,
-	type: HazelChannelType,
-	organizationId: Schema.String,
-}) {}
-
-export class HazelChannelsListResponse extends Schema.Class<HazelChannelsListResponse>(
-	"HazelChannelsListResponse",
-)({
-	channels: Schema.Array(HazelChannelSummary),
-}) {}
-
-export class HazelStartConnectRequest extends Schema.Class<HazelStartConnectRequest>(
-	"HazelStartConnectRequest",
+export class LinearStartConnectRequest extends Schema.Class<LinearStartConnectRequest>(
+	"LinearStartConnectRequest",
 )({
 	returnTo: Schema.optionalKey(IntegrationReturnPath),
 }) {}
 
-export class HazelStartConnectResponse extends Schema.Class<HazelStartConnectResponse>(
-	"HazelStartConnectResponse",
+export class LinearStartConnectResponse extends Schema.Class<LinearStartConnectResponse>(
+	"LinearStartConnectResponse",
 )({
 	redirectUrl: Schema.String,
 	state: Schema.String,
 }) {}
 
-export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectResponse>("HazelDisconnectResponse")(
-	{
-		disconnected: Schema.Boolean,
-	},
-) {}
+export class LinearDisconnectResponse extends Schema.Class<LinearDisconnectResponse>(
+	"LinearDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
 
 /** Per-zone edge-analytics collection state (from the GraphQL Analytics poller). */
 export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyticsZoneStatus>(
@@ -143,6 +124,11 @@ export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyt
 	 * it, and once history is complete. optionalKey only for deploy-window compat; always sent.
 	 */
 	backfillAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	/**
+	 * False when the customer turned collection off for this zone. Separate from `enabled`, which
+	 * is the poller's own state. optionalKey only for deploy-window compat; always sent.
+	 */
+	watched: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** Account-level Workers invocation-metrics collection state. */
@@ -176,6 +162,8 @@ export class CloudflareConnectedAccountStatus extends Schema.Class<CloudflareCon
 	revoked: Schema.Boolean,
 	zones: Schema.Array(CloudflareAnalyticsZoneStatus),
 	workers: Schema.NullOr(CloudflareAnalyticsWorkersStatus),
+	/** Whether zones discovered later are collected. optionalKey only for deploy-window compat. */
+	watchNewZones: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /**
@@ -315,6 +303,25 @@ export class CloudflareStartConnectResponse extends Schema.Class<CloudflareStart
 	state: Schema.String,
 }) {}
 
+export class CloudflareZoneWatchSetting extends Schema.Class<CloudflareZoneWatchSetting>(
+	"CloudflareZoneWatchSetting",
+)({
+	zoneId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+	watched: Schema.Boolean,
+}) {}
+
+/**
+ * Replaces one account's zone selection. `zones` lists explicit choices; a zone it leaves out
+ * follows `watchNewZones`.
+ */
+export class CloudflareZoneSettingsRequest extends Schema.Class<CloudflareZoneSettingsRequest>(
+	"CloudflareZoneSettingsRequest",
+)({
+	accountId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+	watchNewZones: Schema.Boolean,
+	zones: Schema.Array(CloudflareZoneWatchSetting).check(Schema.isMaxLength(5000)),
+}) {}
+
 export class CloudflareDisconnectResponse extends Schema.Class<CloudflareDisconnectResponse>(
 	"CloudflareDisconnectResponse",
 )({
@@ -360,6 +367,29 @@ export class PlanetScaleScrapeTargetSummary extends Schema.Class<PlanetScaleScra
 	lastScrapeError: Schema.NullOr(Schema.String),
 }) {}
 
+export class PlanetScaleApiMetricsStatus extends Schema.Class<PlanetScaleApiMetricsStatus>(
+	"PlanetScaleApiMetricsStatus",
+)({
+	/** Epoch ms of the last poll that landed its window; null before the first. */
+	lastPolledAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+/** The webhooks Maple registers on the bound organization's databases. */
+export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
+	"PlanetScaleWebhookStatus",
+)({
+	/**
+	 * `needs_reauthorization`: the grant predates the `write_databases` access webhooks need.
+	 * `pending`: not every database has one yet. `failing`: registering one failed.
+	 */
+	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]),
+	registeredDatabases: Schema.Number,
+	databases: Schema.Number,
+	/** The most recent registration failure, or null. */
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
 export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegrationStatus>(
 	"PlanetScaleIntegrationStatus",
 )({
@@ -375,14 +405,16 @@ export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegr
 	/** API permissions probed at org-binding time (e.g. readMetricsEndpoints). */
 	detectedPermissions: Schema.NullOr(Schema.Record(Schema.String, Schema.Boolean)),
 	/**
-	 * How branch-metrics scraping authenticates. PlanetScale's metrics endpoints
-	 * only document service-token auth, so "oauth" applies only when the bearer
-	 * probe succeeded; "missing" means scraping is paused until a service token
-	 * with the read_metrics_endpoints permission is added (the one manual step —
-	 * inventory, insights, and webhooks run on the OAuth grant regardless).
+	 * Where branch metrics come from: `api` polls PlanetScale's metrics API on the
+	 * OAuth grant; `service_token` scrapes Prometheus with a token stored on the
+	 * managed target (connections set up before the API existed).
 	 */
-	metricsAuth: Schema.Literals(["oauth", "service_token", "missing"]),
+	metricsAuth: Schema.Literals(["api", "service_token"]),
+	/** The metrics API poller's progress; null for `service_token` and before binding. */
+	apiMetrics: Schema.NullOr(PlanetScaleApiMetricsStatus),
 	scrapeTarget: Schema.NullOr(PlanetScaleScrapeTargetSummary),
+	/** Null until an organization is bound. */
+	webhooks: Schema.NullOr(PlanetScaleWebhookStatus),
 	/** Epoch ms of the last successful inventory refresh; null before the first. */
 	lastInventoryAt: Schema.NullOr(Schema.Number),
 	lastInventoryError: Schema.NullOr(Schema.String),
@@ -710,6 +742,7 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		repositorySelection: Schema.NullOr(VcsRepoSelection),
 		/** Whether GitHub Actions runs become traces. True before the org has connected. */
 		ciTracesEnabled: Schema.Boolean,
+		repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery),
 		repositories: Schema.Array(GithubRepoSummary),
 	},
 ) {}
@@ -718,6 +751,8 @@ export class GithubStartConnectRequest extends Schema.Class<GithubStartConnectRe
 	"GithubStartConnectRequest",
 )({
 	returnTo: Schema.optionalKey(IntegrationReturnPath),
+	/** Open the App install page instead of user authorization ("Install on another GitHub account"). */
+	mode: Schema.optionalKey(Schema.Literal("install")),
 }) {}
 
 export class GithubStartConnectResponse extends Schema.Class<GithubStartConnectResponse>(
@@ -725,6 +760,19 @@ export class GithubStartConnectResponse extends Schema.Class<GithubStartConnectR
 )({
 	redirectUrl: Schema.String,
 	state: Schema.String,
+}) {}
+
+export class GithubSelectInstallationRequest extends Schema.Class<GithubSelectInstallationRequest>(
+	"GithubSelectInstallationRequest",
+)({
+	state: Schema.String,
+	installationId: Schema.String,
+}) {}
+
+export class GithubSelectInstallationResponse extends Schema.Class<GithubSelectInstallationResponse>(
+	"GithubSelectInstallationResponse",
+)({
+	connected: Schema.Literal(true),
 }) {}
 
 export class GithubDisconnectResponse extends Schema.Class<GithubDisconnectResponse>(
@@ -1371,7 +1419,7 @@ export type IntegrationHttpError =
 	| IntegrationsPersistenceError
 
 /**
- * Dashboard control surface for the Hazel, Cloudflare, Railway and GitHub
+ * Dashboard control surface for the Linear, Cloudflare, Railway and GitHub
  * integrations, plus VCS lookups. Internal transport: session-only, absent from
  * the public docs. PlanetScale and chat connectors are public v2 resources.
  *
@@ -1380,15 +1428,15 @@ export type IntegrationHttpError =
  */
 export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
-		HttpApiEndpoint.get("hazelStatus", "/hazel/status", {
-			success: HazelIntegrationStatus,
+		HttpApiEndpoint.get("linearStatus", "/linear/status", {
+			success: LinearIntegrationStatus,
 			error: IntegrationsPersistenceError,
 		}),
 	)
 	.add(
-		HttpApiEndpoint.post("hazelStart", "/hazel/start", {
-			payload: HazelStartConnectRequest,
-			success: HazelStartConnectResponse,
+		HttpApiEndpoint.post("linearStart", "/linear/start", {
+			payload: LinearStartConnectRequest,
+			success: LinearStartConnectResponse,
 			error: [
 				IntegrationsForbiddenError,
 				IntegrationsValidationError,
@@ -1398,8 +1446,8 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
-		HttpApiEndpoint.get("hazelOrganizations", "/hazel/organizations", {
-			success: HazelOrganizationsListResponse,
+		HttpApiEndpoint.get("linearTeams", "/linear/teams", {
+			success: LinearTeamsListResponse,
 			error: [
 				IntegrationsValidationError,
 				IntegrationsNotConnectedError,
@@ -1410,23 +1458,8 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
-		HttpApiEndpoint.get("hazelChannels", "/hazel/organizations/:organizationId/channels", {
-			params: {
-				organizationId: Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()),
-			},
-			success: HazelChannelsListResponse,
-			error: [
-				IntegrationsValidationError,
-				IntegrationsNotConnectedError,
-				IntegrationsRevokedError,
-				IntegrationsUpstreamError,
-				IntegrationsPersistenceError,
-			],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.delete("hazelDisconnect", "/hazel", {
-			success: HazelDisconnectResponse,
+		HttpApiEndpoint.delete("linearDisconnect", "/linear", {
+			success: LinearDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)
@@ -1465,6 +1498,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("cloudflareZoneSettings", "/cloudflare/zones", {
+			payload: CloudflareZoneSettingsRequest,
+			success: CloudflareIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(
@@ -1604,6 +1644,18 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.post("githubStart", "/github/start", {
 			payload: GithubStartConnectRequest,
 			success: GithubStartConnectResponse,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("githubSelectInstallation", "/github/select", {
+			payload: GithubSelectInstallationRequest,
+			success: GithubSelectInstallationResponse,
 			error: [
 				IntegrationsForbiddenError,
 				IntegrationsValidationError,

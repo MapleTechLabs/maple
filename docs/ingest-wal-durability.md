@@ -9,6 +9,14 @@ destroyed with the task.
 
 This is how it stays durable.
 
+## Ingest rules
+
+Customer drop and redact rules ([ingest-rules.md](ingest-rules.md)) run in
+`process_decoded_payload`, before the payload splits into the native WAL path and the collector
+forward. A dropped record is never appended and a redacted value is rewritten first, so the raw
+value never reaches the WAL on disk, the segments shipped to S3, or the collector. Replaying a WAL
+or an S3 segment therefore never needs the rules again.
+
 ## The log
 
 One **lane** per `(shard, destination)` (see `lane_index` in `apps/ingest/src/telemetry.rs`). Lanes

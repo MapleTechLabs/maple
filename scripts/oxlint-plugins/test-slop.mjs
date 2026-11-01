@@ -462,11 +462,14 @@ const isNameElement = (node) => {
 	)
 }
 
+const nameKey = (node) => (node.type === "Literal" ? node.value : node.object.name)
+
+/** Two or more distinct names. `[FetchX.name, FetchX.name]` pins a count ("sent twice"), not a list. */
 const isNameList = (node) =>
 	node?.type === "ArrayExpression" &&
 	node.elements.length >= 2 &&
-	node.elements.some((element) => element?.type === "Literal") &&
-	node.elements.every(isNameElement)
+	node.elements.every(isNameElement) &&
+	new Set(node.elements.map(nameKey)).size >= 2
 
 /**
  * Only command lists: event streams and column lists of PascalCase names are real ordering contracts.

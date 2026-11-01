@@ -463,6 +463,7 @@ export const makeEdgeCacheService = (
 			"cache.hit": false,
 			"cache.read_ms": 0,
 			"cache.read_timed_out": false,
+			"cache.slots_held": slots.held(),
 		})
 		const readStartedAt = yield* Clock.currentTimeMillis
 		const nowMs = readStartedAt

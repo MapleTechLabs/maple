@@ -15,6 +15,8 @@ const overrideKeys = [
 	"VITE_INGEST_URL",
 	"VITE_MAPLE_SELF_INGEST_URL",
 	"VITE_ELECTRIC_SYNC_URL",
+	"VITE_ELECTRIC_SYNC_DISABLED",
+	"VITE_STATUS_PAGE_BASE_URL",
 	"VITE_MAPLE_REGION",
 	"VITE_MAPLE_REGION_APP_URLS",
 	"VITE_MAPLE_AUTH_MODE",
@@ -51,6 +53,55 @@ const clerkEarlyLoad = (publishableKey: string): Plugin => ({
 	},
 })
 
+/**
+ * `src/boot.ts` as its own module script ahead of the app's: Vite folds every script in
+ * index.html into one graph, which would make Clerk's start wait for the whole app bundle.
+ */
+const earlyBoot = (): Plugin => {
+	let base = "/"
+	return {
+		name: "maple-early-boot",
+		config: (config) => {
+			// Vite's own default root, so the inputs match it however the build is started.
+			const root = path.resolve(config.root ?? process.cwd())
+			return {
+				build: {
+					rolldownOptions: {
+						input: {
+							index: path.resolve(root, "index.html"),
+							boot: path.resolve(root, "src/boot.ts"),
+						},
+					},
+				},
+			}
+		},
+		configResolved: (config) => {
+			base = config.base
+		},
+		transformIndexHtml: {
+			order: "post",
+			handler(_html, context) {
+				const chunk = Object.values(context.bundle ?? {}).find(
+					(output) => output.type === "chunk" && output.isEntry && output.name === "boot",
+				)
+				// A build without it would still work, just without the early start: fail loudly instead.
+				if (context.bundle !== undefined && chunk === undefined) this.error("No `boot` entry chunk")
+				return [
+					{
+						tag: "script",
+						attrs: {
+							type: "module",
+							crossorigin: true,
+							src: `${base}${chunk?.fileName ?? "src/boot.ts"}`,
+						},
+						injectTo: "head-prepend",
+					},
+				]
+			},
+		},
+	}
+}
+
 export default defineConfig(({ mode, command }) => {
 	const env = loadEnv(mode, envDir, "")
 
@@ -58,6 +109,7 @@ export default defineConfig(({ mode, command }) => {
 		process.env.VITE_API_BASE_URL ??= siblingUrl("api")
 		process.env.VITE_INGEST_URL ??= siblingUrl("ingest")
 		process.env.VITE_ELECTRIC_SYNC_URL ??= siblingUrl("electric-sync")
+		process.env.VITE_STATUS_PAGE_BASE_URL ??= siblingUrl("status")
 	}
 	process.env.VITE_MAPLE_AUTH_MODE ||= env.MAPLE_AUTH_MODE?.trim() || "self_hosted"
 	process.env.VITE_CLERK_PUBLISHABLE_KEY ||= env.CLERK_PUBLISHABLE_KEY?.trim() || ""
@@ -83,6 +135,7 @@ export default defineConfig(({ mode, command }) => {
 			foldkit(command === "serve" ? {} : { devToolsMcpPort: false }),
 			// `/version.json`, which open tabs poll to offer a reload after a deploy (shell/version.ts).
 			versionManifest(process.env.VITE_COMMIT_SHA?.trim() || ""),
+			earlyBoot(),
 			...(process.env.VITE_MAPLE_AUTH_MODE?.trim().toLowerCase() === "clerk" && clerkKey
 				? [clerkEarlyLoad(clerkKey)]
 				: []),

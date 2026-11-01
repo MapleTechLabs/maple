@@ -315,6 +315,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						window: payload.timeRange,
 						variableValues: payload.variableValues ?? {},
 						...(share.widgetId === undefined ? undefined : { onlyWidgetId: share.widgetId }),
+						// Stored SQL is only ever written by a caller that can read the telemetry
+						// (see the dashboards write routes), the same bar as minting the share.
+						rawSqlAllowed: true,
 					})
 					return new ShareWidgetDataResponse({ results, variables })
 				}),

@@ -27,6 +27,7 @@ export const Message = defineMessageUnion({
 	/** The mobile span sheet (`Sheet side="bottom"`); it is open exactly while a span is selected. */
 	GotSpanSheetMessage: { message: Dialog.Message },
 	CompletedFetchHierarchy: result(TraceData),
+	ClickedRetryHierarchy: {},
 	CompletedFetchSpanEvents: result(SpanEvents),
 	CompletedFetchProductEvents: result(Schema.Array(ProductEvent)),
 	CompletedFetchLogsCount: result(Schema.Number),

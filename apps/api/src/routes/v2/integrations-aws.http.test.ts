@@ -11,7 +11,11 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { MAPLE_TEST_OIDC_KEY } from "@maple/backend/services/integrations/aws/fake-aws"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
@@ -49,19 +53,31 @@ const testConfig = (awsAvailable: boolean) =>
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 			MAPLE_INGEST_PUBLIC_URL: "https://ingest.test",
+			MAPLE_API_BASE_URL: "https://api.maple.test",
 			INTERNAL_SERVICE_TOKEN: "test-internal-token",
-			...(awsAvailable
-				? {
-						MAPLE_AWS_PRINCIPAL_ARN: "arn:aws:iam::999999999999:user/maple-integrations",
-						MAPLE_AWS_ACCESS_KEY_ID: "AKIAMAPLETEST0000001",
-						MAPLE_AWS_SECRET_ACCESS_KEY: "maple-test-secret",
-					}
-				: undefined),
+			...(awsAvailable ? { MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey } : undefined),
 		}),
 	)
 
-const makeHarness = (options: { readonly awsAvailable: boolean } = { awsAvailable: true }) => {
+/** What the warehouse holds for `/ingest`: each row as ClickHouse sends it, and the SQL it was asked. */
+const makeWarehouse = (rows: ReadonlyArray<unknown>) => {
+	const asked: Array<string> = []
+	const service = makeWarehouseServiceStub({
+		compiledQuery: (_tenant, compiled) => {
+			asked.push(compiledQueryOf(compiled).sql)
+			return compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
+		},
+	})
+	return { asked, layer: Layer.succeed(WarehouseQueryService, service) }
+}
+
+const makeHarness = (
+	options: { readonly awsAvailable: boolean; readonly warehouseRows?: ReadonlyArray<unknown> } = {
+		awsAvailable: true,
+	},
+) => {
 	const testDb = createTestDb(createdDbs)
+	const warehouse = makeWarehouse(options.warehouseRows ?? [])
 	const envLive = Env.layer.pipe(Layer.provide(testConfig(options.awsAvailable)))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -72,6 +88,7 @@ const makeHarness = (options: { readonly awsAvailable: boolean } = { awsAvailabl
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 		Layer.provide(AllV2GroupLayersLive),
+		Layer.provide(warehouse.layer),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
@@ -123,6 +140,7 @@ const makeHarness = (options: { readonly awsAvailable: boolean } = { awsAvailabl
 
 	return {
 		request,
+		warehouseSql: warehouse.asked,
 		adminKey,
 		memberKey,
 		testDb,
@@ -152,7 +170,8 @@ describe("v2 aws integration over HTTP", () => {
 			role_arn: expect.stringMatching(
 				/^arn:aws:iam::123456789012:role\/MapleIntegration-[0-9a-f]{24}$/,
 			),
-			external_id: expect.stringMatching(/^[0-9a-f]{32}$/),
+			oidc_issuer: "https://api.maple.test/oidc/aws",
+			oidc_subject: expect.stringMatching(/^aws-connection:[0-9a-f-]{36}$/),
 			modules: [],
 			granted_modules: null,
 			template_version: null,
@@ -161,6 +180,7 @@ describe("v2 aws integration over HTTP", () => {
 			last_checked_at: null,
 			last_check_error: null,
 			metric_stream: null,
+			metric_stream_changed_at: null,
 			metrics_last_received_at: null,
 			metrics_last_error: null,
 			created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
@@ -177,13 +197,14 @@ describe("v2 aws integration over HTTP", () => {
 		expect(setup.body.object).toBe("aws_connection.setup")
 		expect(setup.body.setup_script).toContain(`--stack-name ${setup.body.stack_name}`)
 		expect(setup.body.setup_script).toContain('if [ "$account" != "123456789012" ]')
-		// The template names the role the connection reports and requires its external id.
+		// The template names the role the connection reports, and trusts only its subject's tokens.
 		const template = JSON.parse(setup.body.cloudformation_template)
 		const role = template.Resources.MapleRole.Properties
 		expect(created.body.role_arn.endsWith(`/${role.RoleName}`)).toBe(true)
-		expect(role.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals["sts:ExternalId"]).toBe(
-			created.body.external_id,
-		)
+		expect(role.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals).toEqual({
+			"api.maple.test/oidc/aws:aud": "sts.amazonaws.com",
+			"api.maple.test/oidc/aws:sub": created.body.oidc_subject,
+		})
 		expect(setup.body.terraform).toContain(`name                 = "${role.RoleName}"`)
 
 		// Members read the status; only admins render setups or change anything.
@@ -275,6 +296,77 @@ describe("v2 aws integration over HTTP", () => {
 		expect(status.body.connections.map((connection: { id: string }) => connection.id)).toEqual([
 			created.body.id,
 		])
+		await harness.dispose()
+	})
+
+	it("shows any member what a connection's stream stored, and only for its own org", async () => {
+		const harness = makeHarness({
+			awsAvailable: true,
+			warehouseRows: [
+				{
+					namespace: "AWS/ECS",
+					region: "us-east-1",
+					metrics: "12",
+					dataPoints: "3600",
+					resources: "4",
+					sampleResources: ["api", "checkout", "web", "worker"],
+					lastPointAt: "2026-10-23 09:58:00.000000000",
+				},
+				{
+					namespace: "AWS/SQS",
+					region: "",
+					metrics: "3",
+					dataPoints: "180",
+					resources: "1",
+					sampleResources: ["orders"],
+					lastPointAt: "2026-10-23 09:59:00.000000000",
+				},
+			],
+		})
+		const admin = await harness.adminKey()
+		const member = await harness.memberKey()
+		const outsider = await harness.adminKey(undefined, OTHER_ORG)
+		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
+			account_id: "123456789012",
+		})
+		const path = `${CONNECTIONS}/${created.body.id}/ingest`
+
+		const ingest = await harness.request("GET", path, member.secret)
+		expect(ingest.status).toBe(200)
+		expect(ingest.body).toEqual({
+			object: "aws_connection.ingest",
+			window_start: expect.stringMatching(/Z$/),
+			window_end: expect.stringMatching(/Z$/),
+			data_points: 3780,
+			last_point_at: "2026-10-23T09:59:00.000Z",
+			groups: [
+				{
+					namespace: "AWS/ECS",
+					region: "us-east-1",
+					metrics: 12,
+					data_points: 3600,
+					resources: 4,
+					sample_resources: ["api", "checkout", "web", "worker"],
+					last_point_at: "2026-10-23T09:58:00.000Z",
+				},
+				{
+					namespace: "AWS/SQS",
+					region: null,
+					metrics: 3,
+					data_points: 180,
+					resources: 1,
+					sample_resources: ["orders"],
+					last_point_at: "2026-10-23T09:59:00.000Z",
+				},
+			],
+		})
+		const [sql] = harness.warehouseSql
+		expect(sql).toContain("OrgId = 'org_aws_e2e'")
+		expect(sql).toMatch(/\['maple_aws_connection_id'\] = '[0-9a-f-]{36}'/)
+
+		// Another org's admin learns nothing, not even that it exists, and the warehouse is not asked.
+		expect((await harness.request("GET", path, outsider.secret)).status).toBe(404)
+		expect(harness.warehouseSql).toHaveLength(1)
 		await harness.dispose()
 	})
 

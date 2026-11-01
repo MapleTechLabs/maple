@@ -5,7 +5,7 @@ import {
 	type SessionToolUsage,
 } from "@maple/agent-sessions"
 import { buildSessionAxis, type SessionAxis } from "../../../lib/agent-sessions/session-axis"
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -24,6 +24,7 @@ import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
+import { errorChip, TOOL_CHIP } from "../kit/error-chip"
 
 // The session overview: checks and the tool ledger, the rail.
 
@@ -33,12 +34,9 @@ const LEDGER_NAME = "w-44 min-w-0 shrink-0"
 const LEDGER_COUNT = "w-11 shrink-0 text-right"
 const LEDGER_TIME = "w-16 shrink-0 text-right"
 
-const formatToolDuration = (ms: number): string =>
-	ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : formatSessionDuration(ms)
-
 const callWhen = (event: SessionToolCall, sessionStartMs: number): string => {
 	const offsetMs = event.startMs - sessionStartMs
-	const at = `${offsetMs <= 0 ? "0s" : formatSessionDuration(offsetMs)} in, ${formatToolDuration(event.durationMs)}`
+	const at = `${offsetMs <= 0 ? "0s" : formatSessionDuration(offsetMs)} in, ${formatDuration(event.durationMs)}`
 	return event.turnIndex === undefined ? at : `turn ${event.turnIndex}, ${at}`
 }
 
@@ -81,32 +79,17 @@ const ledgerHeader = (h: H, summary: SessionSummary): Html => {
 											mono: true,
 											valueClassName: "font-semibold text-chart-4",
 										},
-										[formatToolDuration(toolMs)],
+										[formatDuration(toolMs)],
 									),
 								]),
 								...(failed > 0
 									? [
-											h.span(
-												[
-													h.Class(
-														"flex items-baseline gap-1.5 rounded-sm bg-severity-error/12 px-1.5 py-0.5",
-													),
-												],
-												[
-													h.span(
-														[
-															h.Class(
-																"font-mono font-semibold text-severity-error text-xs tabular-nums",
-															),
-														],
-														[String(failed)],
-													),
-													h.span(
-														[h.Class("text-2xs text-severity-error")],
-														["failed"],
-													),
-												],
-											),
+											errorChip(h, {
+												iconName: "GearIcon",
+												count: failed,
+												noun: "failed call",
+												className: TOOL_CHIP,
+											}),
 										]
 									: []),
 							],
@@ -170,7 +153,7 @@ const callLane = (
 						h.AriaHasPopup("dialog"),
 						h.Class(
 							cn(
-								"absolute cursor-pointer rounded-[1px]",
+								"absolute cursor-pointer rounded-2xs",
 								event.failed
 									? "top-[5px] h-3.5 bg-severity-error"
 									: "top-[7px] h-2.5 bg-chart-4",
@@ -243,7 +226,7 @@ const ledgerRow = (
 									h.Class(
 										cn(
 											LEDGER_NAME,
-											"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary",
+											"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary active:text-primary",
 										),
 									),
 									h.Type("button"),
@@ -269,19 +252,19 @@ const ledgerRow = (
 								cn(
 									LEDGER_COUNT,
 									"font-mono text-xs tabular-nums",
-									tool.failed > 0 ? "text-severity-error" : "text-muted-foreground/50",
+									tool.failed > 0 ? "text-severity-error" : "text-foreground-faint",
 								),
 							),
 						],
-						[tool.failed > 0 ? String(tool.failed) : "."],
+						[String(tool.failed)],
 					),
 					h.span(
 						[h.Class(cn(LEDGER_TIME, "font-mono text-xs tabular-nums"))],
-						[formatToolDuration(tool.totalMs)],
+						[formatDuration(tool.totalMs)],
 					),
 					h.span(
 						[h.Class(cn(LEDGER_TIME, "font-mono text-muted-foreground text-xs tabular-nums"))],
-						[formatToolDuration(tool.slowestMs)],
+						[formatDuration(tool.slowestMs)],
 					),
 					callLane(h, model, tool, axis, sessionStartMs),
 				],
@@ -344,7 +327,7 @@ const waiting = (h: H, model: Model, progress: LoadProgress): Html =>
 			),
 			loadIndicator(h, model, progress, "items-center"),
 			h.p(
-				[h.Class("text-xs text-muted-foreground/70")],
+				[h.Class("text-xs text-foreground-subtle")],
 				["The Traces, Flow and Transcript views already show what has loaded."],
 			),
 		],

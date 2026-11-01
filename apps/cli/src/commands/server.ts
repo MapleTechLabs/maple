@@ -17,6 +17,8 @@ import {
 } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { ServerBindError, startServer } from "../server/serve"
+import { loadProjectorModules, resolveProjectorModulePaths } from "../server/eventing/projector-modules"
+import { ACCESS_TOKEN_ENV, INGEST_KEY_ENV, type RemoteAuth, remoteAuthFromEnv } from "../server/remote-auth"
 import { CURRENT_LOCAL_SCHEMA } from "../server/schema-identity"
 import {
 	adoptLegacySidecars,
@@ -47,8 +49,16 @@ import {
 	restoreCheckpoint,
 	writeBackupConfig,
 } from "../server/checkpoints"
+import { writeIngestConfig } from "../server/chdb"
 import { resolveUiAssets } from "../server/ui-assets"
 import { clearStartFailures, guardStartFailures } from "./start-failures"
+import {
+	acquireInMemoryStore,
+	type InMemoryStore,
+	inMemoryConflicts,
+	inMemoryDiscoveryPath,
+	inMemoryStartFailuresKey,
+} from "./in-memory-store"
 import { debugLog } from "../lib/debug"
 import { MAPLE_VERSION } from "../version"
 import { jsonFormatRequested, writeJson } from "./json-output"
@@ -84,6 +94,7 @@ import {
 	LocalStatus,
 	mapleCommand,
 	parseElapsedSeconds,
+	parseProcStartedAtMs,
 	PID_HANDOVER_ENV,
 	prettyPath,
 	resolveAdvertiseHost,
@@ -94,7 +105,7 @@ import {
 	startedBeforeWrite,
 	validateHost,
 } from "./server-args"
-import { DEFAULT_LOCAL_PORT } from "../lib/local-address"
+import { DEFAULT_LOCAL_PORT, isLoopbackHostname } from "../lib/local-address"
 
 /**
  * A refused command whose precondition simply wasn't met: the server is already
@@ -160,6 +171,20 @@ const validatedHost = (source: string, value: string): Effect.Effect<string, Ser
 			new ServerOptionError({ source, message: `invalid ${source}: ${describeError(error)}` }),
 	})
 
+/**
+ * What the banner says about authentication: which secrets guard the listener,
+ * or a warning when a non-loopback listener leaves ingest or reads open.
+ */
+export const authSummary = (auth: RemoteAuth, bindHost: string): string | undefined => {
+	const open = [
+		...(auth.ingestKey === undefined ? [`ingest (${INGEST_KEY_ENV})`] : []),
+		...(auth.accessToken === undefined ? [`dashboard and queries (${ACCESS_TOKEN_ENV})`] : []),
+	]
+	if (open.length === 0) return "ingest key + access token"
+	if (isLoopbackHostname(bindHost)) return undefined
+	return amber(`⚠ open to anyone who can reach this address: ${open.join(", ")}`)
+}
+
 /** The startup banner shown once the server is listening. `dashboardUrl` is the
  *  URL the user should open (the auto-updating `local.maple.dev` by default, or
  *  the bundled same-origin UI with `--offline`); `undefined` when no UI. */
@@ -170,6 +195,8 @@ const startBanner = (
 	dashboardUrl: string | undefined,
 	offline: boolean,
 	scope: CommandScope,
+	authLine: string | undefined,
+	inMemory: InMemoryStore | undefined,
 ): string => {
 	// No leading indent here: the gutter below supplies it.
 	const row = (key: string, value: string) => `${dim(key.padEnd(11))}${value}`
@@ -189,8 +216,17 @@ const startBanner = (
 					...(offline ? [] : [`${" ".repeat(11)}${dim("· bundled UI: pass --offline")}`]),
 				]
 			: []),
-		row("data", prettyPath(dataDir)),
-		row("pid", `${process.pid}  ${dim("· stop with")} ${bold(mapleCommand("stop", scope))}`),
+		inMemory === undefined
+			? row("data", prettyPath(dataDir))
+			: row(
+					"data",
+					`${inMemory.tmpfs ? "in memory" : "temporary"}  ${dim(`· deleted on exit (${prettyPath(inMemory.root)})`)}`,
+				),
+		...(authLine === undefined ? [] : [row("auth", authLine)]),
+		row(
+			"pid",
+			`${process.pid}  ${dim("· stop with")} ${inMemory === undefined ? bold(mapleCommand("stop", scope)) : bold("Ctrl-C")}`,
+		),
 	]
 
 	// The mark rides in a left gutter rather than sitting above the rows, so it
@@ -242,8 +278,21 @@ const readPidSnapshot = (path: string): Effect.Effect<Option.Option<PidFileSnaps
 const sameSnapshot = (a: PidFileSnapshot, b: PidFileSnapshot): boolean =>
 	a.raw === b.raw && a.ino === b.ino && a.mtimeMs === b.mtimeMs
 
-/** Wall-clock start of a live process (`ps -o etime=`), when it can be known. */
-const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+/** Wall-clock start of a live process from `/proc`, on Linux. */
+const procStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+	Effect.try({
+		try: () =>
+			parseProcStartedAtMs(
+				readFileSync(`/proc/${pid}/stat`, "utf8"),
+				readFileSync("/proc/stat", "utf8"),
+			),
+		catch: (error) => error,
+	}).pipe(
+		Effect.map(Option.fromUndefinedOr),
+		Effect.orElseSucceed(() => Option.none<number>()),
+	)
+
+const psStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
 	Effect.try({
 		try: () =>
 			Bun.spawnSync(["ps", "-o", "etime=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" }),
@@ -258,6 +307,15 @@ const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =
 		Effect.orElseSucceed(() => Option.none<number>()),
 	)
 
+/** Wall-clock start of a live process (`/proc`, else `ps -o etime=`), when it can be known.
+ *  `/proc` first: slim and distroless container images ship no `ps`. */
+const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+	procStartedAtMs(pid).pipe(
+		Effect.flatMap((startedAt) =>
+			Option.isSome(startedAt) ? Effect.succeed(startedAt) : psStartedAtMs(pid),
+		),
+	)
+
 type PidOwner =
 	| { readonly kind: "stale" }
 	/** `verified`: the process provably started before the file was written. */
@@ -269,7 +327,7 @@ const livePid = (pid: number, verified: boolean): PidOwner => ({ kind: "live", p
 /**
  * Does the process named by a PID file still own it? After a crash or reboot
  * the number may belong to an unrelated process, which necessarily started
- * after the file was written. Without `ps` the answer is "live, unverified",
+ * after the file was written. Without `/proc` or `ps` the answer is "live, unverified",
  * the conservative reading for every caller.
  */
 const pidOwner = (snapshot: PidFileSnapshot): Effect.Effect<PidOwner> =>
@@ -453,9 +511,9 @@ const adoptSidecars = (dataDir: string): Effect.Effect<void, ServerStateFileErro
 
 const decodeDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerDiscovery))
 
-const readDiscovery = (dataDir: string): Effect.Effect<Option.Option<ServerDiscovery>> =>
+const readDiscovery = (path: string): Effect.Effect<Option.Option<ServerDiscovery>> =>
 	Effect.try({
-		try: () => readFileSync(serverDiscoveryPath(dataDir), "utf8"),
+		try: () => readFileSync(path, "utf8"),
 		catch: (error) => error,
 	}).pipe(
 		Effect.map(decodeDiscovery),
@@ -463,24 +521,24 @@ const readDiscovery = (dataDir: string): Effect.Effect<Option.Option<ServerDisco
 	)
 
 /** Delete the discovery file when (and only when) it names `pid`. */
-const removeDiscoveryFor = (dataDir: string, pid: number): Effect.Effect<void> =>
+const removeDiscoveryFor = (path: string, pid: number): Effect.Effect<void> =>
 	Effect.gen(function* () {
-		const current = yield* readDiscovery(dataDir)
+		const current = yield* readDiscovery(path)
 		if (Option.isSome(current) && current.value.pid === pid) {
-			yield* ignoreFailure(() => unlinkSync(serverDiscoveryPath(dataDir)))
+			yield* ignoreFailure(() => unlinkSync(path))
 		}
 	})
 
 /** Delete a discovery file whose server is gone (crash, `kill -9`). */
-const removeStaleDiscovery = (dataDir: string): Effect.Effect<void> =>
+const removeStaleDiscovery = (path: string): Effect.Effect<void> =>
 	Effect.gen(function* () {
-		const current = yield* readDiscovery(dataDir)
+		const current = yield* readDiscovery(path)
 		if (
 			Option.isSome(current) &&
 			current.value.pid !== process.pid &&
 			!isProcessAlive(current.value.pid)
 		) {
-			yield* ignoreFailure(() => unlinkSync(serverDiscoveryPath(dataDir)))
+			yield* ignoreFailure(() => unlinkSync(path))
 		}
 	})
 
@@ -513,7 +571,7 @@ const port = Flag.Int("port").pipe(
 
 const host = Flag.String("host").pipe(
 	Flag.withDescription(
-		"Local server host (env: MAPLE_LOCAL_BIND_HOST; non-loopback start exposes unauthenticated ingest and queries)",
+		`Local server host (env: MAPLE_LOCAL_BIND_HOST; off loopback, set ${INGEST_KEY_ENV} and ${ACCESS_TOKEN_ENV})`,
 	),
 	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
 )
@@ -545,6 +603,13 @@ const dataDirFlag = Flag.optional(
 	Flag.String("data-dir").pipe(
 		Flag.withDescription("Embedded ClickHouse data directory (default: ~/.maple/data)"),
 	),
+)
+
+const projectorModuleFlag = Flag.String("projector-module").pipe(
+	Flag.withDescription(
+		"Load a trusted local projector .mjs module (repeatable; executes with Maple's permissions)",
+	),
+	Flag.atLeast(0),
 )
 
 const chdbConfigFileFlag = Flag.optional(
@@ -581,16 +646,21 @@ const resetFlag = Flag.Boolean("reset").pipe(
 /** Default refresh cadence. A crash costs at most this much telemetry. */
 const CHECKPOINT_INTERVAL_DEFAULT = "30m"
 
-const checkpointIntervalFlag = Flag.String("checkpoint-interval").pipe(
-	Flag.withDescription(
-		"How often to refresh the store's restore point while running (e.g. 45s, 30m, 2h; `off` to disable)",
+// Optional, not defaulted: `--in-memory` refuses both even when given their default.
+const checkpointIntervalFlag = Flag.optional(
+	Flag.String("checkpoint-interval").pipe(
+		Flag.withDescription(
+			`How often to refresh the store's restore point while running (e.g. 45s, 30m, 2h; \`off\` to disable; default ${CHECKPOINT_INTERVAL_DEFAULT})`,
+		),
 	),
-	Flag.withDefault(CHECKPOINT_INTERVAL_DEFAULT),
 )
 
-const onDirtyStoreFlag = Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
-	Flag.withDescription("Recovery policy when the local chDB store was not cleanly closed"),
-	Flag.withDefault("fail" as const),
+const onDirtyStoreFlag = Flag.optional(
+	Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
+		Flag.withDescription(
+			"Recovery policy when the local chDB store was not cleanly closed (default: fail)",
+		),
+	),
 )
 
 const yesFlag = Flag.Boolean("yes").pipe(
@@ -603,6 +673,13 @@ const checkpointIdFlag = Flag.optional(
 	Flag.String("checkpoint-id").pipe(
 		Flag.withDescription("Restore one immutable checkpoint ID instead of the selected current"),
 	),
+)
+
+const inMemoryFlag = Flag.Boolean("in-memory").pipe(
+	Flag.withDescription(
+		"Keep telemetry for this run only: a throwaway store (tmpfs on Linux when it has room) deleted on exit, with no checkpoints",
+	),
+	Flag.withDefault(false),
 )
 
 const offlineFlag = Flag.Boolean("offline").pipe(
@@ -631,9 +708,14 @@ export const chdbConfigPath = (dataDir: string): string => dataDirSidecarPath(da
  * held for the process lifetime, and `maple checkpoint` is a separate process
  * talking over HTTP: it cannot inject config into a live connection. So a server
  * started without a backups config can never checkpoint. A user-supplied
- * `--chdb-config-file` is honoured untouched.
+ * `--chdb-config-file` is honoured untouched. An in-memory store is never
+ * checkpointed, so it gets only the MergeTree ingest defaults (`backups: false`).
  */
-export const resolveChdbConfigFile = (dataDir: string, supplied: string | undefined) =>
+export const resolveChdbConfigFile = (
+	dataDir: string,
+	supplied: string | undefined,
+	{ backups }: { readonly backups: boolean } = { backups: true },
+) =>
 	Effect.gen(function* () {
 		if (supplied !== undefined) return supplied
 		const fs = yield* FileSystem
@@ -644,7 +726,8 @@ export const resolveChdbConfigFile = (dataDir: string, supplied: string | undefi
 		yield* fs.makeDirectory(dirname(path), { recursive: true }).pipe(Effect.ignore)
 		return yield* Effect.try({
 			try: () => {
-				writeBackupConfig(path)
+				if (backups) writeBackupConfig(path)
+				else writeIngestConfig(path)
 				return path
 			},
 			catch: (error) => error,
@@ -968,6 +1051,8 @@ const childFailureLine = (logPath: string, fromByte: number): string =>
 	)
 
 interface DetachedStart {
+	readonly reset: boolean
+	readonly projectorModules: readonly string[]
 	readonly bindHost: string
 	readonly advertiseHost: string
 	readonly port: number
@@ -979,6 +1064,7 @@ interface DetachedStart {
 	readonly minimumRawTelemetryRetentionDays: number | undefined
 	readonly checkpointInterval: string
 	readonly scope: CommandScope
+	readonly authLine: string | undefined
 }
 
 type ChildReadiness = { readonly kind: "ready" } | { readonly kind: "exited" } | { readonly kind: "timeout" }
@@ -986,8 +1072,9 @@ type ChildReadiness = { readonly kind: "ready" } | { readonly kind: "exited" } |
 /**
  * Re-exec `maple start` detached, dropping `--background`/`-d` so the child runs
  * the normal foreground path. Called with this process holding the PID claim
- * and every destructive step already done; the child inherits the claim via
- * `PID_HANDOVER_ENV`, so the store is never unclaimed in between. Ready means
+ * before any store recovery or reset; the child inherits the claim via
+ * `PID_HANDOVER_ENV`, validates its modules, then performs those operations, so
+ * the store is never unclaimed in between. Ready means
  * `/local/status` answers with the CHILD's pid: a `/health` 200 could come from
  * another server already on the port.
  */
@@ -1001,6 +1088,8 @@ const startDetached = (options: DetachedStart) =>
 		// not be forwarded. In dev (`bun run src/bin.ts`) argv[1] is the real
 		// script and Bun needs it; in the compiled binary execPath alone suffices.
 		const childArgs = buildDetachedChildArgs({
+			reset: options.reset,
+			projectorModules: options.projectorModules,
 			entry: process.argv[1],
 			host: options.bindHost,
 			advertiseHost: options.advertiseHost,
@@ -1064,7 +1153,7 @@ const startDetached = (options: DetachedStart) =>
 				// is only written once the child is listening.
 				const discovery: Option.Option<ServerDiscovery> = Option.isSome(status)
 					? Option.none()
-					: yield* readDiscovery(options.dataDir)
+					: yield* readDiscovery(serverDiscoveryPath(options.dataDir))
 				if (
 					(Option.isSome(status) && status.value.pid === child.pid) ||
 					(Option.isSome(discovery) && discovery.value.pid === child.pid)
@@ -1127,6 +1216,7 @@ const startDetached = (options: DetachedStart) =>
 					`  ${dim("listening")} ${cyan(underline(bindAddr))}\n` +
 					(connectAddr === bindAddr ? "" : `  ${dim("connect")}   ${cyan(connectAddr)}\n`) +
 					(dashboardUrl === undefined ? "" : `  ${dim("dashboard")} ${cyan(dashboardUrl)}\n`) +
+					(options.authLine === undefined ? "" : `  ${dim("auth")}      ${options.authLine}\n`) +
 					`  ${dim("env")}       export OTEL_EXPORTER_OTLP_ENDPOINT=${connectAddr}\n` +
 					`  ${dim("logs")}      ${prettyPath(logPath)}\n` +
 					`  ${dim("stop")}      ${bold(mapleCommand("stop", options.scope))}\n`,
@@ -1159,28 +1249,66 @@ export const start = Command.make("start", {
 	port,
 	dataDir: dataDirFlag,
 	chdbConfigFile: chdbConfigFileFlag,
+	projectorModules: projectorModuleFlag,
 	minimumRawTelemetryRetentionDays: minimumRawTelemetryRetentionDaysFlag,
 	background: backgroundFlag,
 	offline: offlineFlag,
 	reset: resetFlag,
 	onDirtyStore: onDirtyStoreFlag,
 	checkpointInterval: checkpointIntervalFlag,
+	inMemory: inMemoryFlag,
 }).pipe(
 	Command.withDescription("Start the local ingest + query server (embedded ClickHouse via chDB)"),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const fs = yield* FileSystem
-			const dataDir = resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
+			const projectorModules = yield* resolveProjectorModulePaths(a.projectorModules)
+			const conflicts = a.inMemory
+				? inMemoryConflicts({
+						background: a.background,
+						dataDir: Option.isSome(a.dataDir),
+						reset: a.reset,
+						minimumRawTelemetryRetentionDays: Option.isSome(a.minimumRawTelemetryRetentionDays),
+						checkpointIntervalSet: Option.isSome(a.checkpointInterval),
+						onDirtyStoreSet: Option.isSome(a.onDirtyStore),
+					})
+				: []
+			if (conflicts.length > 0) {
+				return yield* new ServerOptionError({
+					source: "--in-memory",
+					message: `--in-memory keeps nothing after the run, so it cannot be combined with ${conflicts.join(", ")}`,
+				})
+			}
+			// Acquired on the handler's scope, outside the server's: the store is
+			// deleted only after chDB has closed.
+			const mapleDir = dirname(defaultDataDir())
+			const inMemory = a.inMemory ? yield* acquireInMemoryStore(mapleDir) : undefined
+			const dataDir = inMemory?.dataDir ?? resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
+			const discoveryPath =
+				inMemory === undefined
+					? serverDiscoveryPath(dataDir)
+					: inMemoryDiscoveryPath(mapleDir, process.pid)
+			const startFailuresKey = inMemory === undefined ? dataDir : inMemoryStartFailuresKey(mapleDir)
 			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
+			const auth = yield* Effect.fromResult(remoteAuthFromEnv(process.env)).pipe(
+				Effect.mapError(
+					(error) => new ServerOptionError({ source: error.source, message: error.message }),
+				),
+			)
 			// Rejected up front, before anything is opened: a typo that quietly fell
 			// back to the default (or worse, to off) would reintroduce the data loss
 			// the refresh loop exists to prevent.
-			const checkpointInterval = parseCheckpointInterval(a.checkpointInterval)
+			const checkpointIntervalArg = Option.getOrElse(
+				a.checkpointInterval,
+				() => CHECKPOINT_INTERVAL_DEFAULT,
+			)
+			const onDirtyStore = Option.getOrElse(a.onDirtyStore, (): DirtyStorePolicy => "fail")
+			const checkpointInterval = parseCheckpointInterval(checkpointIntervalArg)
 			if (checkpointInterval === "invalid") {
 				return yield* new ServerOptionError({
 					source: "--checkpoint-interval",
 					message:
-						`invalid --checkpoint-interval: ${a.checkpointInterval}; ` +
+						`invalid --checkpoint-interval: ${checkpointIntervalArg}; ` +
 						"expected a duration like 45s, 30m or 2h, or `off`",
 				})
 			}
@@ -1233,11 +1361,39 @@ export const start = Command.make("start", {
 						() => releasePidFile(pidPath),
 					)
 					// Holding the claim, any discovery file left behind is a dead server's.
-					yield* removeStaleDiscovery(dataDir)
+					yield* removeStaleDiscovery(discoveryPath)
 
 					// A taken port fails here, before anything touches the store, rather
 					// than after a reset or wipe (or, detached, only in the child's log).
 					yield* ensurePortFree(bindHost, a.port)
+
+					// The detached child owns initialization and recovery under the handed-over
+					// PID claim. The parent must not reset a store before that child validates
+					// its modules (which can behave differently in a fresh process).
+					if (a.background) {
+						return yield* startDetached({
+							projectorModules,
+							reset: a.reset,
+							bindHost,
+							advertiseHost,
+							port: a.port,
+							dataDir,
+							offline: a.offline,
+							hostedUiUrl,
+							chdbConfigFile: Option.getOrUndefined(a.chdbConfigFile),
+							onDirtyStore,
+							minimumRawTelemetryRetentionDays: Option.getOrUndefined(
+								a.minimumRawTelemetryRetentionDays,
+							),
+							checkpointInterval: checkpointIntervalArg,
+							scope,
+							authLine: authSummary(auth, bindHost),
+						})
+					}
+
+					// Validate executable modules under the PID claim, before reconciliation,
+					// migration abandonment, reset or dirty-store recovery can change data.
+					const projectors = yield* loadProjectorModules(projectorModules)
 
 					// A restore transaction lives beside dataDir and must be reconciled
 					// before reset, compatibility, dirty-store, or directory creation logic.
@@ -1336,7 +1492,7 @@ export const start = Command.make("start", {
 					// which we cannot catch. (`--reset` already wiped above, so the marker is gone.)
 					if (isStoreDirty(dataDir)) {
 						const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
-						if (a.onDirtyStore === "fail") {
+						if (onDirtyStore === "fail") {
 							return yield* new LocalStoreDirtyError({
 								dataDir,
 								policy: "fail",
@@ -1346,7 +1502,7 @@ export const start = Command.make("start", {
 									dirtyStoreRecoveryAdvice(availability, scope),
 							})
 						}
-						if (a.onDirtyStore === "restore-checkpoint") {
+						if (onDirtyStore === "restore-checkpoint") {
 							if (!availability.available) {
 								return yield* new LocalStoreDirtyError({
 									dataDir,
@@ -1405,26 +1561,12 @@ export const start = Command.make("start", {
 					}
 
 					const requestedRetentionDays = Option.getOrUndefined(a.minimumRawTelemetryRetentionDays)
+					// No backups config in memory: nothing is ever checkpointed.
 					const chdbConfigFile = yield* resolveChdbConfigFile(
 						dataDir,
 						Option.getOrUndefined(a.chdbConfigFile),
+						{ backups: inMemory === undefined },
 					)
-
-					if (a.background) {
-						return yield* startDetached({
-							bindHost,
-							advertiseHost,
-							port: a.port,
-							dataDir,
-							offline: a.offline,
-							hostedUiUrl,
-							chdbConfigFile,
-							onDirtyStore: a.onDirtyStore,
-							minimumRawTelemetryRetentionDays: requestedRetentionDays,
-							checkpointInterval: a.checkpointInterval,
-							scope,
-						})
-					}
 
 					yield* Effect.sync(() =>
 						process.stderr.write(
@@ -1450,9 +1592,11 @@ export const start = Command.make("start", {
 						configFile: chdbConfigFile,
 						minimumRawTelemetryRetentionDays: requestedRetentionDays,
 						assets,
+						auth,
+						projectors,
 					})
 					started = true
-					yield* clearStartFailures(dataDir)
+					yield* clearStartFailures(startFailuresKey)
 
 					const bindAddr = serverUrl(bindHost, boundPort)
 					const connectAddr = serverUrl(advertiseHost, boundPort)
@@ -1460,11 +1604,16 @@ export const start = Command.make("start", {
 					const boundScope = commandScope({ dataDir, port: boundPort, host: bindHost })
 
 					// Non-fatal: it only helps other CLI processes find a non-default port.
+					if (inMemory !== undefined) {
+						yield* fs
+							.makeDirectory(dirname(discoveryPath), { recursive: true })
+							.pipe(Effect.ignore)
+					}
 					yield* Effect.acquireRelease(
 						Effect.tryPromise({
 							try: () =>
 								durableWrite(
-									serverDiscoveryPath(dataDir),
+									discoveryPath,
 									`${JSON.stringify(
 										{
 											pid: process.pid,
@@ -1476,13 +1625,13 @@ export const start = Command.make("start", {
 										2,
 									)}\n`,
 								),
-							catch: stateFileError(serverDiscoveryPath(dataDir), "write"),
+							catch: stateFileError(discoveryPath, "write"),
 						}).pipe(
 							Effect.catch((error) =>
 								Effect.sync(() => process.stderr.write(dim(`◌ ${error.message}\n`))),
 							),
 						),
-						() => removeDiscoveryFor(dataDir, process.pid),
+						() => removeDiscoveryFor(discoveryPath, process.pid),
 					)
 
 					// Default: send users to the auto-updating UI on local.maple.dev (it
@@ -1496,7 +1645,16 @@ export const start = Command.make("start", {
 							: hostedDashboardUrl(hostedUiUrl, boundPort)
 					yield* Effect.sync(() =>
 						process.stderr.write(
-							startBanner(bindAddr, connectAddr, dataDir, dashboardUrl, a.offline, boundScope),
+							startBanner(
+								bindAddr,
+								connectAddr,
+								dataDir,
+								dashboardUrl,
+								a.offline,
+								boundScope,
+								authSummary(auth, bindHost),
+								inMemory,
+							),
 						),
 					)
 
@@ -1508,6 +1666,7 @@ export const start = Command.make("start", {
 					}
 					// After the banner, never before it: the server is already listening
 					// and the user has their URL. See `ensureInitialCheckpoint`.
+					if (inMemory !== undefined) return yield* Effect.never
 					const initialTakenAt = yield* ensureInitialCheckpoint(target, storeHadLiveData)
 
 					// Forked into this scope AFTER the server, so shutdown stops it (and
@@ -1520,8 +1679,8 @@ export const start = Command.make("start", {
 
 					return yield* Effect.never
 				}),
-			).pipe(guardStartFailures(dataDir, { detachedChild: pidHandoverFrom() !== undefined }))
-		}),
+			).pipe(guardStartFailures(startFailuresKey, { detachedChild: pidHandoverFrom() !== undefined }))
+		}, Effect.scoped),
 	),
 )
 
@@ -1568,7 +1727,7 @@ const statusConfirmsPid = (
 	scope: CommandScope,
 ): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
-		const discovery = yield* readDiscovery(dataDir)
+		const discovery = yield* readDiscovery(serverDiscoveryPath(dataDir))
 		const urls = [
 			...(Option.isSome(discovery) && discovery.value.pid === pid ? [discovery.value.url] : []),
 			serverProbeUrl(
@@ -1592,7 +1751,7 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 			const located = yield* locatePidFile(dataDir)
 
 			if (Option.isNone(located)) {
-				yield* removeStaleDiscovery(dataDir)
+				yield* removeStaleDiscovery(serverDiscoveryPath(dataDir))
 				return yield* new ServerStateError({
 					message: `maple is not running for ${prettyPath(dataDir)} (no PID file found)`,
 				})
@@ -1604,7 +1763,8 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 				if (Option.isSome(current) && sameSnapshot(current.value, snapshot)) {
 					yield* ignoreFailure(() => unlinkSync(pidPath))
 				}
-				if (snapshot.pid !== undefined) yield* removeDiscoveryFor(dataDir, snapshot.pid)
+				if (snapshot.pid !== undefined)
+					yield* removeDiscoveryFor(serverDiscoveryPath(dataDir), snapshot.pid)
 				return yield* new ServerStateError({
 					message: `maple is not running for ${prettyPath(dataDir)} (stale PID file, cleaned up)`,
 				})
@@ -1676,7 +1836,7 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 			const current = yield* readPidSnapshot(pidPath)
 			if (Option.isSome(current) && current.value.pid === pid)
 				yield* ignoreFailure(() => unlinkSync(pidPath))
-			yield* removeDiscoveryFor(dataDir, pid)
+			yield* removeDiscoveryFor(serverDiscoveryPath(dataDir), pid)
 			yield* Effect.sync(() => process.stderr.write(`\n${green("✓")} maple stopped\n`))
 		}),
 	),
@@ -1751,7 +1911,7 @@ export const checkpoint = Command.make("checkpoint", {
 			// store started on a non-default port is checkpointed without repeating it.
 			const discovered = Option.isSome(a.port)
 				? Option.none<URL>()
-				: Option.flatMap(yield* readDiscovery(dataDir), (found) =>
+				: Option.flatMap(yield* readDiscovery(serverDiscoveryPath(dataDir)), (found) =>
 						isProcessAlive(found.pid) && URL.canParse(found.url)
 							? Option.some(new URL(found.url))
 							: Option.none(),

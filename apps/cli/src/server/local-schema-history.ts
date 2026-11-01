@@ -472,6 +472,74 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "9f47ab6ca94633c667375133a2a2bc8fab1065a0494fb89973ba2230d8f9d516",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v38 adds ci_runs, ci_jobs and their views; nothing is rewritten, and nothing is
+		// backfilled because CI traces never reach a local store.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 38,
+		fingerprint: "b5b7d31165206b3b",
+		digest: "b5b7d31165206b3bb5b9d7067625afb518b78767d066db56903641628900a5a8",
+		manifestDigest: "ff3610deae33950cec09239468ee3752c2869a8232f3d1e1c252a61ca29992db",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v39 adds six HTTP counters to both service-operations rollups (metadata-only,
+		// not backfilled) and service_endpoint_details_hourly with its view, which the
+		// edge backfills from retained traces.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 39,
+		fingerprint: "88c8c6faccb79227",
+		digest: "88c8c6faccb79227ce636b6b551fbed82ccab826fec78f93f1a9b0e3c66a8e96",
+		manifestDigest: "94f37f19d259b57465d90633c479e19baa678071ac5cf9e6143529d48eef9de7",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v40 re-sorts service_map_spans and service_map_children by 5-minute bucket
+		// and trace id. The edge copies every row unchanged through view-free staging
+		// tables, so nothing is backfilled.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 40,
+		fingerprint: "438c01e111c00fb0",
+		digest: "438c01e111c00fb008c9646dcdcfd894bc3eeac4faa8f366338a5482bc2fdf8d",
+		manifestDigest: "c2ac5bcca067310071aca22ec22436ccdcdbd86e0d6a3e8639d2bd82186ee7e7",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v41 adds service_map_db_edges_minutely with its view. Additive, nothing
+		// rewritten, and not backfilled: the service map reads raw traces for any
+		// minute before the view's first write.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 41,
+		fingerprint: "318b1ee496b66c39",
+		digest: "318b1ee496b66c392c209250a016eb805b5047ddf1be0927140e40f08ca04f97",
+		manifestDigest: "2b984bb508f9efb6ca633c54000312086f480614210a14c63ffccd574eac0441",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v42: scanner_requests, service_runtimes_hourly and their views, new and
+		// filled forward. Nothing is rewritten and nothing is backfilled.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 42,
+		fingerprint: "d03ed074b19ce990",
+		digest: "d03ed074b19ce99042d1e8f867f80b0ad14a7cd14f167e6fa223c314cc15cebc",
+		manifestDigest: "7fa5b1193b333d6432b26e258f6735f1f795e46383a7b68e097c59b61d71563d",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */

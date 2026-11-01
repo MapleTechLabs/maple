@@ -78,7 +78,7 @@ export const completedSync = (model: Model, context: PageContext, failure: LoadF
 	// A failed sync still re-reads the status: the card stays connected and shows its error.
 	return failure === null
 		? reloaded
-		: { ...reloaded, ...toast(reloaded.model, "error", "Failed to sync Supabase", failure.message) }
+		: { ...reloaded, ...toast(reloaded.model, "error", "Couldn't sync Supabase", failure.message) }
 }
 
 /** One write per project at a time; a second flip while one saves is ignored. */
@@ -145,7 +145,7 @@ export const completedMetrics = (
 		context,
 		ref,
 		failure,
-		enabled ? "Failed to start collecting metrics" : "Failed to stop collecting metrics",
+		enabled ? "Couldn't start collecting metrics" : "Couldn't stop collecting metrics",
 	)
 
 export const toggledLogs = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
@@ -163,7 +163,7 @@ export const completedLogs = (
 		context,
 		ref,
 		failure,
-		enabled ? "Failed to start collecting logs" : "Failed to stop collecting logs",
+		enabled ? "Couldn't start collecting logs" : "Couldn't stop collecting logs",
 	)
 
 export const toggledLogDrain = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
@@ -181,5 +181,5 @@ export const completedLogDrain = (
 		context,
 		ref,
 		failure,
-		enabled ? "Failed to create the log drain" : "Failed to remove the log drain",
+		enabled ? "Couldn't create the log drain" : "Couldn't remove the log drain",
 	)

@@ -1,12 +1,14 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer } from "effect"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { BillingAccountPersistenceError, BillingCustomerId, OrgId } from "@maple/domain/http"
+import { ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { CancellationReviewQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
 import {
-	CancellationReviewError,
-	CancellationReviewService,
-	type CancellationToReview,
-} from "@maple/backend/services/cancellation-review/CancellationReviewService"
+	CancellationReviewJob,
+	CancellationReviewQueue,
+} from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import {
 	ProductEventsService,
 	type ProductEventInput,
@@ -60,6 +62,7 @@ const recordingAudit = () => {
 const EMPTY_SUMMARY: MembershipRevocationSummary = {
 	apiKeysRevoked: 0,
 	mcpFamiliesRevoked: 0,
+	deviceCredentialsRevoked: 0,
 	cliAuthorizationsDeleted: 0,
 	mcpAuthorizationsDeleted: 0,
 	emailDestinationsUpdated: 0,
@@ -83,7 +86,7 @@ const recordingRevocation = (fail = false) => {
 		revokeUser: (userId) => run(`revokeUser:${userId}`),
 		demoteMembership: (orgId, userId, roles) =>
 			run(`demote:${orgId}:${userId}:${roles.join(",")}`).pipe(
-				Effect.map(() => ({ apiKeysRevoked: 0, mcpFamiliesRevoked: 0 })),
+				Effect.map(() => ({ apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked: 0 })),
 			),
 		invalidateMembership: (userId) =>
 			fail
@@ -95,19 +98,22 @@ const recordingRevocation = (fail = false) => {
 	return { calls, layer }
 }
 
-/** Records the cancellations the Autumn route hands to the review, which can be made to fail. */
-const recordingCancellationReviews = (fail = false) => {
-	const reviewed: Array<CancellationToReview> = []
-	const layer = Layer.succeed(CancellationReviewService, {
-		review: (cancellation) =>
-			fail
-				? Effect.fail(new CancellationReviewError({ message: "Autumn did not answer", step: "billing" }))
-				: Effect.sync(() => {
-						reviewed.push(cancellation)
-						return "posted" as const
-					}),
-	})
-	return { reviewed, layer }
+const decodeQueuedJob = Schema.decodeUnknownSync(CancellationReviewJob)
+
+/** Records the bodies the Autumn route queues for review; the queue can be made to refuse them. */
+const recordingCancellationQueue = (fail = false) => {
+	const queued: Array<unknown> = []
+	const layer = CancellationReviewQueue.layer.pipe(
+		Layer.provide(
+			Layer.succeed(CancellationReviewQueueProducer, {
+				sendBatch: (messages) =>
+					fail
+						? Effect.fail(new QueueSendError({ message: "queue unavailable", cause: null }))
+						: Effect.sync(() => void queued.push(...messages.map((message) => message.body))),
+			}),
+		),
+	)
+	return { queued, layer }
 }
 
 const makeRouterLayer = (
@@ -116,11 +122,13 @@ const makeRouterLayer = (
 	productEvents: Layer.Layer<ProductEventsService>,
 	revocation: Layer.Layer<MembershipRevocationService> = recordingRevocation().layer,
 	audit: Layer.Layer<AuditLogService> = recordingAudit().layer,
-	cancellationReviews: Layer.Layer<CancellationReviewService> = recordingCancellationReviews().layer,
+	cancellationQueue: Layer.Layer<CancellationReviewQueue> = recordingCancellationQueue().layer,
+	billingCustomers: Layer.Layer<BillingCustomerResolver> = BillingCustomerResolver.standalone,
 ) =>
 	router.pipe(
 		Layer.provide(productEvents),
-		Layer.provide(cancellationReviews),
+		Layer.provide(billingCustomers),
+		Layer.provide(cancellationQueue),
 		Layer.provide(revocation),
 		Layer.provide(audit),
 		Layer.provide(Env.layer),
@@ -463,14 +471,17 @@ const AUTUMN_CANCEL_SCHEDULED = JSON.stringify({
 })
 
 describe("AutumnWebhookRouter", () => {
-	it.effect("reviews a scheduled cancellation", () =>
+	it.effect("queues a scheduled cancellation for its review", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
-			const reviews = recordingCancellationReviews()
+			const reviews = recordingCancellationQueue()
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(
 					AutumnWebhookRouter,
-					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS" },
+					{
+						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
+						MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS",
+					},
 					events.layer,
 					undefined,
 					undefined,
@@ -483,7 +494,11 @@ describe("AutumnWebhookRouter", () => {
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 200)
 				assert.deepStrictEqual(
-					reviews.reviewed.map(({ receivedAt: _receivedAt, ...cancellation }) => cancellation),
+					// What the consumer decodes off the queue.
+					reviews.queued.map((body) => {
+						const { receivedAt: _receivedAt, ...cancellation } = decodeQueuedJob(body)
+						return cancellation
+					}),
 					[
 						{
 							orgId: "org_42",
@@ -506,10 +521,83 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
+	it.effect("queues no review for an org whose plan ended because it is billed through another", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const reviews = recordingCancellationQueue()
+			const payer = Schema.decodeUnknownSync(OrgId)("org_payer")
+			const linked = Layer.succeed(BillingCustomerResolver, {
+				billingOrgId: () => Effect.succeed(payer),
+				customerFor: () => Effect.succeed(BillingCustomerId.make(payer)),
+				requireOwnBilling: () => Effect.die("not used"),
+				readLink: () => Effect.succeed(Option.some(payer)),
+				forget: () => Effect.void,
+			})
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{
+						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
+						MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS",
+					},
+					events.layer,
+					undefined,
+					undefined,
+					reviews.layer,
+					linked,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(reviews.queued, [])
+				assert.deepStrictEqual(events.tracked, [])
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
+	it.effect("asks for redelivery when it cannot tell whether the org is billed elsewhere", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const reviews = recordingCancellationQueue()
+			const unreadable = Layer.succeed(BillingCustomerResolver, {
+				billingOrgId: () => Effect.die("not used"),
+				customerFor: () => Effect.die("not used"),
+				requireOwnBilling: () => Effect.die("not used"),
+				readLink: () => Effect.fail(new BillingAccountPersistenceError({ message: "postgres down" })),
+				forget: () => Effect.void,
+			})
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{
+						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
+						MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS",
+					},
+					events.layer,
+					undefined,
+					undefined,
+					reviews.layer,
+					unreadable,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 503)
+				assert.deepStrictEqual(reviews.queued, [])
+				assert.deepStrictEqual(events.tracked, [])
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
 	it.effect("reviews nothing on a deployment with no channel to report to", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
-			const reviews = recordingCancellationReviews()
+			const reviews = recordingCancellationQueue()
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(
 					AutumnWebhookRouter,
@@ -525,23 +613,26 @@ describe("AutumnWebhookRouter", () => {
 				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 200)
-				assert.deepStrictEqual(reviews.reviewed, [])
+				assert.deepStrictEqual(reviews.queued, [])
 				assert.strictEqual(events.tracked.length, 1)
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))
 		}),
 	)
 
-	it.effect("records the plan events, then answers 503, when the review could not finish", () =>
+	it.effect("records the plan events, then answers 503, when the review could not be queued", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(
 					AutumnWebhookRouter,
-					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS" },
+					{
+						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
+						MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS",
+					},
 					events.layer,
 					undefined,
 					undefined,
-					recordingCancellationReviews(true).layer,
+					recordingCancellationQueue(true).layer,
 				),
 				{ disableLogger: true },
 			)

@@ -27,6 +27,8 @@ export interface RunRawSqlInput {
 	readonly startTime: string
 	readonly endTime: string
 	readonly granularitySeconds: number
+	/** Stop at the 1,000-row cap instead of failing on a longer result. */
+	readonly truncateAtCap?: boolean
 }
 
 /**
@@ -58,6 +60,7 @@ export const runRawSql = Effect.fn("McpRawSql.runRawSql")(function* (input: RunR
 		startTime: input.startTime,
 		endTime: input.endTime,
 		granularitySeconds: input.granularitySeconds,
+		...(input.truncateAtCap === true ? { truncateAtCap: true } : undefined),
 		workload: "interactive",
 		context: "mcp.run_sql",
 	}).pipe(

@@ -1,4 +1,5 @@
 import { formatUtcTitle } from "../../lib/time"
+import { ROW_LINE_CHARS } from "@maple/web/lib/display-text"
 import { formatTimestamp, type TimeFormat } from "../kit/local-time"
 import { countLabel } from "@maple/ui/lib/format"
 import { getSeverityColor } from "@maple/ui/lib/severity"
@@ -121,7 +122,7 @@ export const logRow = (
 				],
 			),
 			h.span(
-				[h.Class("flex min-w-[40%] flex-1 items-center gap-2"), h.Title(log.body)],
+				[h.Class("flex min-w-[40%] flex-1 items-center gap-2"), h.Title(log.body.slice(0, ROW_LINE_CHARS))],
 				[
 					h.span(
 						[

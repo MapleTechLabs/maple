@@ -40,9 +40,9 @@ const group = (
 					h.AriaControls(`anomaly-group-${key}`),
 					h.Class(
 						cn(
-							"sticky top-0 z-10 flex h-8 w-full items-center gap-2 border-b border-border/60 bg-muted/40 pr-2 pl-2 text-left outline-none",
-							"backdrop-blur supports-[backdrop-filter]:bg-muted/60",
-							"hover:bg-muted/60",
+							"sticky top-0 z-10 flex h-8 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken pr-2 pl-2 text-left outline-none",
+							"backdrop-blur supports-[backdrop-filter]:bg-surface-strong",
+							"hover:bg-surface-strong active:bg-surface-strong",
 						),
 					),
 				],
@@ -59,7 +59,7 @@ const group = (
 			...(isOpen
 				? [
 						h.div(
-							[h.Id(`anomaly-group-${key}`), h.Role("list"), h.Class("divide-y divide-border/40")],
+							[h.Id(`anomaly-group-${key}`), h.Role("list"), h.Class("divide-y divide-border-subtle")],
 							clusterByService(incidents).map((cluster) =>
 								h.div(
 									[h.Key(cluster.key + (cluster.incidents[0]?.id ?? ""))],
@@ -69,12 +69,12 @@ const group = (
 													h.div(
 														[
 															h.Class(
-																"flex h-7 items-center gap-1.5 border-b border-border/40 bg-muted/20 pl-5 text-2xs text-muted-foreground",
+																"flex h-7 items-center gap-1.5 border-b border-border-subtle bg-surface-faint pl-5 text-2xs text-muted-foreground",
 															),
 														],
 														[
 															serviceDot(h, { serviceName: cluster.serviceName, size: "sm" }),
-															h.span([h.Class("font-medium text-foreground/80")], [cluster.serviceName]),
+															h.span([h.Class("font-medium text-foreground-soft")], [cluster.serviceName]),
 															...(cluster.deploymentEnv ? [h.span([], [cluster.deploymentEnv])] : []),
 															h.span([h.Class("tabular-nums")], [String(cluster.incidents.length), " anomalies"]),
 														],
@@ -82,7 +82,7 @@ const group = (
 												]
 											: []),
 										h.div(
-											[h.Class("divide-y divide-border/40")],
+											[h.Class("divide-y divide-border-subtle")],
 											cluster.incidents.map((incident) =>
 												h.div(
 													[h.Key(incident.id), h.Role("listitem")],

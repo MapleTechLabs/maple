@@ -5,6 +5,7 @@ import { CatalogPlan, CatalogPlansResponse, MapleApi } from "@maple/domain/http"
 import { decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 
 // The plan catalog is the one billing operation that is NOT internal-only: it is
 // served unauthenticated so a transient token-settle gap renders prices instead
@@ -14,6 +15,7 @@ export const HttpBillingPublicLive = HttpApiBuilder.group(MapleApi, "billingPubl
 	Effect.gen(function* () {
 		const auth = yield* AuthService
 		const autumn = yield* AutumnClient
+		const billingCustomers = yield* BillingCustomerResolver
 
 		return handlers.handle("listPlans", () =>
 			Effect.gen(function* () {
@@ -22,7 +24,12 @@ export const HttpBillingPublicLive = HttpApiBuilder.group(MapleApi, "billingPubl
 				// `customerEligibility` (autumn marks listPlans' customerId optional).
 				const req = yield* HttpServerRequest.HttpServerRequest
 				const tenant = yield* Effect.option(auth.resolveTenant(req.headers as Record<string, string>))
-				const customerId = Option.getOrUndefined(tenant)?.orgId
+				// A member org's eligibility is its billing org's. Without it, the plain catalog.
+				const customerId = Option.isNone(tenant)
+					? undefined
+					: yield* billingCustomers
+							.customerFor(tenant.value.orgId)
+							.pipe(Effect.orElseSucceed(() => undefined))
 				const result = yield* autumn.listPlans(customerId)
 				const response = yield* ensureOk(result)
 				// Autumn wraps the catalog as `{ list: [...] }`.

@@ -33,6 +33,25 @@ describe("apiKeyRowPermissions", () => {
 		})
 	})
 
+	it("lets a member revoke their own phone's device key; an admin revokes any but rolls none", () => {
+		expect(apiKeyRowPermissions({ ...live, kind: "device" }, { isAdmin: false, userId: ME })).toEqual({
+			canRoll: false,
+			canRevoke: true,
+		})
+		expect(
+			apiKeyRowPermissions(
+				{ ...live, kind: "device", created_by: OTHER },
+				{ isAdmin: false, userId: ME },
+			),
+		).toEqual({ canRoll: false, canRevoke: false })
+		expect(
+			apiKeyRowPermissions(
+				{ ...live, kind: "device", created_by: OTHER },
+				{ isAdmin: true, userId: ME },
+			),
+		).toEqual({ canRoll: false, canRevoke: true })
+	})
+
 	it("offers nothing on a revoked key or before the session names the viewer", () => {
 		expect(
 			apiKeyRowPermissions({ ...live, kind: "mcp", revoked: true }, { isAdmin: true, userId: ME }),

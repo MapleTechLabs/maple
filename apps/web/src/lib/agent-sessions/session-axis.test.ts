@@ -92,7 +92,7 @@ describe("buildSessionAxis", () => {
 
 		// Hours, not the "360m" an unrolled minute count would print.
 		const long = buildSessionAxis({ startMs: START, endMs: START + 6 * HOUR, collapsedGaps: [] })
-		expect(long.ticks.map((tick) => tick.label)).toEqual(["0s", "2h 0m", "4h 0m", "6h 0m"])
+		expect(long.ticks.map((tick) => tick.label)).toEqual(["0s", "2h", "4h", "6h"])
 	})
 
 	it("survives a session with no measurable duration", () => {

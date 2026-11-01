@@ -1,4 +1,4 @@
-import * as AWS from "alchemy/AWS"
+import * as AWS from "@alchemy.run/aws"
 import type * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion, resolveAwsResourceName } from "@maple/infra/aws"

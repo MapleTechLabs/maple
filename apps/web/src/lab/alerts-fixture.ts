@@ -296,6 +296,7 @@ const ruleFrom = (spec: RuleSpec, nowMs: number): AlertRuleDocument => {
 		minimumSampleCount: spec.minSamples ?? 0,
 		consecutiveBreachesRequired: 2,
 		breachesOutOf: null,
+		evaluationIntervalMinutes: null,
 		thresholds: [
 			{
 				severity: spec.severity,
@@ -314,6 +315,9 @@ const ruleFrom = (spec: RuleSpec, nowMs: number): AlertRuleDocument => {
 		destinationIds: spec.destinations,
 		noDataBehavior: "skip",
 		lastEvaluationError: spec.error ?? null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
 		lastEvaluatedAt: iso(nowMs - (spec.lastEvaluatedAgoMs ?? MIN)),
 		lastScheduledAt: iso(nowMs - (spec.lastEvaluatedAgoMs ?? MIN)),
 		createdAt: iso(nowMs - 90 * DAY),
@@ -674,7 +678,9 @@ const chatPreview = (nowMs: number, range: { start: number; end: number }): Aler
 		windowMinutes: 5,
 		threshold: 0.05,
 		thresholdUpper: null,
-		thresholds: [{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] }],
+		thresholds: [
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
+		],
 		comparator: "gt",
 		truncatedToStart: null,
 		series: [{ groupKey: "maple-chat", points }],

@@ -1,6 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import type { HtmlBuilder } from "foldkit/html"
+import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import type { PageContext } from "../../contract"
@@ -18,6 +20,7 @@ import { cacheRange, RANGE_CACHE_LIMIT, seedEvents, seedShiftMs } from "./loader
 import { Message } from "./message"
 import type { EventRow, Manifest, Model, ReplayDetail } from "./model"
 import { init, update } from "./update"
+import { playerStatus } from "./derive"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -134,13 +137,21 @@ describe("replay detail", () => {
 	test("a loaded session subscribes to 0–0, then the planned opening range, and its traces", () => {
 		const start = entered().model
 		const detailed = pageUpdate(start, Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }))
-		expect(names(detailed.commands)).toEqual([FetchRange.name, FetchTraceSummaries.name])
+		expect(names(detailed.commands)).toEqual(expect.arrayContaining([FetchRange.name, FetchTraceSummaries.name]))
 		const planned = pageUpdate(
 			detailed.model,
 			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(manifest) }),
 		)
 		expect(names(planned.commands)).toEqual([FetchRange.name])
 		expect(planned.model.loader.queue).toEqual([{ fromChunkSeq: 0, toChunkSeq: 1 }])
+	})
+
+	test("trace summaries read the session's own span with slack, not the day-wide `t` window", () => {
+		const start = init({ sessionId: SESSION, search: { t: "2026-10-01 11:18:00" } }, context).model
+		const traced = { ...session, traceIds: ["0af7651916cd43dd8448eb211c80319c"] }
+		const detailed = pageUpdate(start, Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(traced) }))
+		const summaries = detailed.commands?.find((command) => command.name === FetchTraceSummaries.name)
+		expect(summaries?.args).toMatchObject({ windowStart: "2026-10-01 11:03:00", windowEnd: "2026-10-01 11:37:00" })
 	})
 
 	test("the opening range becomes the seed, and an answer for a superseded range is dropped", () => {
@@ -255,6 +266,150 @@ describe("replay detail", () => {
 		expect(rebuilt.meta.actionMarkers.map((marker) => marker.ms)).toEqual([1_000, 305_000])
 	})
 
+	const spread = (sizes: ReadonlyArray<{ seconds: number; bytes: number; isCheckpoint: boolean }>): Manifest => ({
+		chunks: sizes.map((chunk, seq) => ({
+			chunk_seq: seq,
+			timestamp: new Date(Date.UTC(2026, 9, 1, 11, 18, 0) + chunk.seconds * 1000).toISOString(),
+			duration_ms: 10_000,
+			event_count: 2,
+			byte_size: chunk.bytes,
+			is_checkpoint: chunk.isCheckpoint,
+		})),
+		maxBytesPerRequest: 6_000_000,
+		maxChunksPerRequest: 16,
+	})
+	const epochAt = (seconds: number) => Date.UTC(2026, 9, 1, 11, 18, 0) + seconds * 1000
+	const chunkRows = (seq: number, seconds: number) => [
+		{ chunk_seq: seq, events: [{ type: 4, timestamp: epochAt(seconds), data: {} }, { type: 3, timestamp: epochAt(seconds) + 5, data: { source: 2, type: 2 } }] },
+	]
+	const openWith = (manifest: Manifest): Model => {
+		const start = entered().model
+		return [
+			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }),
+			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(manifest) }),
+		].reduce((model, message) => pageUpdate(model, message).model, start)
+	}
+	const answerWith = (model: Model, rows: ReturnType<typeof chunkRows>) =>
+		pageUpdate(model, Message.CompletedFetchRange({ key: model.loader.range.key ?? "", result: Result.succeed(rows) }))
+
+	test("the whole recording downloads after the opening window, without waiting for playback", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 4_000_000, isCheckpoint: false },
+			{ seconds: 120, bytes: 4_000_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0))
+		expect(names(seeded.commands)).toEqual([FetchRange.name])
+		const second = answerWith(seeded.model, chunkRows(1, 60))
+		expect(names(second.commands)).toEqual([FetchRange.name])
+		const done = answerWith(second.model, chunkRows(2, 120)).model
+		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0, 1, 2])
+		expect(done.loader.queue).toEqual([])
+		expect(done.meta.actionMarkers.map((marker) => marker.ms)).toEqual([5, 60_005, 120_005])
+	})
+
+	test("past the memory cap the rest downloads for its markers, and the window slides at its end", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 30_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 30_000_000, isCheckpoint: true },
+			{ seconds: 120, bytes: 1_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const metaOnly = answerWith(seeded, chunkRows(1, 60)).model
+		const done = answerWith(metaOnly, chunkRows(2, 120)).model
+		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0])
+		expect(done.meta.actionMarkers.map((marker) => marker.ms)).toEqual([5, 60_005, 120_005])
+
+		const playing = pageUpdate(pageUpdate(done, Message.ReadiedEngine({ seedVersion: done.loader.seedVersion, totalMs: 1 })).model, Message.ClickedPlay()).model
+		// Ticks well inside the window do not slide it; the engine running dry there does.
+		const early = pageUpdate(playing, Message.TickedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 5_000 })).model
+		expect(early.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0])
+		const dry = pageUpdate(playing, Message.StarvedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 5_000 })).model
+		expect(dry.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
+		const slid = pageUpdate(playing, Message.TickedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 9_500 })).model
+		// Chunk 1 was fetched for its markers only and not kept, so the new window fetches it again.
+		expect(slid.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
+		// The window being left is not cached past the cap either.
+		expect(Object.keys(slid.loader.rangeCache)).toEqual([])
+		const rebuilt = answerWith(answerWith(slid, chunkRows(1, 60)).model, chunkRows(2, 120)).model
+		expect(rebuilt.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([1, 2])
+		const resumed = pageUpdate(rebuilt, Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 })).model
+		expect(resumed.player.isPlaying).toBe(true)
+		expect(resumed.player.control).toContain("|play|9500")
+	})
+
+	test("past the cap with no later checkpoint to slide to, the window keeps growing instead of freezing", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 30_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 30_000_000, isCheckpoint: false },
+			{ seconds: 120, bytes: 1_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const done = answerWith(answerWith(seeded, chunkRows(1, 60)).model, chunkRows(2, 120)).model
+		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0, 1, 2])
+	})
+
+	test("a seek ahead of the download still fills in the markers it jumped over", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 4_000_000, isCheckpoint: false },
+			{ seconds: 120, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 180, bytes: 4_000_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const ready = pageUpdate(seeded, Message.ReadiedEngine({ seedVersion: seeded.loader.seedVersion, totalMs: 1 })).model
+		// Chunk 1 is in flight when the seek lands on chunk 2; its answer is superseded.
+		const seeking = pageUpdate(ready, Message.RequestedSeek({ displayMs: 125_000 })).model
+		const rebuilt = answerWith(seeking, chunkRows(2, 120)).model
+		const ahead = answerWith(rebuilt, chunkRows(3, 180)).model
+		expect(ahead.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
+		const filled = answerWith(ahead, chunkRows(1, 60)).model
+		expect(filled.meta.actionMarkers.map((marker) => marker.ms)).toEqual([5, 60_005, 120_005, 180_005])
+	})
+
+	test("a chunk missing right at a range boundary does not stop the next range from playing", () => {
+		const base = spread([
+			{ seconds: 0, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 4_000_000, isCheckpoint: false },
+			{ seconds: 180, bytes: 4_000_000, isCheckpoint: false },
+		])
+		// Chunk 2 never arrived: ranges are 0, 1 and 3.
+		const manifest: Manifest = { ...base, chunks: base.chunks.map((chunk) => (chunk.chunk_seq === 2 ? { ...chunk, chunk_seq: 3 } : chunk)) }
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const second = answerWith(seeded, chunkRows(1, 60)).model
+		const done = answerWith(second, chunkRows(3, 180)).model
+		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0, 1, 3])
+	})
+
+	test("a failed background range is skipped, and only errors once the playhead reaches it", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 4_000_000, isCheckpoint: false },
+			{ seconds: 120, bytes: 4_000_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const failed = pageUpdate(
+			seeded,
+			Message.CompletedFetchRange({ key: seeded.loader.range.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
+		)
+		expect(failed.model.loader.queue).toEqual([{ fromChunkSeq: 2, toChunkSeq: 2 }])
+		expect(names(failed.commands)).toEqual([FetchRange.name])
+		const rest = answerWith(failed.model, chunkRows(2, 120)).model
+		expect(playerStatus(rest, session).status).toBe("ready")
+
+		const ready = pageUpdate(rest, Message.ReadiedEngine({ seedVersion: rest.loader.seedVersion, totalMs: 1 })).model
+		const inside = pageUpdate(ready, Message.TickedEngine({ seedVersion: ready.loader.seedVersion, currentMs: 5_000 })).model
+		expect(playerStatus(inside, session).status).toBe("ready")
+		// The engine running dry before the manifest's estimate of the window end counts as reaching it.
+		const dry = pageUpdate(inside, Message.StarvedEngine({ seedVersion: ready.loader.seedVersion, currentMs: 5_000 })).model
+		expect(playerStatus(dry, session).status).toBe("error")
+		const atEdge = pageUpdate(ready, Message.TickedEngine({ seedVersion: ready.loader.seedVersion, currentMs: 9_500 })).model
+		expect(playerStatus(atEdge, session).status).toBe("error")
+		const retried = pageUpdate(atEdge, Message.ClickedRetryPlayer())
+		expect(names(retried.commands)).toContain(FetchRange.name)
+		expect(playerStatus(retried.model, session).status).not.toBe("error")
+	})
+
 	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {
 		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
 		const ticked = pageUpdate(ready, Message.TickedEngine({ seedVersion: 1, currentMs: 100 })).model
@@ -284,5 +439,20 @@ describe("replay detail", () => {
 		expect(Object.keys(cache)).toHaveLength(RANGE_CACHE_LIMIT)
 		expect(Object.keys(cache)[0]).toBe("range-3")
 		expect(Object.keys(cacheRange(cache, "range-3", [])).at(-1)).toBe("range-3")
+	})
+})
+
+describe("replay detail playback", () => {
+	test("an engine tick reuses every memoized section, so only the playhead is rebuilt", () => {
+		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
+		const playing = pageUpdate(ready, Message.ClickedPlay()).model
+		const ticked = pageUpdate(playing, Message.TickedEngine({ seedVersion: 1, currentMs: 1500 })).model
+		expect(ticked.player.currentMs).not.toBe(playing.player.currentMs)
+		// The first render draws the frame before the tick, the second the tick itself.
+		const frames = [playing, ticked].values()
+		Lazy.expectAllReused({
+			view: (model: Model, h: HtmlBuilder<Message>) => view(frames.next().value ?? model, h),
+			model: ticked,
+		})
 	})
 })

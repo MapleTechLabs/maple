@@ -249,6 +249,39 @@ const webAnalyticsAiFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+const securityTelemetryFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "security-telemetry",
+		name: "scannerSignaturesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.scannerSignaturesQuery(), window),
+	},
+	{
+		module: "security-telemetry",
+		name: "scannerExposedQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.scannerExposedQuery(), window),
+	},
+	{
+		module: "security-telemetry",
+		name: "scannerSourcesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.scannerSourcesQuery(), window),
+	},
+	{
+		module: "security-telemetry",
+		name: "scannerTimelineQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.scannerTimelineQuery({ bucketSeconds: 3600 }), window),
+	},
+	{
+		module: "security-telemetry",
+		name: "runtimeVersionsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.runtimeVersionsQuery(), window),
+	},
+]
+
 // Product-event funnel fixtures. The funnel SQL has four independent axes —
 // person-key resolution (with or without the identity_links join), a session
 // step 1 (UNION ALL of a session_replays branch), the population filter
@@ -845,6 +878,13 @@ const infraFixtures: ReadonlyArray<BuilderFixture> = [
 		sampleValues: { workloadKind: "deployment" },
 	},
 	{
+		// registry `serviceRuntimes`.
+		module: "service-infra",
+		name: "serviceRuntimesSQL",
+		label: "default",
+		compile: () => runCompile(CH.serviceRuntimesSQL({ services: ["api", "checkout"] }, window)),
+	},
+	{
 		// backend ServiceMapRollupService, the hourly resolutions rollup.
 		module: "service-map-rollup",
 		name: "serviceMapResolutionsRollupSQL",
@@ -988,6 +1028,13 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 	{
+		// runtime span estimate before a raw traces breakdown.
+		module: "services",
+		name: "traceSpanVolumeByServiceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.traceSpanVolumeByServiceQuery(), window),
+	},
+	{
 		// backend TelemetryReadService, v2 trace search.
 		module: "traces",
 		name: "traceSummariesQuery",
@@ -1000,6 +1047,29 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 					httpMethod: "GET",
 					deploymentEnv: "production",
 					limit: 50,
+				}),
+				window,
+			),
+	},
+	{
+		// v2 trace search as the iOS Traces tab sends it: root scope, no filters.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "root-scope",
+		compile: () => CH.compileUnsafe(CH.traceSummariesQuery({ spanScope: "root", limit: 51 }), window),
+	},
+	{
+		// v2 trace search, root scope with a filter trace_list_mv cannot express.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "root-scope-raw",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceSummariesQuery({
+					spanScope: "root",
+					httpRoute: "/users/:id",
+					hasError: true,
+					limit: 51,
 				}),
 				window,
 			),
@@ -1083,6 +1153,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					requestId: true,
 					since: true,
 					until: true,
+					excludeActionSuffixes: [".read", ".called"],
 					limit: 50,
 					offset: 50,
 				}),
@@ -1103,6 +1174,97 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					until: END_TIME,
 				},
 			),
+	},
+	// Cancellation evidence (CancellationTelemetryEvidence.read).
+	{
+		module: "cancellation-evidence",
+		name: "cancellationServiceUsageQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationServiceUsageQuery({ limit: 15 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationServiceCountsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationServiceCountsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationResourceAttributesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationResourceAttributesQuery({ limit: 500 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationResourceSpansQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationResourceSpansQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationErrorFingerprintsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationErrorFingerprintsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAuditActionsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationAuditActionsQuery({ limit: 25 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAuditActorsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationAuditActorsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationToolCallsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationToolCallsQuery({ limit: 15 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAlertChecksQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationAlertChecksQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationErrorsByDayQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationErrorsByDayQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationProductEventsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationProductEventsQuery({ limit: 50 }), {
+				...window,
+				splitTime: START_TIME,
+				groupId: "org_customer",
+			}),
 	},
 	// Session replay fixtures used by the replay routes.
 	{
@@ -1271,6 +1433,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 
 	...webAnalyticsFixtures,
 	...webAnalyticsAiFixtures,
+	...securityTelemetryFixtures,
 
 	// Traces sidebar (query-engine runtime); the pipe fixtures cover the raw-only route.
 	{
@@ -1546,6 +1709,125 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
+	// Service API tab — routes/internal/query-engine.http.ts. Totals and timeseries
+	// run the operations splice with migration 0048's HTTP measures; the raw tier
+	// is the per-org fallback when the rollups or those columns are absent.
+	{
+		module: "service-api",
+		name: "serviceEndpointsWithHttpQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceEndpointsWithHttpQuery({ serviceName: "api", limit: 50 }), window, {
+				rowSchema: CH.serviceEndpointsWithHttpRowSchema,
+			}),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTotalsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTotalsQuery({ serviceName: "api", environments: ["production"] }),
+				window,
+				{
+					rowSchema: CH.serviceApiTotalsRowSchema,
+				},
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTotalsQuery",
+		label: "rawTier",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceApiTotalsQuery({ serviceName: "api", tiers: "raw" }), window, {
+				rowSchema: CH.serviceApiTotalsRowSchema,
+			}),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "mergedSubHour",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({ serviceName: "api", bucketSeconds: 300 }),
+				{ ...window, bucketSeconds: 300 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "perEndpointHourly",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({
+					serviceName: "api",
+					bucketSeconds: 3600,
+					spanNames: ["GET /v2/services", "POST /v2/alerts"],
+				}),
+				{ ...window, bucketSeconds: 3600 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "rawTier",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({ serviceName: "api", bucketSeconds: 300, tiers: "raw" }),
+				{ ...window, bucketSeconds: 300 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	// Endpoint detail — one hour-grain tier off service_endpoint_details_hourly.
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointStatusBreakdownQuery",
+		label: "allEndpoints",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceEndpointStatusBreakdownQuery({ serviceName: "api" }), window, {
+				rowSchema: CH.serviceEndpointStatusBreakdownRowSchema,
+			}),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointStatusBreakdownQuery",
+		label: "oneEndpoint",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointStatusBreakdownQuery({
+					serviceName: "api",
+					environments: ["production"],
+					spanName: "GET /v2/services",
+				}),
+				window,
+				{ rowSchema: CH.serviceEndpointStatusBreakdownRowSchema },
+			),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointDistributionQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointDistributionQuery({ serviceName: "api", spanName: "GET /v2/services" }),
+				window,
+				{ rowSchema: CH.serviceEndpointDistributionRowSchema },
+			),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointSlowestQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointSlowestQuery({ serviceName: "api", spanName: "GET /v2/services" }),
+				window,
+				{ rowSchema: CH.serviceEndpointSlowestRowSchema },
+			),
+	},
+
 	// Releases page — routes/internal/query-engine.http.ts `releasesList` and
 	// `releaseDetail`. Same splice as the services list, grouped one level
 	// finer (per commit), plus the error-events bridge keyed on the version.
@@ -1568,6 +1850,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				CH.releasesListQuery({ serviceName: "api", environments: ["production"], limit: 100 }),
 				window,
 			),
+	},
+	// Dependency scanner: which commit each service runs, ranked by traffic.
+	{
+		module: "releases",
+		name: "runningCommitsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.runningCommitsQuery(), window),
 	},
 	{
 		module: "releases",
@@ -1708,6 +1997,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.ciQueueTotalsQuery({}), window),
 	},
 	{
+		module: "ci-runs",
+		name: "ciActorStatsQuery",
+		label: "allWorkflows",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciActorStatsQuery({
+					defaultBranches: [{ owner: "acme", repository: "web", branch: "main" }],
+				}),
+				window,
+			),
+	},
+	{
 		module: "pr-review",
 		name: "operationTrafficHourlyQuery",
 		label: "allServices",
@@ -1793,6 +2094,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(CH.sourceUsageHourlyQuery(), {
 				...window,
 				sourceId: "src_aXunrkWtzvXSkw9Z2smcft",
+			}),
+	},
+
+	// AwsConnectionService.ingest: what one connection's metric stream stored.
+	{
+		module: "aws-ingest",
+		name: "awsIngestQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.awsIngestQuery(), {
+				...window,
+				connectionId: "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
 			}),
 	},
 

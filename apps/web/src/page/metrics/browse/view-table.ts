@@ -1,13 +1,22 @@
-import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { listFooter } from "../../../ui/list-footer"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	ROW_LINK_LIFT,
+	rowLink,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+import { emptyValue, serviceDot } from "../../../ui/values"
 import { metricTypeBadge, type MetricRow } from "../shared"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -15,11 +24,6 @@ import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 
 type H = HtmlBuilder<Message>
-
-// A row link stretched over its row, and the lift for controls above it.
-const ROW_STRETCHED_LINK_CLASS =
-	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
-const ROW_LINK_LIFT = "relative z-10"
 
 const MD_CELL = "hidden md:table-cell"
 
@@ -29,25 +33,25 @@ export const loadingTable = (h: H): Html =>
 			{ header: "Metric name", headClassName: "w-[40%]", skeleton: "w-48" },
 			{
 				header: "Type",
-				headClassName: `${MD_CELL} w-[100px]`,
+				headClassName: `${MD_CELL} w-24`,
 				cellClassName: MD_CELL,
 				skeleton: "w-16",
 			},
 			{
 				header: "Service",
-				headClassName: `${MD_CELL} w-[120px]`,
+				headClassName: `${MD_CELL} w-32`,
 				cellClassName: MD_CELL,
 				skeleton: "w-20",
 			},
 			{
 				header: "Points",
-				headClassName: `${MD_CELL} w-[100px]`,
+				headClassName: `${MD_CELL} w-24`,
 				cellClassName: MD_CELL,
 				skeleton: "w-12",
 			},
 			{
 				header: "Last seen",
-				headClassName: `${MD_CELL} w-[100px]`,
+				headClassName: `${MD_CELL} w-24`,
 				cellClassName: MD_CELL,
 				skeleton: "w-16",
 			},
@@ -64,11 +68,12 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 				h.div(
 					[h.Class("flex min-w-0 flex-col gap-0.5")],
 					[
-						h.a(
-							[
-								h.Href(metricLink(model, metric.metricName, metric.metricType)),
-								h.Class(cn("block min-w-0", ROW_STRETCHED_LINK_CLASS)),
-							],
+						rowLink(
+							h,
+							{
+								href: metricLink(model, metric.metricName, metric.metricType),
+								className: "block min-w-0",
+							},
 							[
 								truncatedText(h, {
 									text: metric.metricName,
@@ -93,7 +98,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 				h,
 				[
 					metric.serviceName === ""
-						? h.span([h.Class("text-xs text-muted-foreground")], [EMPTY_VALUE])
+						? emptyValue(h, "text-xs")
 						: badge(
 								h,
 								{
@@ -118,7 +123,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 				`${MD_CELL} text-xs text-muted-foreground`,
 			),
 		],
-		"hover:bg-muted/50",
+		"hover:bg-surface-sunken active:bg-surface-sunken",
 	)
 
 /** The loaded table: rows up to `tableLimit`, dimmed while the next page loads. */
@@ -141,10 +146,10 @@ export const metricsTable = (
 						tableHeader(h, [
 							tableRow(h, [
 								tableHead(h, ["Metric name"], "w-[40%]"),
-								tableHead(h, ["Type"], "w-[100px]"),
-								tableHead(h, ["Service"], "w-[120px]"),
-								tableHead(h, ["Points"], "w-[100px]"),
-								tableHead(h, ["Last seen"], "w-[100px]"),
+								tableHead(h, ["Type"], "w-24"),
+								tableHead(h, ["Service"], "w-32"),
+								tableHead(h, ["Points"], "w-24"),
+								tableHead(h, ["Last seen"], "w-24"),
 							]),
 						]),
 						tableBody(

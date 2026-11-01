@@ -11,16 +11,12 @@ import {
 } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { buildAlertChatUrl } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
-import {
-	hydrateDestinationRow,
-	type DestinationSecretConfig,
-	type EnrichedDestinationSecretConfig,
-} from "./AlertDestinationHydration"
+import { hydrateDestinationRow } from "./AlertDestinationHydration"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { ChatAlertPoster } from "./ChatAlertPoster"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
@@ -107,13 +103,14 @@ export interface NotificationDestinationResult {
 const make: Effect.Effect<
 	NotificationDispatcherApi,
 	NotificationDispatchError,
-	Database | Env | EmailService | ChatAlertPoster | HttpClient.HttpClient
+	Database | Env | EmailService | ChatAlertPoster | LinearIssueTracker | HttpClient.HttpClient
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const httpClient = yield* HttpClient.HttpClient
 	const env = yield* Env
 	const email = yield* EmailService
 	const chatAlertPoster = yield* ChatAlertPoster
+	const linear = yield* LinearIssueTracker
 
 	const encryptionKey = yield* parseBase64Aes256GcmKey(
 		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -132,14 +129,6 @@ const make: Effect.Effect<
 				),
 			)
 
-	const enrichSecretConfig = (
-		_row: AlertDestinationRow,
-		secretConfig: DestinationSecretConfig,
-	): Effect.Effect<EnrichedDestinationSecretConfig, NotificationDispatchError> =>
-		// Hazel-OAuth webhooks now embed their delivery token in the URL path,
-		// so no enrichment is required at dispatch time.
-		Effect.succeed(secretConfig)
-
 	const dispatchOne = Effect.fn("NotificationDispatcher.dispatchOne")(function* (
 		row: AlertDestinationRow,
 		request: NotificationRequest,
@@ -156,11 +145,10 @@ const make: Effect.Effect<
 			onSecretConfigInvalid: () =>
 				new NotificationDispatchError({ message: "Stored destination secret is invalid" }),
 		})
-		const enrichedSecret = yield* enrichSecretConfig(row, hydrated.secretConfig)
 		const context: DispatchContext = {
 			destination: row,
 			publicConfig: hydrated.publicConfig,
-			secretConfig: enrichedSecret,
+			secretConfig: hydrated.secretConfig,
 			deliveryKey: request.deliveryKey,
 			ruleId: request.ruleId,
 			ruleName: request.ruleName,
@@ -178,10 +166,8 @@ const make: Effect.Effect<
 			value: request.value,
 			sampleCount: request.sampleCount,
 		}
-		const chatUrl = buildAlertChatUrl(env.MAPLE_APP_BASE_URL, {
-			...request,
-			thresholdUpper: request.thresholdUpper ?? null,
-		})
+		// Every request here is an error issue or its escalation, which no alert incident or rule page has.
+		const chatUrl = request.linkUrl
 		const payloadJson = JSON.stringify({
 			eventType: request.escalation ? "escalation" : request.eventType,
 			...(request.escalation ? { escalation: request.escalation } : undefined),
@@ -213,7 +199,7 @@ const make: Effect.Effect<
 			DELIVERY_TIMEOUT_MS,
 			request.linkUrl,
 			chatUrl,
-			{ sendEmail, postChatAlert: chatAlertPoster.post },
+			{ sendEmail, postChatAlert: chatAlertPoster.post, linear },
 		).pipe(
 			Effect.provideService(HttpClient.HttpClient, httpClient),
 			Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })),
@@ -340,11 +326,12 @@ const make: Effect.Effect<
 export class NotificationDispatcher extends Context.Service<
 	NotificationDispatcher,
 	NotificationDispatcherApi
->()("@maple/api/services/NotificationDispatcher", { make }) {
+>()("@maple/backend/services/NotificationDispatcher", { make }) {
 	// The chat poster is self-provided (it needs only what every caller already
 	// supplies) so wiring stays unchanged in app.ts and the alerting worker.
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(EmailService.layer),
+		Layer.provide(LinearIssueTracker.layer),
 	)
 }

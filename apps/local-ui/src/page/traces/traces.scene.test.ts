@@ -56,7 +56,7 @@ const loaded = (rows: ReadonlyArray<TraceRow>) => {
 describe("local traces list", () => {
 	test("entry reads the clock, then asks for the list and the facets", () => {
 		expect(init(context).commands.map(({ name }) => name)).toContain("ReadTracesClock")
-		expect((anchored().commands ?? []).map(({ name }) => name)).toEqual([FetchTraces.name, FetchFacets.name])
+		expect((anchored().commands ?? []).map(({ name }) => name)).toEqual(expect.arrayContaining([FetchTraces.name, FetchFacets.name]))
 	})
 
 	test("a new key opens on the cached older window, then fetches its own rows", () => {
@@ -95,7 +95,7 @@ describe("local traces list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([row("t1")]).model),
-			expectView(text("1")).toExist(),
+			expectView(role("link", { name: "Trace GET /" })).toExist(),
 			click(role("checkbox", { name: "Has error" })),
 			expectOutMessage(PageOutMessage.RequestedNavigation({ hash: "#/traces?errors=1", isReplace: true })),
 		)

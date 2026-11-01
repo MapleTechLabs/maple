@@ -3,7 +3,8 @@
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
-import { Clock, Context, Effect, Exit, Layer, Result, Schema, type Scope } from "effect"
+import { ProjectorRegistry } from "@maple/eventing-core"
+import { Clock, Context, Effect, Exit, Layer, Metric, Result, Schema, type Scope } from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { resolve } from "node:path"
 import { gunzipSync } from "node:zlib"
@@ -20,7 +21,7 @@ import {
 	readRawTelemetryRetentionDays,
 	rawTelemetryTtlStatements,
 } from "./chdb"
-import { buildInsertStatements } from "./inserts"
+import { InsertBatcher } from "./insert-batcher"
 import {
 	eventingControlSnapshotPath,
 	type EventConsumerFailure,
@@ -30,7 +31,11 @@ import {
 	writeControlSnapshot,
 } from "./eventing/control-store"
 import { ensureEventConsumerToken, eventConsumerTokenMatches } from "./eventing/consumer-auth"
-import { LocalEventingRuntime, type LocalEventingRuntimeApi } from "./eventing/runtime"
+import {
+	LocalEventingProjectors,
+	LocalEventingRuntime,
+	type LocalEventingRuntimeApi,
+} from "./eventing/runtime"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch, OtlpFieldError } from "./otlp/encode"
 import {
 	decodeLogsRequest,
@@ -52,6 +57,21 @@ import {
 	READ_ONLY_REJECTION_PREFIX,
 	ReadOnlyQueryRejected,
 } from "./query-guard"
+import {
+	accessDenied,
+	issueSession,
+	LOGIN_ACTION_PATH,
+	LOGIN_PATH,
+	LoginThrottle,
+	loginPage,
+	hasValidSession,
+	NO_REMOTE_AUTH,
+	type RemoteAuth,
+	safeNextPath,
+	secretMatches,
+	sessionCookie,
+} from "./remote-auth"
+import { applyLocalIngestRules, localIngestRulesPath, makeLocalIngestRulesSource } from "./ingest-rules"
 import { localServiceMapRollupLoop } from "./service-map-rollup"
 import { ensureStoreMarkerDurable, storeHasData } from "./store-version"
 import {
@@ -82,8 +102,12 @@ export interface ServerOptions {
 	readonly dataDir: string
 	readonly configFile?: string
 	readonly minimumRawTelemetryRetentionDays?: number
+	/** Loaded from `--projector-module` under the PID claim, before any store preparation. */
+	readonly projectors?: ProjectorRegistry
 	/** Serves the bundled SPA; omit to disable the UI (API-only). */
 	readonly assets?: AssetResolver
+	/** Ingest key and access token; omit for an open loopback server. */
+	readonly auth?: RemoteAuth
 }
 
 export class ServerBindError extends Schema.TaggedError<ServerBindError>()("@maple/cli/ServerBindError", {
@@ -113,6 +137,9 @@ export interface BrowserOriginPolicy {
 	readonly trustedOrigins: ReadonlySet<string>
 	/** Origins only honoured when the request itself targets loopback. */
 	readonly loopbackDevOrigins: ReadonlySet<string>
+	/** Accept same-origin from any Host on routes the access token guards: a
+	 * rebinding page can reach them but never holds the session cookie. */
+	readonly anySameOriginHost: boolean
 }
 
 const parseOrigin = (value: string): string | undefined => {
@@ -126,6 +153,7 @@ export const makeBrowserOriginPolicy = (options: {
 	readonly browserHosts: readonly string[]
 	readonly hostedOrigin?: string | undefined
 	readonly extraOrigins?: string | undefined
+	readonly anySameOriginHost?: boolean
 }): Result.Result<BrowserOriginPolicy, LocalServerConfigError> => {
 	const trusted = new Set<string>()
 	const hosted = options.hostedOrigin?.trim()
@@ -157,6 +185,7 @@ export const makeBrowserOriginPolicy = (options: {
 		browserHosts: options.browserHosts,
 		trustedOrigins: trusted,
 		loopbackDevOrigins: new Set(LOCAL_UI_DEV_ORIGINS),
+		anySameOriginHost: options.anySameOriginHost ?? false,
 	})
 }
 
@@ -187,7 +216,9 @@ export const isBrowserOriginAllowed = (
 	// a loopback name, so loopback aliases of this listener count as same-origin.
 	return (
 		originUrl.host === requestUrl.host &&
-		(policy.browserHosts.includes(originUrl.hostname) || isLoopbackHostname(originUrl.hostname))
+		((policy.anySameOriginHost && !requestUrl.pathname.startsWith("/v1/")) ||
+			policy.browserHosts.includes(originUrl.hostname) ||
+			isLoopbackHostname(originUrl.hostname))
 	)
 }
 
@@ -212,7 +243,8 @@ export const corsHeadersForAllowedOrigin = (
 				// `x-maple-sdk` is the SDK identity hint every browser SDK sends on
 				// every request; a listener that does not allow it fails preflight
 				// for the whole SDK.
-				"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
+				"access-control-allow-headers":
+					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
@@ -366,8 +398,10 @@ const projectionFailure =
 	(error: { readonly message: string }): Effect.Effect<never, IngestStopped> =>
 		Effect.fail(stopIngest(text(`event projection ${signal}: ${error.message}`, status), requestBytes))
 
+const localIngestRules = makeLocalIngestRulesSource(localIngestRulesPath())
+
 const ingest = (
-	db: Pick<Chdb, "exec">,
+	inserts: Pick<InsertBatcher, "insert">,
 	authority: RetiredDayAuthority,
 	signal: Signal,
 	req: Request,
@@ -394,6 +428,21 @@ const ingest = (
 				),
 			),
 		)
+		// Customer ingest rules run first, so dropped or redacted data never reaches events or chDB.
+		const { rules, reloaded } = localIngestRules()
+		if (reloaded)
+			yield* Effect.forEach(rules.problems, (problem) => Effect.logWarning(problem), { discard: true })
+		// A value the rules cannot read (a malformed int or bytes) is the sender's fault: 400.
+		const ruled = yield* Effect.try({
+			try: () => applyLocalIngestRules(signal, decoded, rules.compiled),
+			catch: (error) =>
+				stopIngest(text(`decode ${signal}: ${describeThrown(error)}`, 400), requestBytes),
+		})
+		if (ruled.dropped + ruled.redactedValues > 0)
+			yield* Effect.annotateCurrentSpan({
+				"maple.ingest.rules.dropped_items": ruled.dropped,
+				"maple.ingest.rules.redacted_values": ruled.redactedValues,
+			})
 		const rejectProjection = (status: 400 | 503) => projectionFailure(signal, requestBytes, status)
 		const evaluation = yield* eventing
 			.evaluateOtlp(signal, decoded, (rangeDate) => authority.isRetired(rangeDate))
@@ -435,27 +484,36 @@ const ingest = (
 			rejected += filtered.rejected
 			return { ...batch, ndjson: filtered.ndjson, rowCount: filtered.accepted }
 		})
-		let accepted = 0
-		for (const batch of batches) {
-			if (batch.rowCount === 0) continue
-			for (const statement of buildInsertStatements(batch.datasource, batch.ndjson)) {
-				const inserted = Result.try(() => db.exec(statement.sql))
-				if (Result.isFailure(inserted))
-					return yield* stopIngest(
-						text(`chDB insert (${batch.datasource}): ${describeThrown(inserted.failure)}`, 500),
-						requestBytes,
-						accepted,
-					)
-				accepted += statement.rowCount
-			}
-		}
 		const readyEventIds = [...evaluation.recoveredEventIds, ...staged.eventIds]
-		// The rows are committed: a 5xx here would make exporters resend the batch
-		// and double-count it, so readiness is retried in the background instead.
-		if (readyEventIds.length > 0) {
-			const marked = yield* Effect.exit(eventing.markReady(readyEventIds))
-			if (Exit.isFailure(marked)) readiness.retry(readyEventIds)
-		}
+		// Queued rows commit even if this fiber is interrupted while it waits on the
+		// batcher, so the wait and the readiness marking after it run as one step.
+		const accepted = yield* Effect.uninterruptible(
+			Effect.gen(function* () {
+				const accepted = yield* inserts
+					.insert(batches.filter((batch) => batch.rowCount > 0))
+					.pipe(
+						Effect.catchTag("@maple/cli/LocalInsertError", (error) =>
+							Effect.fail(
+								stopIngest(
+									text(
+										`chDB insert (${error.datasource}): ${describeThrown(error.cause)}`,
+										500,
+									),
+									requestBytes,
+									error.accepted,
+								),
+							),
+						),
+					)
+				// The rows are committed: a 5xx here would make exporters resend the batch
+				// and double-count it, so readiness is retried in the background instead.
+				if (readyEventIds.length > 0) {
+					const marked = yield* Effect.exit(eventing.markReady(readyEventIds))
+					if (Exit.isFailure(marked)) readiness.retry(readyEventIds)
+				}
+				return accepted
+			}),
+		)
 		const droppedEvents = staged.dropped
 		const errorMessage = rejected > 0 ? "telemetry from permanently retired UTC days was rejected" : ""
 		if (contentType.includes("json")) {
@@ -566,7 +624,7 @@ async function handleQuery(
 // (apps/local-ui/src/worker-entry.ts) minus HSTS, which plain-http loopback ignores.
 const UI_CONTENT_SECURITY_POLICY = [
 	"default-src 'self'",
-	"script-src 'self'",
+	"script-src 'self' 'wasm-unsafe-eval'",
 	"style-src 'self' 'unsafe-inline'",
 	"img-src 'self' data:",
 	"font-src 'self' data:",
@@ -650,7 +708,7 @@ interface ServerStatus {
 /** OTLP-ingest request as a `Server`-kind span, mirroring the Rust gateway
  *  (`apps/ingest`): `maple.signal`, item count, request size, HTTP semconv. */
 const ingestSpan = (
-	db: Chdb,
+	inserts: InsertBatcher,
 	authority: RetiredDayAuthority,
 	readiness: ReadinessRetry,
 	status: ServerStatus,
@@ -659,7 +717,13 @@ const ingestSpan = (
 ): Effect.Effect<Response, never, LocalEventingRuntime> =>
 	recoverResponse(
 		Effect.gen(function* () {
-			const { response, accepted, requestBytes } = yield* ingest(db, authority, signal, req, readiness)
+			const { response, accepted, requestBytes } = yield* ingest(
+				inserts,
+				authority,
+				signal,
+				req,
+				readiness,
+			)
 			if (accepted > 0 && response.status < 300) status.lastIngestAtMs = yield* Clock.currentTimeMillis
 			yield* Effect.annotateCurrentSpan({
 				"http.request.body.size": requestBytes,
@@ -1373,8 +1437,72 @@ const handleEventingRead = (
 	})
 }
 
+const MAX_LOGIN_BODY_BYTES = 4 * 1024
+
+const authRejections = Metric.counter("maple.local.auth_rejections_total", {
+	description: "Requests refused for a missing or wrong ingest key or access token",
+	incremental: true,
+})
+
+/** `GET /login`: the sign-in page, or home for a browser already signed in. */
+const signInPage = (auth: RemoteAuth, req: Request, url: URL): Response => {
+	if (auth.accessToken === undefined || hasValidSession(auth, req, Date.now()))
+		return new Response(null, { status: 303, headers: { location: "/" } })
+	return loginPage({ next: safeNextPath(url.searchParams.get("next")) })
+}
+
+/** `POST /local/auth/login`: exchange the access token for a session cookie. */
+const loginSpan = (
+	auth: RemoteAuth,
+	throttle: LoginThrottle,
+	req: Request,
+	url: URL,
+): Effect.Effect<Response> =>
+	Effect.gen(function* () {
+		const accessToken = auth.accessToken
+		if (accessToken === undefined) return text("not found", 404)
+		const body = yield* Effect.promise(() => readBoundedBytes(req, MAX_LOGIN_BODY_BYTES))
+		if (Result.isFailure(body)) return bodyFailureResponse(body.failure)
+		const form = new URLSearchParams(new TextDecoder().decode(body.success))
+		const next = safeNextPath(form.get("next"))
+		const nowMs = yield* Clock.currentTimeMillis
+		// Check, compare and record in one synchronous step, so parallel attempts cannot pass together.
+		const attempt = yield* Effect.sync(() => {
+			const retryAfterMs = throttle.retryAfterMs(nowMs)
+			if (retryAfterMs > 0) return { outcome: "throttled" as const, retryAfterMs }
+			if (secretMatches(accessToken, form.get("token"))) return { outcome: "ok" as const }
+			throttle.recordFailure(nowMs)
+			return { outcome: "invalid" as const }
+		})
+		yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": attempt.outcome })
+		if (attempt.outcome === "throttled") {
+			const response = loginPage({
+				error: "Too many failed attempts. Try again in a minute.",
+				next,
+				status: 429,
+			})
+			response.headers.set("retry-after", String(Math.ceil(attempt.retryAfterMs / 1000)))
+			return response
+		}
+		if (attempt.outcome === "invalid")
+			return loginPage({ error: "That access token is not valid.", next, status: 401 })
+		return new Response(null, {
+			status: 303,
+			headers: {
+				location: next,
+				"set-cookie": sessionCookie(req, url, issueSession(accessToken, nowMs)),
+			},
+		})
+	}).pipe(
+		Effect.withSpan("POST /local/auth/login", {
+			kind: "server",
+			attributes: { "http.request.method": "POST", "http.route": LOGIN_ACTION_PATH },
+		}),
+	)
+
 interface ServerContext {
 	readonly db: Chdb
+	readonly inserts: InsertBatcher
 	readonly options: ServerOptions
 	readonly policy: BrowserOriginPolicy
 	readonly runSpan: SpanRunner
@@ -1384,6 +1512,10 @@ interface ServerContext {
 	readonly consumerToken: string
 	readonly readiness: ReadinessRetry
 	readonly status: ServerStatus
+	readonly auth: RemoteAuth
+	readonly loginThrottle: LoginThrottle
+	/** Counts a 401 without a span: refusals can come in floods. */
+	readonly countRejection: (route: "ingest" | "read") => void
 }
 
 /** `GET /local/status`: identity and liveness for the CLI probe and the UI. */
@@ -1413,7 +1545,27 @@ const makeFetch =
 		const corsHeaders = corsHeadersForAllowedOrigin(origin)
 		const respond = (response: Response): Response => withCors(response, corsHeaders)
 		if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders })
+		const denied = accessDenied(context.auth, { maintenanceToken, consumerToken }, req, url, Date.now())
+		if (denied !== null) {
+			if (denied.status === 401)
+				context.countRejection(url.pathname.startsWith("/v1/") ? "ingest" : "read")
+			return respond(denied)
+		}
 		if (url.pathname === "/health") return respond(text("OK"))
+		if (url.pathname === LOGIN_PATH && req.method === "GET")
+			return respond(signInPage(context.auth, req, url))
+		if (url.pathname === LOGIN_ACTION_PATH)
+			return respond(
+				req.method === "POST"
+					? await runSpan(loginSpan(context.auth, context.loginThrottle, req, url)).then(
+							(response) => {
+								if (response.status === 401) context.countRejection("read")
+								return response
+							},
+						)
+					: // A reload of a failed sign-in lands here; show the form again.
+						new Response(null, { status: 303, headers: { location: LOGIN_PATH } }),
+			)
 		if (req.method === "GET" && url.pathname === "/local/status")
 			return respond(statusResponse(context.status))
 		if (req.method === "POST") {
@@ -1430,7 +1582,14 @@ const makeFetch =
 					await runSpan(
 						admitted(
 							gate,
-							ingestSpan(db, authority, context.readiness, context.status, signal, req),
+							ingestSpan(
+								context.inserts,
+								authority,
+								context.readiness,
+								context.status,
+								signal,
+								req,
+							),
 						),
 					),
 				)
@@ -1505,6 +1664,7 @@ export const startServer = (
 				browserHosts: options.browserHosts,
 				hostedOrigin: options.corsOrigin,
 				extraOrigins: process.env[ALLOWED_ORIGINS_ENV],
+				anySameOriginHost: options.auth?.accessToken !== undefined,
 			}),
 		)
 		const existingRetention = yield* Effect.try({
@@ -1563,7 +1723,12 @@ export const startServer = (
 		const eventingLayer = Layer.mergeAll(
 			LocalEventingRuntime.layer,
 			LocalEventingControlStore.layer,
-		).pipe(Layer.provide(Layer.succeed(LocalEventingControlConfig, { dataDir: options.dataDir })))
+		).pipe(
+			Layer.provide(Layer.succeed(LocalEventingControlConfig, { dataDir: options.dataDir })),
+			Layer.provide(
+				Layer.succeed(LocalEventingProjectors, options.projectors ?? new ProjectorRegistry()),
+			),
+		)
 		const runtime = yield* Effect.acquireRelease(
 			Effect.sync(() => ManagedRuntime.make(Layer.mergeAll(TelemetryLayer, eventingLayer))),
 			(rt) => Effect.promise(() => rt.dispose()),
@@ -1642,6 +1807,7 @@ export const startServer = (
 			),
 		)
 		const gate = new RequestQuiescenceGate()
+		const inserts = InsertBatcher.attach(db)
 		const runSpan: SpanRunner = (effect) => runtime.runPromise(effect)
 		const eventing = Context.get(services, LocalEventingRuntime)
 		const readiness = new ReadinessRecovery(
@@ -1668,6 +1834,7 @@ export const startServer = (
 						hostname: options.hostname,
 						fetch: makeFetch({
 							db,
+							inserts,
 							options,
 							policy,
 							runSpan,
@@ -1677,6 +1844,16 @@ export const startServer = (
 							consumerToken,
 							readiness,
 							status,
+							auth: options.auth ?? NO_REMOTE_AUTH,
+							loginThrottle: new LoginThrottle(),
+							countRejection: (route) => {
+								runtime.runFork(
+									Metric.update(
+										Metric.withAttributes(authRejections, { "maple.auth.route": route }),
+										1,
+									),
+								)
+							},
 						}),
 					}),
 				catch: (error) =>
@@ -1692,6 +1869,9 @@ export const startServer = (
 					// then cut whatever is left. chDB closes after this finalizer.
 					readiness.stop()
 					const drained = gate.shutdown()
+					// Queued exports are admitted requests: commit them now rather than
+					// on the next tick. Requests admitted later still flush on their own tick.
+					inserts.flush()
 					const stopped = s.stop(false)
 					await settleWithin(Promise.all([drained, stopped]), SHUTDOWN_DRAIN_MS)
 					await s.stop(true)
@@ -1724,6 +1904,7 @@ export const __testables = {
 	handleScopedDelete,
 	handleProjectionActivation,
 	ingest,
+	loginSpan,
 	readBoundedJson,
 	recordServerResponse,
 	RequestQuiescenceGate,

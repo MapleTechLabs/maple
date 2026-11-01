@@ -12,7 +12,6 @@ export const SHORTCUT_GROUPS = [
 	"Lists & Tables",
 	"Agent Sessions",
 	"Session Replay",
-	"Chat",
 ] as const
 
 type Group = (typeof SHORTCUT_GROUPS)[number]
@@ -50,8 +49,6 @@ export const SHORTCUTS: ReadonlyArray<ShortcutDef> = [
 	{ label: "Play / pause replay", group: "Session Replay", combo: key("Space") },
 	{ label: "Seek back 5s", group: "Session Replay", combo: key("ArrowLeft") },
 	{ label: "Seek forward 5s", group: "Session Replay", combo: key("ArrowRight") },
-	{ label: "Open AI chat", group: "Chat", combo: key("C") },
-	{ label: "New chat tab", group: "Chat", combo: { modifiers: ["Mod", "Shift"], key: "O" } },
 ]
 
 /** `KEY_DISPLAY_SYMBOLS` for the keys the registry binds. */

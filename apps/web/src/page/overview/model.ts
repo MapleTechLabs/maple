@@ -1,3 +1,4 @@
+import { AlertSignalType } from "@maple/domain/http"
 import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -45,7 +46,6 @@ const UsageTotals = Schema.Struct({
 	logs: Schema.Number,
 	traces: Schema.Number,
 	metrics: Schema.Number,
-	dataSize: Schema.Number,
 })
 export type UsageTotals = typeof UsageTotals.Type
 
@@ -58,6 +58,7 @@ export const Incident = Schema.Struct({
 	status: Schema.String,
 	groupKey: Schema.NullOr(Schema.String),
 	severity: Schema.Literals(["warning", "critical"]),
+	signalType: AlertSignalType,
 })
 export type Incident = typeof Incident.Type
 

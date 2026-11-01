@@ -58,6 +58,7 @@ import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
 import {
 	dataSourceQuerySet,
+	dataSourceRawSql,
 	MARKDOWN_STATIC_ENDPOINT,
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
@@ -159,6 +160,16 @@ export interface WidgetDataOutcome {
 const findWidget = (document: DashboardDocument, widgetId: string) =>
 	document.widgets.find((widget) => widget.id === widgetId)
 
+const RAW_SQL_NOT_ALLOWED_MESSAGE =
+	'Raw SQL widgets require the "traces:read", "logs:read" and "metrics:read" scopes.'
+
+const requestsRawSql = (document: DashboardDocument, request: WidgetDataRequest): boolean => {
+	const widget = findWidget(document, request.widgetId)
+	const dataSource =
+		request.source === "sparkline" ? widget?.display?.sparkline?.dataSource : widget?.dataSource
+	return dataSourceRawSql(dataSource) !== null
+}
+
 /**
  * The interpolated query-set params, read back as typed values.
  *
@@ -239,6 +250,11 @@ export interface WidgetDataBatchInput {
 	readonly variableValues: Readonly<Record<string, string>>
 	/** A widget-scoped share answers for this widget and nothing else. */
 	readonly onlyWidgetId?: string
+	/**
+	 * Whether stored raw SQL may run for this caller. Required so every caller decides: raw SQL
+	 * reads any warehouse table as the org, beyond what a dashboard read grants.
+	 */
+	readonly rawSqlAllowed: boolean
 }
 
 export interface WidgetDataBatchResult {
@@ -260,7 +276,7 @@ const boardWhereClauses = (document: DashboardDocument): ReadonlyArray<string> =
 export class DashboardWidgetDataService extends Context.Service<
 	DashboardWidgetDataService,
 	DashboardWidgetDataServiceApi
->()("@maple/api/services/DashboardWidgetDataService", {
+>()("@maple/backend/services/DashboardWidgetDataService", {
 	make: Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
@@ -560,23 +576,27 @@ export class DashboardWidgetDataService extends Context.Service<
 			const results = yield* Effect.forEach(input.requests, (request) =>
 				input.onlyWidgetId !== undefined && request.widgetId !== input.onlyWidgetId
 					? Effect.succeed(failed(request.widgetId, "not_found", WIDGET_NOT_ON_DASHBOARD))
-					: resolve(orgId, document, request, window, variableValues).pipe(
-							Effect.map(({ data, narrowedToSeconds }): ShareWidgetDataOutcome =>
-								narrowedToSeconds === undefined
-									? { widgetId: request.widgetId, ok: true, data }
-									: { widgetId: request.widgetId, ok: true, data, narrowedToSeconds },
+					: !input.rawSqlAllowed && requestsRawSql(document, request)
+						? Effect.succeed(failed(request.widgetId, "unsupported", RAW_SQL_NOT_ALLOWED_MESSAGE))
+						: resolve(orgId, document, request, window, variableValues).pipe(
+								Effect.map(({ data, narrowedToSeconds }): ShareWidgetDataOutcome =>
+									narrowedToSeconds === undefined
+										? { widgetId: request.widgetId, ok: true, data }
+										: { widgetId: request.widgetId, ok: true, data, narrowedToSeconds },
+								),
+								// Per-widget failures ride inside the batch: one tile that cannot
+								// be served must not blank its neighbours. `failed` is retryable.
+								Effect.catchTags({
+									"@maple/http/errors/ShareWidgetNotFoundError": (error) =>
+										Effect.succeed(failed(request.widgetId, "not_found", error.message)),
+									"@maple/http/errors/ShareUnsupportedWidgetError": (error) =>
+										Effect.succeed(
+											failed(request.widgetId, "unsupported", error.message),
+										),
+									"@maple/http/errors/ShareWidgetExecutionError": (error) =>
+										Effect.succeed(failed(request.widgetId, "failed", error.message)),
+								}),
 							),
-							// Per-widget failures ride inside the batch: one tile that cannot
-							// be served must not blank its neighbours. `failed` is retryable.
-							Effect.catchTags({
-								"@maple/http/errors/ShareWidgetNotFoundError": (error) =>
-									Effect.succeed(failed(request.widgetId, "not_found", error.message)),
-								"@maple/http/errors/ShareUnsupportedWidgetError": (error) =>
-									Effect.succeed(failed(request.widgetId, "unsupported", error.message)),
-								"@maple/http/errors/ShareWidgetExecutionError": (error) =>
-									Effect.succeed(failed(request.widgetId, "failed", error.message)),
-							}),
-						),
 			)
 
 			const variables = Object.fromEntries(

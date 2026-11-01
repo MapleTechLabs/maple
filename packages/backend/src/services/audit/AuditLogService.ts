@@ -90,9 +90,17 @@ export interface AuditLogListFilters {
 	readonly requestId?: string
 	readonly sinceMs?: number
 	readonly untilMs?: number
+	/** Leave out actions ending in any of these, before the limit; see {@link AUDIT_ACCESS_ACTION_SUFFIXES}. */
+	readonly excludeActionSuffixes?: ReadonlyArray<string>
 	readonly limit: number
 	readonly offset: number
 }
+
+/**
+ * Actions that record access rather than a change: reads, tool calls, SQL runs
+ * and API requests. A heavy agent user writes hundreds of these a day.
+ */
+export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
 
 export interface AuditLogServiceApi {
 	/**
@@ -182,6 +190,9 @@ const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 		requestId: filters.requestId !== undefined,
 		since: since !== undefined,
 		until: until !== undefined,
+		...(filters.excludeActionSuffixes !== undefined
+			? { excludeActionSuffixes: filters.excludeActionSuffixes }
+			: undefined),
 		limit: filters.limit,
 		offset: filters.offset,
 	}
@@ -205,7 +216,7 @@ const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 }
 
 export class AuditLogService extends Context.Service<AuditLogService, AuditLogServiceApi>()(
-	"@maple/api/services/AuditLogService",
+	"@maple/backend/services/AuditLogService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService
@@ -342,7 +353,10 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 							(entry.changedFields?.includes(filters.changedField) ?? false)) &&
 						(filters.requestId === undefined || entry.requestId === filters.requestId) &&
 						(filters.sinceMs === undefined || entry.occurredAt.getTime() >= filters.sinceMs) &&
-						(filters.untilMs === undefined || entry.occurredAt.getTime() <= filters.untilMs),
+						(filters.untilMs === undefined || entry.occurredAt.getTime() <= filters.untilMs) &&
+						!(filters.excludeActionSuffixes ?? []).some((suffix) =>
+							entry.action.endsWith(suffix),
+						),
 				)
 				.sort(
 					(a, b) =>

@@ -15,7 +15,8 @@ import { identityOf, isSameIdentity } from "../platform/session-identity"
 // Each product event fires as a Command at the moment the user acts.
 
 type Commands = { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }
-const tracked = (result: Commands, name: string) => result.commands?.find((command) => command.name === name)?.args
+const tracked = (result: Commands, name: string) =>
+	result.commands?.find((command) => command.name === name)?.args
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -25,13 +26,21 @@ describe("product events", () => {
 		const model = initIntegrations({ search: { integration: "github" } }, context).model
 		const connected = updateIntegrations(
 			model,
-			IntegrationsMessage.ReceivedConnectMessage({ provider: "github", status: "success", message: null }),
+			IntegrationsMessage.ReceivedConnectMessage({
+				provider: "github",
+				status: "success",
+				message: null,
+			}),
 			context,
 		)
 		expect(tracked(connected, "TrackIntegrationConnected")).toEqual({ provider: "github" })
 		const failed = updateIntegrations(
 			model,
-			IntegrationsMessage.ReceivedConnectMessage({ provider: "github", status: "error", message: "denied" }),
+			IntegrationsMessage.ReceivedConnectMessage({
+				provider: "github",
+				status: "error",
+				message: "denied",
+			}),
 			context,
 		)
 		expect(tracked(failed, "TrackIntegrationConnected")).toBeUndefined()
@@ -54,22 +63,39 @@ describe("product events", () => {
 			created_by: "user_2Nk8mXqPfR3yZ1aB4cD5eF6g",
 			created_by_email: "ada@acme.test",
 		})
-		const secret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({ ...Schema.encodeSync(V2ApiKey)(key), secret: "s" })
+		const secret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+			...Schema.encodeSync(V2ApiKey)(key),
+			secret: "s",
+		})
 		const done = (kind: "standard" | "mcp") =>
 			CreateDialog.update(
 				{ ...CreateDialog.init("keys"), accessMode: "restricted" },
 				CreateDialog.Message.CompletedCreate({ kind, result: Result.succeed(secret) }),
 			)
-		expect(tracked(done("standard"), "TrackApiKeyCreated")).toEqual({ kind: "standard", access: "restricted" })
+		expect(tracked(done("standard"), "TrackApiKeyCreated")).toEqual({
+			kind: "standard",
+			access: "restricted",
+		})
 		expect(tracked(done("mcp"), "TrackApiKeyCreated")).toEqual({ kind: "mcp", access: "full" })
 	})
 
 	test("a completed quick-start step is onboarding_step_completed", () => {
-		const loaded = { ...QuickStart.init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE }
-		const picked = QuickStart.update(loaded, QuickStart.Message.PickedRole({ role: "backend" })).model
-		const next = QuickStart.update(picked, QuickStart.Message.ClickedContinue({ step: "role" }))
-		expect(tracked(next, "TrackOnboardingStepCompleted")).toEqual({ step: "role" })
-		expect(tracked(QuickStart.update(loaded, QuickStart.Message.ClickedContinue({ step: "role" })), "TrackOnboardingStepCompleted")).toBeUndefined()
+		const loaded = {
+			...QuickStart.init("maple-onboarding-v6-org_1").model,
+			state: DEFAULT_QUICK_START_STATE,
+		}
+		const picked = QuickStart.update(
+			loaded,
+			QuickStart.Message.ToggledLanguage({ language: "nodejs" }),
+			true,
+		)
+		expect(tracked(picked, "TrackOnboardingStepCompleted")).toBeUndefined()
+		const next = QuickStart.update(
+			picked.model,
+			QuickStart.Message.ClickedContinue({ step: "stack" }),
+			true,
+		)
+		expect(tracked(next, "TrackOnboardingStepCompleted")).toEqual({ step: "stack" })
 	})
 
 	test("a checkout return that times out is plan_checkout_returned, unconfirmed", () => {
@@ -85,6 +111,7 @@ const snapshot = (fullName: string | null): ClerkSnapshot => ({
 	maybeUser: Option.some({ fullName, email: "ada@acme.test", imageUrl: "" }),
 	maybeOrganization: Option.none(),
 	memberships: [],
+	maybePendingTask: Option.none(),
 })
 
 describe("session identity", () => {

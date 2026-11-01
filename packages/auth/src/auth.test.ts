@@ -8,6 +8,7 @@ import {
 	makeGetCustomerData,
 	makeLoginSelfHosted,
 	makeRefreshSelfHostedSession,
+	makeResolveClerkUser,
 	makeResolveMcpTenant,
 	makeResolveTenant,
 	ORG_SELECTION_HEADER,
@@ -176,11 +177,14 @@ describe("makeResolveTenant", () => {
 					authorization: "Bearer test-token",
 				}),
 			)
-			const failure = getFailure(exit) as { _tag?: string; message?: string } | undefined
+			const failure = getFailure(exit)
 
 			assert.isTrue(Exit.isFailure(exit))
-			assert.strictEqual(failure?._tag, "@maple/http/errors/UnauthorizedError")
-			assert.strictEqual(failure?.message, "Active organization is required")
+			assert.deepInclude(failure, {
+				_tag: "@maple/http/errors/UnauthorizedError",
+				message: "Active organization is required",
+				reason: "no_active_organization",
+			})
 		}),
 	)
 
@@ -227,6 +231,68 @@ describe("makeResolveTenant", () => {
 				userId: asUserId("root"),
 				roles: [asRoleName("root")],
 				authMode: "self_hosted",
+			})
+		}),
+	)
+})
+
+describe("pending Clerk sessions (no organization chosen yet)", () => {
+	const clerkEnv = {
+		...baseEnv,
+		MAPLE_AUTH_MODE: "clerk",
+		CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+		CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+	} as const
+
+	// Mirrors @clerk/backend: a pending session reads as signed out unless the caller opts in.
+	const pendingSession = async () => ({
+		isAuthenticated: true,
+		message: null,
+		toAuth: ({ treatPendingAsSignedOut = true }: { treatPendingAsSignedOut?: boolean } = {}) =>
+			treatPendingAsSignedOut
+				? {
+						isAuthenticated: false,
+						tokenType: "session_token",
+						userId: null,
+						orgId: null,
+						orgRole: null,
+					}
+				: {
+						isAuthenticated: true,
+						tokenType: "session_token",
+						userId: "user_new",
+						orgId: null,
+						orgRole: null,
+					},
+	})
+
+	it.effect("resolves the user, so they can create their first organization", () =>
+		Effect.gen(function* () {
+			const userId = yield* makeResolveClerkUser(
+				clerkEnv,
+				pendingSession,
+			)({
+				authorization: "Bearer test-token",
+			})
+			assert.strictEqual(userId, asUserId("user_new"))
+		}),
+	)
+
+	it.effect("is refused on organization-scoped routes as having no active organization", () =>
+		Effect.gen(function* () {
+			// Membership would be granted, yet a pending session never adopts a selection.
+			const resolveTenant = makeResolveTenant(
+				clerkEnv,
+				pendingSession,
+				"session_token",
+				(_userId, orgId) => Effect.succeed(Option.some({ orgId, role: asRoleName("org:admin") })),
+			)
+			const exit = yield* Effect.exit(
+				resolveTenant({ authorization: "Bearer test-token", [ORG_SELECTION_HEADER]: "org_123" }),
+			)
+			assert.deepInclude(getFailure(exit), {
+				_tag: "@maple/http/errors/UnauthorizedError",
+				reason: "no_active_organization",
 			})
 		}),
 	)

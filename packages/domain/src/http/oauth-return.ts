@@ -1,5 +1,6 @@
 import { Option, Schema } from "effect"
 import { ChatConnectorId } from "../primitives"
+import { VcsAccountType, VcsRepoSelection } from "./vcs"
 
 /**
  * An OAuth / app-install return, finished by the signed-in dashboard rather than the callback.
@@ -10,7 +11,7 @@ import { ChatConnectorId } from "../primitives"
  */
 export const OAuthReturnFlow = Schema.Literals([
 	"cloudflare",
-	"hazel",
+	"linear",
 	"github",
 	"planetscale",
 	"supabase",
@@ -41,10 +42,36 @@ export const OAuthChatOutcome = Schema.Struct({
 	reason: Schema.NullOr(Schema.String),
 })
 
+export class GithubInstallationChoice extends Schema.Class<GithubInstallationChoice>(
+	"GithubInstallationChoice",
+)({
+	id: Schema.String,
+	accountLogin: Schema.String,
+	accountType: VcsAccountType,
+	repositorySelection: VcsRepoSelection,
+}) {}
+
+/**
+ * What GitHub user authorization found. `state` is a short-lived, single-use selection over
+ * the verified `installations`; `needsApproval` lists accounts whose org withheld the user's
+ * role; `unavailable` counts ones this user cannot connect here; `installUrl` installs the app
+ * on another account.
+ */
+export class GithubInstallationSelection extends Schema.Class<GithubInstallationSelection>(
+	"GithubInstallationSelection",
+)({
+	state: Schema.String,
+	installations: Schema.Array(GithubInstallationChoice),
+	needsApproval: Schema.Array(Schema.String),
+	unavailable: Schema.Number,
+	installUrl: Schema.String,
+}) {}
+
 export class OAuthCompleteResponse extends Schema.Class<OAuthCompleteResponse>("OAuthCompleteResponse")({
 	status: OAuthCompleteStatus,
 	message: Schema.String,
 	chat: Schema.NullOr(OAuthChatOutcome),
+	github: Schema.optionalKey(GithubInstallationSelection),
 }) {}
 
 /** The fragment key the API callback writes and the dashboard reads. */

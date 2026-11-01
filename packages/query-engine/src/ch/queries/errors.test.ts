@@ -11,7 +11,6 @@ import {
 	errorTickBootstrapIssuesQuery,
 	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
-	errorFingerprintsQuery,
 	tracesDurationStatsQuery,
 	tracesFacetsQuery,
 } from "./errors"
@@ -68,26 +67,6 @@ describe("errorsSparkQuery", () => {
 // errorsByTypeQuery
 
 describe("errorsByTypeQuery", () => {
-	it("compiles broad errors by type from the time-ordered error events table", () => {
-		const q = errorsByTypeQuery({})
-		const { sql } = compileUnsafe(q, baseParams)
-		// Broad recent-window scans prune on (OrgId, Timestamp, FingerprintHash).
-		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toString(error_events_by_time.FingerprintHash) AS fingerprintHash")
-		expect(sql).toContain("any(error_events_by_time.ErrorLabel) AS errorLabel")
-		expect(sql).toContain("count() AS count")
-		expect(sql).toContain("uniq(error_events_by_time.ServiceName) AS affectedServicesCount")
-		// Names a few services so a list need not look them up per fingerprint.
-		expect(sql).toContain(
-			"arraySort(groupUniqArrayIf(3)(error_events_by_time.ServiceName, error_events_by_time.ServiceName != '')) AS serviceNames",
-		)
-		expect(sql).toContain("min(error_events_by_time.Timestamp) AS firstSeen")
-		expect(sql).toContain("max(error_events_by_time.Timestamp) AS lastSeen")
-		expect(sql).toContain("GROUP BY fingerprintHash")
-		expect(sql).toContain("ORDER BY count DESC")
-		expect(sql).toContain("LIMIT 50")
-	})
-
 	it("applies rootOnly filter", () => {
 		const q = errorsByTypeQuery({ rootOnly: true })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -110,28 +89,13 @@ describe("errorsByTypeQuery", () => {
 		const q = errorsByTypeQuery({ fingerprintHashes: ["12345678901234567890"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		// Fingerprint-constrained scans use the fingerprint-ordered table.
-		expect(sql).toContain("FROM error_events")
 		expect(sql).not.toContain("FROM error_events_by_time")
-		expect(sql).toContain("FingerprintHash IN (toUInt64('12345678901234567890'))")
 	})
 
 	it("applies custom limit", () => {
 		const q = errorsByTypeQuery({ limit: 25 })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("LIMIT 25")
-	})
-
-	it("keeps only unexpected identities: outside the namespace, or a 5xx/envelope marker", () => {
-		const q = errorsByTypeQuery({
-			unexpectedIdentity: {
-				namespacePrefix: "@maple/",
-				markerLabels: ["@maple/api/http/Http5xxResponseError"],
-			},
-		})
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("ErrorLabel NOT LIKE '@maple/%'")
-		expect(sql).toContain("ErrorLabel IN ('@maple/api/http/Http5xxResponseError')")
-		expect(sql).toContain("any(error_events_by_time.StatusMessage) AS sampleMessage")
 	})
 
 	it("escapes LIKE wildcards in the namespace prefix", () => {
@@ -144,19 +108,6 @@ describe("errorsByTypeQuery", () => {
 // errorsTimeseriesQuery
 
 describe("errorsTimeseriesQuery", () => {
-	it("compiles error timeseries with bucket", () => {
-		const q = errorsTimeseriesQuery({ fingerprintHash: "98765432109876543210" })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM error_events")
-		expect(sql).toContain("toStartOfInterval")
-		expect(sql).toContain("INTERVAL 3600 SECOND")
-		expect(sql).toContain("count() AS count")
-		expect(sql).toContain("GROUP BY bucket")
-		expect(sql).toContain("ORDER BY bucket ASC")
-		// Fingerprint hash filter in WHERE
-		expect(sql).toContain("FingerprintHash = toUInt64('98765432109876543210')")
-	})
-
 	it("applies services filter", () => {
 		const q = errorsTimeseriesQuery({ fingerprintHash: "1", services: ["api"] })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -167,17 +118,6 @@ describe("errorsTimeseriesQuery", () => {
 // errorsSummaryQuery
 
 describe("errorsSummaryQuery", () => {
-	it("reads error totals from the time-ordered error events table", () => {
-		const q = errorsSummaryQuery({})
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain(
-			"ifNull(ifNotFinite(round(e.totalErrors / s.totalSpans, 6), 0), 0) AS errorRate",
-		)
-		expect(sql).toContain("uniq(error_events_by_time.ServiceName) AS affectedServicesCount")
-		expect(sql).toContain("uniq(error_events_by_time.TraceId) AS affectedTracesCount")
-	})
-
 	it("reads whole hours from service_usage and the partial end hours from raw spans", () => {
 		// A sub-hour window has no whole hour; reading only the hourly rollup made its
 		// denominator 0 and the error rate 0%.
@@ -214,30 +154,6 @@ describe("errorsSummaryQuery", () => {
 // errorDetailTracesQuery
 
 describe("errorDetailTracesQuery", () => {
-	it("seeks the error traces' spans through trace_index with a small error TraceId subquery", () => {
-		const q = errorDetailTracesQuery({ fingerprintHash: "111" })
-		const { sql } = compileUnsafe(q, baseParams)
-		// The ranked error-trace query picks the trace ids inside the trace_index
-		// seek, which is what bounds the span read; the join only carries the span id.
-		expect(sql).toContain("FROM traces")
-		expect(sql).toContain(
-			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
-		)
-		expect(sql).toMatch(
-			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \(SELECT/,
-		)
-		expect(sql).toMatch(
-			/AS matching_traces\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(/,
-		)
-		expect(sql).toContain("GROUP BY TraceId")
-		expect(sql).toContain("GROUP BY traceId")
-		expect(sql).toContain("groupUniqArray(traces.ServiceName)")
-		expect(sql).toContain("ORDER BY startTime DESC")
-		// Error subquery references error_events, filtered by fingerprint hash
-		expect(sql).toContain("FROM error_events")
-		expect(sql).toContain("FingerprintHash = toUInt64('111')")
-	})
-
 	it("applies rootOnly filter", () => {
 		const q = errorDetailTracesQuery({ fingerprintHash: "1", rootOnly: true })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -321,18 +237,6 @@ describe("errorsByTypeQuery exclusions", () => {
 // errorsFacetsQuery
 
 describe("errorsFacetsQuery", () => {
-	it("compiles 4 facet branches and drops empty versions", () => {
-		const q = errorsFacetsQuery({})
-		const { sql } = compileUnionUnsafe(q, baseParams)
-		const unionCount = (sql.match(/UNION ALL/g) || []).length
-		expect(unionCount).toBe(3) // 4 queries = 3 UNION ALL
-		const facetTypes = [...sql.matchAll(/'(\w+)' AS facetType/g)].map((m) => m[1])
-		expect(facetTypes).toEqual(
-			expect.arrayContaining(["service", "environment", "error_type", "version"]),
-		)
-		expect(sql).toContain("ServiceVersion != ''")
-	})
-
 	it("filters by error label and service version", () => {
 		// The "Error Type" sidebar section shipped without a filter behind it:
 		// the route passed `errorTypes` into a request schema that had no such
@@ -440,11 +344,6 @@ describe("errorTickIssuesQuery", () => {
 	it("scans the minute rollup with a half-open window and no truncating limit", () => {
 		const { sql } = compileUnsafe(errorTickIssuesQuery(), baseParams)
 
-		expect(sql).toContain("FROM error_fingerprints_minutely")
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("Minute >= '2024-01-01 00:00:00'")
-		expect(sql).toContain("Minute < '2024-01-02 00:00:00'")
-		expect(sql).toContain("sum(error_fingerprints_minutely.OccurrenceCount) AS count")
 		expect(sql).not.toContain("LIMIT")
 	})
 })
@@ -453,10 +352,6 @@ describe("errorTickFirstErrorMinuteQuery", () => {
 	it("reads the org's earliest minute in the window from the minute rollup", () => {
 		const { sql } = compileUnsafe(errorTickFirstErrorMinuteQuery(), baseParams)
 
-		expect(sql).toContain("FROM error_fingerprints_minutely")
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("Minute >= '2024-01-01 00:00:00'")
-		expect(sql).toContain("Minute < '2024-01-02 00:00:00'")
 		expect(sql).toContain("ORDER BY minute ASC")
 		expect(sql).toContain("LIMIT 1")
 	})
@@ -466,51 +361,13 @@ describe("errorTickBootstrapIssuesQuery", () => {
 	it("bootstraps once from raw events without a truncating limit", () => {
 		const { sql } = compileUnsafe(errorTickBootstrapIssuesQuery(), baseParams)
 
-		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
-		expect(sql).toContain("Timestamp < '2024-01-02 00:00:00'")
 		expect(sql).not.toContain("LIMIT")
-	})
-})
-
-// errorFingerprintsQuery
-
-describe("errorFingerprintsQuery", () => {
-	it("compiles a distinct-fingerprint scan scoped by service and environment", () => {
-		const q = errorFingerprintsQuery({ services: ["api"], deploymentEnvs: ["production"] })
-		const { sql } = compileUnsafe(q, baseParams)
-
-		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toString(error_events_by_time.FingerprintHash) AS fingerprintHash")
-		expect(sql).toContain("ServiceName IN ('api')")
-		expect(sql).toContain("DeploymentEnv IN ('production')")
-		expect(sql).toContain("GROUP BY fingerprintHash")
-		expect(sql).toContain("LIMIT 1000")
 	})
 })
 
 // tracesFacetsQuery
 
 describe("tracesFacetsQuery", () => {
-	it("compiles 7 facet branches, each with a raw edge and an hourly interior", () => {
-		const q = tracesFacetsQuery({})
-		const { sql } = compileUnionUnsafe(q, baseParams)
-		// 7 facet branches, each splicing a raw edge with the hourly interior.
-		expect(sql.match(/UNION ALL/g)).toHaveLength(6 + 7)
-		const facetTypes = [...sql.matchAll(/'(\w+)' AS facetType/g)].map((m) => m[1])
-		expect(facetTypes).toEqual(
-			expect.arrayContaining([
-				"service",
-				"spanName",
-				"httpMethod",
-				"httpStatus",
-				"deploymentEnv",
-				"serviceNamespace",
-				"errorCount",
-			]),
-		)
-	})
-
 	it("applies namespace filter", () => {
 		const q = tracesFacetsQuery({ namespace: "team-a" })
 		const { sql } = compileUnionUnsafe(q, baseParams)

@@ -40,20 +40,22 @@ const itemListJsonLd = {
     <main class="mx-auto max-w-6xl px-6 pb-20 pt-16 md:pb-28 md:pt-20">
         <h1 class="font-display text-4xl font-medium tracking-[-0.03em] text-fg md:text-5xl">Guides</h1>
         <p class="mt-4 max-w-[60ch] text-[15px] leading-relaxed text-fg-muted">
-            Practical guides to APM, observability, OpenTelemetry, and debugging production software.
+            Practical guides to APM, observability, OpenTelemetry, and running production software.
         </p>
 
-        <div class="mt-14 grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="mt-12 border-b border-border">
             {guideCategories.map((category) => (
-                <section id={category.id} class="scroll-mt-24" aria-labelledby={`${category.id}-title`}>
-                    <h2 id={`${category.id}-title`} class="border-b border-border pb-3 font-display text-lg font-medium text-fg">
-                        {category.title}
-                    </h2>
-                    <ul class="mt-4 space-y-3">
-                        {category.guides.map((guide) => (
+                <section id={category.id} class="grid scroll-mt-24 gap-6 border-t border-border py-10 lg:grid-cols-[15rem_1fr] lg:gap-12" aria-labelledby={`${category.id}-title`}>
+                    <div>
+                        <h2 id={`${category.id}-title`} class="font-display text-xl font-medium tracking-[-0.015em] text-fg">{category.title}</h2>
+                        <p class="mt-2 text-[13px] leading-relaxed text-fg-muted">{category.description}</p>
+                    </div>
+                    <ul class="grid gap-x-10 gap-y-7 sm:grid-cols-2">
+                        {category.guides.map((item) => (
                             <li>
-                                <a href={guide.href} class="text-[14px] leading-snug text-fg-muted transition-colors hover:text-primary">
-                                    {guide.title}
+                                <a href={item.href} class="group block">
+                                    <span class="font-display text-[16px] font-medium leading-snug text-fg transition-colors group-hover:text-primary">{item.title}</span>
+                                    <span class="mt-1.5 block text-[13px] leading-relaxed text-fg-muted">{item.description}</span>
                                 </a>
                             </li>
                         ))}
@@ -62,13 +64,16 @@ const itemListJsonLd = {
             ))}
 
             {fieldNotes.length > 0 && (
-                <section aria-labelledby="field-notes">
-                    <h2 id="field-notes" class="border-b border-border pb-3 font-display text-lg font-medium text-fg">From the blog</h2>
-                    <ul class="mt-4 space-y-3">
-                        {fieldNotes.map((post) => (
+                <section class="grid gap-6 border-t border-border py-10 lg:grid-cols-[15rem_1fr] lg:gap-12" aria-labelledby="field-notes">
+                    <div>
+                        <h2 id="field-notes" class="font-display text-xl font-medium tracking-[-0.015em] text-fg">From the blog</h2>
+                    </div>
+                    <ul class="grid gap-x-10 gap-y-7 sm:grid-cols-2">
+                        {fieldNotes.map((item) => (
                             <li>
-                                <a href={`/blog/${post.id}`} class="text-[14px] leading-snug text-fg-muted transition-colors hover:text-primary">
-                                    {post.data.title}
+                                <a href={`/blog/${item.id}`} class="group block">
+                                    <span class="font-display text-[16px] font-medium leading-snug text-fg transition-colors group-hover:text-primary">{item.data.title}</span>
+                                    <span class="mt-1.5 block text-[13px] leading-relaxed text-fg-muted">{item.data.description}</span>
                                 </a>
                             </li>
                         ))}

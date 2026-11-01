@@ -23,7 +23,7 @@ export interface DemoServiceApi {
 }
 
 export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
-	"@maple/api/services/DemoService",
+	"@maple/backend/services/DemoService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService

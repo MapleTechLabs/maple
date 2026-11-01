@@ -97,17 +97,17 @@ const commandItem = <M>(
 		),
 	]
 	const children = [
-			...(item.leading === undefined ? [] : [item.leading]),
-			h.span([h.Class("truncate text-sm")], [item.title]),
-			...(item.shortcut === undefined
-				? []
-				: [
-						h.kbd(
-							[h.Class(commandShortcutStyles), h.DataAttribute("slot", "command-shortcut")],
-							[item.shortcut],
-						),
-					]),
-		]
+		...(item.leading === undefined ? [] : [item.leading]),
+		h.span([h.Class("truncate text-sm")], [item.title]),
+		...(item.shortcut === undefined
+			? []
+			: [
+					h.kbd(
+						[h.Class(commandShortcutStyles), h.DataAttribute("slot", "command-shortcut")],
+						[item.shortcut],
+					),
+				]),
+	]
 	return item.href === undefined ? h.div(attributes, children) : h.a(attributes, children)
 }
 
@@ -135,7 +135,9 @@ export const commandList = <M>(
 	options: ListOptions<M> = {},
 ): Html => {
 	const matches = new Set(
-		options.isUnfiltered === true ? commandTitles(groups) : filterItems(commandTitles(groups), model.inputValue),
+		options.isUnfiltered === true
+			? commandTitles(groups)
+			: filterItems(commandTitles(groups), model.inputValue),
 	)
 	const visible = Array.filter(
 		groups.map((group) => ({
@@ -199,9 +201,9 @@ export const commandList = <M>(
 	])
 }
 
-/** `CommandFooter`. */
+/** `CommandFooter`. Positioned so the popup's tinted `::before` layer paints under its hints, not over them. */
 export const commandFooter = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class(commandFooterStyles), h.DataAttribute("slot", "command-footer")], children)
+	h.div([h.Class(cn("relative", commandFooterStyles)), h.DataAttribute("slot", "command-footer")], children)
 
 /** The autocomplete's hidden input, last in the popup. */
 export const commandHiddenInput = hiddenInput

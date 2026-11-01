@@ -1,5 +1,6 @@
 import { formatCurrency } from "@maple/domain/format"
 import type { DailySpendResponse } from "@maple/domain/http"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import type { TrialStatus } from "../../../lib/billing/plan-gating"
@@ -22,8 +23,10 @@ import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
 import { plotFrame } from "../../../charts/plot-frame"
 import { resolveColor, ResolveThemeColors, type ThemeColors } from "../../../charts/theme-colors"
 import { chartEmpty, chartLoading } from "../../../ui/chart-state"
+import { textLink } from "../../../ui/text-link"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
+import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
@@ -53,14 +56,20 @@ export const SPEND_THEME_TOKENS = ["--primary", "--border", "--background"]
 
 const figure = (
 	h: H,
-	options: Readonly<{ label: string; value: string; note: ReadonlyArray<Html | string>; valueClassName?: string }>,
+	options: Readonly<{
+		label: string
+		value: string
+		note: ReadonlyArray<Html | string>
+		valueClassName?: string
+	}>,
 ): Html =>
 	h.div(
 		[h.Class("flex min-w-0 flex-col gap-2 p-4")],
 		[
-			h.span([h.Class("text-2xs font-medium text-muted-foreground")], [options.label]),
+			// The uppercase overline every KPI tile uses (Overview's usage cards, the Stat widget).
+			eyebrow(h, {}, [options.label]),
 			statFigure(h, { size: "lg", value: options.value, valueClassName: options.valueClassName }),
-			h.span([h.Class("text-2xs text-muted-foreground")], options.note),
+			h.span([h.Class("font-prose text-2xs text-muted-foreground")], options.note),
 		],
 	)
 
@@ -93,7 +102,9 @@ const spendPlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((m
 		className: "h-full w-full",
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) =>
-				tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
+				tooltip._tag === "Bucket"
+					? Option.some(bucketTooltipBody(h, tooltip, portal))
+					: Option.none(),
 			),
 	}),
 )
@@ -121,7 +132,10 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 		})),
 		bands: BANDS.map((band) => ({ key: band, label: bandLabel(band, spend), color: bandColor(band) })),
 		primary,
-		chrome: { border: resolveColor(colors, "--border"), background: resolveColor(colors, "--background") },
+		chrome: {
+			border: resolveColor(colors, "--border"),
+			background: resolveColor(colors, "--background"),
+		},
 		projected,
 		yMax,
 		currency: spend.currency,
@@ -132,7 +146,10 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 pt-3")],
 				[
-					h.span([h.Class("text-2xs font-medium text-muted-foreground")], ["Cumulative spend by feature"]),
+					h.span(
+						[h.Class("text-2xs font-medium text-muted-foreground")],
+						["Cumulative spend by feature"],
+					),
 					// Colors only: the amounts live in the figures and the cost breakdown.
 					seriesLegend(h, {
 						className: "gap-x-4",
@@ -142,7 +159,16 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 								label: bandLabel(band, spend),
 								color: bandColor(band),
 							})),
-							...(hasFuture ? [{ key: "projected", label: "Projection", color: primary, swatch: "dashed" as const }] : []),
+							...(hasFuture
+								? [
+										{
+											key: "projected",
+											label: "Projection",
+											color: primary,
+											swatch: "dashed" as const,
+										},
+									]
+								: []),
 						],
 					}),
 				],
@@ -175,17 +201,14 @@ const chartSlot = (h: H, model: Model, spend: SpendModel): Html => {
 		case "Loading":
 			return chartLoading(h, { variant: "area", height: SPEND_CHART_HEIGHT })
 		case "Failure":
-			return h.div(
-				[h.Style({ height: `${SPEND_CHART_HEIGHT}px` })],
-				[
-					errorState(h, {
-						failure: daily.error,
-						title: "Couldn't load daily spend",
-						onRetry: Message.ClickedRetryDaily(),
-						className: "border-0",
-					}),
-				],
-			)
+			// A section of the cycle panel: the compact row, so the breakdown stays above the fold.
+			return errorState(h, {
+				failure: daily.error,
+				title: "Couldn't load daily spend",
+				variant: "row",
+				onRetry: Message.ClickedRetryDaily(),
+				className: "rounded-none border-0 px-4 py-3",
+			})
 		case "Success":
 		case "Refreshing":
 		case "Stale":
@@ -205,7 +228,7 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 					h.AriaDisabled(false),
 					h.AriaExpanded(isOpen),
 					h.Class(
-						"group flex w-full items-center gap-2 px-4 py-2.5 text-left outline-none focus-visible:bg-muted/40",
+						"group flex w-full items-center gap-2 px-4 py-2.5 text-left outline-none focus-visible:bg-surface-sunken",
 					),
 					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 					h.DataAttribute("slot", "collapsible-trigger"),
@@ -220,7 +243,10 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 						attributes: [h.AriaHidden(true)],
 					}),
 					h.span([h.Class("text-xs font-medium")], ["Cost breakdown"]),
-					h.span([h.Class("truncate text-2xs text-muted-foreground")], ["What makes up the amount spent so far"]),
+					h.span(
+						[h.Class("truncate font-prose text-2xs text-muted-foreground")],
+						["What makes up the amount spent so far"],
+					),
 				],
 			),
 			...(isOpen
@@ -231,25 +257,43 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 								h.DataAttribute("open", ""),
 								h.DataAttribute("slot", "collapsible-panel"),
 								h.Id("billing-cost-breakdown"),
-								h.Style({ "--collapsible-panel-height": "auto", "--collapsible-panel-width": "auto", "animation-name": "none" }),
+								h.Style({
+									"--collapsible-panel-height": "auto",
+									"--collapsible-panel-width": "auto",
+									"animation-name": "none",
+								}),
 							],
 							[
 								h.div(
-									[h.Class("divide-y divide-border/60")],
+									[h.Class("divide-y divide-border-subtle")],
 									costBreakdown(spend).map((line) =>
 										h.div(
-											[h.Key(line.key), h.Class("flex items-baseline justify-between gap-4 py-2")],
+											[
+												h.Key(line.key),
+												h.Class("flex items-baseline justify-between gap-4 py-2"),
+											],
 											[
 												h.div(
 													[h.Class("min-w-0")],
 													[
 														h.p([h.Class("text-sm")], [line.label]),
-														h.p([h.Class("text-2xs text-muted-foreground")], [line.detail]),
+														h.p(
+															[
+																h.Class(
+																	"font-prose text-2xs text-muted-foreground",
+																),
+															],
+															[line.detail],
+														),
 													],
 												),
 												h.span(
 													[h.Class("shrink-0 font-mono text-sm tabular-nums")],
-													[line.cents === null ? "Not itemized" : dollars(line.cents, spend.currency)],
+													[
+														line.cents === null
+															? "Not itemized"
+															: dollars(line.cents, spend.currency),
+													],
 												),
 											],
 										),
@@ -259,7 +303,9 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 									? [
 											h.p(
 												[h.Class("pt-1 text-2xs text-muted-foreground")],
-												["Some items are on pricing we can't itemize; your invoice has the exact amount."],
+												[
+													"Some items are on pricing we can't itemize; your invoice has the exact amount.",
+												],
 											),
 										]
 									: []),
@@ -312,7 +358,10 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 					[
 						h.span([], [period]),
 						h.span([h.Class("text-muted-foreground")], ["·"]),
-						h.span([h.Class("text-muted-foreground")], ["Day ", String(spend.dayOfCycle), " of ", String(spend.cycleDays)]),
+						h.span(
+							[h.Class("text-muted-foreground")],
+							["Day ", String(spend.dayOfCycle), " of ", String(spend.cycleDays)],
+						),
 					],
 				),
 			],
@@ -323,12 +372,19 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 				figure(h, {
 					label: "Spent so far",
 					value: dollars(spend.spendCents, spend.currency),
-					note: [spend.partial ? "At least; some items aren't itemized" : "Excludes taxes and credits"],
+					note: [
+						spend.partial ? "At least; some items aren't itemized" : "Excludes taxes and credits",
+					],
 				}),
 				figure(h, {
 					label: "Projected",
 					value: dollars(spend.projectedCents, spend.currency),
-					valueClassName: "text-primary",
+					// Neutral unless the cycle is heading past the plan's fixed fees or the overage caps.
+					valueClassName:
+						(spend.baseCents > 0 && spend.projectedCents > spend.baseCents) ||
+						(maximum !== null && spend.projectedCents > maximum)
+							? TONE_TEXT.warn
+							: undefined,
 					note: ["At this cycle's daily rate"],
 				}),
 				figure(h, {
@@ -343,18 +399,17 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 										h.span(
 											[h.Class("flex flex-wrap items-center gap-x-1.5")],
 											[
-												inputs.uncappedCount === 1 ? "1 feature has no cap" : `${inputs.uncappedCount} features have no cap`,
+												inputs.uncappedCount === 1
+													? "1 feature has no cap"
+													: `${inputs.uncappedCount} features have no cap`,
 												...(model.isAdmin
 													? [
-															h.button(
-																[
-																	h.Class(
-																		"font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50",
-																	),
-																	...(model.isSavingCap ? [h.Disabled(true)] : []),
-																	h.Type("button"),
-																	h.OnClick(Message.ClickedSetCaps()),
-																],
+															textLink(
+																h,
+																{
+																	onClick: Message.ClickedSetCaps(),
+																	isDisabled: model.isSavingCap,
+																},
 																["Set caps"],
 															),
 														]

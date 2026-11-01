@@ -1,4 +1,5 @@
 import type { CloudflareConnectedAccountStatus } from "@maple/domain/http"
+import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 
 /** A sync older than this is "delayed": the poller runs every few minutes. */
 export const STALE_SYNC_MS = 30 * 60_000
@@ -18,8 +19,6 @@ export interface CloudflareAccount {
 	zones: ReadonlyArray<string>
 	health: AccountHealth
 }
-
-const minutesAgo = (now: number, at: number) => Math.max(1, Math.round((now - at) / 60_000))
 
 /**
  * Health from the poller's own bookkeeping, worst first: zones with errors, then a stale sync, then
@@ -44,12 +43,12 @@ export function accountHealth(account: CloudflareConnectedAccountStatus, now: nu
 	].filter((at): at is number => at !== null)
 	const oldest = synced.length === 0 ? null : Math.min(...synced)
 	if (oldest !== null && now - oldest > STALE_SYNC_MS) {
-		return { tone: "warn", message: `Delayed · last sync ${minutesAgo(now, oldest)}m ago` }
+		return { tone: "warn", message: `Delayed · last sync ${formatRelativeFrom(oldest, now)}` }
 	}
 	if (account.workers?.lastError) return { tone: "warn", message: "Workers analytics failing" }
 	return {
 		tone: "ok",
-		message: oldest === null ? "waiting for first sync" : `synced ${minutesAgo(now, oldest)}m ago`,
+		message: oldest === null ? "waiting for first sync" : `synced ${formatRelativeFrom(oldest, now)}`,
 	}
 }
 

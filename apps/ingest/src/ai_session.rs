@@ -69,7 +69,7 @@
 
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
-use opentelemetry_proto::tonic::trace::v1::span::Event;
+use opentelemetry_proto::tonic::trace::v1::span::{Event, SpanKind};
 
 mod claude_code;
 mod cloudflare_ai_gateway;
@@ -112,6 +112,8 @@ pub struct SpanView<'a> {
     pub span_attrs: &'a [KeyValue],
     pub resource_attrs: &'a [KeyValue],
     pub events: &'a [Event],
+    /// OTLP `Span.kind`, as the raw enum value.
+    pub span_kind: i32,
 }
 
 /// Classify every span in a decoded trace request and stamp the `maple_ai.*`
@@ -152,7 +154,14 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     collect_evidence(&mut ev, &span.attributes, &span.events);
                     let classification =
                         if scope_forces || ev.any || span_name_candidate(&span.name) {
-                            run_predicates(&scope, &resource, &span.name, &ev, &span.attributes)
+                            run_predicates(
+                                &scope,
+                                &resource,
+                                &span.name,
+                                span.kind,
+                                &ev,
+                                &span.attributes,
+                            )
                         } else {
                             None
                         };
@@ -207,7 +216,14 @@ pub fn classify_span(view: &SpanView) -> Option<AiClassification> {
     let scope = scope_facts(view.scope_name, &resource);
     let mut ev = SpanEvidence::default();
     collect_evidence(&mut ev, view.span_attrs, view.events);
-    classify_from_facts(&scope, &resource, view.span_name, &ev, view.span_attrs)
+    classify_from_facts(
+        &scope,
+        &resource,
+        view.span_name,
+        view.span_kind,
+        &ev,
+        view.span_attrs,
+    )
 }
 
 fn string_attribute(key: &str, value: &str) -> KeyValue {
@@ -458,6 +474,8 @@ struct SpanEvidence<'a> {
     /// A Mastra scorer's span: its `scorer_run`/`scorer_step`, or any span it
     /// ran (an LLM judge's agent and model calls) - see [`run_predicates`].
     mastra_scorer: bool,
+    /// `mcp.method.name`: the span is one side of an MCP exchange.
+    mcp_method_name: bool,
     agno: bool,
     agent_framework: bool,
     executor: bool,
@@ -526,6 +544,7 @@ const SCREEN_KEYS: &[&str] = &[
     "llm.",
     "logfire.json_schema",
     "mastra.",
+    "mcp.method.name",
     "message.",
     "model_request_parameters",
     ATTR_NAMESPACE,
@@ -695,6 +714,10 @@ fn absorb_key<'a>(ev: &mut SpanEvidence<'a>, attr: &'a KeyValue, b0: u8) {
                 {
                     ev.mastra_scorer = true;
                 }
+            } else if key == "mcp.method.name" {
+                // A veto, not evidence: an MCP span is AI work only on other grounds.
+                ev.mcp_method_name = true;
+                return;
             } else if key.starts_with("message.") {
                 ev.message = true;
             } else if key == "model_request_parameters" {
@@ -1084,6 +1107,7 @@ fn classify_from_facts(
     scope: &ScopeFacts,
     resource: &ResourceFacts,
     span_name: &str,
+    span_kind: i32,
     ev: &SpanEvidence,
     span_attrs: &[KeyValue],
 ) -> Option<AiClassification> {
@@ -1091,13 +1115,14 @@ fn classify_from_facts(
     if !scope.any && !resource.mastra_sdk && !ev.any && !span_name_candidate(span_name) {
         return None;
     }
-    run_predicates(scope, resource, span_name, ev, span_attrs)
+    run_predicates(scope, resource, span_name, span_kind, ev, span_attrs)
 }
 
 fn run_predicates(
     scope: &ScopeFacts,
     resource: &ResourceFacts,
     span_name: &str,
+    span_kind: i32,
     ev: &SpanEvidence,
     span_attrs: &[KeyValue],
 ) -> Option<AiClassification> {
@@ -1108,6 +1133,13 @@ fn run_predicates(
     // whichever instrumentation recorded the span (a judge's model call can sit
     // under LangSmith's scope, which the vendor order would name first).
     if ev.mastra_scorer {
+        return None;
+    }
+    // An MCP server handling `tools/call` carries `gen_ai.operation.name =
+    // execute_tool` by the MCP conventions, but it is the tool, not an agent
+    // using one: stamped, every call to an instrumented MCP server became an
+    // `unknown:genai` session. The client side stays agent work.
+    if ev.mcp_method_name && span_kind == SpanKind::Server as i32 {
         return None;
     }
     let ctx = Ctx {
@@ -1402,6 +1434,7 @@ mod tests {
             span_attrs: &span_attrs,
             resource_attrs: &resource_attrs,
             events: &[],
+            span_kind: 0,
         })
     }
 
@@ -1766,6 +1799,7 @@ mod tests {
             span_attrs: &span_attrs,
             resource_attrs: &resource_attrs,
             events: &[],
+            span_kind: 0,
         })
         .unwrap();
         assert_eq!(result.session_id.as_deref(), Some("4211"));
@@ -2608,6 +2642,7 @@ mod tests {
             span_attrs: &[],
             resource_attrs: &[],
             events: &events,
+            span_kind: 0,
         })
         .unwrap();
         assert_eq!(result.vendor, "llamaindex");
@@ -2898,6 +2933,45 @@ mod tests {
         assert_eq!(
             attr_value(&span.attributes, "maple_ai.input_messages_dropped").as_deref(),
             Some("2")
+        );
+    }
+
+    #[test]
+    fn mcp_server_tool_calls_are_not_agent_work() {
+        // The MCP conventions put `gen_ai.operation.name = execute_tool` on both
+        // sides of a `tools/call`. The client is an agent using a tool; the
+        // server is the tool, and must not become an `unknown:genai` session.
+        let tool_call = |kind: SpanKind| Span {
+            name: "tools/call run_sql".to_owned(),
+            kind: kind as i32,
+            attributes: attrs(&[
+                ("mcp.method.name", "tools/call"),
+                ("gen_ai.operation.name", "execute_tool"),
+                ("gen_ai.tool.name", "run_sql"),
+            ]),
+            ..Default::default()
+        };
+        let mut request = ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                resource: Some(Resource {
+                    attributes: attrs(&[("service.name", "mcp-server")]),
+                    ..Default::default()
+                }),
+                scope_spans: vec![ScopeSpans {
+                    spans: vec![tool_call(SpanKind::Server), tool_call(SpanKind::Client)],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+
+        stamp_trace_request(&mut request);
+
+        let spans = &request.resource_spans[0].scope_spans[0].spans;
+        assert_eq!(attr_value(&spans[0].attributes, VENDOR_ID_ATTR), None);
+        assert_eq!(
+            attr_value(&spans[1].attributes, VENDOR_ID_ATTR).as_deref(),
+            Some("unknown:genai")
         );
     }
 

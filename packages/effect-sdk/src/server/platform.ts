@@ -19,7 +19,7 @@
 // because std-env's `provider` doesn't enumerate Lambda — Lambda runs node on
 // EC2-managed hosts and isn't a CI/CD provider in std-env's taxonomy.
 
-import { Match } from "effect"
+import { Match, Option, Schema } from "effect"
 import { platform, provider, runtime } from "std-env"
 
 export interface PlatformInputs {
@@ -34,6 +34,8 @@ export interface PlatformInputs {
 	 * unavailable (e.g. browser or workerd). Mapped to `host.arch`.
 	 */
 	readonly arch: string
+	/** Runtime version without a leading "v" ("22.11.0"). Absent or empty when the runtime has none. */
+	readonly runtimeVersion?: string
 	/** Subset of `process.env` we care about. Reading the whole object would be wasteful and risky. */
 	readonly env: Readonly<Record<string, string | undefined>>
 }
@@ -52,6 +54,9 @@ const runtimeAttrs = (rt: string): Attrs =>
 		})),
 		Match.orElse((): Attrs => empty),
 	)
+
+const runtimeVersionAttrs = (version: string | undefined): Attrs =>
+	version ? { "process.runtime.version": version } : empty
 
 // Node `process.platform` ⇒ OTel `os.type`.
 const osAttrs = (plat: string): Attrs =>
@@ -166,14 +171,14 @@ const vercelEdgeFallback = (rt: string, alreadyResolved: boolean, env: PlatformI
  * Returned keys follow OTel semantic conventions:
  * - `cloud.provider`, `cloud.platform`, `cloud.region`
  * - `faas.name`, `faas.version`, `faas.instance`
- * - `process.runtime.name`
+ * - `process.runtime.name`, `process.runtime.version`
  * - `os.type`, `host.arch`
  *
  * Plus Maple-specific provenance keys (`maple.runtime`, `maple.provider`)
  * preserved for back-compat with existing dashboards.
  */
 export const derivePlatformAttributes = (inputs: PlatformInputs): PlatformAttributes => {
-	const { runtime: rt, provider: prov, platform: plat, arch, env } = inputs
+	const { runtime: rt, provider: prov, platform: plat, arch, runtimeVersion, env } = inputs
 
 	// Lambda overrides std-env's provider when present; matches the original
 	// short-circuit semantics. Otherwise std-env's provider drives cloud.*.
@@ -187,6 +192,7 @@ export const derivePlatformAttributes = (inputs: PlatformInputs): PlatformAttrib
 		...(rt && { "maple.runtime": rt }),
 		...(prov && { "maple.provider": prov }),
 		...runtimeAttrs(rt),
+		...runtimeVersionAttrs(runtimeVersion),
 		...osAttrs(plat),
 		...archAttrs(arch),
 		...cloudAttrs,
@@ -226,6 +232,41 @@ const PLATFORM_ENV_KEYS = [
 	"RAILWAY_REPLICA_ID",
 ] as const
 
+// Runtime globals no lib type declares, parsed per runtime so a missing or
+// odd-shaped global yields no version.
+const NodeGlobals = Schema.Struct({
+	process: Schema.Struct({ versions: Schema.Struct({ node: Schema.String }) }),
+})
+const BunGlobals = Schema.Struct({
+	process: Schema.Struct({ versions: Schema.Struct({ bun: Schema.String }) }),
+})
+const DenoGlobals = Schema.Struct({
+	Deno: Schema.Struct({ version: Schema.Struct({ deno: Schema.String }) }),
+})
+const decodeNode = Schema.decodeUnknownOption(NodeGlobals)
+const decodeBun = Schema.decodeUnknownOption(BunGlobals)
+const decodeDeno = Schema.decodeUnknownOption(DenoGlobals)
+
+/**
+ * Version of the running runtime for `process.runtime.version`. workerd and the
+ * edge runtimes have no meaningful version (under nodejs_compat workerd's
+ * `process.versions.node` is a compat value, not its own), so they report none.
+ */
+export const readRuntimeVersion = (rt: string, root: unknown = globalThis): string | undefined =>
+	Match.value(rt).pipe(
+		Match.when("node", () =>
+			Option.getOrUndefined(Option.map(decodeNode(root), (g) => g.process.versions.node)),
+		),
+		Match.when("bun", () =>
+			Option.getOrUndefined(Option.map(decodeBun(root), (g) => g.process.versions.bun)),
+		),
+		Match.when("deno", () =>
+			Option.getOrUndefined(Option.map(decodeDeno(root), (g) => g.Deno.version.deno)),
+		),
+		Match.whenOr("workerd", "edge-light", "fastly", "netlify", () => undefined),
+		Match.orElse(() => undefined),
+	)
+
 /**
  * Read live std-env + process.env state and derive OTel platform attributes.
  * Safe to call on any runtime — falls back to empty string for missing inputs
@@ -238,11 +279,13 @@ export const getAutoPlatformAttributes = (): PlatformAttributes => {
 	const env: Record<string, string | undefined> = {}
 	for (const key of PLATFORM_ENV_KEYS) env[key] = procEnv[key]
 
+	const rt = runtime ?? ""
 	return derivePlatformAttributes({
-		runtime: runtime ?? "",
+		runtime: rt,
 		provider: provider ?? "",
 		platform: platform ?? "",
 		arch: proc?.arch ?? "",
+		runtimeVersion: readRuntimeVersion(rt),
 		env,
 	})
 }

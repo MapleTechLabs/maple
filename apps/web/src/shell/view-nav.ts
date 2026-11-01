@@ -4,7 +4,6 @@ import { Option } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { infraSurfacesOf } from "../data/infra-surfaces"
 import { icon, iconColor } from "../ui/icon"
 import {
 	sidebarGroup,
@@ -19,16 +18,17 @@ import {
 } from "../ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Message } from "./message"
-import type { Model, ShellClerk } from "./model"
+import { type Model, type ShellClerk, shellProbe, shellSurfaces } from "./model"
 import {
 	isNavItemActive,
 	matchSubItem,
-	NAV_PREVIEW_MAX_GLYPHS,
 	type NavGroup,
+	type NavFlags,
 	type NavItem,
 	type NavSubItem,
 	type NavSurface,
 	navGroups,
+	navPreview,
 	partitionSubItems,
 } from "./nav"
 import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } from "./view-sidebar"
@@ -37,38 +37,39 @@ import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } 
  * `useOrganizationFeatureFlags`: self-hosted turns every rollout on; a Clerk org reads its public
  * metadata, and fails closed (no flagged rows) until Clerk has an org.
  */
-export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> =>
-	navGroups({
-		releases:
-			!isClerkAuthEnabled ||
-			(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags.releases)),
+export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> => {
+	const flag = (name: keyof NavFlags) =>
+		!isClerkAuthEnabled ||
+		(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags[name]))
+	return navGroups({
+		releases: flag("releases"),
+		securityAudit: flag("securityAudit"),
+		statusPages: flag("statusPages"),
 	})
+}
 
-/** The last-hour probe's answer; `null` while it is in flight or after it failed. */
-export const presenceOf = (model: Model): ReadonlyArray<InfraSurfaceLiteral> | null =>
-	AsyncData.match(model.infraPresence, {
-		onIdle: () => null,
-		onLoading: () => null,
-		onRefreshing: () => null,
-		onFailure: () => null,
-		onStale: () => null,
-		onSuccess: (surfaces) => surfaces,
-	})
+/** The last-hour probe's answer; `null` while it is first in flight or after it failed. */
+export const presenceOf = (model: Model): ReadonlyArray<InfraSurfaceLiteral> | null => {
+	const probe = shellProbe(model)
+	return probe === "failed" ? null : probe
+}
 
-/** `useInfraSurfaces`: the probe's surfaces plus connected integrations; `null` until the probe answers. */
-export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null =>
-	infraSurfacesOf(presenceOf(model), model.integrations)
+const NO_SURFACES: ReadonlySet<NavSurface> = new Set()
 
-/** Brand marks of a closed section (all or nothing, deduplicated, the section's own page left out). */
-const previewOf = (item: NavItem, isOpen: boolean): ReadonlyArray<NavSubItem> | undefined => {
-	const subItems = item.subItems
-	if (isOpen || subItems === undefined || !subItems.every((sub) => sub.icon !== undefined)) return undefined
-	if (!subItems.some((sub) => sub.iconColor !== undefined)) return undefined
-	const candidates = subItems.filter((sub) => sub.href !== item.href)
-	const unique = candidates.filter(
-		(sub, index) => candidates.findIndex((other) => other.icon === sub.icon) === index,
-	)
-	return unique.length > NAV_PREVIEW_MAX_GLYPHS ? undefined : unique
+/**
+ * The surfaces the nav filters by: every one when the probe failed, none of the optional ones
+ * while the answer is pending, so rows only ever appear once.
+ */
+export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null => {
+	const surfaces = shellSurfaces(model)
+	switch (surfaces._tag) {
+		case "Pending":
+			return NO_SURFACES
+		case "Every":
+			return null
+		case "Only":
+			return surfaces.surfaces
+	}
 }
 
 const activeSubHrefOf = (subItems: ReadonlyArray<NavSubItem>, currentPath: string): string | undefined =>
@@ -149,7 +150,7 @@ const navRow = (
 	if (isCollapsed && subItems !== undefined && subItems.length > 0)
 		return collapsedSectionRow(h, model, item, isActive)
 	const isOpen = subItems !== undefined && subItems.length > 0 && isActive
-	const preview = previewOf(item, isOpen)
+	const preview = isOpen || subItems === undefined ? undefined : navPreview(item, subItems)
 	return sidebarMenuItem(h, undefined, [
 		sidebarMenuButton(
 			h,
@@ -172,16 +173,26 @@ const navRow = (
 										"flex shrink-0 items-center gap-0.5 text-muted-foreground group-data-[collapsible=icon]:hidden",
 									),
 								],
-								preview.flatMap((sub) =>
-									sub.icon === undefined
-										? []
-										: [
-												icon(h, sub.icon, {
-													className: "size-3",
-													...iconColor(sub.iconColor),
-												}),
-											],
-								),
+								[
+									...preview.glyphs.flatMap((sub) =>
+										sub.icon === undefined
+											? []
+											: [
+													icon(h, sub.icon, {
+														className: "size-3",
+														...iconColor(sub.iconColor),
+													}),
+												],
+									),
+									...(preview.overflow > 0
+										? [
+												h.span(
+													[h.Class("ms-0.5 text-2xs tabular-nums")],
+													[`+${preview.overflow}`],
+												),
+											]
+										: []),
+								],
 							),
 						]),
 			],

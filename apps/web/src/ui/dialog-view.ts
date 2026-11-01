@@ -5,7 +5,13 @@ import * as DialogStyles from "@maple/ui/styles/ui/dialog"
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
-import { type Attribute, type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
+import {
+	type Attribute,
+	type ChildAttribute,
+	childAttributes,
+	type Html,
+	type HtmlBuilder,
+} from "foldkit/html"
 import {
 	descriptionId,
 	type Kind,
@@ -32,6 +38,11 @@ type Parts = Readonly<{
 	isLabelled: boolean
 }>
 
+// A dialog is a prose context: its buttons and field labels share the sans face of its title and body.
+// Close and Cancel buttons carry their own slot (`dialog-close`, `alert-dialog-cancel`), so match those too.
+const proseControls =
+	"[&_[data-slot=button]]:font-prose [&_[data-slot$='-close']]:font-prose [&_[data-slot$='-cancel']]:font-prose [&_[data-slot=label]]:font-prose [&_[data-slot=field-label]]:font-prose"
+
 // dialog.tsx `DialogPopup`, alert-dialog.tsx `AlertDialogPopup`, sheet.tsx `SheetPopup`, command.tsx
 const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isBottomStick = true): Parts => {
 	switch (kind) {
@@ -45,6 +56,7 @@ const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isB
 				popup: cn(
 					DialogStyles.dialogPopupStyles,
 					isBottomStick && DialogStyles.dialogPopupBottomStickStyles,
+					proseControls,
 					className,
 				),
 				closeButton: Option.some(DialogStyles.dialogCloseStyles),
@@ -61,6 +73,7 @@ const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isB
 				popup: cn(
 					AlertDialogStyles.alertDialogPopupStyles,
 					AlertDialogStyles.alertDialogPopupBottomStickStyles,
+					proseControls,
 					className,
 				),
 				closeButton: Option.none(),
@@ -257,27 +270,31 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 
 type TitledKind = "dialog" | "alert-dialog" | "sheet"
 
+// Titles and descriptions are prose: the page header's sans faces, not the mono UI face.
+const titleFace = "font-display tracking-tight"
+const descriptionFace = "font-prose"
+
 const contentStyles = {
 	dialog: {
 		header: DialogStyles.dialogHeaderStyles,
-		title: DialogStyles.dialogTitleStyles,
-		description: DialogStyles.dialogDescriptionStyles,
+		title: cn(DialogStyles.dialogTitleStyles, titleFace),
+		description: cn(DialogStyles.dialogDescriptionStyles, descriptionFace),
 		panel: DialogStyles.dialogPanelStyles,
 		footer: DialogStyles.dialogFooterStyles,
 		footerDefault: DialogStyles.dialogFooterDefaultStyles,
 	},
 	"alert-dialog": {
 		header: AlertDialogStyles.alertDialogHeaderStyles,
-		title: AlertDialogStyles.alertDialogTitleStyles,
-		description: AlertDialogStyles.alertDialogDescriptionStyles,
+		title: cn(AlertDialogStyles.alertDialogTitleStyles, titleFace),
+		description: cn(AlertDialogStyles.alertDialogDescriptionStyles, descriptionFace),
 		panel: DialogStyles.dialogPanelStyles,
 		footer: AlertDialogStyles.alertDialogFooterStyles,
 		footerDefault: AlertDialogStyles.alertDialogFooterDefaultStyles,
 	},
 	sheet: {
 		header: SheetStyles.sheetHeaderStyles,
-		title: SheetStyles.sheetTitleStyles,
-		description: SheetStyles.sheetDescriptionStyles,
+		title: cn(SheetStyles.sheetTitleStyles, titleFace),
+		description: cn(SheetStyles.sheetDescriptionStyles, descriptionFace),
 		panel: SheetStyles.sheetPanelStyles,
 		footer: SheetStyles.sheetFooterStyles,
 		footerDefault: SheetStyles.sheetFooterDefaultStyles,
@@ -347,10 +364,10 @@ export const dialogPanel = <M>(
 			hasMeasuredScrollbar: measured !== undefined,
 		},
 		[
-		h.div(
-			[h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)],
-			children,
-		),
+			h.div(
+				[h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)],
+				children,
+			),
 		],
 	)
 
@@ -366,4 +383,11 @@ export const dialogFooter = <M>(
 			h.DataAttribute("slot", `${kind}-footer`),
 		],
 		children,
+	)
+
+/** A footer's leading hint: prose face, takes the width the actions leave so it wraps late. */
+export const dialogFooterHint = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	h.span(
+		[h.Class("min-w-0 flex-1 self-center font-prose text-xs text-pretty text-muted-foreground")],
+		[text],
 	)

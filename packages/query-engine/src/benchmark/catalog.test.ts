@@ -25,8 +25,10 @@ import * as activityQueries from "../ch/queries/activity"
 import * as alertCheckQueries from "../ch/queries/alert-checks"
 import * as ciRunsQueries from "../ch/queries/ci-runs"
 import * as auditLogQueries from "../ch/queries/audit-log"
+import * as cancellationEvidenceQueries from "../ch/queries/cancellation-evidence"
 import * as anomalyQueries from "../ch/queries/anomaly"
 import * as attributeKeyQueries from "../ch/queries/attribute-keys"
+import * as awsIngestQueries from "../ch/queries/aws-ingest"
 import * as containerQueries from "../ch/queries/containers"
 import * as errorQueries from "../ch/queries/errors"
 import * as infraQueries from "../ch/queries/infra"
@@ -39,6 +41,8 @@ import * as serviceInfraQueries from "../ch/queries/service-infra"
 import * as serviceMapRollupQueries from "../ch/queries/service-map-rollup"
 import * as serviceMapQueries from "../ch/queries/service-map"
 import * as serviceEndpointQueries from "../ch/queries/service-endpoints"
+import * as serviceApiQueries from "../ch/queries/service-api"
+import * as serviceEndpointDetailQueries from "../ch/queries/service-endpoint-details"
 import * as serviceOperationQueries from "../ch/queries/service-operations"
 import * as prReviewQueries from "../ch/queries/pr-review"
 import * as serviceQueries from "../ch/queries/services"
@@ -47,6 +51,7 @@ import * as sessionEventQueries from "../ch/queries/session-events"
 import * as sessionReplayQueries from "../ch/queries/session-replays"
 import * as webAnalyticsQueries from "../ch/queries/web-analytics"
 import * as webAnalyticsAiQueries from "../ch/queries/web-analytics-ai"
+import * as securityTelemetryQueries from "../ch/queries/security-telemetry"
 import * as productEventQueries from "../ch/queries/product-events"
 import * as productEventPathQueries from "../ch/queries/product-events-paths"
 import * as productEventExploreQueries from "../ch/queries/product-events-explore"
@@ -264,6 +269,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	activity: activityQueries,
 	"alert-checks": alertCheckQueries,
 	"audit-log": auditLogQueries,
+	"cancellation-evidence": cancellationEvidenceQueries,
 	"ci-runs": ciRunsQueries,
 	anomaly: anomalyQueries,
 	"attribute-keys": attributeKeyQueries,
@@ -277,17 +283,21 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"service-map-rollup": serviceMapRollupQueries,
 	"service-map": serviceMapQueries,
 	"service-endpoints": serviceEndpointQueries,
+	"service-api": serviceApiQueries,
+	"service-endpoint-details": serviceEndpointDetailQueries,
 	"pr-review": prReviewQueries,
 	"service-operations": serviceOperationQueries,
 	services: serviceQueries,
 	"signal-presence": signalPresenceQueries,
 	"source-usage": sourceUsageQueries,
+	"aws-ingest": awsIngestQueries,
 	releases: releaseQueries,
 	"session-events": sessionEventQueries,
 	"session-replays": sessionReplayQueries,
 	"top-operations": topOperationQueries,
 	"web-analytics": webAnalyticsQueries,
 	"web-analytics-ai": webAnalyticsAiQueries,
+	"security-telemetry": securityTelemetryQueries,
 	"product-events": productEventQueries,
 	"product-events-paths": productEventPathQueries,
 	"product-events-explore": productEventExploreQueries,

@@ -1,13 +1,15 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Schema } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Result, Schema, Semaphore } from "effect"
+import { TestClock } from "effect/testing"
 import { InternalScrapeTarget } from "@maple/domain/http"
 import { convertFamiliesToOtlp, parsePrometheusText, type OtlpExportRequest } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
-import { scrapeError, type ScrapeError } from "./ScrapeError"
+import { scrapeError, type ScrapeError, type ScrapeFailureReason } from "./ScrapeError"
 import { otlpContext, Scraper } from "./Scraper"
 import { TargetFetcher } from "./TargetFetcher"
+import { type TargetGroup, targetKey } from "./TargetRegistry"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 
 const decodeTarget = Schema.decodeUnknownSync(InternalScrapeTarget)
@@ -29,7 +31,7 @@ const TARGET = decodeTarget({
 
 interface Harness {
 	readonly sent: Array<{ ingestKey: string; request: OtlpExportRequest }>
-	fetch: () => Effect.Effect<string, ScrapeError>
+	fetch: (target: InternalScrapeTarget) => Effect.Effect<string, ScrapeError>
 	send: () => Effect.Effect<void, ScrapeError>
 }
 
@@ -43,7 +45,9 @@ const scraperLayer = (harness: Harness) =>
 	Scraper.layer.pipe(
 		Layer.provide(
 			Layer.mergeAll(
-				Layer.succeed(TargetFetcher, { fetch: () => Effect.suspend(() => harness.fetch()) }),
+				Layer.succeed(TargetFetcher, {
+					fetch: (target) => Effect.suspend(() => harness.fetch(target)),
+				}),
 				Layer.succeed(OtlpIngest, {
 					send: (ingestKey, request) =>
 						Effect.suspend(() => {
@@ -55,11 +59,23 @@ const scraperLayer = (harness: Harness) =>
 		),
 	)
 
-const scrape = (harness: Harness, target: InternalScrapeTarget = TARGET) =>
+const cycle = (harness: Harness, targets: TargetGroup, failing?: ReadonlyMap<string, ScrapeFailureReason>) =>
 	Effect.gen(function* () {
 		const scraper = yield* Scraper
-		return yield* scraper.scrape(target)
+		return yield* scraper.scrapeCycle(targets, yield* Semaphore.make(10), failing)
 	}).pipe(Effect.provide(scraperLayer(harness)))
+
+/** A one-target cycle, failing with that target's result. */
+const scrape = (harness: Harness, target: InternalScrapeTarget = TARGET) =>
+	Effect.flatMap(cycle(harness, [target]), (outcome) => Effect.fromResult(outcome.scrapes[0]!.result))
+
+const branch = (key: string) =>
+	decodeTarget({
+		...TARGET,
+		subTargetKey: key,
+		url: `https://${key}.example.com/metrics`,
+		scrapeUrl: `https://${key}.example.com/metrics`,
+	})
 
 describe("Scraper", () => {
 	it.effect("exports one OTLP request with the org's ingest key and target attribution", () =>
@@ -134,9 +150,41 @@ describe("Scraper", () => {
 		}),
 	)
 
-	// Only 5xx-class faults are `Error`: a blocked org used to mint an Error span
-	// (and an error fingerprint) every interval, forever.
-	it.effect("keeps the span Ok on a billing block but still fails the scrape", () =>
+	// A billing block is the ingest key's, so it fails every delivered sub-target.
+	// Its span lives on `OtlpIngest.send`; the fetch spans stay Ok.
+	it.effect("closes a streak's repeated failure Ok and a changed failure as an error", () =>
+		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
+			const harness = makeHarness()
+			harness.fetch = () =>
+				Effect.fail(
+					scrapeError({ message: "returned HTTP 404", reason: "target_rejected", statusCode: 404 }),
+				)
+			const failingWith = (reason: ScrapeFailureReason) => new Map([[targetKey(TARGET), reason]])
+			const repeated = yield* cycle(harness, [TARGET], failingWith("target_rejected")).pipe(
+				Effect.provide(tracer.layer),
+			)
+			const changed = yield* cycle(harness, [TARGET], failingWith("target_error")).pipe(
+				Effect.provide(tracer.layer),
+			)
+
+			// Both still report the failure; only the span status differs.
+			for (const outcome of [repeated, changed]) {
+				assert.isTrue(Result.isFailure(outcome.scrapes[0]!.result))
+			}
+			const spans = endedSpansNamed(tracer.ended, "scraper.scrape_target")
+			assert.deepStrictEqual(
+				spans.map((span) => Exit.isSuccess(span.exit)),
+				[true, false],
+			)
+			assert.deepStrictEqual(
+				spans.map((span) => span.attributes.get("error.type")),
+				["target_rejected", "target_rejected"],
+			)
+		}),
+	)
+
+	it.effect("attributes a shared delivery failure to every delivered sub-target", () =>
 		Effect.gen(function* () {
 			const tracer = makeCapturingTracer()
 			const harness = makeHarness()
@@ -148,13 +196,117 @@ describe("Scraper", () => {
 						statusCode: 402,
 					}),
 				)
-			const error = yield* scrape(harness).pipe(Effect.provide(tracer.layer), Effect.flip)
+			const outcome = yield* cycle(harness, [branch("main"), branch("dev")]).pipe(
+				Effect.provide(tracer.layer),
+			)
 
-			assert.strictEqual(error.reason, "delivery_blocked")
-			const [span] = endedSpansNamed(tracer.ended, "scraper.scrape_target")
-			assert.isTrue(Exit.isSuccess(span!.exit))
-			assert.strictEqual(span!.attributes.get("error.type"), "delivery_blocked")
-			assert.strictEqual(span!.attributes.get("http.response.status_code"), 402)
+			assert.strictEqual(outcome.deliveryFailure?.reason, "delivery_blocked")
+			const errors = outcome.scrapes.map((scrape) =>
+				Result.isFailure(scrape.result) ? scrape.result.failure : null,
+			)
+			assert.deepStrictEqual(
+				errors.map((error) => error?.reason),
+				["delivery_blocked", "delivery_blocked"],
+			)
+			assert.deepStrictEqual(
+				errors.map((error) => error?.targetHost),
+				["main.example.com", "dev.example.com"],
+			)
+			for (const span of endedSpansNamed(tracer.ended, "scraper.scrape_target")) {
+				assert.isTrue(Exit.isSuccess(span.exit))
+			}
+		}),
+	)
+
+	it.effect("delivers a whole parent cycle as one export with a resource per sub-target", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			const keys = Array.from({ length: 54 }, (_, index) => `branch-${index}`)
+			const [first, ...rest] = keys.map(branch)
+			const outcome = yield* cycle(harness, [first!, ...rest])
+
+			assert.lengthOf(harness.sent, 1)
+			const instances = harness.sent[0]!.request.resourceMetrics.map(
+				(resource) =>
+					resource.scopeMetrics[0]!.metrics[0]!.gauge!.dataPoints[0]!.attributes.find(
+						(a) => a.key === "instance",
+					)?.value.stringValue,
+			)
+			assert.deepStrictEqual(
+				instances,
+				keys.map((key) => `${key}.example.com`),
+			)
+			assert.deepStrictEqual(
+				outcome.scrapes.map((scrape) => [
+					scrape.target.subTargetKey,
+					Result.isSuccess(scrape.result),
+				]),
+				keys.map((key) => [key, true]),
+			)
+		}),
+	)
+
+	it.effect("isolates a failing sub-target: the rest are delivered, it reports its own error", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			harness.fetch = (target) =>
+				target.subTargetKey === "broken"
+					? Effect.fail(
+							scrapeError({
+								message: "returned HTTP 503",
+								reason: "rate_limited",
+								statusCode: 503,
+							}),
+						)
+					: Effect.succeed("up 1\n")
+			const outcome = yield* cycle(harness, [branch("main"), branch("broken"), branch("dev")])
+
+			assert.lengthOf(harness.sent, 1)
+			assert.lengthOf(harness.sent[0]!.request.resourceMetrics, 2)
+			assert.isNull(outcome.deliveryFailure)
+			const byKey = new Map(
+				outcome.scrapes.map((scrape) => [scrape.target.subTargetKey, scrape.result]),
+			)
+			assert.isTrue(Result.isSuccess(byKey.get("main")!))
+			assert.isTrue(Result.isSuccess(byKey.get("dev")!))
+			const broken = byKey.get("broken")!
+			assert.isTrue(Result.isFailure(broken))
+			if (Result.isFailure(broken)) assert.include(broken.failure.message, "broken.example.com")
+		}),
+	)
+
+	// TARGET is a 15s target: a lone one may take 14s, a shared one gets 7.5s.
+	it.effect("caps a stalled branch at half the interval only when it shares a cycle", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			harness.fetch = (target) =>
+				target.subTargetKey === "dev"
+					? Effect.as(Effect.sleep(Duration.seconds(10)), "up 1\n")
+					: Effect.succeed("up 1\n")
+			const shared = yield* Effect.forkChild(cycle(harness, [branch("main"), branch("dev")]))
+			yield* TestClock.adjust(Duration.seconds(8))
+			const outcome = yield* Fiber.join(shared)
+			const dev = outcome.scrapes.find((scrape) => scrape.target.subTargetKey === "dev")!
+			assert.isTrue(Result.isFailure(dev.result))
+			if (Result.isFailure(dev.result)) assert.include(dev.result.failure.message, "request timed out")
+			assert.strictEqual(dev.durationMs, 7_500)
+			assert.lengthOf(harness.sent, 1)
+
+			const lone = yield* Effect.forkChild(cycle(harness, [branch("dev")]))
+			yield* TestClock.adjust(Duration.seconds(10))
+			const loneOutcome = yield* Fiber.join(lone)
+			assert.isTrue(Result.isSuccess(loneOutcome.scrapes[0]!.result))
+			assert.strictEqual(loneOutcome.scrapes[0]!.durationMs, 10_000)
+		}),
+	)
+
+	it.effect("sends nothing when every sub-target fails", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			harness.fetch = () => Effect.fail(scrapeError({ message: "down", reason: "target_error" }))
+			const outcome = yield* cycle(harness, [branch("main"), branch("dev")])
+			assert.lengthOf(harness.sent, 0)
+			assert.isNull(outcome.deliveryFailure)
 		}),
 	)
 
@@ -168,21 +320,28 @@ describe("Scraper", () => {
 		}),
 	)
 
-	it.effect("starts a fresh trace instead of inheriting the caller's span", () =>
+	it.effect("roots each cycle and parents its sub-target spans under it", () =>
 		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
 			const harness = makeHarness()
-			const traceIds: Array<string> = []
-			harness.fetch = () =>
-				Effect.map(Effect.currentSpan.pipe(Effect.orDie), (span) => {
-					traceIds.push(span.traceId)
-					return "up 1\n"
-				})
 			const outer = yield* Effect.makeSpan("test.outer")
-			yield* scrape(harness).pipe(Effect.withParentSpan(outer))
-			yield* scrape(harness).pipe(Effect.withParentSpan(outer))
+			yield* cycle(harness, [branch("main"), branch("dev")]).pipe(
+				Effect.withParentSpan(outer),
+				Effect.provide(tracer.layer),
+			)
+			yield* cycle(harness, [branch("main")]).pipe(
+				Effect.withParentSpan(outer),
+				Effect.provide(tracer.layer),
+			)
 
-			assert.lengthOf(new Set(traceIds), 2)
-			for (const traceId of traceIds) assert.notStrictEqual(traceId, outer.traceId)
+			const cycles = endedSpansNamed(tracer.ended, "scraper.scrape_cycle")
+			assert.lengthOf(cycles, 2)
+			for (const span of cycles) assert.isUndefined(span.parentSpanId)
+			const targets = endedSpansNamed(tracer.ended, "scraper.scrape_target")
+			assert.deepStrictEqual(
+				targets.map((span) => span.parentSpanId),
+				[cycles[0]!.spanId, cycles[0]!.spanId, cycles[1]!.spanId],
+			)
 		}),
 	)
 })

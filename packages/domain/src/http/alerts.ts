@@ -1,4 +1,4 @@
-import { Array as Arr, Order, Schema } from "effect"
+import { Array as Arr, Option, Order, Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../query-engine"
 import {
 	AlertDeliveryEventId,
@@ -8,8 +8,6 @@ import {
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
-	HazelChannelId,
-	HazelOrganizationId,
 	IsoDateTimeString,
 	PostgresTransactionId,
 	RoleName,
@@ -21,11 +19,12 @@ import { HttpTaggedError } from "./error-policy"
 export const AlertDestinationType = Schema.Literals([
 	"pagerduty",
 	"webhook",
-	"hazel-oauth",
 	"discord",
 	"telegram",
+	"google-chat",
 	"email",
 	"chat",
+	"linear",
 ]).annotate({
 	identifier: "@maple/AlertDestinationType",
 	title: "Alert Destination Type",
@@ -46,6 +45,8 @@ export const AlertSignalType = Schema.Literals([
 	"throughput",
 	"builder_query",
 	"raw_query",
+	/** The hidden rule behind an uptime monitor; managed only through the monitor. */
+	"uptime",
 ]).annotate({
 	identifier: "@maple/AlertSignalType",
 	title: "Alert Signal Type",
@@ -185,6 +186,23 @@ export const AlertWindowMinutes = PositiveInt.pipe(
 	Schema.check(Schema.isLessThanOrEqualTo(MAX_ALERT_WINDOW_MINUTES)),
 )
 
+/** Check intervals a rule can pick. A longer interval gets a longer query time limit. */
+export const ALERT_EVALUATION_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+export const AlertEvaluationIntervalMinutes = Schema.Literals(ALERT_EVALUATION_INTERVALS)
+export type AlertEvaluationIntervalMinutes = typeof AlertEvaluationIntervalMinutes.Type
+
+/**
+ * Why a rule's last check failed: its query ran past its time or memory limit, the
+ * query itself is invalid, or something else went wrong.
+ */
+export const AlertEvaluationErrorKind = Schema.Literals([
+	"query_too_slow",
+	"query_too_much_memory",
+	"invalid_query",
+	"other",
+])
+export type AlertEvaluationErrorKind = typeof AlertEvaluationErrorKind.Type
+
 /** Longest "N of the last M checks" window a rule can count over. */
 export const MAX_ALERT_BREACH_WINDOW = 30
 export const AlertBreachWindow = PositiveInt.pipe(
@@ -278,19 +296,6 @@ export class WebhookAlertDestinationConfig extends Schema.Class<WebhookAlertDest
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
-export class HazelOAuthAlertDestinationConfig extends Schema.Class<HazelOAuthAlertDestinationConfig>(
-	"HazelOAuthAlertDestinationConfig",
-)({
-	type: Schema.Literal("hazel-oauth"),
-	name: ChannelLabel,
-	hazelOrganizationId: HazelOrganizationId,
-	hazelOrganizationName: NonEmptyString,
-	hazelOrganizationLogoUrl: Schema.optionalKey(Schema.NullOr(NonEmptyString)),
-	hazelChannelId: HazelChannelId,
-	hazelChannelName: NonEmptyString,
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
-
 export class DiscordAlertDestinationConfig extends Schema.Class<DiscordAlertDestinationConfig>(
 	"DiscordAlertDestinationConfig",
 )({
@@ -312,6 +317,17 @@ export class TelegramAlertDestinationConfig extends Schema.Class<TelegramAlertDe
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/** A Google Chat space's incoming webhook (`https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…`). */
+export class GoogleChatAlertDestinationConfig extends Schema.Class<GoogleChatAlertDestinationConfig>(
+	"GoogleChatAlertDestinationConfig",
+)({
+	type: Schema.Literal("google-chat"),
+	name: ChannelLabel,
+	/** Write-only: the `key` and `token` query parameters are the credential. */
+	webhookUrl: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 /**
  * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
  * from the workspace row, never taken from the request — the workspace must belong to the org, and
@@ -326,6 +342,40 @@ export class ChatAlertDestinationConfig extends Schema.Class<ChatAlertDestinatio
 	channelId: NonEmptyString,
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
+
+/**
+ * A team in the org's connected Linear workspace. Each alert thread (rule and group) opens one
+ * issue there; the team's key and name are read from Linear at save time, never from the request.
+ */
+export class LinearAlertDestinationConfig extends Schema.Class<LinearAlertDestinationConfig>(
+	"LinearAlertDestinationConfig",
+)({
+	type: Schema.Literal("linear"),
+	name: ChannelLabel,
+	teamId: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+const GOOGLE_CHAT_HOST = "chat.googleapis.com"
+const SPACE_MESSAGES_PATH = /^\/v1\/spaces\/([A-Za-z0-9_-]+)\/messages$/
+
+/**
+ * An incoming webhook URL, as Google Chat's "Apps & integrations → Webhooks" hands it out. The
+ * `key` and `token` query parameters are the credential; the path names the space.
+ */
+export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly spaceId: string }> =>
+	Option.liftThrowable(() => new URL(raw.trim()))().pipe(
+		Option.flatMap((url) => {
+			const space = SPACE_MESSAGES_PATH.exec(url.pathname)
+			return url.protocol === "https:" &&
+				url.host === GOOGLE_CHAT_HOST &&
+				space?.[1] !== undefined &&
+				(url.searchParams.get("key") ?? "").length > 0 &&
+				(url.searchParams.get("token") ?? "").length > 0
+				? Option.some({ spaceId: space[1] })
+				: Option.none()
+		}),
+	)
 
 export const MAX_EMAIL_RECIPIENTS = 10
 
@@ -351,11 +401,12 @@ export class EmailAlertDestinationConfig extends Schema.Class<EmailAlertDestinat
 export const AlertDestinationCreateRequest = Schema.Union([
 	PagerDutyAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
-	HazelOAuthAlertDestinationConfig,
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
+	GoogleChatAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	ChatAlertDestinationConfig,
+	LinearAlertDestinationConfig,
 ])
 export type AlertDestinationCreateRequest = Schema.Schema.Type<typeof AlertDestinationCreateRequest>
 
@@ -376,18 +427,6 @@ export class UpdateWebhookAlertDestinationConfig extends Schema.Class<UpdateWebh
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
-export class UpdateHazelOAuthAlertDestinationConfig extends Schema.Class<UpdateHazelOAuthAlertDestinationConfig>(
-	"UpdateHazelOAuthAlertDestinationConfig",
-)({
-	name: OptionalNonEmptyString,
-	hazelOrganizationId: Schema.optionalKey(HazelOrganizationId),
-	hazelOrganizationName: Schema.optionalKey(Schema.String),
-	hazelOrganizationLogoUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	hazelChannelId: Schema.optionalKey(HazelChannelId),
-	hazelChannelName: Schema.optionalKey(Schema.String),
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
-
 export class UpdateDiscordAlertDestinationConfig extends Schema.Class<UpdateDiscordAlertDestinationConfig>(
 	"UpdateDiscordAlertDestinationConfig",
 )({
@@ -402,6 +441,14 @@ export class UpdateTelegramAlertDestinationConfig extends Schema.Class<UpdateTel
 	name: OptionalNonEmptyString,
 	botToken: Schema.optionalKey(Schema.String),
 	chatId: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class UpdateGoogleChatAlertDestinationConfig extends Schema.Class<UpdateGoogleChatAlertDestinationConfig>(
+	"UpdateGoogleChatAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	webhookUrl: Schema.optionalKey(Schema.String),
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
@@ -422,6 +469,14 @@ export class UpdateChatAlertDestinationConfig extends Schema.Class<UpdateChatAle
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class UpdateLinearAlertDestinationConfig extends Schema.Class<UpdateLinearAlertDestinationConfig>(
+	"UpdateLinearAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	teamId: OptionalNonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("pagerduty"),
@@ -432,10 +487,6 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 		...UpdateWebhookAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
-		type: Schema.Literal("hazel-oauth"),
-		...UpdateHazelOAuthAlertDestinationConfig.fields,
-	}),
-	Schema.Struct({
 		type: Schema.Literal("discord"),
 		...UpdateDiscordAlertDestinationConfig.fields,
 	}),
@@ -444,12 +495,20 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 		...UpdateTelegramAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
+		type: Schema.Literal("google-chat"),
+		...UpdateGoogleChatAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
 		type: Schema.Literal("email"),
 		...UpdateEmailAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("chat"),
 		...UpdateChatAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("linear"),
+		...UpdateLinearAlertDestinationConfig.fields,
 	}),
 ])
 export type AlertDestinationUpdateRequest = Schema.Schema.Type<typeof AlertDestinationUpdateRequest>
@@ -468,6 +527,8 @@ export class AlertDestinationDocument extends Schema.Class<AlertDestinationDocum
 	/** The connector and linked workspace a `chat` destination posts through; absent otherwise. */
 	chatConnector: Schema.optionalKey(ChatConnectorId),
 	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
+	/** The Linear team a `linear` destination opens issues in; absent otherwise. */
+	linearTeamId: Schema.optionalKey(Schema.String),
 	lastTestedAt: Schema.NullOr(IsoDateTimeString),
 	lastTestError: Schema.NullOr(Schema.String),
 	/**
@@ -564,7 +625,7 @@ export const ALERT_TEMPLATE_VARIABLES: ReadonlyArray<{
 	{ key: "incidentId", description: "Incident id (empty for tests)" },
 	{ key: "incidentStatus", description: "open | resolved" },
 	{ key: "links.app", description: "Deep link to the alert in Maple" },
-	{ key: "links.chat", description: "Deep link to Maple AI for this alert" },
+	{ key: "links.chat", description: "Deep link to the alert rule in Maple" },
 	{ key: "sentAt", description: "ISO timestamp the notification was sent" },
 ]
 
@@ -595,6 +656,8 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	threshold: Schema.Number,
 	thresholdUpper: Schema.NullOr(Schema.Number),
 	windowMinutes: AlertWindowMinutes,
+	/** Minutes between checks. Null derives it from the window (1 to 5). */
+	evaluationIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
 	minimumSampleCount: NonNegativeInt,
 	/** N: breaching checks needed to open (or escalate). */
 	consecutiveBreachesRequired: PositiveInt,
@@ -612,6 +675,13 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	noDataBehavior: QueryEngineNoDataBehavior,
 	/** Most recent evaluation error for this rule, surfaced from `alertRuleStates.lastError`. */
 	lastEvaluationError: Schema.NullOr(Schema.String),
+	lastEvaluationErrorKind: Schema.NullOr(AlertEvaluationErrorKind),
+	/**
+	 * Set when the scheduler slowed the rule down after its query kept hitting its limit:
+	 * it is checked at least this far apart until it is edited.
+	 */
+	slowedIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
+	slowedAt: Schema.NullOr(IsoDateTimeString),
 	lastEvaluatedAt: Schema.NullOr(IsoDateTimeString),
 	/** Last time the scheduler picked this rule up for evaluation. */
 	lastScheduledAt: Schema.NullOr(IsoDateTimeString),
@@ -646,6 +716,7 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	threshold: Schema.optionalKey(Schema.Number),
 	thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	windowMinutes: AlertWindowMinutes,
+	evaluationIntervalMinutes: Schema.optionalKey(Schema.NullOr(AlertEvaluationIntervalMinutes)),
 	minimumSampleCount: Schema.optionalKey(NonNegativeInt),
 	consecutiveBreachesRequired: Schema.optionalKey(PositiveInt),
 	breachesOutOf: Schema.optionalKey(Schema.NullOr(AlertBreachWindow)),
@@ -734,6 +805,24 @@ export class AlertRulePreviewFiringSpan extends Schema.Class<AlertRulePreviewFir
 	severity: AlertSeverity,
 }) {}
 
+/** How long one check of a raw SQL rule takes, timed once on the latest window. */
+export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQueryTiming")({
+	/** Milliseconds one check took, or null when it did not finish within `probeLimitMs`. */
+	elapsedMs: Schema.NullOr(Schema.Number),
+	/** Why it did not finish, when it did not. */
+	failure: Schema.NullOr(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
+	/** The longest any check may run, so the timing stops there. */
+	probeLimitMs: Schema.Number,
+	/** The rule's check interval and that interval's time limit. */
+	intervalMinutes: Schema.Number,
+	limitMs: Schema.Number,
+	/**
+	 * Intervals up to the window whose time limit the query fits with a fifth to spare. Time only:
+	 * the probe runs with the top memory, and a check that runs out of memory slows the rule down.
+	 */
+	fitsIntervalMinutes: Schema.Array(AlertEvaluationIntervalMinutes),
+}) {}
+
 /**
  * Evaluator-faithful preview of an alert rule over a time range: the exact
  * per-window observations the scheduler computes (tumbling `windowMinutes`
@@ -753,6 +842,10 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	truncatedToStart: Schema.NullOr(IsoDateTimeString),
 	series: Schema.Array(AlertRulePreviewSeries),
 	wouldFire: Schema.Array(AlertRulePreviewFiringSpan),
+	/** Raw SQL rules only: how long one check takes against each interval's limit. */
+	queryTiming: Schema.optionalKey(AlertQueryTiming),
+	/** Raw SQL rules only: the range was too heavy to chart, so `series` is empty. */
+	seriesFailure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({

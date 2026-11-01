@@ -45,6 +45,17 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 
 const hrefOfSearch = (search: Search) => hrefOf(AppRoute.InfraCloudflare({ search }))
 
+/** Switching view drops the scope and the search; the tab link and `ClickedView` both use it. */
+const withView = (search: Search, view: Search["view"]): Search => ({
+	...search,
+	view,
+	scope: undefined,
+	q: undefined,
+})
+
+/** The view tab's link: where `ClickedView` writes. */
+export const viewHref = (search: Search, view: Search["view"]): string => hrefOfSearch(withView(search, view))
+
 /** `patchSearch`: list state is written in place (a replace, not a new entry). */
 const patch = (model: Model, next: Partial<Search>): Return => ({
 	model,
@@ -149,7 +160,10 @@ export const routeChanged = (
 	if (hrefOfSearch(model.search) === hrefOfSearch(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: (): Return => ({ model: next }),
 	})
 }
@@ -185,7 +199,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		TickedIngestPoll: () => refreshIngest(model, context),
 		TickedClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		ClickedView: ({ view }) => patch(model, { view, scope: undefined, q: undefined }),
+		ClickedView: ({ view }) => patch(model, withView(model.search, view)),
 		ClickedScope: ({ scope }) => patch(model, { scope }),
 		ChangedSearch: ({ value }) => patch(model, { q: value === "" ? undefined : value }),
 		ClickedClearSearch: () => patch(model, { q: undefined }),

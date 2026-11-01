@@ -29,7 +29,7 @@ const rowMarker = (h: H, state: RowState): Html =>
 			? spinner(h, "size-3.5 text-muted-foreground")
 			: h.span([
 					h.AriaHidden(true),
-					h.Class("size-3.5 rounded-full border border-dashed border-muted-foreground/60"),
+					h.Class("size-3.5 rounded-full border border-dashed border-foreground-subtle"),
 				])
 
 const overdueHelp = (h: H): Html =>
@@ -62,7 +62,10 @@ const overdueHelp = (h: H): Html =>
 /** How a setup without the script is confirmed: by the first data, as no run reports it. */
 const CONFIRMED_BY = {
 	logs: { done: "Confirmed: logs arrive", waiting: "Confirmed by the first log Maple receives" },
-	metrics: { done: "Confirmed: metrics are read", waiting: "Confirmed by the first metrics read, within 5 minutes" },
+	metrics: {
+		done: "Confirmed: metrics are read",
+		waiting: "Confirmed by the first metrics read, within 5 minutes",
+	},
 } as const
 
 /** A row per capability set up or removed, ticked as the script reports or, without it, as data arrives. */
@@ -87,7 +90,10 @@ export const runStatus = (
 		const state: RowState =
 			confirmed && (reported || !byScript) ? "done" : running || !byScript ? "running" : "pending"
 		// The poller's failure, once past the grant's grace: what a setup without the script can be told.
-		const error = !byScript && capability === "metrics" && metricsState.kind === "failing" ? metricsState.error : null
+		const error =
+			!byScript && capability === "metrics" && metricsState.kind === "failing"
+				? metricsState.error
+				: null
 		const detail = byScript
 			? wanted
 				? run.on
@@ -106,7 +112,7 @@ export const runStatus = (
 				cn(
 					// On a phone a long error would squeeze the steps above out of view: it scrolls instead.
 					"flex max-h-[40svh] shrink-0 flex-col gap-3 overflow-y-auto border-t px-6 py-4 sm:max-h-none",
-					overdue && "bg-severity-warn/6",
+					overdue && "bg-severity-warn-a1",
 				),
 			),
 		],
@@ -117,7 +123,10 @@ export const runStatus = (
 					overdue
 						? icon(h, "AlertWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" })
 						: done === rows.length
-							? icon(h, "CircleCheckIcon", { size: 14, className: "shrink-0 text-severity-info" })
+							? icon(h, "CircleCheckIcon", {
+									size: 14,
+									className: "shrink-0 text-severity-info",
+								})
 							: spinner(h, "size-3.5 shrink-0 text-severity-debug"),
 					h.p(
 						[h.Class(cn("text-sm font-medium", overdue && "text-severity-warn"))],
@@ -127,15 +136,19 @@ export const runStatus = (
 									? "Confirmed by the first data"
 									: "Waiting for Google Cloud"
 								: overdue
-								? "No report from the script yet"
-								: reporting
-									? "The script is reporting back"
-									: "Waiting for the script to report back",
+									? "No report from the script yet"
+									: reporting
+										? "The script is reporting back"
+										: "Waiting for the script to report back",
 						],
 					),
 					h.span(
 						[h.Class("ml-auto shrink-0 font-mono text-xs text-muted-foreground")],
-						[reporting ? `${done} of ${rows.length} ${byScript ? "done" : "confirmed"}` : "updates on its own"],
+						[
+							reporting
+								? `${done} of ${rows.length} ${byScript ? "done" : "confirmed"}`
+								: "updates on its own",
+						],
 					),
 				],
 			),
@@ -145,7 +158,11 @@ export const runStatus = (
 						[h.Class("flex flex-col gap-1.5 pl-6")],
 						rows.map((row) =>
 							h.li(
-								[h.Class("grid grid-cols-[auto_1fr] items-center gap-x-2.5 text-xs/5 sm:grid-cols-[auto_10rem_1fr]")],
+								[
+									h.Class(
+										"grid grid-cols-[auto_1fr] items-center gap-x-2.5 text-xs/5 sm:grid-cols-[auto_10rem_1fr]",
+									),
+								],
 								[
 									rowMarker(h, row.state),
 									h.span([h.Class("text-foreground")], [row.title]),
@@ -154,7 +171,9 @@ export const runStatus = (
 											h.Class(
 												cn(
 													"col-start-2 text-pretty sm:col-start-auto",
-													row.error === null ? "text-muted-foreground" : "text-severity-error",
+													row.error === null
+														? "text-muted-foreground"
+														: "text-severity-error",
 												),
 											),
 										],
@@ -198,7 +217,7 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 			h.span(
 				[
 					h.Class(
-						"flex size-12 items-center justify-center rounded-full bg-severity-info/12 text-severity-info",
+						"flex size-12 items-center justify-center rounded-full bg-severity-info-a2 text-severity-info",
 					),
 				],
 				[icon(h, "CheckIcon", { size: 20 })],
@@ -216,7 +235,7 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 				],
 			),
 			h.ul(
-				[h.Class("w-full divide-y divide-border/60 rounded-lg border text-left")],
+				[h.Class("w-full divide-y divide-border-subtle rounded-md border text-left")],
 				rows.map((row) =>
 					h.li(
 						[h.Class("flex items-center gap-3 px-4 py-2.5")],

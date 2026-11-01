@@ -42,7 +42,7 @@ const header = <M>(h: HtmlBuilder<M>, options: ChartCardOptions): Html | null =>
 										...(options.scope === undefined ? [] : [options.scope]),
 									],
 								),
-								h.p([h.Class("text-2xs text-muted-foreground/70")], [options.description]),
+								h.p([h.Class("text-2xs text-foreground-subtle")], [options.description]),
 							],
 						),
 					],

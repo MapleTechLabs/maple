@@ -21,6 +21,7 @@ import {
 	validate,
 } from "./state"
 import { idsOf, lenses, numberField, textareaField, valueState } from "./view-fields"
+import { RULES_COPY } from "./copy"
 
 // `ReviewRulesForm`'s layout, selects, toggles and footer.
 
@@ -200,7 +201,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				controlClassName: "min-h-24 max-h-64",
 				maxLength: INSTRUCTIONS_MAX,
 				description: [
-					"Read alongside each repository's own CLAUDE.md, AGENTS.md and .maple/review.md.",
+					RULES_COPY.instructionsHint,
 					" ",
 					String(model.state.instructions.length),
 					"/",
@@ -214,7 +215,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				placeholder: "generated/\n*.pb.go\napps/**/routeTree.gen.ts",
 				controlClassName: "max-h-40 font-mono",
 				description: [
-					"One per line. The review never reads files that match.",
+					RULES_COPY.ignoreHint,
 					...(isRepository && parent.ignorePaths && parent.ignorePaths.length > 0
 						? [` The organization already ignores ${parent.ignorePaths.length}.`]
 						: []),
@@ -227,39 +228,39 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					selectField(h, model, {
 						name: "minInlineSeverity",
 						slug: "severity",
-						label: "Inline comments",
+						label: RULES_COPY.severity.label,
 						className: "w-full",
 						items: [...inheritOption(inheritedSeverity), ...Object.entries(SEVERITY_LABELS)],
-						description: "The summary comment lists every issue either way.",
+						description: RULES_COPY.severity.description,
 					}),
 					selectField(h, model, {
 						name: "feedbackScope",
 						slug: "feedback",
-						label: "Learn from feedback",
+						label: RULES_COPY.feedback.label,
 						className: "w-full",
 						items: [...inheritOption(inheritedFeedback), ...Object.entries(FEEDBACK_LABELS)],
-						description:
-							"Skips issues like ones your team downvoted or dismissed. Security and critical issues are always posted.",
+						description: RULES_COPY.feedback.description,
 					}),
 					numberField(h, model, {
 						name: "dailyLimit",
 						slug: "limit",
-						label: "Daily limit per repository",
+						label: RULES_COPY.limit.label,
 						max: DAILY_LIMIT_MAX,
 						placeholder: limitPlaceholder(model, parent.dailyLimit),
-						description: ["Reviews a repository may start per UTC day."],
+						description: [RULES_COPY.limit.description],
 					}),
 					numberField(h, model, {
 						name: "automaticReviewLimit",
 						slug: "per-pr",
-						label: "Reviews per pull request",
+						label: RULES_COPY.perPr.label,
 						max: AUTOMATIC_LIMIT_MAX,
 						placeholder: limitPlaceholder(model, parent.automaticReviewLimit),
 						description: [
-							"After this many, pushes stop starting reviews. Mention the reviewer with",
+							RULES_COPY.perPr.description[0],
 							" ",
 							inlineCode(h, {}, ["review"]),
-							" to run one anyway.",
+							" ",
+							RULES_COPY.perPr.description[1],
 						],
 					}),
 				],
@@ -279,23 +280,28 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				: switchRow(h, model, {
 						name: "reviewDrafts",
 						slug: "drafts",
-						label: "Review drafts",
-						description: "Draft pull requests are skipped unless this is on.",
+						label: RULES_COPY.drafts.label,
+						description: RULES_COPY.drafts.description,
 					}),
+			toggleSetting(h, model, {
+				name: "reviewExternalContributors",
+				slug: "external",
+				label: RULES_COPY.external.label,
+				description: RULES_COPY.external.description,
+				inherited: parent.reviewExternalContributors ?? BUILT_IN.reviewExternalContributors,
+			}),
 			toggleSetting(h, model, {
 				name: "blockOnContractBreaks",
 				slug: "block-breaks",
-				label: "Fail the check on broken telemetry",
-				description:
-					"Fails the review check when a pull request removes a span, attribute or metric name that an alert or dashboard reads, and the name is not emitted anywhere else.",
+				label: RULES_COPY.blockBreaks.label,
+				description: RULES_COPY.blockBreaks.description,
 				inherited: parent.blockOnContractBreaks ?? BUILT_IN.blockOnContractBreaks,
 			}),
 			toggleSetting(h, model, {
 				name: "postMergeCheck",
 				slug: "post-merge",
-				label: "Check production after merge",
-				description:
-					"An hour after a reviewed pull request deploys, compares the operations it touched before and after, and comments on the pull request.",
+				label: RULES_COPY.postMerge.label,
+				description: RULES_COPY.postMerge.description,
 				inherited: parent.postMergeCheck ?? BUILT_IN.postMergeCheck,
 			}),
 			...footer(h, model, inputs.isAdmin),

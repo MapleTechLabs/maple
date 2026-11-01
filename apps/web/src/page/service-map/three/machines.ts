@@ -1,9 +1,10 @@
-import { fade, type InkPalette, type MachineKind } from "../../../components/service-map/three/appearance"
 import {
-	health,
-	HEALTH_COLOR,
-	type SpatialView,
-} from "../../../components/service-map/three/spatial-layout"
+	dim,
+	fade,
+	type InkPalette,
+	type MachineKind,
+} from "../../../components/service-map/three/appearance"
+import { health, HEALTH_COLOR, type SpatialView } from "../../../components/service-map/three/spatial-layout"
 import type { Node3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { resolveMachineBadge } from "./badge-art"
@@ -426,6 +427,55 @@ function badgeMount(kind: MachineKind, height: number): { position: Vec3; rotati
 	}
 }
 
+/** A flat shadow cast away from the lit faces (toward +x, -z), longer for taller machines. */
+function blobShadow({ height, palette, dimmed }: { height: number; palette: InkPalette; dimmed: boolean }) {
+	const [dx, dz] = [height * 0.5, -height * 0.3]
+	// The footprint swept along (dx, dz): two corners stay, two move, two do both.
+	const outline: ReadonlyArray<readonly [number, number]> = [
+		[-HALF, HALF],
+		[-HALF, -HALF],
+		[-HALF + dx, -HALF + dz],
+		[HALF + dx, -HALF + dz],
+		[HALF + dx, HALF + dz],
+		[HALF, HALF],
+	]
+	// Shape y becomes world -z once the shape is laid flat.
+	const footprint = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z)))
+	const geometry = new THREE.ShapeGeometry(footprint).rotateX(-Math.PI / 2)
+	const material = new THREE.MeshBasicMaterial({
+		color: palette.night ? "#000000" : palette.ink,
+		transparent: true,
+		opacity: (palette.night ? 0.34 : 0.16) * (dimmed ? 0.5 : 1),
+		depthWrite: false,
+		polygonOffset: true,
+		polygonOffsetFactor: -1,
+		polygonOffsetUnits: -1,
+	})
+	const shadow = new THREE.Mesh(geometry, material)
+	// Under the pad's top face, so the pad keeps its health colour and the shadow shows past its edge.
+	shadow.position.y = 0.01
+	// Picking walks every part of a machine; the shadow reaches past the pad, so it must not catch clicks.
+	shadow.raycast = () => {}
+	return shadow
+}
+
+/** A raised rail round the selected machine's pad in the selection colour, inked in a deeper
+ * shade so the outline never swallows the colour. */
+function selectionFrame(palette: InkPalette): Child {
+	const [outer, bar, rise] = [3.0, 0.22, 0.14]
+	const reach = (outer - bar) / 2
+	const color = palette.selected
+	const ink = fade(palette.selected, palette.ink, 0.45)
+	const long: Vec3 = [outer, rise, bar]
+	const short: Vec3 = [bar, rise, outer - bar * 2]
+	return [
+		inkBox({ size: long, position: [0, rise / 2, reach], color, ink }),
+		inkBox({ size: long, position: [0, rise / 2, -reach], color, ink }),
+		inkBox({ size: short, position: [reach, rise / 2, 0], color, ink }),
+		inkBox({ size: short, position: [-reach, rise / 2, 0], color, ink }),
+	]
+}
+
 /** One machine on its pad; the outer group carries `userData.pickId` for the scene's raycast. */
 export function factoryMachine(
 	scope: Scope,
@@ -450,7 +500,7 @@ export function factoryMachine(
 	const kind = machineKind(node)
 	const badge = resolveMachineBadge(node)
 	const height = machineStoreys(node, view) * MODULE
-	const recede = (color: string) => (dimmed ? fade(color, palette.paper, 0.72) : color)
+	const recede = (color: string) => (dimmed ? dim(color, palette.paper, 0.72) : color)
 	const trouble = health(node.errorRate)
 	// Each homestead draws its roof and shutters from earthy sets, stable per node.
 	const seed = seedOf(node.id)
@@ -487,12 +537,15 @@ export function factoryMachine(
 	}
 	const model = MACHINE_MODELS[kind]
 	const machine = group({ position }, [
+		// The pad carries health, big enough to read with the whole map in view.
 		inkBox({
 			size: [2.5, 0.06, 2.5],
 			position: [0, 0.03, 0],
-			color: selected ? palette.selected : recede(palette.pad),
+			color: recede(trouble === "healthy" ? palette.pad : HEALTH_COLOR[trouble]),
 			ink: finish.ink,
 		}),
+		blobShadow({ height, palette, dimmed }),
+		selected && selectionFrame(palette),
 		group({ position: [0, 0.06, 0] }, [
 			model(scope, { height, finish }),
 			mapleState(scope, { kind, selected, finish }),

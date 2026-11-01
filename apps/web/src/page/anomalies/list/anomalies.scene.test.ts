@@ -100,7 +100,7 @@ describe("anomalies list", () => {
 			entered,
 			Message.CompletedFetchFirstPage({ key: entered.firstPage.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
 		).model
-		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Failed to load anomalies")).toExist())
+		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Couldn't load anomalies")).toExist())
 	})
 
 	test("j and k walk the rows in group order, Enter opens the focused one, Escape clears it", () => {

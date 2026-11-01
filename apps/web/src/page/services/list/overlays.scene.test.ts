@@ -59,7 +59,7 @@ describe("services list overlays", () => {
 		expect(landed(false)).toMatchObject({
 			_tag: "RequestedNavigation",
 			url,
-			toast: { type: "error", title: "Failed to copy commit sha" },
+			toast: { type: "error", title: "Couldn't copy commit sha" },
 		})
 	})
 

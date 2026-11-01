@@ -8,6 +8,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { orderedSearch } from "../../../route/tanstack-search"
+import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
@@ -28,14 +29,17 @@ const SAMPLES_PAGE = 25
 const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	const paging = pagingOf(model)
 	return h.div(
-		[h.Class("flex h-9 items-center gap-[9px] px-6 font-mono text-xs")],
+		[h.Class("flex h-9 items-center gap-2 px-6 font-mono text-xs")],
 		[
-			h.span([h.Class("text-muted-foreground")], ["Showing ", formatToolCount(shown), " of ", formatToolCount(total)]),
+			h.span(
+				[h.Class("text-muted-foreground")],
+				["Showing ", formatToolCount(shown), " of ", formatToolCount(total)],
+			),
 			...(paging === "more"
 				? [
 						h.button(
 							[
-								h.Class("text-foreground transition-colors hover:text-primary"),
+								h.Class("text-foreground hover:text-primary active:text-primary"),
 								h.Type("button"),
 								h.OnClick(Message.ClickedLoadMore()),
 							],
@@ -43,16 +47,18 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 						),
 					]
 				: paging === "loading"
-					? [h.span([h.Class("text-muted-foreground/60")], ["Loading…"])]
+					? [h.span([h.Class("text-foreground-subtle")], ["Loading…"])]
 					: paging === "failed"
 						? [
 								h.button(
 									[
-										h.Class("text-severity-error transition-colors hover:text-foreground"),
+										h.Class(
+											"text-severity-error hover:text-foreground active:text-foreground",
+										),
 										h.Type("button"),
 										h.OnClick(Message.ClickedLoadMore()),
 									],
-									["Couldn't load more — retry"],
+									["Couldn't load more. Retry"],
 								),
 							]
 						: []),
@@ -74,7 +80,7 @@ export const samplesPane = (
 	const isLoading = first === undefined || (!AsyncData.hasData(first) && failure === undefined)
 	const body: ReadonlyArray<Html> =
 		failure !== undefined
-			? [errorState(h, { failure, title: "Failed to load samples" })]
+			? [errorState(h, { failure, title: "Couldn't load samples" })]
 			: isLoading && rows.length === 0
 				? [
 						h.div(
@@ -83,12 +89,7 @@ export const samplesPane = (
 						),
 					]
 				: rows.length === 0
-					? [
-							h.div(
-								[h.Class("px-6 py-12 text-center font-mono text-xs text-muted-foreground")],
-								["No samples in the selected window."],
-							),
-						]
+					? [emptyMessage(h, {}, ["No samples in the selected window."])]
 					: rows.map((row, index) =>
 							sampleRow(h, model, inputs, row, {
 								index,
@@ -100,22 +101,34 @@ export const samplesPane = (
 		[h.Class("flex min-w-0 grow flex-col overflow-hidden")],
 		[
 			h.div(
-				[h.Class("flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-6 font-mono")],
+				[
+					h.Class(
+						"flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-6 font-mono",
+					),
+				],
 				[
 					h.div(
 						[h.Class("flex items-baseline gap-2")],
 						[
 							h.span([h.Class("text-xs font-medium text-foreground")], ["Samples"]),
 							h.span(
-								[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
-								[formatToolCount(options.total), " failed ", pluralize(options.total, "call"), " · newest first"],
+								[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
+								[
+									formatToolCount(options.total),
+									" failed ",
+									pluralize(options.total, "call"),
+									" · newest first",
+								],
 							),
 						],
 					),
 					h.div(
 						[h.Class("flex items-center gap-2")],
 						[
-							h.span([h.Class("pr-1 text-2xs text-muted-foreground/60 max-md:hidden")], ["j / k"]),
+							h.span(
+								[h.Class("pr-1 text-2xs text-foreground-subtle max-md:hidden")],
+								["j / k"],
+							),
 							iconButton(
 								h,
 								{
@@ -123,14 +136,18 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current === 0,
-									className: "text-muted-foreground hover:text-foreground",
+									className: "text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
 								},
 								[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
 							),
 							h.span(
-								[h.Class("w-[72px] text-center text-xs tabular-nums text-foreground")],
-								[rows.length === 0 ? "0" : String(current + 1), " of ", formatToolCount(options.total)],
+								[h.Class("w-20 text-center text-xs tabular-nums text-foreground")],
+								[
+									rows.length === 0 ? "0" : String(current + 1),
+									" of ",
+									formatToolCount(options.total),
+								],
 							),
 							iconButton(
 								h,
@@ -139,7 +156,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
-									className: "text-muted-foreground hover:text-foreground",
+									className: "text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
 								},
 								[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
@@ -165,13 +182,17 @@ const sampleRow = (
 ): Html => {
 	const time = formatTimestampInTimezone(row.timestamp, { timeZone: inputs.timeZone })
 	return h.div(
-		[h.Key(row.spanId), h.DataAttribute("slot", "tool-error-sample"), h.Class("border-b border-border/50")],
+		[
+			h.Key(row.spanId),
+			h.DataAttribute("slot", "tool-error-sample"),
+			h.Class("border-b border-border-subtle"),
+		],
 		[
 			h.div(
 				[
 					h.Class(
 						cn(
-							"group relative flex w-full items-center gap-3.5 px-6 font-mono transition-colors hover:bg-muted/30",
+							"group relative flex w-full items-center gap-3.5 px-6 font-mono hover:bg-surface-sunken active:bg-surface-sunken",
 							options.isOpen ? "h-11" : "h-10",
 						),
 					),
@@ -196,9 +217,9 @@ const sampleRow = (
 					}),
 					h.span([h.Class("shrink-0 text-xs text-foreground")], [time]),
 					h.span(
-						[h.Class("flex min-w-0 shrink items-center gap-[5px] text-xs")],
+						[h.Class("flex min-w-0 shrink items-center gap-1.5 text-xs")],
 						[
-							h.span([h.Class("shrink-0 text-muted-foreground/70")], ["session"]),
+							h.span([h.Class("shrink-0 text-foreground-subtle")], ["session"]),
 							sessionLink(h, {
 								tool: inputs.tool,
 								sessionId: row.sessionId,
@@ -215,7 +236,11 @@ const sampleRow = (
 						? []
 						: [
 								h.span(
-									[h.Class("hidden min-w-0 shrink truncate text-xs text-muted-foreground/70 xl:block")],
+									[
+										h.Class(
+											"hidden min-w-0 shrink truncate text-xs text-foreground-subtle xl:block",
+										),
+									],
 									[row.service],
 								),
 							]),
@@ -225,10 +250,10 @@ const sampleRow = (
 								h.span(
 									[
 										h.Class(
-											"hidden shrink-0 rounded-sm border border-border px-[5px] text-2xs leading-3.5 text-muted-foreground/70 md:block",
+											"hidden shrink-0 rounded-sm border border-border px-1.5 text-2xs leading-3.5 text-foreground-subtle md:block",
 										),
 									],
-									["variant ", h.span([h.Class("text-foreground/85")], [options.variant])],
+									["variant ", h.span([h.Class("text-foreground-soft")], [options.variant])],
 								),
 							]),
 					h.span([h.Class("grow")], []),
@@ -236,28 +261,37 @@ const sampleRow = (
 						? []
 						: [
 								h.span(
-									[h.Class("hidden shrink-0 text-2xs tabular-nums text-muted-foreground/70 md:block")],
+									[
+										h.Class(
+											"hidden shrink-0 text-2xs tabular-nums text-foreground-subtle md:block",
+										),
+									],
 									["args ", formatToolCount(row.argumentsBytes), " B"],
 								),
 							]),
 					h.span(
-						[h.Class("w-12 shrink-0 text-right text-xs tabular-nums text-foreground/85")],
+						[h.Class("w-12 shrink-0 text-right text-xs tabular-nums text-foreground-soft")],
 						[formatDurationNs(row.durationNs)],
 					),
 					h.a(
 						[
 							// The call's own timestamp narrows the trace read to one partition.
 							h.Href(
-								`${hrefOf(AppRoute.Trace({ traceId: row.traceId, search: {} }))}${orderedSearch([
-									["spanId", row.spanId],
-									["t", formatWarehouseDateTime(row.timestamp)],
-								])}`,
+								`${hrefOf(AppRoute.Trace({ traceId: row.traceId, search: {} }))}${orderedSearch(
+									[
+										["spanId", row.spanId],
+										["t", formatWarehouseDateTime(row.timestamp)],
+									],
+								)}`,
 							),
 							h.Class(
-								"relative flex shrink-0 items-center gap-[5px] text-2xs text-muted-foreground transition-colors hover:text-foreground",
+								"relative flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 						],
-						["Open trace", icon(h, "ExternalLinkIcon", { size: 11, attributes: [h.AriaHidden(true)] })],
+						[
+							"Open trace",
+							icon(h, "ExternalLinkIcon", { size: 12, attributes: [h.AriaHidden(true)] }),
+						],
 					),
 				],
 			),

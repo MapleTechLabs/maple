@@ -5,6 +5,7 @@ import {
 	BillingProfile,
 	BillingProfileUnavailableError,
 	BillingTaxId,
+	type BillingCustomerId,
 	type BillingNotConfiguredError,
 	type BillingUpstreamError,
 } from "@maple/domain/http"
@@ -53,13 +54,13 @@ const CUSTOMER_EXPAND = ["subscriptions.plan"] as const
 export const readStripeCustomerId = (
 	edgeCache: Pick<EdgeCacheServiceApi, "getOrCompute">,
 	autumn: Pick<AutumnClientApi, "getOrCreateCustomer">,
-	orgId: string,
+	customerId: BillingCustomerId,
 ): Effect.Effect<Option.Option<string>, BillingUpstreamError | BillingNotConfiguredError> =>
 	Effect.gen(function* () {
 		const { result } = yield* readCustomerCached(
 			edgeCache,
-			orgId,
-			autumn.getOrCreateCustomer(orgId, { expand: CUSTOMER_EXPAND }),
+			customerId,
+			autumn.getOrCreateCustomer(customerId, { expand: CUSTOMER_EXPAND }),
 		)
 		const response = yield* ensureOk(result)
 		return stripeCustomerIdOf(response)
@@ -74,20 +75,20 @@ export const readStripeCustomerId = (
 export const ensureStripeCustomerId = (
 	edgeCache: Pick<EdgeCacheServiceApi, "getOrCompute" | "invalidate">,
 	autumn: Pick<AutumnClientApi, "getOrCreateCustomer">,
-	orgId: string,
+	customerId: BillingCustomerId,
 ): Effect.Effect<string, BillingUpstreamError | BillingNotConfiguredError | BillingProfileUnavailableError> =>
 	Effect.gen(function* () {
-		const cached = yield* readStripeCustomerId(edgeCache, autumn, orgId)
+		const cached = yield* readStripeCustomerId(edgeCache, autumn, customerId)
 		if (Option.isSome(cached)) return cached.value
 
-		const created: AutumnResult = yield* autumn.getOrCreateCustomer(orgId, {
+		const created: AutumnResult = yield* autumn.getOrCreateCustomer(customerId, {
 			expand: CUSTOMER_EXPAND,
 			createInStripe: true,
 		})
 		const response = yield* ensureOk(created)
 		// The cached snapshot predates the link; drop it so the next customer read
 		// (and the next call here) sees the Stripe id.
-		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
+		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: customerId })
 		const linked = stripeCustomerIdOf(response)
 		yield* Effect.annotateCurrentSpan({ "maple.billing.stripe_customer_created": Option.isSome(linked) })
 		if (Option.isSome(linked)) return linked.value
@@ -99,6 +100,8 @@ export const ensureStripeCustomerId = (
 // Stripe wire shapes, post-`camelizeKeys`. Only the consumed fields; additive
 // upstream fields are tolerated.
 const StripeCustomer = Schema.Struct({
+	// A deleted customer still retrieves, as a 200 tombstone with `deleted: true`.
+	deleted: Schema.optionalKey(Schema.Boolean),
 	name: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	address: Schema.optionalKey(Schema.NullOr(BillingAddress)),
 })
@@ -122,7 +125,7 @@ export const unlinkedProfile = (): BillingProfile => new BillingProfile({ linked
 
 /**
  * Read the Stripe customer + its tax IDs (concurrently) into a `BillingProfile`.
- * Both are pure reads, so a Stripe 4xx here is our bug and collapses to 502.
+ * A customer Stripe no longer has (a 404, or a deleted tombstone) reads as unlinked; any other Stripe 4xx here is our bug and collapses to 502.
  */
 export const readBillingProfile = (
 	stripe: Pick<StripeClientApi, "getCustomer" | "listTaxIds">,
@@ -133,9 +136,15 @@ export const readBillingProfile = (
 			[stripe.getCustomer(stripeCustomerId), stripe.listTaxIds(stripeCustomerId)],
 			{ concurrency: 2 },
 		)
-		const customer = yield* ensureOk(customerResult).pipe(
-			Effect.flatMap((body) => decodeUpstream(StripeCustomer, body)),
-		)
+		const customer = isResourceMissing(customerResult)
+			? undefined
+			: yield* ensureOk(customerResult).pipe(
+					Effect.flatMap((body) => decodeUpstream(StripeCustomer, body)),
+				)
+		if (customer === undefined || customer.deleted === true) {
+			yield* Effect.annotateCurrentSpan("maple.billing.stripe_customer_missing", true)
+			return unlinkedProfile()
+		}
 		const taxIds = yield* ensureOk(taxIdsResult).pipe(
 			Effect.flatMap((body) => decodeUpstream(StripeTaxIdList, body)),
 		)
@@ -166,10 +175,25 @@ const decodeStripeCode = (value: unknown): Option.Option<string> =>
 		Option.map((body) => body.code),
 	)
 
+/** Stripe's answer for an object it does not have: 404 `resource_missing`. */
+const isResourceMissing = (result: AutumnResult): boolean =>
+	result.statusCode === 404 && rejectionCode(result) === "resource_missing"
+
+/**
+ * A billing-details write that hit a customer Stripe no longer has: the profile read as
+ * unlinked, so answer as unlinked rather than surfacing Stripe's 404 as if the input were wrong.
+ */
+export const failIfCustomerMissing = (
+	result: AutumnResult,
+): Effect.Effect<void, BillingProfileUnavailableError> =>
+	isResourceMissing(result)
+		? Effect.fail(
+				new BillingProfileUnavailableError({ message: "Stripe has no customer at the linked id" }),
+			)
+		: Effect.void
+
 /**
  * Deleting a tax ID Stripe no longer has is a success, not an error: the row
- * was already removed (double click, second tab). Stripe answers 404
- * `resource_missing`; anything else passes through for classification.
+ * was already removed (double click, second tab). Anything else passes through for classification.
  */
-export const isAlreadyRemoved = (result: AutumnResult): boolean =>
-	result.statusCode === 404 && rejectionCode(result) === "resource_missing"
+export const isAlreadyRemoved = isResourceMissing

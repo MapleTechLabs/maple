@@ -21,7 +21,7 @@ export const excludedEmptyHint = <M>(
 		[
 			h.Class(
 				cn(
-					"mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-md border border-dashed border-destructive/40 bg-destructive/5 px-3 py-2 text-xs",
+					"mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-md border border-dashed border-destructive-a4 bg-destructive-a1 px-3 py-2 text-xs",
 					options.className,
 				),
 			),

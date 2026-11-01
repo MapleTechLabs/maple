@@ -112,7 +112,7 @@ const emptyStrip = (
 		left: (i / (EMPTY_STRIP_TICKS - 1)) * 100,
 	}))
 	const dashed = (className: string) =>
-		h.div([h.Class(`absolute inset-x-0 ${className} border-t border-dashed border-border/60`)])
+		h.div([h.Class(`absolute inset-x-0 ${className} border-t border-dashed border-border-subtle`)])
 	return h.div(
 		[
 			h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),

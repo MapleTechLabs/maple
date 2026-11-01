@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { dotLoader } from "../../page/chat/kit/dot-loader"
-import { statusMarker } from "../../page/chat/kit/view-transcript"
+import { dotLoader } from "../../page/investigations/conversation/kit/dot-loader"
+import { statusMarker } from "../../page/investigations/conversation/kit/view-transcript"
 import { eyebrow } from "../../ui/eyebrow"
 import { defineLab } from "../define"
 
@@ -12,6 +12,10 @@ type Model = typeof Model.Type
 
 const heading = <M>(h: HtmlBuilder<M>, text: string): Html =>
 	eyebrow(h, { variant: "label", as: "h2", className: "mb-2" }, [text])
+
+/** On the text's middle, with the same gap either side (the margins stand in for the spaces). */
+const inlineLoader = <M>(h: HtmlBuilder<M>): Html =>
+	dotLoader(h, { className: "mx-1.5 align-middle -translate-y-px" })
 
 const view = (_model: Model, h: HtmlBuilder<never>): Html =>
 	h.div(
@@ -32,8 +36,8 @@ const view = (_model: Model, h: HtmlBuilder<never>): Html =>
 			h.section(
 				[h.Class("flex flex-col gap-1")],
 				[
-					heading(h, "The tool row — running, then settled"),
-					...["Searching Traces", "Reading spans", "Grouping by service"].map((line) =>
+					heading(h, "The tool row: running, then settled"),
+					...["Searching traces", "Reading spans", "Grouping by service"].map((line) =>
 						h.div(
 							[h.Key(line), h.Class("flex items-center gap-2 py-0.5 text-xs")],
 							[
@@ -71,12 +75,12 @@ const view = (_model: Model, h: HtmlBuilder<never>): Html =>
 					h.p(
 						[h.Class("text-sm leading-relaxed")],
 						[
-							"The checkout path is still degraded ",
-							dotLoader(h),
-							" and the paywall worker is the one dragging it down ",
-							dotLoader(h),
-							" so I am pulling the last hour of spans ",
-							dotLoader(h),
+							"The checkout path is still degraded",
+							inlineLoader(h),
+							"and the paywall worker is the one dragging it down",
+							inlineLoader(h),
+							"so I am pulling the last hour of spans",
+							inlineLoader(h),
 							"before saying anything firmer.",
 						],
 					),

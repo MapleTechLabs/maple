@@ -4,7 +4,7 @@ import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor } from "./dispatcher"
 import { listMcpTools } from "./tool-catalog"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -115,9 +115,19 @@ describe("MCP dispatcher", () => {
 	)
 
 	describe("tool audience", () => {
-		// The sandbox tools execute code inside a container holding the org's source, and the
-		// pull request tools act on the org's behalf. A third-party MCP client sees neither.
-		const AGENT_TOOLS = ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]
+		// The sandbox and GitHub tools read the org's source, commits and CI, and the pull
+		// request tools act on the org's behalf. A third-party MCP client sees none of them.
+		const AGENT_TOOLS = [
+			"sandbox_grep",
+			"sandbox_list_files",
+			"sandbox_read_file",
+			"sandbox_exec",
+			"list_source_repositories",
+			"search_source_code",
+			"read_source_file",
+			"ci_runs",
+			"compare_commits",
+		]
 		const INTERNAL_TOOLS = ["pr_changed_files", "pr_context", "pr_file_diff", ...AGENT_TOOLS]
 
 		it("keeps the sandbox tools agent-only and the pull request tools internal", () => {
@@ -256,6 +266,24 @@ describe("MCP dispatcher", () => {
 			}),
 		)
 
+		// A failure message can quote a whole SQL statement; the span keeps a bounded prefix.
+		it.effect("caps the failure message it puts on the span", () =>
+			Effect.gen(function* () {
+				const { spans, tracer } = makeRecordingTracer()
+				const message = `SQL rejected: ${"x".repeat(5_000)}`
+				yield* recordExpectedMcpFailure(
+					{ _tag: "@maple/mcp/errors/McpInvalidInputError", message },
+					"Invalid tool input",
+				).pipe(Effect.withSpan("probe"), Effect.withTracer(tracer))
+
+				const recorded = String(
+					spans.find((s) => s.name === "probe")?.attributes.get("maple.mcp.error.message"),
+				)
+				expect(recorded.length).toBeLessThan(message.length)
+				expect(message.startsWith(recorded)).toBe(true)
+			}),
+		)
+
 		// Expected 4xx (bad parameters, bad credentials) must not be Error spans —
 		// only 5xx is, per CLAUDE.md. Prod was recording `@maple/mcp/decode-error`
 		// and `McpAuthInvalidError` as Error status + exception events.
@@ -270,6 +298,7 @@ describe("MCP dispatcher", () => {
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
+				expect(dispatchSpan.attributes.get("maple.mcp.error.message")).toContain("inspect_trace")
 
 				// The inner registry span still FAILS with the decode error (the typed
 				// error stays in the error channel); the SDK exporter is what turns it

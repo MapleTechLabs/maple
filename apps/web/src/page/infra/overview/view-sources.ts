@@ -13,7 +13,7 @@ import { sourceHref } from "./links"
 import type { HealthSegment, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
-import { ROW_CLASS } from "./view-findings"
+import { ROW_CLASS, sectionCaption } from "./view-findings"
 
 // `SourcesTable`, `SourceRowBody` and `HealthBar`.
 
@@ -24,6 +24,8 @@ const SEGMENT_CLASS = {
 	// Hatched, not a fill: there is no limit to measure against.
 	unbounded:
 		"bg-[repeating-linear-gradient(135deg,var(--muted-foreground)_0_1.5px,transparent_1.5px_4px)] opacity-60",
+	// Healthy but barely used: muted, not a warning.
+	idle: "bg-foreground-faint",
 } satisfies Record<HealthSegment["key"], string>
 
 const SEGMENT_LABEL = {
@@ -31,6 +33,7 @@ const SEGMENT_LABEL = {
 	elevated: "elevated",
 	saturated: "saturated",
 	unbounded: "no limit",
+	idle: "idle",
 } satisfies Record<HealthSegment["key"], string>
 
 const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>): Html => {
@@ -49,14 +52,41 @@ const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>)
 			}),
 			h.span(
 				[h.Class("flex gap-3 text-2xs text-muted-foreground tabular-nums")],
-				drawn.map((segment) => h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]])),
+				drawn.map((segment) =>
+					h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]]),
+				),
 			),
 		],
 	)
 }
 
-export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState, time: TimeSearch): Html =>
-	h.a(
+/** `healthBar` for a source we couldn't check: an empty track, so the row is not blank. */
+const healthBarUnavailable = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-1.5")],
+		[
+			h.span([h.Class("h-1.5 w-full rounded-full border border-dashed")], []),
+			h.span([h.Class("text-2xs")], ["\u00a0"]),
+		],
+	)
+
+/** `healthBar`'s shape while loading: the bar and an empty legend line, so the row keeps its height. */
+const healthBarLoading = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-1.5")],
+		[skeleton(h, "h-1.5 w-full rounded-full"), h.span([h.Class("text-2xs")], ["\u00a0"])],
+	)
+
+/** `isFailureExplained`: the page already shows the one failure every source shares. */
+export const sourceRow = <M>(
+	h: HtmlBuilder<M>,
+	id: SourceId,
+	state: SourceState,
+	time: TimeSearch,
+	isFailureExplained = false,
+): Html => {
+	const isQuietFailure = isFailureExplained && state.status === "error"
+	return h.a(
 		[h.Class(cn(ROW_CLASS, "py-3.5")), h.Href(sourceHref(id, time))],
 		[
 			h.span(
@@ -66,11 +96,24 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 					h.span(
 						[h.Class("flex min-w-0 flex-col gap-0.5")],
 						[
-							h.span([h.Class("text-sm text-foreground group-hover:text-primary")], [SOURCE_TITLE[id]]),
 							h.span(
-								[h.Class("text-xs text-muted-foreground")],
-								[state.status === "ready" ? state.summary.resources : state.status === "error" ? "Couldn't load" : " "],
+								[h.Class("text-sm text-foreground group-hover:text-primary")],
+								[SOURCE_TITLE[id]],
 							),
+							...(isQuietFailure
+								? []
+								: [
+										state.status === "loading"
+											? skeleton(h, "my-0.5 h-3 w-16")
+											: h.span(
+													[h.Class("text-xs text-muted-foreground")],
+													[
+														state.status === "ready"
+															? state.summary.resources
+															: "Couldn't load",
+													],
+												),
+									]),
 						],
 					),
 				],
@@ -80,43 +123,78 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 				state.status === "ready"
 					? [healthBar(h, state.summary.segments)]
 					: state.status === "loading"
-						? [skeleton(h, "h-1.5 w-full rounded-full")]
-						: [],
+						? [healthBarLoading(h)]
+						: [healthBarUnavailable(h)],
 			),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"min-w-0 flex-1 truncate text-xs md:w-64 md:flex-none",
-							state.status === "ready" ? VALUE_TONE[state.summary.headlineTone] : "text-muted-foreground",
-						),
+			state.status === "loading"
+				? h.span(
+						[h.Class("flex min-w-0 flex-1 md:w-64 md:flex-none")],
+						[skeleton(h, "my-0.5 h-3 w-40 max-w-full")],
+					)
+				: h.span(
+						[
+							h.Class(
+								cn(
+									"min-w-0 flex-1 truncate text-xs md:w-64 md:flex-none",
+									state.status === "ready"
+										? VALUE_TONE[state.summary.headlineTone]
+										: "text-muted-foreground",
+								),
+							),
+						],
+						// The page banner explains a shared failure; the row still says its status is unknown.
+						[state.status === "ready" ? state.summary.headline : "Status unavailable"],
 					),
-				],
-				[
-					state.status === "ready"
-						? state.summary.headline
-						: state.status === "loading"
-							? skeleton(h, "h-3 w-40")
-							: "Open the page for details",
-				],
-			),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],
 	)
+}
+
+/** A source row before the org's sources are known: same height, no name yet. */
+const sourceRowPending = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class("flex items-center gap-4 px-4 py-3.5")],
+		[
+			h.span(
+				[h.Class("flex w-52 shrink-0 items-center gap-3")],
+				[
+					skeleton(h, "size-[18px] shrink-0 rounded-sm"),
+					h.span(
+						[h.Class("flex min-w-0 flex-col gap-0.5")],
+						[skeleton(h, "my-0.5 h-4 w-24"), skeleton(h, "my-0.5 h-3 w-16")],
+					),
+				],
+			),
+			h.span([h.Class("hidden min-w-0 flex-1 pr-6 md:block")], [healthBarLoading(h)]),
+			h.span(
+				[h.Class("flex min-w-0 flex-1 md:w-64 md:flex-none")],
+				[skeleton(h, "my-0.5 h-3 w-40 max-w-full")],
+			),
+		],
+	)
+
+/** Rows the pending table holds: a typical org's count, so the real table mostly lands in place. */
+const PENDING_ROWS = 3
 
 export const sourcesTable = <M>(
 	h: HtmlBuilder<M>,
-	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>>,
+	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>> | null,
 	time: TimeSearch,
+	isFailureExplained = false,
 ): Html =>
 	h.section(
 		[h.Class("space-y-3")],
 		[
-			sectionHeading(h, { title: "Sources", hint: "one row per source reporting to this org" }),
+			sectionHeading(h, {
+				title: "Sources",
+				badge: sectionCaption(h, "one row per source reporting to this org"),
+			}),
 			panel(
 				h,
 				{ tone: "background", className: "divide-y" },
-				sources.map(({ id, state }) => sourceRow(h, id, state, time)),
+				sources === null
+					? Array.from({ length: PENDING_ROWS }, () => sourceRowPending(h))
+					: sources.map(({ id, state }) => sourceRow(h, id, state, time, isFailureExplained)),
 			),
 		],
 	)

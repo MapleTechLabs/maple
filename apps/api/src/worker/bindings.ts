@@ -6,13 +6,16 @@
  * depends on (`apiPorts`).
  *
  */
+import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
+import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
 import { MapleDb } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
+	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
 	EmailSender,
 	McpOAuthRateLimit,
@@ -37,7 +40,12 @@ import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
-import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
+import {
+	AuditEventsQueue,
+	CancellationReviewsQueue,
+	PlanetScaleWebhookQueue,
+	VcsSyncQueue,
+} from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
 
 /**
@@ -51,8 +59,12 @@ export const bindApiClients = Effect.gen(function* () {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
 		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
+		cancellationReviews: yield* Cloudflare.Queues.WriteQueue(CancellationReviewsQueue),
 		// Read side of the replay payload store.
 		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
+		// Published status pages: the publish endpoint writes snapshots, page deletes clear them.
+		statusKv: yield* Cloudflare.KV.ReadWriteNamespace(StatusSnapshotsKv),
+		statusBucket: yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket),
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
 			namespaceId: 2026071801,
 			simple: { limit: API_V2_RATE_LIMIT_REQUESTS, period: API_V2_RATE_LIMIT_PERIOD_SECONDS },
@@ -79,6 +91,8 @@ export const ApiBindingsLive = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Queues.WriteQueueBinding,
 	Cloudflare.R2.ReadBucketBinding,
+	Cloudflare.KV.ReadWriteNamespaceBinding,
+	Cloudflare.R2.ReadWriteBucketBinding,
 	Cloudflare.Workers.RateLimitBinding,
 	Cloudflare.Email.SendBinding,
 )
@@ -169,10 +183,16 @@ export const apiPorts = (
 		Layer.succeed(VcsSyncQueueProducer, producer(clients.vcsSync)),
 		Layer.succeed(PlanetScaleWebhookQueueProducer, producer(clients.planetScaleWebhooks)),
 		Layer.succeed(AuditEventsQueueProducer, producer(clients.auditEvents)),
+		Layer.succeed(CancellationReviewQueueProducer, producer(clients.cancellationReviews)),
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
+		Layer.unwrap(
+			runtime(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
+				Effect.map(([kv, bucket]) => StatusPageStore.fromBindings(kv, bucket)),
+			),
+		),
 		Layer.succeed(EmailSender, clients.email),
 		Layer.succeed(SchemaApplyWorkflow, workflowStarter(schemaApply)),
 		layerMapleDbConnection(env),

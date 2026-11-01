@@ -66,11 +66,8 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalPlain("MAPLE_CLERK_DASHBOARD_URL"),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
-		optionalPlain("HAZEL_API_BASE_URL"),
-		optionalPlain("HAZEL_OAUTH_DISCOVERY_URL"),
-		optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
-		optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
-		optionalPlain("HAZEL_OAUTH_SCOPES"),
+		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
+		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
 		// Each connector's declared install and outbound config; unset means unavailable.
 		...[...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys].map((key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
@@ -85,8 +82,4 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		planetScaleOAuthEnv,
 		supabaseOAuthEnv,
 		optionalPlain("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
-		// Maple's AWS identity on dev (`.env.local`); deploys bind their own (`awsPrincipal`).
-		optionalPlain("MAPLE_AWS_PRINCIPAL_ARN"),
-		optionalPlain("MAPLE_AWS_ACCESS_KEY_ID"),
-		optionalSecret("MAPLE_AWS_SECRET_ACCESS_KEY"),
 	)

@@ -23,7 +23,7 @@ The root span is the one span in a trace with no parent. When it never reaches M
 | More than 0.1%             | Warning  |
 | More than 1%               | Critical |
 
-Warning and critical need at least 50 traces in the window. Traces whose root was dropped by sampling don't count: those with a `th:` value in `tracestate`, and, when Maple's ingest sampling is on, traces made only of the error and slow spans it keeps from traces it drops.
+Warning and critical need at least 50 traces in the window. Traces whose root was dropped by sampling don't count, such as those with a `th:` value in `tracestate`.
 
 The finding lists the services where these traces start, each with its own share. The `audit_setup` [MCP tool](/docs/reference/mcp) returns the same result.
 
@@ -97,7 +97,7 @@ LIMIT 20
    - The trace runs for many minutes: the root span is still open.
    - The parent belongs to a service that exports to another Maple organization or another backend.
 
-5. If the source code is available, locally or through search_source_code and read_source_file, find where each affected service sets up OpenTelemetry. Check that it flushes at the end of each request, invocation or command, and shuts the SDK down on SIGTERM.
+5. If the source code is available locally, find where each affected service sets up OpenTelemetry. Check that it flushes at the end of each request, invocation or command, and shuts the SDK down on SIGTERM.
 
 6. Report per service: the cause, the trace IDs that show it, and the code or configuration change that fixes it. Don't change any code until I confirm.
 ```

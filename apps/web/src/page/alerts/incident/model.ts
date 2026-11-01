@@ -11,7 +11,6 @@ import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
-import { AlertIncidentSearch } from "../../../route/search"
 import { PreviewSlot } from "../shared/preview"
 
 // `/alerts/incidents/$incidentId`.
@@ -20,7 +19,6 @@ const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
 export const Model = Schema.Struct({
 	incidentId: Schema.String,
-	search: AlertIncidentSearch,
 	/** `clockAtSync`: the wall clock to the minute, read when the incident first arrives. */
 	nowMs: Schema.NullOr(Schema.Number),
 	incidents: Rows(AlertIncidentRowSchema),

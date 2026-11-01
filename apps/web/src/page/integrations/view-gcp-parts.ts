@@ -16,7 +16,7 @@ import type { Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-export const GCP_LINK = "underline underline-offset-2 hover:no-underline"
+export const GCP_LINK = "underline underline-offset-2 hover:no-underline active:no-underline"
 export const SMALL = "text-xs/5 text-pretty text-muted-foreground"
 export const GCP_TITLE = "text-base/6 font-medium sm:text-sm/5"
 
@@ -80,7 +80,7 @@ export const copyScriptButton = (
 		label,
 		idleLabel: `Copy ${label}`,
 		variant: "default",
-		className: "text-primary-foreground hover:text-primary-foreground",
+		className: "text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
 		attributes: script === null ? [h.Disabled(true)] : [],
 	})
 
@@ -109,7 +109,7 @@ export const scriptBlock = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground",
+								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 								GCP_LINK,
 							),
 							attributes: [h.AriaExpanded(shown), h.OnClick(Message.ClickedGcpScriptToggle())],
@@ -219,7 +219,7 @@ export const step = (
 									cn(
 										"flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs font-medium",
 										options.state === "current"
-											? "border-foreground/40 text-foreground"
+											? "border-border-strong text-foreground"
 											: "border-border text-muted-foreground",
 									),
 								),

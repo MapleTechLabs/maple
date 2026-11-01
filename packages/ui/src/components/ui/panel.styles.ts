@@ -1,6 +1,6 @@
 export const panelToneStyles = {
 	default: "bg-card",
-	muted: "bg-muted/40",
+	muted: "bg-surface-sunken",
 	background: "bg-background",
 } as const
 

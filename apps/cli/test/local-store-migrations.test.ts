@@ -39,7 +39,11 @@ import {
 	LOCAL_SCHEMA_V33,
 	LOCAL_SCHEMA_V34,
 	LOCAL_SCHEMA_V36,
-	LOCAL_SCHEMA_V37,
+	LOCAL_SCHEMA_V38,
+	LOCAL_SCHEMA_V39,
+	LOCAL_SCHEMA_V40,
+	LOCAL_SCHEMA_V41,
+	LOCAL_SCHEMA_V42,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
 } from "../src/server/schema-identity"
@@ -76,6 +80,7 @@ import {
 	ensureStoreMarkerDurable,
 	isStoreDirty,
 	readMarker,
+	serverPidPath,
 	storeMarkerPath,
 	storeOpenMarkerPath,
 } from "../src/server/store-version"
@@ -92,7 +97,7 @@ import {
 import { LOCAL_SCHEMA_HISTORY } from "../src/server/local-schema-history"
 import { LOCAL_STORE_STEPS } from "../src/server/local-store-migrations/steps"
 import { stepStatements } from "../src/server/local-store-migrations/step-executor"
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -105,11 +110,11 @@ const [v10ToV11ProductEventsModule] = localStoreMigrations.filter(
 )
 
 describe("current local schema identity", () => {
-	it("matches the generated v37 revision and keeps the issue-297 identity frozen", () => {
+	it("matches the generated v42 revision and keeps the issue-297 identity frozen", () => {
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_FINGERPRINT).toBe("1772296e571539fd")
+		expect(SCHEMA_FINGERPRINT).toBe("d03ed074b19ce990")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_DIGEST).toBe("1772296e571539fdff7d2289c58910c1a8a496967f23613d5b2e81935541a786")
+		expect(SCHEMA_DIGEST).toBe("d03ed074b19ce99042d1e8f867f80b0ad14a7cd14f167e6fa223c314cc15cebc")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- frozen identity that stores already on disk carry
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
@@ -117,8 +122,8 @@ describe("current local schema identity", () => {
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
 		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
-		expect(CURRENT_LOCAL_SCHEMA.version).toBe(37)
-		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V37)
+		expect(CURRENT_LOCAL_SCHEMA.version).toBe(42)
+		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V42)
 		const logs = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "logs")
 		expect(logs?.columns.some((column) => column.name.startsWith("idx_"))).toBe(false)
 		expect(logs?.indexes).toContain("idx_lower_body")
@@ -188,7 +193,7 @@ describe("current local schema identity", () => {
 		// its view; v11 replaces `web_events` with `product_events` and adds
 		// `identity_links`; v17 adds `audit_log`, which local mode creates but
 		// never writes; v23 adds `ai_crawler_requests` and its view; v24 adds
-		// `trace_facets_hourly` and its view; v33 adds `trace_index` and its view; v35 removes `trace_detail_spans` and its view; v37 adds `source_usage_hourly` and its six views. Asserted as an exact set difference rather than a
+		// `trace_facets_hourly` and its view; v33 adds `trace_index` and its view; v35 removes `trace_detail_spans` and its view; v37 adds `source_usage_hourly` and its six views; v38 adds `ci_runs`, `ci_jobs` and their views; v39 adds `service_endpoint_details_hourly` and its view; v41 adds `service_map_db_edges_minutely` and its view. Asserted as an exact set difference rather than a
 		// relaxed check, so a future edge still cannot add or drop an object
 		// unnoticed.
 		expect([...v5Names].filter((name) => !currentNames.has(name))).toEqual([
@@ -205,11 +210,23 @@ describe("current local schema identity", () => {
 			"ai_trace_index",
 			"ai_trace_index_mv",
 			"audit_log",
+			"ci_jobs",
+			"ci_jobs_mv",
+			"ci_runs",
+			"ci_runs_mv",
 			"identity_links",
 			"identity_links_mv",
 			"product_events",
 			"product_events_mv",
 			"product_events_traces_mv",
+			"scanner_requests",
+			"scanner_requests_mv",
+			"service_endpoint_details_hourly",
+			"service_endpoint_details_hourly_mv",
+			"service_map_db_edges_minutely",
+			"service_map_db_edges_minutely_mv",
+			"service_runtimes_hourly",
+			"service_runtimes_hourly_mv",
 			"source_usage_hourly",
 			"source_usage_logs_mv",
 			"source_usage_metrics_exp_histogram_mv",
@@ -310,7 +327,10 @@ describe("current local schema identity", () => {
 		// v12 replaces two view bodies and v13 adds columns to two rollups; neither
 		// adds an object. v14 is exactly the GenAI span index and its view, created
 		// empty and filled forward; v17 adds `audit_log`, created empty and never
-		// written in local mode; v35 drops `trace_detail_spans` and its view.
+		// written in local mode; v35 drops `trace_detail_spans` and its view; v38 adds
+		// `ci_runs`, `ci_jobs` and their views, filled forward; v39 adds
+		// `service_endpoint_details_hourly` and its view, backfilled; v41 adds
+		// `service_map_db_edges_minutely` and its view, filled forward.
 		const v12Names = new Set(LOCAL_SCHEMA_V12_MANIFEST.objects.map((object) => object.name))
 		const v13Names = new Set(LOCAL_SCHEMA_V13_MANIFEST.objects.map((object) => object.name))
 		const currentSchemaNames = new Set(LOCAL_SCHEMA_MANIFEST.objects.map((object) => object.name))
@@ -323,7 +343,19 @@ describe("current local schema identity", () => {
 			"ai_trace_index",
 			"ai_trace_index_mv",
 			"audit_log",
+			"ci_jobs",
+			"ci_jobs_mv",
+			"ci_runs",
+			"ci_runs_mv",
 			"product_events_traces_mv",
+			"scanner_requests",
+			"scanner_requests_mv",
+			"service_endpoint_details_hourly",
+			"service_endpoint_details_hourly_mv",
+			"service_map_db_edges_minutely",
+			"service_map_db_edges_minutely_mv",
+			"service_runtimes_hourly",
+			"service_runtimes_hourly_mv",
 			"source_usage_hourly",
 			"source_usage_logs_mv",
 			"source_usage_metrics_exp_histogram_mv",
@@ -413,7 +445,7 @@ describe("local migration registry", () => {
 				// One past the current tip — bump alongside LOCAL_SCHEMA_VERSION, or this
 				// stops testing the future-store guard and starts testing the
 				// unknown-fingerprint one.
-				{ ...CURRENT_LOCAL_SCHEMA, version: 38, fingerprint: "future", digest: SCHEMA_DIGEST },
+				{ ...CURRENT_LOCAL_SCHEMA, version: 43, fingerprint: "future", digest: SCHEMA_DIGEST },
 				CURRENT_LOCAL_SCHEMA,
 			),
 		).toThrow(/newer than this build/)
@@ -570,6 +602,11 @@ describe("local migration registry", () => {
 			"local-0034-to-0035-drop-trace-detail-spans",
 			"local-0035-to-0036-aligned-ttls",
 			"local-0036-to-0037-source-usage-hourly",
+			"local-0037-to-0038-ci-runs-jobs",
+			"local-0038-to-0039-service-api-http-details",
+			"local-0039-to-0040-service-map-spans-trace-key",
+			"local-0040-to-0041-service-map-db-edges-minutely",
+			"local-0041-to-0042-security-telemetry",
 		]
 		const versions = (id: string) => {
 			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
@@ -657,6 +694,23 @@ describe("marker v2 durability", () => {
 })
 
 describe("durable migration recovery", () => {
+	it("treats a PID file naming this process as stale, but refuses for a live server", async () => {
+		const root = await mkdtemp(join(tmpdir(), "maple-migration-own-pid-"))
+		const dataDir = join(root, "data")
+		try {
+			await mkdir(dataDir, { recursive: true })
+			// In a container every `maple` run is PID 1, so a dead server's file names us.
+			await writeFile(serverPidPath(dataDir), String(process.pid))
+			expect(await abandonLocalStoreMigrationPreservingSource(dataDir)).toBeNull()
+			await writeFile(serverPidPath(dataDir), String(process.ppid))
+			await expect(abandonLocalStoreMigrationPreservingSource(dataDir)).rejects.toThrow(
+				`maple is running (PID ${process.ppid})`,
+			)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
 	it("fails closed on malformed journal topology and typed progress", async () => {
 		const root = await mkdtemp(join(tmpdir(), "maple-migration-journal-invariants-"))
 		const dataDir = join(root, "data")
@@ -1559,6 +1613,11 @@ describe("v10 -> v11 product events module", () => {
 			"local-0034-to-0035-drop-trace-detail-spans",
 			"local-0035-to-0036-aligned-ttls",
 			"local-0036-to-0037-source-usage-hourly",
+			"local-0037-to-0038-ci-runs-jobs",
+			"local-0038-to-0039-service-api-http-details",
+			"local-0039-to-0040-service-map-spans-trace-key",
+			"local-0040-to-0041-service-map-db-edges-minutely",
+			"local-0041-to-0042-security-telemetry",
 		])
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V11)
 		// The dropped table is declared, and the backfilled ones say what they

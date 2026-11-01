@@ -20,6 +20,7 @@ import { SourceId } from "@maple/domain/primitives"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { CiTraceSinkWith } from "./CiTraceService"
+import { type IngestRefusal, SharedIngestRefusals } from "./ingest-refusals"
 import { MAX_JOB_LOG_CHARS } from "./logs"
 
 const trackedDbs: TestDb[] = []
@@ -233,7 +234,11 @@ const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attr
 // Installation 42 of `org_ci` with its source, as VcsRepository.upsertInstallation writes it.
 const seedInstallation = (testDb: TestDb, options: { readonly paused?: boolean } = {}) =>
 	Effect.promise(async () => {
-		const sourceId = await insertTestSource(testDb, { orgId: "org_ci", platform: "github", name: "GitHub octo" })
+		const sourceId = await insertTestSource(testDb, {
+			orgId: "org_ci",
+			platform: "github",
+			name: "GitHub octo",
+		})
 		if (options.paused === true) {
 			await executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE id = $1", [sourceId])
 		}
@@ -555,13 +560,44 @@ describe("CiTraceService", () => {
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowRun(orgId, run).pipe(Effect.provideService(Tracer.Tracer, tracer))
 			assert.strictEqual(calls.length, 1)
-			// The webhook job succeeds, but the emit span itself records the lost write.
-			const emit = spans.find((span) => span.name === "CiTraceService.emit")
-			assert.strictEqual(emit?.status._tag, "Ended")
-			if (emit?.status._tag !== "Ended") return
-			assert.isTrue(Exit.isFailure(emit.status.exit))
-			assert.strictEqual(emit.attributes.get("maple.cicd.outcome"), "ingest_failed")
+			// A refusal is the org's state, not a fault: no span on the path ends as Error.
+			const ended = spans.filter(
+				(span) => span.name === "CiTraceService.emit" || span.name === "IngestSender.send",
+			)
+			assert.deepStrictEqual(
+				ended.map((span) => [
+					span.name,
+					span.status._tag === "Ended" && Exit.isSuccess(span.status.exit),
+				]),
+				[
+					["CiTraceService.emit", true],
+					["IngestSender.send", true],
+				],
+			)
+			assert.strictEqual(ended[0]!.attributes.get("maple.cicd.outcome"), "ingest_refused")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [402]))))
+	})
+
+	it.live("holds a refused org: later CI spans are not posted and its job log is not read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		let logReads = 0
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, run)
+			yield* sink.onWorkflowJob(orgId, job, [])
+			yield* sink.onWorkflowJobLog(
+				orgId,
+				job,
+				Stream.fromEffect(
+					Effect.sync(() => {
+						logReads += 1
+						return stamped(0, "ok")
+					}),
+				),
+			)
+			assert.deepStrictEqual([calls.length, logReads], [1, 0])
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [403]))))
 	})
 
 	it.live("after a key rotation elsewhere, drops the stale memoized key and sends once more", () => {
@@ -583,6 +619,29 @@ describe("CiTraceService", () => {
 				[calls[0]!.authorization, calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
 			)
 			assert.notStrictEqual(rotated.publicKey, calls[0]!.authorization?.slice("Bearer ".length))
+		})
+	})
+
+	it.live("ends the hold once the refused key is rotated, and sends with the new key", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			// The isolate caches the queue consumer shares across batches.
+			const caches = Layer.mergeAll(
+				Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>()),
+				Layer.succeed(SharedIngestRefusals, yield* makeExpiringStore<IngestRefusal>()),
+			)
+			const batch = sinkLayer(testDb, recordingFetch(calls, [403, 200])).pipe(Layer.provide(caches))
+			const emitJob = WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			yield* emitJob.pipe(Effect.provide(batch))
+			const rotated = yield* OrgIngestKeysService.use((keys) =>
+				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+			).pipe(Effect.provide(keysLayer(testDb)))
+			yield* emitJob.pipe(Effect.provide(batch))
+			assert.deepStrictEqual(
+				calls.map((call) => call.authorization),
+				[calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
+			)
 		})
 	})
 

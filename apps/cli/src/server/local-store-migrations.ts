@@ -509,11 +509,13 @@ export const abandonLocalStoreMigration = async (dataDir: string): Promise<strin
 	return abandonedPath
 }
 
-/** The PID a file names if that process still exists; a failed probe counts as not live. */
+/** The PID a file names if that process still exists; a failed probe counts as not live.
+ *  Our own PID is stale: in a container every `maple` run is PID 1, so a dead
+ *  server's file names whichever process reads it. */
 const livePidIn = (path: string): number | null => {
 	if (!existsSync(path)) return null
 	const pid = Number.parseInt(readFileSync(path, "utf8").trim(), 10)
-	if (!Number.isInteger(pid) || pid <= 0) return null
+	if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
 	return Effect.runSync(
 		Effect.try(() => process.kill(pid, 0)).pipe(
 			Effect.as(pid),

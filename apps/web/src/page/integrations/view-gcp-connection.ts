@@ -46,7 +46,7 @@ const RETRIES = "Maple retries every 5 minutes. If this lasts an hour, write to 
 
 interface Issue {
 	readonly key: string
-	readonly tone: "crit" | "warn" | "live"
+	readonly tone: "crit" | "warn" | "info"
 	readonly title: string
 	readonly body?: Children
 	readonly action?: Html
@@ -68,13 +68,17 @@ const runScript = (h: H, connector: V2GcpConnector, label: string): Html =>
 		[label],
 	)
 
-const issueNote = (h: H, issue: Issue): Html =>
+/** Info issues are pending states (setup, first data), so their dot stays neutral, never healthy green. */
+const dotTone = (tone: Issue["tone"] | "ok"): Tone => (tone === "info" ? "neutral" : tone)
+
+/** `hasDot`: only a list of issues dots each one; a single issue's tone is the name row's dot. */
+const issueNote = (h: H, issue: Issue, hasDot: boolean): Html =>
 	h.div(
-		[h.Role(issue.tone === "live" ? "note" : "status"), h.Class("flex gap-2.5")],
+		[h.Role(issue.tone === "info" ? "note" : "status"), h.Class("flex gap-2.5")],
 		[
 			h.span(
 				[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
-				[statusDot(h, { tone: issue.tone, size: "lg" })],
+				hasDot ? [statusDot(h, { tone: dotTone(issue.tone), size: "lg" })] : [],
 			),
 			h.div(
 				[h.Class("flex min-w-0 flex-col gap-1.5")],
@@ -149,7 +153,7 @@ const connectionIssues = (
 					? [h.p([], ["To remove the connection instead, choose Disconnect in its menu."])]
 					: []),
 			],
-			action: runScript(h, connector, needed === "setup-pending" ? "Finish setup" : "Apply changes"),
+			action: runScript(h, connector, needed === "setup-pending" ? "Reconnect" : "Apply changes"),
 		})
 	}
 	if (metrics.kind === "incomplete")
@@ -201,7 +205,7 @@ const connectionIssues = (
 		return [
 			{
 				key: "running",
-				tone: "live",
+				tone: "info",
 				title: "Setup in progress",
 				body: ["Logs and metrics start once it is complete."],
 			},
@@ -210,7 +214,7 @@ const connectionIssues = (
 		return [
 			{
 				key: "waiting",
-				tone: "live",
+				tone: "info",
 				title: "Waiting for the first data",
 				body: [
 					log.kind === "waiting"
@@ -293,7 +297,7 @@ const signalText = (
 	}
 }
 
-const SIGNAL_LINK = "inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+const SIGNAL_LINK = "inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground"
 
 const signalView = (h: H, name: string, signal: Signal, link: Html | undefined): Html =>
 	h.div(
@@ -315,10 +319,10 @@ const fact = (h: H, label: string, value: Html | string): Html =>
 	)
 
 const signalLink = (h: H, href: string, label: string): Html =>
-	h.a([h.Href(href), h.Class(SIGNAL_LINK)], [label, icon(h, "ArrowRightIcon", { size: 11 })])
+	h.a([h.Href(href), h.Class(SIGNAL_LINK)], [label, icon(h, "ArrowRightIcon", { size: 12 })])
 
 const menuEntries: ReadonlyArray<MenuEntry> = [
-	...(IS_ADMIN ? [{ _tag: "Item", value: "configure", label: "Configure" } as const] : []),
+	...(IS_ADMIN ? [{ _tag: "Item", value: "configure", label: "Edit data" } as const] : []),
 	{ _tag: "Item", value: "logs", label: "View logs" },
 	{ _tag: "Item", value: "infra", label: "View infrastructure" },
 	...(IS_ADMIN
@@ -366,24 +370,27 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		toParentMessage: (message) => Message.GotGcpMenuMessage({ id: connector.id, message }),
 	})
 	const ago = (value: string) => relativeTime(h, { value, nowMs: model.nowMs, timeZone })
+	// The same row in every state: dot, name and kind, subtitle. Issues add their notes below it.
+	const nameRow = (tone: Issue["tone"] | "ok") =>
+		h.div(
+			[h.Class("flex min-w-0 flex-1 basis-56 items-start gap-2.5")],
+			[
+				h.span(
+					[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
+					[statusDot(h, { tone: dotTone(tone), size: "lg" })],
+				),
+				h.div(
+					[h.Class("flex min-w-0 flex-col gap-0.5")],
+					[name, h.p([h.Class("truncate text-xs text-muted-foreground")], [subtitle])],
+				),
+			],
+		)
 	if (issues.length === 0)
 		return panel(h, { className: "@container" }, [
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 py-3 pr-2 pl-4")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 flex-1 basis-56 items-start gap-2.5")],
-						[
-							h.span(
-								[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
-								[statusDot(h, { tone: "ok", size: "lg" })],
-							),
-							h.div(
-								[h.Class("flex min-w-0 flex-col gap-0.5")],
-								[name, h.p([h.Class("truncate text-xs text-muted-foreground")], [subtitle])],
-							),
-						],
-					),
+					nameRow("ok"),
 					h.div(
 						[
 							h.Class(
@@ -401,30 +408,22 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		])
 	return panel(h, { className: "@container" }, [
 		h.div(
-			[h.Class("flex flex-col gap-3 px-4 pt-3 pb-4")],
+			[h.Class("flex flex-col gap-3 pt-3 pr-2 pb-4 pl-4")],
 			[
 				h.div(
 					[h.Class("flex items-center justify-between gap-3")],
-					[
-						h.div(
-							[h.Class("flex min-w-0 flex-col gap-0.5")],
-							[
-								name,
-								...(connector.scope_type === "project"
-									? []
-									: [h.p([h.Class("truncate text-xs text-muted-foreground")], [subtitle])]),
-							],
-						),
-						h.div([h.Class("-mr-2 shrink-0")], [menu]),
-					],
+					[nameRow(issues[0]?.tone ?? "info"), h.div([h.Class("shrink-0")], [menu])],
 				),
-				...issues.map((issue) => issueNote(h, issue)),
+				h.div(
+					[h.Class("flex flex-col gap-3 pr-2")],
+					issues.map((issue) => issueNote(h, issue, issues.length > 1)),
+				),
 			],
 		),
 		h.div(
 			[
 				h.Class(
-					"flex flex-col divide-y divide-border/60 border-t border-border/60 @md:flex-row @md:divide-x @md:divide-y-0",
+					"flex flex-col divide-y divide-border-subtle border-t border-border-subtle @md:flex-row @md:divide-x @md:divide-y-0",
 				),
 			],
 			[

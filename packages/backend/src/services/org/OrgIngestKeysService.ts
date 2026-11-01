@@ -88,7 +88,7 @@ const generatePublicKey = () => `maple_pk_${randomBytes(24).toString("base64url"
 const generatePrivateKey = () => `maple_sk_${randomBytes(24).toString("base64url")}`
 
 export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>()(
-	"@maple/api/services/OrgIngestKeysService",
+	"@maple/backend/services/OrgIngestKeysService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

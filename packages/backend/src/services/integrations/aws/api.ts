@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import type * as Impl from "./api-impl"
 
 export { AwsApiError } from "./errors"
-export type { AwsKey, AwsRoleReport, AwsRoleTarget } from "./api-impl"
+export type { AwsRoleReport, AwsRoleTarget } from "./api-impl"
 
 const impl = Effect.promise(() => import("./api-impl"))
 

@@ -1,4 +1,9 @@
-import { CodeReviewAnalytics, CodeReviewListResponse, PrReviewId } from "@maple/domain/http"
+import {
+	CodeReviewAnalytics,
+	CodeReviewListResponse,
+	CodeReviewSortKey,
+	PrReviewId,
+} from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
@@ -23,6 +28,9 @@ export const Model = Schema.Struct({
 	/** `useState(PAGE)`: Load more adds a page; a filter change starts over. */
 	limit: Schema.Number,
 	statusSelect: Select.Model,
+	/** The search box's input and its debounce generation. */
+	searchDraft: Schema.String,
+	searchGeneration: Schema.Number,
 	sheet: ReviewSheet,
 })
 export type Model = typeof Model.Type
@@ -40,8 +48,11 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	ClickedReview: { reviewId: PrReviewId },
 	ClickedLoadMore: {},
+	ClickedSort: { key: CodeReviewSortKey },
 	TickedPoll: {},
 	GotStatusSelectMessage: { message: Select.Message },
+	ChangedSearchDraft: { value: Schema.String },
+	ElapsedSearchDebounce: { generation: Schema.Number },
 	GotSheetMessage: { message: SheetMessage },
 })
 export type Message = typeof Message.Type

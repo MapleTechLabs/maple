@@ -3,7 +3,7 @@ title: "Trace Claude Agent SDK agents and Claude Code sessions with OpenTelemetr
 description: "Turn on Claude Code's built-in OpenTelemetry so each Agent SDK conversation or Claude Code session shows up in Maple as one Agent Session."
 group: "AI Frameworks"
 order: 14
-navLabel: "Claude Agent SDK & Claude Code"
+navLabel: "Claude Code & Agent SDK"
 icon: "claude"
 ---
 
@@ -23,12 +23,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for the Claude Agent SDK in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-claude-agent-sdk -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-claude-agent-sdk -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Pass the telemetry variables to the CLI
 
@@ -228,7 +229,7 @@ Claude Code redacts content by default. `OTEL_LOG_USER_PROMPTS=1` records prompt
 
 Let every `query()` loop reach its `result` message. Breaking out early, calling `close()` or aborting kills the CLI before it exports the turn. In a script, keep the process alive about 5 seconds after the last `query()`. On serverless platforms, finish the loop before returning the response.
 
-## Check that it works
+## Verify
 
 Run a two-turn conversation through `reply()` with at least one tool call, then open **Agent Sessions**. You should see one session with the framework **Claude Agent SDK**, one turn per message titled with the prompt, model calls with their tokens, and the tool calls by name.
 
@@ -243,7 +244,7 @@ The transcript has no assistant replies and cost shows as unpriced. Both are on 
 - **The CLI ignores your values.** They are in a repository's `.claude/settings.json`, or a settings file overrides `options.env`. Use `~/.claude/settings.json`, or pass `settingSources: []`.
 - **Extra turns titled `<task-notification>`.** Claude Code ran sub-agents in the background. Add `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"` to the env.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
 - [Claude API & SDK](/docs/agent-tracing/claude-api): tracing direct calls with the Claude SDK instead of the Agent SDK.

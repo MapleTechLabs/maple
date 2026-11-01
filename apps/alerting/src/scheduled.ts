@@ -5,7 +5,7 @@
  * graph this file drags in is imported on the first fire, not at startup and
  * not in the deploy process, where the Worker's init also runs.
  */
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
@@ -19,6 +19,7 @@ import { GcpMetricsService } from "@maple/backend/services/integrations/GcpMetri
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
+import { PlanetScaleMetricsService } from "@maple/backend/services/integrations/PlanetScaleMetricsService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
@@ -27,16 +28,32 @@ import { SupabaseConnectionService } from "@maple/backend/services/integrations/
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
+import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
+import {
+	type StatusPageBindings,
+	StatusPageStore,
+} from "@maple/backend/services/status-pages/StatusPageStore"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Cause, Effect, Layer, Match, Option } from "effect"
+import { Cause, Clock, Effect, Layer, Match, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
+
+/** The status page publisher, only when its KV and R2 bindings exist on this Worker. */
+const statusPagesLayerIfBound = (bindings: Option.Option<StatusPageBindings>) =>
+	Option.match(bindings, {
+		onNone: () => Layer.empty,
+		onSome: ({ kv, bucket }) =>
+			Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
+				Layer.provide(StatusPageStore.fromBindings(kv, bucket)),
+			),
+	})
 
 /**
  * The tick graph for one fire. Deliberately without a tracer or logger of its
@@ -49,6 +66,7 @@ export const layerTick = (
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient> = Option.none(),
 	chatSessions?: ChatSessionNamespace,
+	statusPages: Option.Option<StatusPageBindings> = Option.none(),
 ) =>
 	Layer.mergeAll(
 		AlertsService.layer,
@@ -56,6 +74,7 @@ export const layerTick = (
 		CloudflareAnalyticsService.layer,
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
+		PlanetScaleMetricsService.layer,
 		RailwayMetricsService.layer,
 		AwsConnectionService.layer,
 		SupabaseConnectionService.layer,
@@ -71,6 +90,7 @@ export const layerTick = (
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
+		statusPagesLayerIfBound(statusPages),
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
 		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
@@ -135,18 +155,23 @@ const makeTick = <A, E, R>(
 		catchTickFailure(spanKey),
 	)
 
-const alertTick = makeTick(
-	AlertsService.use((alerts) => alerts.runSchedulerTick()),
-	"scheduler",
-	(result) => ({
-		evaluatedCount: result.evaluatedCount,
-		processedCount: result.processedCount,
-		evaluationFailureCount: result.evaluationFailureCount,
-		warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
-		deferredCount: result.deferredCount,
-		deliveryFailureCount: result.deliveryFailureCount,
-	}),
-)
+const schedulerTick = (lane: AlertSchedulerLane, spanKey: string) =>
+	makeTick(
+		AlertsService.use((alerts) => alerts.runSchedulerTick(lane)),
+		spanKey,
+		(result) => ({
+			evaluatedCount: result.evaluatedCount,
+			processedCount: result.processedCount,
+			evaluationFailureCount: result.evaluationFailureCount,
+			warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
+			deferredCount: result.deferredCount,
+			deliveryFailureCount: result.deliveryFailureCount,
+			alertChecksDroppedCount: result.alertChecksDroppedCount,
+		}),
+	)
+
+const alertTick = schedulerTick("standard", "scheduler")
+const alertLongQueryTick = schedulerTick("long_query", "scheduler_long_query")
 
 const errorTick = makeTick(
 	ErrorsService.use((errors) => errors.runTick()),
@@ -293,6 +318,21 @@ const planetScaleTick = makeTick(
 			: undefined,
 )
 
+const planetScaleMetricsTick = makeTick(
+	PlanetScaleMetricsService.use((metrics) => metrics.pollAll()),
+	"planetscale_metrics",
+	(result) =>
+		result.polled > 0
+			? {
+					orgs: result.orgs,
+					polled: result.polled,
+					branches: result.branches,
+					rowsIngested: result.rowsIngested,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const awsConnectionsTick = makeTick(
 	AwsConnectionService.use((aws) => aws.checkDue()),
 	"aws_connections",
@@ -378,8 +418,46 @@ const prReviewPostMergeTick = makeTick(
 			: undefined,
 )
 
+/**
+ * Imports break-glass updates, repairs auto incidents, then sweeps: edge cleanups, lagging pages
+ * and the heartbeat (written by the sweep only once it reached the database). Each step isolated.
+ */
+const statusPagesTick = Effect.gen(function* () {
+	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
+	const reconciler = yield* Effect.serviceOption(StatusPageReconciler)
+	if (Option.isNone(publisher) || Option.isNone(reconciler)) {
+		return yield* Effect.logInfo("Status page storage is not bound; skipping status page publishing")
+	}
+	yield* makeTick(reconciler.value.reconcileAll(), "status_page_reconcile", (result) =>
+		result.imported + result.cleared + result.failed > 0
+			? {
+					statusPageImported: result.imported,
+					statusPageCleared: result.cleared,
+					statusPageFailures: result.failed,
+				}
+			: undefined,
+	)
+	yield* makeTick(reconciler.value.repairAutoIncidents(), "status_page_repair", (repaired) =>
+		repaired > 0 ? { statusPageAutoIncidentsRepaired: repaired } : undefined,
+	)
+	const nowMs = yield* Clock.currentTimeMillis
+	yield* makeTick(publisher.value.sweep(nowMs), "status_page_publish", (result) =>
+		result.due + result.cleaned + result.cleanupsFailed > 0
+			? {
+					statusPagesDue: result.due,
+					statusPagesWritten: result.written,
+					statusPagesUnchanged: result.unchanged,
+					statusPageFailures: result.failed,
+					statusPagesCleaned: result.cleaned,
+					statusPageCleanupFailures: result.cleanupsFailed,
+				}
+			: undefined,
+	)
+})
+
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
+	readonly alertLongQuery: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
 	readonly awsConnections: Effect.Effect<void, never, R>
 	readonly cloudflareAnalytics: Effect.Effect<void, never, R>
@@ -389,9 +467,11 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly gcpMetrics: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
+	readonly planetScaleMetrics: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
+	readonly statusPages: Effect.Effect<void, never, R>
 	readonly supabaseDiscovery: Effect.Effect<void, never, R>
 	readonly supabaseLogs: Effect.Effect<void, never, R>
 	readonly supabaseInsights: Effect.Effect<void, never, R>
@@ -401,15 +481,19 @@ export interface ScheduledTickPrograms<R = never> {
 const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect.Effect<void, never, R> =>
 	Match.value(lane).pipe(
 		Match.when("alert", () => ticks.alert),
+		Match.when("alert_long_query", () => ticks.alertLongQuery),
 		// `fixVerification` is chained onto `error` rather than given its own lane:
 		// a window this minute's error tick just refuted must already be settled
 		// when the verification tick looks at it.
 		Match.when("error", () => Effect.andThen(ticks.error, ticks.fixVerification)),
-		Match.when("escalation", () => ticks.escalation),
+		// Status pages ride the escalation lane: the minute cron is one connection under its cap.
+		Match.when("escalation", () => Effect.andThen(ticks.escalation, ticks.statusPages)),
 		Match.when("anomaly", () => ticks.anomaly),
 		Match.when("cloudflare_analytics", () => ticks.cloudflareAnalytics),
 		Match.when("gcp_metrics", () => ticks.gcpMetrics),
-		Match.when("planetscale", () => ticks.planetScale),
+		// Metrics ride the inventory's lane: the 5-minute cron is at its six-connection cap, and
+		// they read the branch list the inventory just refreshed.
+		Match.when("planetscale", () => Effect.andThen(ticks.planetScale, ticks.planetScaleMetrics)),
 		Match.when("railway_metrics", () => ticks.railwayMetrics),
 		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
 		Match.when("digest", () => ticks.digest),
@@ -465,6 +549,7 @@ type ScheduledServices =
 	| FixVerificationTickService
 	| GcpMetricsService
 	| PlanetScaleService
+	| PlanetScaleMetricsService
 	| PrReviewPostMergeService
 	| RailwayMetricsService
 	| ServiceMapRollupService
@@ -474,6 +559,7 @@ type ScheduledServices =
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
+	alertLongQuery: alertLongQueryTick,
 	anomaly: anomalyTick,
 	awsConnections: awsConnectionsTick,
 	cloudflareAnalytics: cloudflareAnalyticsTick,
@@ -483,9 +569,11 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	fixVerification: fixVerificationTick,
 	gcpMetrics: gcpMetricsTick,
 	planetScale: planetScaleTick,
+	planetScaleMetrics: planetScaleMetricsTick,
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
+	statusPages: statusPagesTick,
 	supabaseDiscovery: supabaseDiscoveryTick,
 	supabaseLogs: supabaseLogsTick,
 	supabaseInsights: supabaseInsightsTick,
@@ -504,10 +592,11 @@ export const runScheduled = (
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
+	statusPages: Option.Option<StatusPageBindings>,
 ): Effect.Effect<void, unknown> =>
 	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(layerTick(env, email, chatSessions)),
+		Effect.provide(layerTick(env, email, chatSessions, statusPages)),
 	)

@@ -9,8 +9,11 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { init } from "./update"
 import { cardView, connectButton } from "./view"
+import { awsDisconnectDialog } from "./view-aws"
 import { cloudflareReconnectButton } from "./view-cloudflare"
 import { gcpDialogs } from "./view-gcp-dialogs"
+import type { FlowStage } from "./flow"
+import { flowView } from "./view-flow"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
 
@@ -40,9 +43,16 @@ export const cardEmbed = Submodel.defineView<Model, Message, EmbedInputs>((model
 	),
 )
 
+export type FlowInputs = Readonly<{ integration: DataIntegration; stage: FlowStage; timeZone: string }>
+
+/** `/sources/new`'s current step for a data integration: the step card and the rail beside it. */
+export const flowEmbed = Submodel.defineView<Model, Message, FlowInputs>((model, inputs, h) =>
+	flowView(h, model, inputs.integration, inputs.stage, inputs.timeZone),
+)
+
 /**
  * A source's header: the Docs link, Connect while available, Cloudflare's Reconnect, and Google
- * Cloud's removal dialogs (the source's Delete opens them). The source's own Delete disconnects.
+ * Cloud's and AWS's removal dialogs (the source's Delete opens them, on any tab).
  */
 export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((model, inputs, h) => {
 	const entry = catalogEntry(inputs.integration)
@@ -52,10 +62,14 @@ export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((mo
 		overview?.kind === "connected" && inputs.integration === "cloudflare"
 			? [cloudflareReconnectButton(h, model)]
 			: []
-	const dialogs =
-		inputs.integration === "gcp" && (inputs.focusId ?? null) !== null
+	const isFocused = (inputs.focusId ?? null) !== null
+	const dialogs = !isFocused
+		? []
+		: inputs.integration === "gcp"
 			? gcpDialogs(h, model, inputs.timeZone)
-			: []
+			: inputs.integration === "aws"
+				? [awsDisconnectDialog(h, model)]
+				: []
 	return h.div(
 		[h.Class("flex shrink-0 items-center gap-3")],
 		[
@@ -68,7 +82,7 @@ export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((mo
 								h.Target("_blank"),
 								h.Rel("noreferrer"),
 								h.Class(
-									"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground",
+									"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 							],
 							["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],

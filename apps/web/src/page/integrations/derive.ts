@@ -1,3 +1,5 @@
+import { type AwsStreamState, awsStreamState } from "@maple/domain/aws"
+import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import {
@@ -8,6 +10,11 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { Array, DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
+import {
+	metricsAuthOf,
+	metricsLastCollectedAt,
+	metricsLastError,
+} from "../../components/integrations/planetscale-setup-steps"
 import type { Keyed } from "../../data/keyed"
 import { chatIntegrationId, HUB_CATALOG, type IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
@@ -33,6 +40,70 @@ export const isoMs = (iso: string | null | undefined): number | null =>
 		? null
 		: Option.getOrNull(Option.map(DateTime.make(iso), DateTime.toEpochMillis))
 
+/** Where a connection's metric stream stands, as the source's health reads it. */
+export const awsStreamOf = (connection: V2AwsConnection, nowMs: number): AwsStreamState =>
+	awsStreamState(
+		{
+			verifiedAt: isoMs(connection.verified_at),
+			metricStream: connection.metric_stream,
+			metricStreamChangedAt: isoMs(connection.metric_stream_changed_at),
+			metricsLastReceivedAt: isoMs(connection.metrics_last_received_at),
+			metricsLastError: connection.metrics_last_error,
+		},
+		nowMs,
+	)
+
+/** The one thing a connection needs next, or that it receives metrics; worst first. */
+export type AwsConnectionCondition =
+	| "setup"
+	| "failing"
+	| "not-receiving"
+	| "outdated"
+	| "metrics-off"
+	| "stopped"
+	| "waiting"
+	| "receiving"
+
+/** Worst first: a connection's own condition and the integration's worst follow this order. */
+const AWS_CONDITION_RANK: ReadonlyArray<AwsConnectionCondition> = [
+	"failing",
+	"not-receiving",
+	"stopped",
+	"setup",
+	"outdated",
+	"metrics-off",
+	"waiting",
+	"receiving",
+]
+
+export const awsConditionOf = (connection: V2AwsConnection, nowMs: number): AwsConnectionCondition => {
+	if (connection.verified_at === null) return "setup"
+	if (connection.last_check_error !== null) return "failing"
+	const stream = awsStreamOf(connection, nowMs)
+	if (stream._tag === "refused" || stream._tag === "undelivered") return "not-receiving"
+	if (stream._tag === "silent") return "stopped"
+	if (connection.setup_outdated) return "outdated"
+	switch (stream._tag) {
+		case "off":
+			return "metrics-off"
+		case "waiting":
+			return "waiting"
+		case "delivering":
+			return "receiving"
+	}
+}
+
+export const AWS_CONDITION_LABEL = {
+	setup: "Finish setup",
+	failing: "Needs attention",
+	"not-receiving": "No metrics arriving",
+	outdated: "Update the stack",
+	"metrics-off": "Metrics off",
+	stopped: "Metrics stopped",
+	waiting: "Waiting for metrics",
+	receiving: "Receiving metrics",
+} satisfies Record<AwsConnectionCondition, string>
+
 export interface CardStatus {
 	readonly label: string
 	readonly variant: "ok" | "warn" | "crit" | "outline"
@@ -40,7 +111,8 @@ export interface CardStatus {
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
 const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
-const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "outline" }
+/** The status read failed: a warning, not the neutral look of a quiet connection. */
+const STATUS_UNAVAILABLE: CardStatus = { label: "Couldn't check status", variant: "warn" }
 
 export interface ConnectedOverview {
 	readonly kind: "connected"
@@ -57,18 +129,21 @@ export interface AvailableOverview {
 }
 export interface UnavailableOverview {
 	readonly kind: "unavailable"
+	/** `failed`: the status read failed. `not-configured`: this deployment has no setup for it. */
+	readonly reason: "failed" | "not-configured"
 }
 export type IntegrationOverview = ConnectedOverview | AvailableOverview | UnavailableOverview | null
 
 const CONNECT: AvailableOverview = { kind: "available", cta: "Connect" }
 const SET_UP: AvailableOverview = { kind: "available", cta: "Set up" }
-const UNAVAILABLE: UnavailableOverview = { kind: "unavailable" }
+const UNAVAILABLE: UnavailableOverview = { kind: "unavailable", reason: "failed" }
+const UNCONFIGURED: UnavailableOverview = { kind: "unavailable", reason: "not-configured" }
 
 export const HEALTH_TONE = {
 	healthy: "ok",
 	attention: "warn",
 	pending: "neutral",
-	unavailable: "neutral",
+	unavailable: "warn",
 } as const
 
 const syncedLabel = (ms: number | null, nowMs: number, verb = "synced"): string | null =>
@@ -135,7 +210,7 @@ const connectedOrNot = (connected: boolean): CardStatus =>
 	connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED
 
 /** The header badge per integration (`useIntegrationStatuses`); `null` while loading. */
-export const cardStatusOf = (statuses: Statuses, id: IntegrationId): CardStatus | null => {
+export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
 	switch (id) {
 		case "gcp":
 			return fold(
@@ -149,12 +224,16 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId): CardStatus 
 		case "aws":
 			return fold(
 				statuses.aws,
-				(status): CardStatus =>
-					status.connections.length === 0
-						? NOT_CONNECTED
-						: status.connections.some((connection) => connection.verified_at === null)
-							? { label: "Finish setup", variant: "warn" }
-							: { label: countLabel(status.connections.length, "account"), variant: "ok" },
+				(status): CardStatus => {
+					if (status.connections.length === 0) return NOT_CONNECTED
+					const worst = worstAwsCondition(status.connections, nowMs)
+					return worst === "receiving"
+						? { label: countLabel(status.connections.length, "account"), variant: "ok" }
+						: {
+								label: AWS_CONDITION_LABEL[worst],
+								variant: worst === "failing" || worst === "not-receiving" ? "crit" : "warn",
+							}
+				},
 				unavailableStatus,
 			)
 		case "railway":
@@ -192,15 +271,30 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId): CardStatus 
 					status.connected
 						? {
 								label: status.organization ?? "Connected",
-								variant: status.scrape_target?.last_scrape_error != null ? "warn" : "ok",
+								variant: metricsLastError(status) !== null ? "warn" : "ok",
 							}
 						: scrapeStatus(statuses, "planetscale"),
 				unavailableStatus,
 			)
 		case "warpstream":
 			return { label: "Via Prometheus", variant: "outline" }
-		case "hazel":
-			return fold(statuses.hazel, (status) => connectedOrNot(status.connected), unavailableStatus)
+		case "linear":
+			return fold(
+				statuses.linear,
+				(status): CardStatus =>
+					status.revoked
+						? { label: "Revoked", variant: "warn" }
+						: status.connected
+							? {
+									label:
+										status.workspaceName === null || status.workspaceName === ""
+											? "Connected"
+											: status.workspaceName,
+									variant: "ok",
+								}
+							: NOT_CONNECTED,
+				unavailableStatus,
+			)
 		case "github":
 			return githubStatus(statuses)
 		default:
@@ -263,41 +357,41 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
+const worstAwsCondition = (connections: ReadonlyArray<V2AwsConnection>, nowMs: number) => {
+	const conditions = connections.map((connection) => awsConditionOf(connection, nowMs))
+	return AWS_CONDITION_RANK.find((condition) => conditions.includes(condition)) ?? "receiving"
+}
+
 const awsOverview = (statuses: Statuses, nowMs: number) =>
 	fold(
 		statuses.aws,
 		(status): IntegrationOverview => {
 			if (status.connections.length === 0) return CONNECT
-			const failing = status.connections.filter(
-				(connection) => connection.verified_at !== null && connection.last_check_error !== null,
-			).length
-			const pending = status.connections.some((connection) => connection.verified_at === null)
-			// A verified stack older than the connection's modules needs redeploying, as its row says.
-			const outdated = status.connections.some(
-				(connection) => connection.verified_at !== null && connection.setup_outdated,
-			)
+			const conditions = status.connections.map((connection) => awsConditionOf(connection, nowMs))
+			const failing = conditions.filter((condition) => condition === "failing").length
+			const worst = worstAwsCondition(status.connections, nowMs)
 			const issue =
-				failing > 0
+				worst === "failing"
 					? `${countLabel(failing, "account")} failing`
-					: pending
-						? "Finish setup"
-						: outdated
-							? "Update the stack"
-							: null
-			// A stack not deployed yet is setup in progress, not a failure.
+					: worst === "receiving"
+						? null
+						: AWS_CONDITION_LABEL[worst]
+			// A stack not deployed yet, or a first delivery on its way, is setup in progress, not a failure.
 			const health: Pick<IntegrationOverview & { kind: "connected" }, "health" | "stateLabel"> =
-				failing === 0 && pending
-					? { health: "pending", stateLabel: "Finish setup" }
+				worst === "setup" || worst === "waiting"
+					? { health: "pending", stateLabel: AWS_CONDITION_LABEL[worst] }
 					: attentionOr(issue)
+			const receiving = conditions.filter((condition) => condition === "receiving").length
+			const accounts = countLabel(status.connections.length, "account")
 			return {
 				kind: "connected",
 				...health,
 				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
-				stat: countLabel(status.connections.length, "account"),
+				stat: conditions.includes("setup") ? accounts : `${receiving} of ${accounts} sending metrics`,
 				lastSyncLabel: syncedLabel(
-					maxMs(status.connections.map((connection) => isoMs(connection.last_checked_at))),
+					maxMs(status.connections.map((connection) => isoMs(connection.metrics_last_received_at))),
 					nowMs,
-					"checked",
+					"last data",
 				),
 				issue,
 			}
@@ -332,7 +426,7 @@ const supabaseOverview = (statuses: Statuses, nowMs: number) =>
 	fold(
 		statuses.supabase,
 		(status): IntegrationOverview => {
-			if (!status.configured) return UNAVAILABLE
+			if (!status.configured) return UNCONFIGURED
 			if (!status.connected) return CONNECT
 			const issue = status.revoked
 				? "Reconnect to resume"
@@ -429,13 +523,13 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 			if (!status.connected) return scrapeOverview(statuses, nowMs, "planetscale")
 			const issue = status.pending_org_selection
 				? "Finish org selection"
-				: status.metrics_auth === "missing"
-					? "Metrics setup pending"
-					: status.scrape_target?.last_scrape_error != null
-						? "Scrape failing"
-						: status.last_inventory_error != null
-							? "Inventory failing"
-							: null
+				: metricsLastError(status) !== null
+					? metricsAuthOf(status) === "api"
+						? "Metrics polling failing"
+						: "Scrape failing"
+					: status.last_inventory_error != null
+						? "Inventory failing"
+						: null
 			return {
 				kind: "connected",
 				...attentionOr(issue),
@@ -443,11 +537,11 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 				stat:
 					dbCount !== null && dbCount > 0
 						? `${countLabel(dbCount, "database")} tracked`
-						: status.scrape_target?.enabled === true
-							? "Metrics scraping on"
+						: metricsAuthOf(status) === "api" || status.scrape_target?.enabled === true
+							? "Branch metrics on"
 							: null,
 				lastSyncLabel: syncedLabel(
-					maxMs([status.scrape_target?.last_scrape_at, status.last_inventory_at].map(isoMs)),
+					maxMs([metricsLastCollectedAt(status), status.last_inventory_at].map(isoMs)),
 					nowMs,
 				),
 				issue,
@@ -457,21 +551,31 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 	)
 }
 
-const hazelOverview = (statuses: Statuses) =>
+const linearOverview = (statuses: Statuses) =>
 	fold(
-		statuses.hazel,
+		statuses.linear,
 		(status): IntegrationOverview =>
-			status.connected
+			status.revoked
 				? {
 						kind: "connected",
-						health: "healthy",
-						stateLabel: "Healthy",
-						context: status.externalUserEmail,
-						stat: "Alert delivery ready",
+						health: "attention",
+						stateLabel: "Revoked",
+						context: status.workspaceName,
+						stat: null,
 						lastSyncLabel: null,
-						issue: null,
+						issue: "Reconnect Linear",
 					}
-				: CONNECT,
+				: status.connected
+					? {
+							kind: "connected",
+							health: "healthy",
+							stateLabel: "Healthy",
+							context: status.workspaceName,
+							stat: "Incident issues ready",
+							lastSyncLabel: null,
+							issue: null,
+						}
+					: CONNECT,
 		unavailableOverview,
 	)
 
@@ -556,8 +660,8 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return planetscaleOverview(statuses, nowMs)
 		case "warpstream":
 			return SET_UP
-		case "hazel":
-			return hazelOverview(statuses)
+		case "linear":
+			return linearOverview(statuses)
 		case "github":
 			return githubOverview(statuses, nowMs)
 		default:

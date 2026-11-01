@@ -9,11 +9,11 @@ import { Env } from "@maple/backend/platform/Env"
 import { PLANETSCALE_CALLBACK_PATH } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { SUPABASE_CALLBACK_PATH } from "@maple/backend/services/auth/SupabaseOAuthService"
 
-export const HAZEL_CALLBACK_PATH = "/api/integrations/hazel/callback"
+export const LINEAR_CALLBACK_PATH = "/api/integrations/linear/callback"
 export const GITHUB_CALLBACK_PATH = "/api/integrations/github/callback"
 export const CLOUDFLARE_CALLBACK_PATH = "/api/integrations/cloudflare/callback"
 
-const HAZEL_MESSAGE_TYPE = "maple:integration:hazel"
+const LINEAR_MESSAGE_TYPE = "maple:integration:linear"
 const GITHUB_MESSAGE_TYPE = "maple:integration:github"
 const CLOUDFLARE_MESSAGE_TYPE = "maple:integration:cloudflare"
 const PLANETSCALE_MESSAGE_TYPE = "maple:integration:planetscale"
@@ -232,22 +232,22 @@ const requireCodeAndState = (params: URLSearchParams): string | null =>
 
 // `setup_action=request`: the org requires admin approval, so there is no installation yet.
 const requireInstallation = (params: URLSearchParams): string | null =>
-	!params.get("installation_id")
+	!params.get("installation_id") && (!params.get("code") || params.get("setup_action") === "request")
 		? params.get("setup_action") === "request"
 			? "Installation requested. An org admin must approve it on GitHub, then reconnect."
 			: "Missing installation_id in callback"
 		: !params.get("state")
-			? "Missing state in callback. GitHub did not return it. Restart the connection from the Maple dashboard."
+			? "The GitHub app is installed, but this return has no Maple connection request. Open the GitHub source in Maple and click Connect GitHub."
 			: null
 
 const ROUTES: ReadonlyArray<CallbackRoute> = [
 	{
-		path: HAZEL_CALLBACK_PATH,
-		flow: "hazel",
-		provider: "hazel",
-		label: "Hazel",
+		path: LINEAR_CALLBACK_PATH,
+		flow: "linear",
+		provider: "linear",
+		label: "Linear",
 		page: "/integrations",
-		messageType: HAZEL_MESSAGE_TYPE,
+		messageType: LINEAR_MESSAGE_TYPE,
 		precheck: requireCodeAndState,
 	},
 	{
@@ -289,6 +289,15 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 ]
 
 /**
+ * The redirect that hands a callback query to the dashboard. The location carries the provider's
+ * code, so no cache may keep it and the landing request sends no `Referer`.
+ */
+export const forwardToDashboard = (location: string) =>
+	HttpServerResponse.redirect(location, {
+		headers: { "cache-control": "no-store", "referrer-policy": "no-referrer" },
+	})
+
+/**
  * The provider callbacks. They redeem nothing: this request carries no Maple session, so it
  * cannot tell whose browser came back. The query goes to the dashboard in a URL fragment, and
  * the signed-in dashboard finishes it (`oauthComplete`), which only the starting user can do.
@@ -305,7 +314,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 					renderCallbackPage({
 						status: "error",
 						message,
-						returnTo: null,
+						returnTo: route.provider === "github" ? "/sources/new?integration=github" : null,
 						targetOrigin: dashboardTargetOrigin,
 						messageType: route.messageType,
 						label: route.label,
@@ -343,7 +352,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 						flow: route.flow,
 						query: url.search.replace(/^\?/, ""),
 					})
-					return HttpServerResponse.redirect(`${appBaseUrl}${route.page}?${search}${hash}`)
+					return forwardToDashboard(`${appBaseUrl}${route.page}?${search}${hash}`)
 				},
 				// Every branch returns a response, so the status is the only signal of a rejection.
 				Effect.tap((response) =>

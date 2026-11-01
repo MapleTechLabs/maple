@@ -44,6 +44,7 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"listEnvironments",
 	"getService",
 	"getServiceOverview",
+	"queryServiceHealth",
 	"queryTraceTimeseries",
 	"queryTraceBreakdown",
 	// Errors
@@ -71,6 +72,8 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"getAlertIncident",
 	"listAlertRules",
 	"getAlertRule",
+	// Charts an incident's own signal, the read the dashboard's incident page draws from.
+	"previewAlertRule",
 	"listAlertRuleChecks",
 	"listAlertDeliveries",
 	// Anomalies
@@ -85,6 +88,11 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"endLiveActivity",
 	"mintWidgetCredential",
 	"revokeWidgetCredential",
+	// Device-bound widget credentials (DPoP): register a key, then trade proofs for tokens.
+	"registerDeviceCredential",
+	"revokeDeviceCredential",
+	"getDeviceAttestationChallenge",
+	"issueDeviceToken",
 	// Home Screen widgets — one read, and the only one a device credential reaches.
 	"getWidgetSummary",
 ]
@@ -167,6 +175,7 @@ function render(): { text: string; doc: JsonObject } {
 	const doc = structuredClone(OpenApi.fromApi(MapleApiV2)) as unknown as JsonObject
 
 	prunePaths(doc)
+	dropPropertyNames(doc)
 	collapseNullableUnions(doc)
 	collapseErrorResponses(doc)
 	mergeDuplicateComponents(doc)
@@ -217,6 +226,20 @@ function prunePaths(doc: JsonObject): void {
 		)
 		process.exit(1)
 	}
+}
+
+/**
+ * Pass 1b: drop `propertyNames`. Effect emits it beside `additionalProperties: false` for a
+ * struct that rejects extra members (`DevicePublicJwk`); it restates the declared keys as a
+ * union Swift cannot use, and `additionalProperties: false` already says the same thing.
+ */
+function dropPropertyNames(node: JsonValue | undefined): void {
+	const array = asArray(node)
+	if (array !== undefined) return array.forEach(dropPropertyNames)
+	const object = asObject(node)
+	if (object === undefined) return
+	delete object.propertyNames
+	Object.values(object).forEach(dropPropertyNames)
 }
 
 /**
@@ -372,20 +395,20 @@ function collapseNullableUnions(doc: JsonObject): void {
 type Collapsed = { schema: JsonObject; nullable: boolean }
 
 /**
- * `{ anyOf: [S, { type: "null" }] }` → `S`, in either branch order.
- * Returns undefined for anything that is not exactly that shape.
+ * `{ anyOf: [S, { type: "null" }] }` → `S`, in any branch order. Effect flattens
+ * nested unions, so a nullable union arrives as `anyOf: [A, B, null]`; that
+ * becomes `anyOf: [A, B]`, which the later passes collapse further.
  */
 function nullableInnerSchema(schema: JsonObject): JsonObject | undefined {
 	const branches = asObjectArray(schema.anyOf)
-	if (branches === undefined || branches.length !== 2) return undefined
+	if (branches === undefined || branches.length < 2) return undefined
 
-	const nullIndex = branches.findIndex((branch) => branch.type === "null")
-	if (nullIndex === -1) return undefined
+	const rest = branches.filter((branch) => branch.type !== "null")
+	if (rest.length !== branches.length - 1) return undefined
 
-	const inner = branches[nullIndex === 0 ? 1 : 0]
-	if (inner === undefined || inner.type === "null") return undefined
-
-	return mergeAnnotations(schema, inner)
+	const [inner] = rest
+	if (rest.length === 1 && inner !== undefined) return mergeAnnotations(schema, inner)
+	return { ...schema, anyOf: rest }
 }
 
 /**
@@ -404,7 +427,7 @@ function finiteNumberSchema(
 	deref: (schema: JsonObject) => JsonObject,
 ): JsonObject | undefined {
 	const branches = asObjectArray(schema.anyOf)
-	if (branches === undefined || branches.length !== 2) return undefined
+	if (branches === undefined || branches.length < 2) return undefined
 
 	const isNonFiniteEnum = (branch: JsonObject): boolean => {
 		const values = asStringArray(deref(branch).enum)
@@ -415,13 +438,19 @@ function finiteNumberSchema(
 		)
 	}
 
-	const enumIndex = branches.findIndex(isNonFiniteEnum)
-	if (enumIndex === -1) return undefined
+	const isNumeric = (branch: JsonObject): boolean => {
+		const type = deref(branch).type
+		return type === "number" || type === "integer"
+	}
 
-	const numeric = deref(branches[enumIndex === 0 ? 1 : 0] as JsonObject)
-	if (numeric.type !== "number" && numeric.type !== "integer") return undefined
+	// Flattened unions carry the enum beside other members (`[number, nonFinite, false]`);
+	// drop it wherever a numeric branch sits next to it.
+	const rest = branches.filter((branch) => !isNonFiniteEnum(branch))
+	if (rest.length === branches.length || !rest.some(isNumeric)) return undefined
 
-	return mergeAnnotations(schema, numeric)
+	const [numeric] = rest
+	if (rest.length === 1 && numeric !== undefined) return mergeAnnotations(schema, deref(numeric))
+	return { ...schema, anyOf: rest }
 }
 
 /**

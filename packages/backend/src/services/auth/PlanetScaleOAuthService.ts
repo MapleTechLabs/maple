@@ -10,7 +10,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates } from "@maple/db/tables"
+import { OAuthAuthStates, PlanetscaleConnections } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
@@ -187,14 +187,25 @@ export interface PlanetScaleOAuthServiceApi {
 	readonly connectedByUserId: (orgId: OrgId) => Effect.Effect<string | null, IntegrationsPersistenceError>
 	/**
 	 * Grant lifecycle timestamps (epoch ms), so the UI can name a revoked grant
-	 * directly instead of inferring it from whichever downstream call failed.
+	 * directly instead of inferring it from whichever downstream call failed, and
+	 * the scopes PlanetScale granted (unprefixed, e.g. `write_databases`).
 	 */
-	readonly grantStatus: (
-		orgId: OrgId,
-	) => Effect.Effect<
-		{ readonly revokedAt: number | null; readonly expiresAt: number | null },
+	readonly grantStatus: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly revokedAt: number | null
+			readonly expiresAt: number | null
+			readonly scopes: ReadonlyArray<string>
+			/** The grant row's last write, for {@link markRevoked}'s race guard. Null when not connected. */
+			readonly updatedAt: number | null
+		},
 		IntegrationsPersistenceError
 	>
+	/**
+	 * Stamp the grant revoked so pollers stop and the UI asks for a reconnect. A no-op when the
+	 * row was rewritten after `unchangedSince` (a reconnect or refresh wins). Best-effort; reports
+	 * whether the stamp landed.
+	 */
+	readonly markRevoked: (orgId: OrgId, unchangedSince: number) => Effect.Effect<boolean>
 	/** Drop the stored grant. PlanetScale documents no revoke endpoint. */
 	readonly disconnect: (
 		orgId: OrgId,
@@ -204,7 +215,7 @@ export interface PlanetScaleOAuthServiceApi {
 export class PlanetScaleOAuthService extends Context.Service<
 	PlanetScaleOAuthService,
 	PlanetScaleOAuthServiceApi
->()("@maple/api/services/PlanetScaleOAuthService", {
+>()("@maple/backend/services/PlanetScaleOAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -214,6 +225,14 @@ export class PlanetScaleOAuthService extends Context.Service<
 			providerLabel: "PlanetScale",
 			database,
 			env,
+			// A new grant starts clean: an inventory failure from the old one must not count toward
+			// the repeated-403 revoke in PlanetScaleService.pollOrg, even if the callback fails after.
+			onUpsert: (db, orgId, currentTime) =>
+				db.run(
+					PG.update(PlanetscaleConnections)
+						.set({ lastInventoryError: null, updatedAt: currentTime })
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
 		})
 
 		const apiTarget = (accessToken: string) => ({
@@ -541,8 +560,13 @@ export class PlanetScaleOAuthService extends Context.Service<
 			return {
 				revokedAt: row?.revokedAt ?? null,
 				expiresAt: row?.expiresAt ?? null,
+				scopes: (row?.scope ?? "").split(" ").filter((scope) => scope !== ""),
+				updatedAt: row?.updatedAt ?? null,
 			}
 		})
+
+		const markRevoked = (orgId: OrgId, unchangedSince: number) =>
+			oauth.markConnectionRevoked(orgId, unchangedSince)
 
 		const disconnect = Effect.fn("PlanetScaleOAuthService.disconnect")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
@@ -558,6 +582,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			hasConnection,
 			connectedByUserId,
 			grantStatus,
+			markRevoked,
 			disconnect,
 		} satisfies PlanetScaleOAuthServiceApi
 	}),

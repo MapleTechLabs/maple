@@ -75,6 +75,12 @@ export class PlanetScaleForbiddenError extends Schema.TaggedError<PlanetScaleFor
 	{ message: Schema.String },
 ) {}
 
+/** A 403 on the org-wide database listing: the grant has lost access to the whole organization. */
+export class PlanetScaleOrgForbiddenError extends Schema.TaggedError<PlanetScaleOrgForbiddenError>()(
+	"@maple/backend/integrations/PlanetScaleOrgForbiddenError",
+	{ message: Schema.String },
+) {}
+
 export const isPlanetScaleTokenRejected = (error: unknown): error is PlanetScaleTokenRejectedError =>
 	error instanceof PlanetScaleTokenRejectedError
 

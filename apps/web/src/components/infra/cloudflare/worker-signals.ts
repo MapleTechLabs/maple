@@ -3,6 +3,7 @@ import type {
 	CloudflareWorkerLatencyBucket,
 	CloudflareWorkerOutcomeBucket,
 } from "@maple/web-data/warehouse/cloudflare-infra"
+import { shortId } from "@maple/ui/lib/ids"
 import type { ChartEventMarker } from "../primitives/chart-event-marker"
 
 type StripRow = { bucket: string; attributeValue: string; value: number }
@@ -128,7 +129,7 @@ export function deployMarkers(
 		.map((release) => ({
 			id: release.commitSha,
 			at: release.firstSeen,
-			label: release.commitSha.slice(0, 7),
+			label: shortId(release.commitSha, "sha"),
 			tone: "neutral",
 		}))
 }

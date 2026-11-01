@@ -15,7 +15,7 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			"Permanently delete an alert rule together with its incident history, delivery events and evaluation state. " +
 			"Irreversible; requires confirm=true. Ids from list_alert_rules.",
 		parameters: Schema.Struct({
-			rule_id: P.text("Alert rule ID"),
+			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		output: DeleteAlertRuleOutput,

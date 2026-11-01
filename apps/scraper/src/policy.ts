@@ -20,6 +20,7 @@ export const classifyTargetStatus = (status: number): ScrapeFailureReason => {
 	if (status === 429 || status === 503) return "rate_limited"
 	if (status === 401 || status === 403) return "auth_failed"
 	if (status >= 500) return "target_error"
+	if (status >= 400) return "target_rejected"
 	return "scrape_failed"
 }
 
@@ -62,6 +63,8 @@ export const backoffLogMessage = (reason: ScrapeFailureReason): string => {
 			return "Scrape delivery blocked by the ingest gateway, backing off"
 		case "target_error":
 			return "Scrape target returning server errors, backing off"
+		case "target_rejected":
+			return "Scrape target rejecting the request, backing off"
 		case "scrape_failed":
 			return "Scrape failed, backing off"
 	}

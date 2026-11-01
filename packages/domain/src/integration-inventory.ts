@@ -171,7 +171,7 @@ export interface IntegrationInventory {
 
 export const INTEGRATION_FEEDS = {
 	github: [
-		"source code for investigations (list_source_repositories, search_source_code, read_source_file)",
+		"source code for Maple's investigations and pull request review",
 		"commit metadata for deploys (service_deployments)",
 		"GitHub Actions runs as traces under service.name=github-actions, with job logs as logs on their step spans",
 	],
@@ -186,7 +186,7 @@ export const INTEGRATION_FEEDS = {
 		"query insights and deploy-request events",
 	],
 	prometheus: ["metrics scraped from Prometheus endpoints (list_metrics)"],
-	chat: ["the Maple bot in chat workspaces"],
+	chat: ["the Maple bot in chat workspaces", "alert issues and comments in Linear"],
 } satisfies Record<IntegrationProvider, ReadonlyArray<string>>
 
 /** The newest attempt decides: an error newer than the last success is failing. */
@@ -428,11 +428,16 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 			note: [db.kind, db.region, db.state].filter((part) => part !== null && part !== "").join(", "),
 		}
 	})
+	// A disabled managed target only holds branch filters: metrics come from the metrics API.
 	const scrape = inputs.scrapeTargets
-		.filter((t) => t.managedBy?.startsWith("planetscale:"))
+		.filter((t) => t.managedBy?.startsWith("planetscale:") && t.enabled !== false)
 		.map((t) => scrapeResource(t, now, "metrics scrape"))
+	// Only permissions something still depends on; older bindings stored ones that no longer matter.
 	const missing = Object.entries(connection.detectedPermissions ?? {})
-		.filter(([, granted]) => !granted)
+		.filter(
+			([permission, granted]) =>
+				!granted && PLANETSCALE_PERMISSION_FEEDS.some(([key]) => key === permission),
+		)
 		.map(([permission]) => permission)
 	// The inventory pass clears its error on success, so a set error is the latest outcome.
 	const own = isRevoked(oauth)
@@ -459,7 +464,6 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 
 /** What each permission probed at org-binding time feeds, so a missing one names its effect. */
 const PLANETSCALE_PERMISSION_FEEDS = [
-	["readMetricsEndpoints", "database metrics"],
 	["readDatabases", "the database inventory and deploy requests"],
 	["readOrganization", "the organization lookup"],
 ] as const
@@ -510,8 +514,8 @@ const prometheus = (inputs: IntegrationInventoryInputs, now: number): Integratio
 }
 
 const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
-	const hazel = oauthFor(inputs, "hazel")
-	if (!hazel && inputs.chatWorkspaces.length === 0) return null
+	const linear = oauthFor(inputs, "linear")
+	if (!linear && inputs.chatWorkspaces.length === 0) return null
 	const workspaces = inputs.chatWorkspaces.map((w): IntegrationResource => ({
 		kind: "workspace",
 		name: w.name,
@@ -520,26 +524,26 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 		lastError: null,
 		note: w.connector,
 	}))
-	const hazelResource: ReadonlyArray<IntegrationResource> = hazel
+	const linearResource: ReadonlyArray<IntegrationResource> = linear
 		? [
 				{
 					kind: "workspace",
-					name: hazel.externalAccountName ?? hazel.externalUserEmail ?? "Hazel",
-					status: hazel.revokedAt === null ? "healthy" : "disconnected",
+					name: linear.externalAccountName ?? "Linear",
+					status: linear.revokedAt === null ? "healthy" : "disconnected",
 					lastSuccessAt: null,
 					lastError: null,
-					note: "hazel",
+					note: "linear",
 				},
 			]
 		: []
 	const connectedAt = [
 		...inputs.chatWorkspaces.map((w) => w.createdAt),
-		...(hazel ? [hazel.createdAt] : []),
+		...(linear ? [linear.createdAt] : []),
 	]
 	return entry("chat", now, {
 		account: null,
 		connectedAt: Math.min(...connectedAt),
-		resources: [...workspaces, ...hazelResource],
+		resources: [...workspaces, ...linearResource],
 	})
 }
 
@@ -578,9 +582,7 @@ export const withSourceHealth = (
 		const own = sources.filter((source) => source.platform === entry.provider)
 		if (own.length === 0) return entry
 		const status = worstStatus([entry.status, ...own.map((source) => source.health.status)])
-		const problem =
-			own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
+		const problem = own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
 		return { ...entry, status, problem: status === "healthy" ? null : problem }
 	}),
 })
-

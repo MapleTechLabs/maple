@@ -394,7 +394,7 @@ describe("runChatTurn review refusals", () => {
 			submitDiagnosis: () => Effect.die("no investigation in a review session"),
 			submitReview: (_org, _id, request) => Effect.sync(() => filed.push(request)),
 			review: {
-				coverage: { observe: () => {}, unread: () => ["src/b.ts"] },
+				coverage: { observe: () => {}, unread: () => ["src/b.ts"], wholeDiff: () => true },
 				ledger: makeReviewLedger(),
 			},
 			text: "Review pull request #1.",

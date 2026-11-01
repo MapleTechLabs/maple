@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { isRefusal, makeIngestSender } from "./ingest-sender"
@@ -25,7 +25,8 @@ const config = ConfigProvider.layer(
 )
 
 /** A gateway that records each request and answers with `status` and `body`. */
-const gateway = (sent: Array<Sent>, status: number, body = "{}"): typeof fetch =>
+const gateway =
+	(sent: Array<Sent>, status: number, body = "{}"): typeof fetch =>
 	async (input: string | URL | Request, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 		sent.push({
@@ -74,11 +75,40 @@ describe("makeIngestSender", () => {
 		const sent: Array<Sent> = []
 		return Effect.gen(function* () {
 			const refused = yield* Effect.flip(send(gateway(sent, 402, "over plan limit")))
-			assert.deepStrictEqual([refused.status, refused.message], [402, "Test metrics ingest returned 402: over plan limit"])
+			assert.deepStrictEqual(
+				[refused.status, refused.message],
+				[402, "Test metrics ingest returned 402: over plan limit"],
+			)
 			assert.isTrue(isRefusal(refused))
 
 			const failed = yield* Effect.flip(send(gateway(sent, 503, "")))
 			assert.deepStrictEqual([failed.status, isRefusal(failed)], [503, false])
 		})
+	})
+
+	it.effect("ends the span Ok on a refusal and Error on a gateway fault", () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		return Effect.gen(function* () {
+			yield* Effect.flip(send(gateway([], 403, "<title>Attention Required!</title>")))
+			yield* Effect.flip(send(gateway([], 502, "")))
+			const sends = spans.filter((span) => span.name === "IngestSender.send")
+			assert.deepStrictEqual(
+				sends.map((span) => [
+					span.status._tag === "Ended" && Exit.isSuccess(span.status.exit),
+					span.attributes.get("maple.ingest.outcome"),
+				]),
+				[
+					[true, "refused"],
+					[false, undefined],
+				],
+			)
+		}).pipe(Effect.provideService(Tracer.Tracer, tracer))
 	})
 })

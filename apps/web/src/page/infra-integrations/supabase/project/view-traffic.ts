@@ -24,7 +24,10 @@ const total = (h: H, value: string, label: string, className?: string): Html =>
 	h.div(
 		[h.Class("flex flex-col items-end gap-0.5")],
 		[
-			h.span([h.Class(cn("font-mono text-lg tabular-nums text-foreground", className))], [value]),
+			h.span(
+				[h.Class(cn("font-mono text-lg font-semibold tabular-nums text-foreground", className))],
+				[value],
+			),
 			h.span([h.Class("text-2xs text-muted-foreground")], [label]),
 		],
 	)
@@ -76,7 +79,7 @@ const legend = (h: H, traffic: SupabaseApiTrafficResponse, isOpen: boolean): Htm
 					h.Type("button"),
 					h.AriaExpanded(isOpen),
 					h.OnClick(Message.ClickedToggleTopPaths()),
-					h.Class("text-2xs text-muted-foreground transition-colors hover:text-foreground"),
+					h.Class("text-2xs text-muted-foreground hover:text-foreground active:text-foreground"),
 				],
 				[isOpen ? "Hide top paths" : "Top paths →"],
 			),
@@ -111,7 +114,7 @@ const bars = (
 				}),
 	])
 
-const PATH_ROW = "flex items-center gap-4 border-t border-border/40 px-4 py-2 text-xs"
+const PATH_ROW = "flex items-center gap-4 border-t border-border-subtle px-4 py-2 text-xs"
 
 const topPathsList = (h: H, paths: SupabaseApiTopPathsResponse): Html =>
 	paths.paths.length === 0
@@ -181,7 +184,7 @@ const trafficBody = (
 				? [
 						keyedBody(h, model.topPaths, {
 							rows: 4,
-							failureTitle: "Failed to load the top paths",
+							failureTitle: "Couldn't load the top paths",
 							onRetry: Message.ClickedRetry({ section: "topPaths" }),
 							render: (paths) => topPathsList(h, paths),
 						}),
@@ -208,7 +211,7 @@ export const trafficPanel = (
 		[
 			keyedBody(h, model.traffic, {
 				rows: 6,
-				failureTitle: "Failed to load API requests",
+				failureTitle: "Couldn't load API requests",
 				onRetry: Message.ClickedRetry({ section: "traffic" }),
 				render: (traffic) => trafficBody(h, model, traffic, theme, timeZone, isLogsEnabled),
 			}),

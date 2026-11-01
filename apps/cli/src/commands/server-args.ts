@@ -122,6 +122,21 @@ export const parseElapsedSeconds = (raw: string): number | undefined => {
 }
 
 /**
+ * Start time of a Linux process from `/proc/<pid>/stat` (field 22, ticks since
+ * boot) and `/proc/stat` (`btime`), for images that ship no `ps`. Fields are
+ * counted after the last `)` because the command name may hold spaces and parens.
+ */
+export const parseProcStartedAtMs = (pidStat: string, systemStat: string): number | undefined => {
+	const commEnd = pidStat.lastIndexOf(")")
+	// `state` is field 3, so `starttime` (field 22) is index 19 after the comm.
+	const ticks = pidStat.slice(commEnd + 2).split(" ")[19] ?? ""
+	const boot = systemStat.match(/^btime (\d+)$/m)
+	if (commEnd < 0 || !boot || !/^\d+$/.test(ticks)) return undefined
+	// /proc reports times in USER_HZ, which the kernel ABI fixes at 100 per second.
+	return Number(boot[1]) * 1000 + Number(ticks) * 10
+}
+
+/**
  * Could a live process that started at `startedAtMs` have written a PID file
  * last modified at `writtenAtMs`? A reused PID belongs to a process started
  * after the writer died, so after the write. The slack covers `etime`'s
@@ -142,6 +157,8 @@ export const storeChangedSince = (status: LocalStatus | undefined, sinceMs: numb
 	(status.lastDeleteAtMs != null && status.lastDeleteAtMs >= sinceMs)
 
 export interface DetachedChildArgs {
+	readonly reset?: boolean
+	readonly projectorModules?: readonly string[]
 	readonly entry: string | undefined
 	readonly host: string
 	readonly advertiseHost: string
@@ -182,7 +199,9 @@ export const buildDetachedChildArgs = (options: DetachedChildArgs): string[] => 
 		...(options.minimumRawTelemetryRetentionDays !== undefined
 			? ["--minimum-raw-telemetry-retention-days", String(options.minimumRawTelemetryRetentionDays)]
 			: []),
+		...(options.reset ? ["--reset"] : []),
 		...(options.offline ? ["--offline"] : []),
+		...(options.projectorModules ?? []).flatMap((path) => ["--projector-module", path]),
 	]
 }
 

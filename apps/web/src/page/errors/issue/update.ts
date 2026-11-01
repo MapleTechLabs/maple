@@ -560,7 +560,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: settled,
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to add comment",
+						title: "Couldn't add comment",
 						description: failure.message,
 					}),
 				}),
@@ -595,7 +595,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: settled,
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to detach the pull request",
+						title: "Couldn't detach the pull request",
 						description: failure.message,
 					}),
 				}),

@@ -1,5 +1,5 @@
-import type { V2AwsConnection, V2AwsSetup } from "@maple/domain/http/v2"
-import type { AwsConnectionId } from "@maple/domain/primitives"
+import type { V2AwsConnection, V2AwsIngest, V2AwsSetup } from "@maple/domain/http/v2"
+import type { AwsConnectionId, AwsMetricNamespace } from "@maple/domain/primitives"
 import { Option, type Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../data/keyed"
@@ -12,17 +12,25 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	type AwsCardModel,
 	type AwsRemovedStack,
+	type AwsSelection,
 	type AwsSetupMethod,
+	type AwsSetupPart,
 	CheckAwsConnection,
 	CreateAwsConnection,
 	DeleteAwsConnection,
 	decodeCreateRequest,
+	LoadAwsIngest,
 	LoadAwsSetup,
+	METRIC_SELECTION_HINT,
+	metricStreamOf,
 	normalizeAccountId,
 	pendingConnections,
 	ReadAwsRemoved,
+	selectionOf,
+	UpdateAwsMetricStream,
 	WriteAwsRemoved,
 } from "./aws"
+import { integrationOfSearch } from "./catalog"
 import { ReadClock } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -58,6 +66,7 @@ export const gotAccountId = (model: Model, message: Field.Message): Return => {
 	}
 }
 
+/** The role comes first: the metric stream is picked once Maple can see the account. */
 export const submittedAccount = (model: Model): Return => {
 	const card = model.awsCard
 	if (card.isCreating) return { model }
@@ -72,10 +81,18 @@ export const submittedAccount = (model: Model): Return => {
 
 /** The new connection's setup opens right away: deploying the stack is the next step. */
 export const succeededCreate = (model: Model, context: PageContext, connection: V2AwsConnection): Return =>
-	chain(withCard(model, { accountId: Field.init(), isCreating: false, isAdding: false }), [
-		(next) => openSetup(next, context, connection.id),
-		(next) => requestStatus(next, context, "aws", "Supersede"),
-	])
+	chain(
+		withCard(model, {
+			accountId: Field.init(),
+			isCreating: false,
+			isAdding: false,
+			flowId: connection.id,
+		}),
+		[
+			(next) => openSetup(next, context, connection.id),
+			(next) => requestStatus(next, context, "aws", "Supersede"),
+		],
+	)
 
 export const failedCreate = (model: Model, error: string): Return => ({
 	model: withCard(model, { isCreating: false, createError: error }),
@@ -88,13 +105,20 @@ export const setAdding = (model: Model, isAdding: boolean): Return => ({
 const setupKey = (context: PageContext, id: AwsConnectionId) =>
 	requestKey(context.orgId, "awsIntegration.setup", { id })
 
-export const openSetup = (model: Model, context: PageContext, id: AwsConnectionId): Return => {
+export const openSetup = (
+	model: Model,
+	context: PageContext,
+	id: AwsConnectionId,
+	mode: Keyed.ReadMode = "Load",
+): Return => {
 	// Another connection's setup is never shown while this one loads: its stack is for another account.
 	const opened = withCard(
 		model,
-		model.awsCard.setupId === id ? { setupId: id } : { setupId: id, setup: Keyed.idle() },
+		model.awsCard.setupId === id
+			? { setupId: id, flowId: id }
+			: { setupId: id, flowId: id, setup: Keyed.idle() },
 	)
-	return Option.match(Keyed.requestFor(opened.awsCard.setup, setupKey(context, id), "Load"), {
+	return Option.match(Keyed.requestFor(opened.awsCard.setup, setupKey(context, id), mode), {
 		onNone: () => ({ model: opened }),
 		onSome: (requested) => ({
 			model: withCard(opened, { setup: requested }),
@@ -111,8 +135,8 @@ export const completedLoadSetup = (
 	result: Result.Result<V2AwsSetup, LoadFailure>,
 ): Return => ({ model: withCard(model, { setup: Keyed.accept(model.awsCard.setup, key, result) }) })
 
-export const setMethod = (model: Model, method: AwsSetupMethod): Return => ({
-	model: withCard(model, { method }),
+export const setMethod = (model: Model, part: AwsSetupPart, method: AwsSetupMethod): Return => ({
+	model: withCard(model, part === "role" ? { method } : { streamMethod: method }),
 })
 
 /** A click during a background check makes that check the user's: its result is toasted. */
@@ -161,7 +185,7 @@ export const completedCheck = (
 	if (failure !== null) {
 		return quiet
 			? { model: settled }
-			: toast(settled, "error", "Failed to check the AWS connection", failure.message)
+			: toast(settled, "error", "Couldn't check the AWS connection", failure.message)
 	}
 	const before = connectionsOf(model).find((entry) => entry.id === id)
 	const justVerified = before?.verified_at === null && connection?.verified_at != null
@@ -238,12 +262,16 @@ export const completedDisconnect = (
 	error: string | null,
 ): Return => {
 	const settled = withCard(model, { isDisconnecting: false })
-	if (removed === null) return toast(settled, "error", "Failed to disconnect AWS", error ?? "")
+	if (removed === null) return toast(settled, "error", "Couldn't disconnect AWS", error ?? "")
 	const card = settled.awsCard
 	const stacks = [removed, ...card.removed.filter((stack) => stack.connectionId !== removed.connectionId)]
 	return chain(
 		// `disconnectId` stays: the closing dialog still names the account.
-		withCard(settled, { removed: stacks, setupId: card.setupId === id ? null : card.setupId }),
+		withCard(settled, {
+			removed: stacks,
+			setupId: card.setupId === id ? null : card.setupId,
+			flowId: card.flowId === id ? null : card.flowId,
+		}),
 		[
 			(next) =>
 				next.awsCard.disconnectId === id
@@ -278,19 +306,144 @@ export const completedReadRemoved = (model: Model, removed: ReadonlyArray<AwsRem
 	model: withCard(model, { removed }),
 })
 
+const ingestKey = (context: PageContext, id: AwsConnectionId) =>
+	requestKey(context.orgId, "awsIntegration.ingest", { id })
+
+/**
+ * The ingest of each verified streaming connection, only where the AWS card shows it: a status
+ * read loads what is missing, the card's watch refreshes it.
+ */
+const requestIngest = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
+	chain(
+		model,
+		(integrationOfSearch(model.search.integration) === "aws" ? connectionsOf(model) : [])
+			.filter((connection) => connection.verified_at !== null && connection.metric_stream !== null)
+			.map((connection) => (next: Model) => {
+				const slot = next.awsCard.ingest[connection.id] ?? Keyed.idle()
+				return Option.match(Keyed.requestFor(slot, ingestKey(context, connection.id), mode), {
+					onNone: () => ({ model: next }),
+					onSome: (requested) => ({
+						model: withCard(next, {
+							ingest: { ...next.awsCard.ingest, [connection.id]: requested },
+						}),
+						commands: [LoadAwsIngest({ key: requested.key, id: connection.id })],
+					}),
+				})
+			}),
+	)
+
+/** The status is read again, and with it each stream's ingest; the clock moves "last delivery" along. */
+export const tickedWatch = (model: Model, context: PageContext): Return =>
+	chain(model, [
+		(next) => ({ model: next, commands: [ReadClock()] }),
+		(next) => requestStatus(next, context, "aws", "Refresh"),
+		(next) => requestIngest(next, context, "Refresh"),
+	])
+
+export const completedIngest = (
+	model: Model,
+	id: AwsConnectionId,
+	key: string,
+	result: Result.Result<V2AwsIngest, LoadFailure>,
+): Return => {
+	const slot = model.awsCard.ingest[id]
+	if (slot === undefined) return { model }
+	return {
+		model: withCard(model, {
+			ingest: { ...model.awsCard.ingest, [id]: Keyed.accept(slot, key, result) },
+		}),
+	}
+}
+
 /**
  * A status read can verify the open setup before any check of this page does (the hourly check,
  * another tab): the setup closes then too.
  */
-export const statusArrived = (model: Model, before: ReadonlyArray<V2AwsConnection>): Return => {
+export const statusArrived = (
+	model: Model,
+	context: PageContext,
+	before: ReadonlyArray<V2AwsConnection>,
+): Return => {
 	const setupId = model.awsCard.setupId
 	const was = before.find((entry) => entry.id === setupId)
 	const now = connectionsOf(model).find((entry) => entry.id === setupId)
-	if (was?.verified_at !== null || now === undefined || now.verified_at === null) return { model }
-	return toast(
-		withCard(model, { setupId: null }),
-		"success",
-		"AWS connected",
-		`Maple can read account ${now.account_id}.`,
-	)
+	const justVerified = was?.verified_at === null && now !== undefined && now.verified_at !== null
+	return chain(model, [
+		(next) => requestIngest(next, context, "Load"),
+		(next) =>
+			justVerified
+				? toast(
+						withCard(next, { setupId: null }),
+						"success",
+						"AWS connected",
+						`Maple can read account ${now.account_id}.`,
+					)
+				: { model: next },
+	])
+}
+
+/** Edit data: the picker opens with what the connection streams. */
+export const clickedMetrics = (model: Model, id: AwsConnectionId): Return => ({
+	model: withCard(model, { metricsId: id, metricsError: null }),
+})
+
+export const cancelledMetrics = (model: Model): Return => ({
+	model: withCard(model, { metricsId: null, metricsError: null, selection: null }),
+})
+
+/** One region or namespace in or out of what the connection would stream. */
+const toggled = (
+	model: Model,
+	id: AwsConnectionId,
+	change: (selection: AwsSelection) => AwsSelection,
+): Return => {
+	const connection = connectionsOf(model).find((entry) => entry.id === id)
+	if (connection === undefined) return { model }
+	return {
+		model: withCard(model, {
+			selection: change(selectionOf(connection, model.awsCard.selection)),
+			metricsError: null,
+		}),
+	}
+}
+
+const flip = <A>(values: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
+	values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]
+
+export const toggledRegion = (model: Model, id: AwsConnectionId, region: string): Return =>
+	toggled(model, id, (selection) => ({ ...selection, regions: flip(selection.regions, region) }))
+
+export const toggledNamespace = (model: Model, id: AwsConnectionId, namespace: AwsMetricNamespace): Return =>
+	toggled(model, id, (selection) => ({ ...selection, namespaces: flip(selection.namespaces, namespace) }))
+
+export const submittedMetrics = (model: Model, id: AwsConnectionId): Return => {
+	const card = model.awsCard
+	const connection = connectionsOf(model).find((entry) => entry.id === id)
+	if (connection === undefined || card.isSavingMetrics) return { model }
+	return Option.match(metricStreamOf(selectionOf(connection, card.selection)), {
+		onNone: () => ({ model: withCard(model, { metricsError: METRIC_SELECTION_HINT }) }),
+		onSome: (metricStream) => ({
+			model: withCard(model, { isSavingMetrics: true, metricsError: null }),
+			commands: [UpdateAwsMetricStream({ id, metricStream })],
+		}),
+	})
+}
+
+/** AWS only streams once the stack is deployed again, so its setup opens right away. */
+export const completedMetricStream = (
+	model: Model,
+	context: PageContext,
+	connection: V2AwsConnection | null,
+	error: string | null,
+): Return => {
+	if (connection === null) {
+		return { model: withCard(model, { isSavingMetrics: false, metricsError: error }) }
+	}
+	return chain(withCard(model, { isSavingMetrics: false, metricsId: null }), [
+		// The stored script predates the stream, so it is read again.
+		(next) => openSetup(next, context, connection.id, "Supersede"),
+		(next) => requestStatus(next, context, "aws", "Supersede"),
+		(next) =>
+			toast(next, "success", "Metric stream added", "Run the setup again in AWS to start streaming."),
+	])
 }

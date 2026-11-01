@@ -18,7 +18,7 @@ const alert = (overrides: Partial<ChatAlertBlock> = {}): ChatAlertBlock => ({
 	imageAlt: "High error rate over the alert window",
 	links: [
 		{ label: "Open in Maple", url: "https://app.maple.dev/alerts/1", primary: true },
-		{ label: "✨ Ask Maple AI", url: "https://app.maple.dev/chat", primary: false },
+		{ label: "View rule", url: "https://app.maple.dev/alerts/rule_1", primary: false },
 	],
 	footer: ["\u{1F341} Maple Alerts", "`▁▁▇`", "Incident `inc_1`"],
 	sentAtMs: 1_700_000_000_000,
@@ -212,7 +212,7 @@ describe("renderDiscordMessage", () => {
 					{ name: "Group", value: "`electric-sync`", inline: true },
 					{
 						name: "Links",
-						value: "[Open in Maple](https://app.maple.dev/alerts/1) · [✨ Ask Maple AI](https://app.maple.dev/chat)",
+						value: "[Open in Maple](https://app.maple.dev/alerts/1) · [View rule](https://app.maple.dev/alerts/rule_1)",
 						inline: false,
 					},
 				],

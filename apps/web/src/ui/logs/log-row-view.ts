@@ -6,8 +6,9 @@ import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { encodeLogKey } from "../../lib/log-key"
+import { tryParseJson } from "../../lib/display-text"
 import { SpanId, TraceId } from "@maple/domain"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 
 /** `LogRow` (`@maple/query-engine` route-rows): one log as the list renders it. */
 export const LogRecord = Schema.Struct({
@@ -83,12 +84,7 @@ export const severityLabel = (severityText: string, severityNumber?: number): st
 	return "UNSET"
 }
 
-// packages/ui/src/components/attributes/attributes-table.tsx `tryParseJson`, as a predicate.
-const isJsonValue = (value: string): boolean => {
-	const trimmed = value.trimStart()
-	if (trimmed[0] !== "{" && trimmed[0] !== "[") return false
-	return Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(value)._tag === "Some"
-}
+const isJsonValue = (value: string): boolean => Option.isSome(tryParseJson(value))
 
 // packages/ui/src/components/logs/log-attribute-chip.tsx `shortKey` / `truncateValue`.
 const shortKey = (key: string): string => {

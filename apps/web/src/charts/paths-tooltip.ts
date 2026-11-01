@@ -43,7 +43,7 @@ const cameFrom = (h: H, inputs: PathsTooltipInputs): ReadonlyArray<Html> => {
 							[
 								icon(h, "ArrowLeftIcon", { size: 10, className: "shrink-0 text-muted-foreground" }),
 								h.span(
-									[h.Class("min-w-0 flex-1 truncate text-foreground/90")],
+									[h.Class("min-w-0 flex-1 truncate text-foreground-soft")],
 									[from === undefined ? "" : labelOf(from)],
 								),
 								h.span([h.Class("text-muted-foreground")], [link.count.toLocaleString("en-US")]),
@@ -53,7 +53,7 @@ const cameFrom = (h: H, inputs: PathsTooltipInputs): ReadonlyArray<Html> => {
 							[h.Class("relative mt-0.5 ml-4 h-1 rounded-sm bg-foreground/5")],
 							[
 								h.div([
-									h.Class("absolute inset-y-0 left-0 rounded-sm bg-[var(--chart-2)]/70"),
+									h.Class("absolute inset-y-0 left-0 rounded-sm bg-chart-2/70"),
 									h.Style({ width: `${share * 100}%` }),
 								]),
 							],
@@ -68,7 +68,7 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 	const { node, anchor, width, height, reverse } = inputs
 	return h.div(
 		[
-			h.Class("pointer-events-none absolute z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-md"),
+			h.Class("pointer-events-none absolute z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-popup"),
 			h.Style({
 				left: `${Math.min(Math.max(0, node.x + NODE_W + 10), Math.max(0, width - TIP_W))}px`,
 				top: `${Math.min(node.y + 4, Math.max(0, height - 96))}px`,
@@ -84,7 +84,7 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 						h.Class(
 							cn(
 								"size-2 shrink-0 rounded-xs",
-								node.kind === "event" && "bg-[var(--chart-2)]",
+								node.kind === "event" && "bg-chart-2",
 								node.kind === "end" && "bg-foreground/20",
 								node.kind === "other" && "bg-foreground/35",
 							),
@@ -100,7 +100,7 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 				[h.Class("mb-1.5 h-1.5 overflow-hidden rounded-sm bg-foreground/5")],
 				[
 					h.div([
-						h.Class("h-full rounded-sm bg-[var(--chart-2)]"),
+						h.Class("h-full rounded-sm bg-chart-2"),
 						h.Style({ width: `${Math.min(100, (node.count / anchor.count) * 100)}%` }),
 					]),
 				],

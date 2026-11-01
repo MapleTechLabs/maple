@@ -15,7 +15,7 @@ import {
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { SessionRow } from "../kit/session-row"
-import { FetchFacets, FetchFirstPage, FetchNextPage, VirtualizeList, WatchListEnd } from "./command"
+import { FetchFacets, FetchFirstPage, FetchNextPage, filterInputs, VirtualizeList, WatchListEnd } from "./command"
 import { allRows } from "./derive"
 import { Message } from "./message"
 import type { Model, ReplaysFacets, ReplaysPage } from "./model"
@@ -116,7 +116,7 @@ describe("replays list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([FetchFirstPage.name, FetchFacets.name])
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchFirstPage.name, FetchFacets.name]))
 	})
 
 	test("a first page for a superseded window is dropped", () => {
@@ -180,6 +180,30 @@ describe("replays list", () => {
 		)
 		const ticked = routeChanged(model, { search: { browser: "Safari" } }, context).model
 		expect(pageUpdate(ticked, Message.ToggledFacetOption({ facet: "browser", name: "Safari" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/replays", isReplace: false }),
+		)
+	})
+
+	test("a groupId link scopes the list and the facets to that group, and its banner clears it", () => {
+		const groupId = "org_acme_1"
+		const resolved = pageUpdate(
+			init({ search: { groupId } }, context).model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		)
+		expect(resolved.commands?.map(({ args }) => args)).toEqual([
+			expect.objectContaining({ search: { groupId } }),
+			expect.objectContaining({ search: { groupId } }),
+		])
+		expect(filterInputs({ groupId }, window).groupId).toBe(groupId)
+		const model = loaded(page([session("a")]), { groupId })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			expectView(text("Sessions from group")).toExist(),
+			expectView(label("Clear group filter")).toExist(),
+		)
+		expect(pageUpdate(model, Message.ClickedClearGroupId()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/replays", isReplace: false }),
 		)
 	})

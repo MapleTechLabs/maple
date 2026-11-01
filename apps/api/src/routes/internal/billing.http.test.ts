@@ -1,5 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
+import { ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
@@ -25,6 +27,11 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import {
 	BillingApiGroup,
 	BillingConflictError,
+	BillingCustomerId,
+	DailySpendResponse,
+	DailyVolume,
+	BillingManagedByBillingOrgError,
+	OrgId,
 	BillingCustomer,
 	CurrentTenant,
 	ApiSchemaErrors,
@@ -36,10 +43,12 @@ import {
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
-import { decodeInvoices, HttpBillingLive, resolveCycleWindow } from "./billing.http"
+import { decodeInvoices, HttpBillingLive, resolveCycleWindow, sumDailySpend } from "./billing.http"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 const ORG = "org_test_123"
+/** The org as the Autumn customer it bills to: itself, unlinked. */
+const CUSTOMER = BillingCustomerId.make(ORG)
 
 const makeCache = () => makeEdgeCacheService(makeMemoryBackend())
 
@@ -108,7 +117,7 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 				const autumn = yield* AutumnClient
 				return yield* autumn
 					.updateCustomerBillingControls(
-						ORG,
+						CUSTOMER,
 						new UpdateBillingControlsRequest({
 							spendLimits: [
 								new UpdateBillingSpendLimit({
@@ -188,7 +197,7 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 			Effect.gen(function* () {
 				const autumn = yield* AutumnClient
 				return yield* autumn
-					.updateCustomerBillingControls(ORG, {
+					.updateCustomerBillingControls(CUSTOMER, {
 						spendLimits: [
 							{ featureId: "logs", enabled: true, limitType: "absolute", overageLimit: 250 },
 						],
@@ -215,7 +224,7 @@ describe("AutumnClient.updateCustomerName", () => {
 			Effect.gen(function* () {
 				const autumn = yield* AutumnClient
 				return yield* autumn
-					.updateCustomerName(ORG, "Acme Inc")
+					.updateCustomerName(CUSTOMER, "Acme Inc")
 					.pipe(Effect.provideService(FetchHttpClient.Fetch, fetch))
 			}).pipe(Effect.provide(autumnClientLayer)),
 		)
@@ -235,8 +244,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { customer: ORG, calls } }
 			})
 
-			const first = yield* readCustomerCached(cache, ORG, run)
-			const second = yield* readCustomerCached(cache, ORG, run)
+			const first = yield* readCustomerCached(cache, CUSTOMER, run)
+			const second = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 1)
 			assert.isFalse(first.hit)
@@ -254,8 +263,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 500, response: { error: "boom" } }
 			})
 
-			const first = yield* readCustomerCached(cache, ORG, run)
-			const second = yield* readCustomerCached(cache, ORG, run)
+			const first = yield* readCustomerCached(cache, CUSTOMER, run)
+			const second = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 2)
 			assert.isFalse(first.hit)
@@ -273,10 +282,10 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { calls } }
 			})
 
-			yield* readCustomerCached(cache, ORG, run)
-			yield* readCustomerCached(cache, ORG, run) // served from cache
+			yield* readCustomerCached(cache, CUSTOMER, run)
+			yield* readCustomerCached(cache, CUSTOMER, run) // served from cache
 			yield* cache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: ORG })
-			const after = yield* readCustomerCached(cache, ORG, run)
+			const after = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 2)
 			assert.isFalse(after.hit)
@@ -293,8 +302,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { calls } }
 			})
 
-			yield* readCustomerCached(cache, "org_a", run)
-			yield* readCustomerCached(cache, "org_b", run)
+			yield* readCustomerCached(cache, BillingCustomerId.make("org_a"), run)
+			yield* readCustomerCached(cache, BillingCustomerId.make("org_b"), run)
 
 			assert.strictEqual(calls, 2)
 		}),
@@ -304,7 +313,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: activePlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_TTL_SECONDS])
 		}),
 	)
@@ -313,7 +322,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: noPlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
 		}),
 	)
@@ -322,7 +331,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: lapsedPlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_LAPSED_TTL_SECONDS])
 		}),
 	)
@@ -331,7 +340,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: { error: "autumn_api_error" } })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
 		}),
 	)
@@ -389,6 +398,35 @@ describe("decodeInvoices", () => {
 			assert.isTrue(exit._tag === "Failure")
 		}),
 	)
+})
+
+describe("sumDailySpend", () => {
+	const day = (date: string, logsGB: number, productEvents?: number) =>
+		new DailyVolume({
+			date,
+			logsGB,
+			tracesGB: 1,
+			metricsGB: 0,
+			browserSessions: 2,
+			...(productEvents === undefined ? undefined : { productEvents }),
+		})
+	const series = (days: ReadonlyArray<DailyVolume>) =>
+		new DailySpendResponse({ cycleStart: 10, cycleEnd: 20, days })
+
+	it("adds a billing org's members into its series, day by day", () => {
+		const total = sumDailySpend(series([day("2026-10-01", 1, 3), day("2026-10-02", 2)]), [
+			series([day("2026-10-01", 0.5), day("2026-10-02", 4, 1)]),
+		])
+		assert.deepStrictEqual(
+			total.days.map((d) => [d.date, d.logsGB, d.tracesGB, d.browserSessions, d.productEvents]),
+			[
+				["2026-10-01", 1.5, 2, 4, 3],
+				["2026-10-02", 6, 2, 4, 1],
+			],
+		)
+		assert.strictEqual(total.cycleStart, 10)
+		assert.strictEqual(total.cycleEnd, 20)
+	})
 })
 
 describe("resolveCycleWindow", () => {
@@ -583,14 +621,34 @@ describe("billing writes over HTTP", () => {
 		.middleware(ApiUnexpectedErrors) {}
 
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
+	const PAYER_ORG = Schema.decodeUnknownSync(OrgId)("org_billing_payer")
 	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
 		decodeTenant({ orgId: ORG, userId: "user_billing_test", roles, authMode: "self_hosted" })
 
 	const die = () => Effect.die(new Error("not reachable once the admin gate rejects"))
 
+	/** A member org's resolver: reads bill to `payer`, writes are refused. */
+	const billedThroughResolver = (payer: OrgId) =>
+		Layer.succeed(BillingCustomerResolver, {
+			billingOrgId: () => Effect.succeed(payer),
+			customerFor: () => Effect.succeed(BillingCustomerId.make(payer)),
+			requireOwnBilling: () =>
+				Effect.fail(
+					new BillingManagedByBillingOrgError({ message: "billed elsewhere", billingOrgId: payer }),
+				),
+			readLink: () => Effect.succeed(Option.some(payer)),
+			forget: () => Effect.void,
+		})
+
 	const makeHarness = (
 		roles: ReadonlyArray<string>,
-		overrides: { readonly autumn?: object; readonly organizations?: object } = {},
+		overrides: {
+			readonly autumn?: object
+			readonly organizations?: object
+			readonly stripe?: object
+			/** The org this one is billed through, when it is a member org. */
+			readonly billedThrough?: OrgId
+		} = {},
 	) => {
 		const routes = HttpApiBuilder.layer(BillingOnlyApi).pipe(
 			Layer.provide(HttpBillingLive),
@@ -606,8 +664,16 @@ describe("billing writes over HTTP", () => {
 			),
 			Layer.provideMerge(Layer.succeed(EdgeCacheService, makeCache())),
 			Layer.provideMerge(Layer.succeed(DailySpendService, { get: die })),
+			Layer.provideMerge(
+				overrides.billedThrough === undefined
+					? BillingCustomerResolver.standalone
+					: billedThroughResolver(overrides.billedThrough),
+			),
+			Layer.provideMerge(
+				Layer.succeed(BillingOrgService, { members: () => Effect.succeed([]) } as never),
+			),
 			Layer.provideMerge(Layer.succeed(ProductEventsService, { track: die, trackMany: die })),
-			Layer.provideMerge(Layer.succeed(StripeClient, { request: die })),
+			Layer.provideMerge(Layer.succeed(StripeClient, { request: die, ...overrides.stripe })),
 			Layer.provideMerge(
 				Layer.succeed(OrganizationService, { retrieve: die, ...overrides.organizations } as never),
 			),
@@ -621,10 +687,10 @@ describe("billing writes over HTTP", () => {
 		)
 		const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 
-		const post = async (path: string, body: unknown) => {
+		const send = (method: string) => async (path: string, body: unknown) => {
 			const response = await handler(
 				new Request(`http://maple.test${path}`, {
-					method: "POST",
+					method,
 					headers: { authorization: "Bearer test-token", "content-type": "application/json" },
 					body: JSON.stringify(body),
 				}),
@@ -634,7 +700,7 @@ describe("billing writes over HTTP", () => {
 			return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 		}
 
-		return { post, dispose }
+		return { post: send("POST"), put: send("PUT"), dispose }
 	}
 
 	it("refuses attach from a non-admin member", async () => {
@@ -643,6 +709,68 @@ describe("billing writes over HTTP", () => {
 			const response = await harness.post("/internal/billing/attach", { planId: "startup" })
 			assert.strictEqual(response.status, 403)
 			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingForbiddenError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers a details save against a customer Stripe no longer has as unavailable", async () => {
+		const missing = {
+			statusCode: 404,
+			response: { message: "No such customer", code: "resource_missing", statusCode: 404 },
+		}
+		const harness = makeHarness(["org:admin"], {
+			autumn: {
+				getOrCreateCustomer: () =>
+					Effect.succeed({ statusCode: 200, response: { id: ORG, stripeId: "cus_deleted" } }),
+			},
+			stripe: { updateCustomer: () => Effect.succeed(missing) },
+		})
+		try {
+			const response = await harness.put("/internal/billing/profile", { name: "Acme GmbH" })
+			assert.strictEqual(response.status, 409)
+			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingProfileUnavailableError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers a tax-ID add against a customer Stripe no longer has as unavailable", async () => {
+		const missing = {
+			statusCode: 404,
+			response: { message: "No such customer", code: "resource_missing", statusCode: 404 },
+		}
+		const harness = makeHarness(["org:admin"], {
+			autumn: {
+				getOrCreateCustomer: () =>
+					Effect.succeed({ statusCode: 200, response: { id: ORG, stripeId: "cus_deleted" } }),
+			},
+			stripe: { createTaxId: () => Effect.succeed(missing) },
+		})
+		try {
+			const response = await harness.post("/internal/billing/profile/tax-ids", {
+				type: "eu_vat",
+				value: "DE123456789",
+			})
+			assert.strictEqual(response.status, 409)
+			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingProfileUnavailableError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses plan and portal changes from an org billed through another org", async () => {
+		const harness = makeHarness(["org:admin"], { billedThrough: PAYER_ORG })
+		try {
+			const attach = await harness.post("/internal/billing/attach", { planId: "startup" })
+			assert.strictEqual(attach.status, 409)
+			assert.strictEqual(attach.body._tag, "@maple/http/errors/BillingManagedByBillingOrgError")
+			assert.strictEqual(attach.body.billingOrgId, PAYER_ORG)
+			const portal = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(portal.status, 409)
+			assert.strictEqual(portal.body._tag, "@maple/http/errors/BillingManagedByBillingOrgError")
 		} finally {
 			await harness.dispose()
 		}

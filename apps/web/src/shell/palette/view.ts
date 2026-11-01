@@ -22,9 +22,16 @@ import { MeasurePaletteList } from "./command"
 import { Message, type Model } from "./model"
 import { type Context, shownEntries } from "./update"
 
+/**
+ * Layout-free wrapper: group labels take the sidebar's uppercase tracked style, and a short scroll
+ * fade keeps the last visible row from reading as disabled.
+ */
+const PALETTE_LIST_CLASS =
+	"contents [&_[data-slot=command-group-label]]:text-2xs [&_[data-slot=command-group-label]]:font-semibold [&_[data-slot=command-group-label]]:uppercase [&_[data-slot=command-group-label]]:tracking-widest [&_[data-slot=scroll-area-viewport]]:[--fade-size:0.5rem]"
+
 // `CommandPalette`'s popup: the input, the grouped entries (or "No results"), the footer hints.
 
-export type ViewInputs = Readonly<{ context: Context; isReleasesVisible: boolean }>
+export type ViewInputs = Readonly<{ context: Context; visibleFlagged: ReadonlyArray<string> }>
 
 const GLYPH_CLASS = "shrink-0 text-muted-foreground"
 
@@ -52,7 +59,10 @@ const groupsOf = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<PaletteEntry>): R
 	}))
 
 const hint = <M>(h: HtmlBuilder<M>, key: string, text: string): Html =>
-	h.span([h.Class("flex items-center gap-1.5")], [kbd(h, undefined, [key]), text])
+	h.span(
+		[h.Class("flex items-center gap-1.5 text-muted-foreground")],
+		[kbd(h, "text-muted-foreground", [key]), text],
+	)
 
 /** `CommandEmpty`: `No results for “{query}”.`, the query its own text run. */
 const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>
@@ -79,10 +89,10 @@ export const paletteView = <M>(
 	const toList = (message: Combobox.Message) =>
 		toMessage(
 			message._tag === "PressedInputKey" && message.key === "Enter"
-				? Message.PressedEnter({ isReleasesVisible: inputs.isReleasesVisible })
+				? Message.PressedEnter({ visibleFlagged: inputs.visibleFlagged })
 				: Message.GotListMessage({ message }),
 		)
-	const shown = shownEntries(model, inputs.context, inputs.isReleasesVisible)
+	const shown = shownEntries(model, inputs.context, inputs.visibleFlagged)
 	const groups = groupsOf(h, shown.entries)
 	return h.submodel({
 		slotId: "command-palette",
@@ -98,14 +108,21 @@ export const paletteView = <M>(
 					{ placeholder: PLACEHOLDER, groups, hasDismissButton: true, isUnfiltered: true },
 					toList,
 				),
-				commandList(h, model.list, groups, toList, {
-					isUnfiltered: true,
-					itemClassName: "flex items-center gap-2",
-					onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
-					empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
-					viewportAttributes: [h.OnMount(Mount.mapMessage(MeasurePaletteList(), toMessage))],
-					hasMeasuredScrollbar: true,
-				}),
+				h.div(
+					[h.Class(PALETTE_LIST_CLASS)],
+					[
+						commandList(h, model.list, groups, toList, {
+							isUnfiltered: true,
+							itemClassName: "flex items-center gap-2",
+							onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
+							empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
+							viewportAttributes: [
+								h.OnMount(Mount.mapMessage(MeasurePaletteList(), toMessage)),
+							],
+							hasMeasuredScrollbar: true,
+						}),
+					],
+				),
 				commandFooter(h, [hint(h, "↵", " to open"), hint(h, "Esc", " to close")]),
 				commandHiddenInput(h, model.list),
 			],

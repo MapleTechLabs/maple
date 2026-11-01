@@ -89,7 +89,7 @@ describe("productEventsFunnelQuery", () => {
 			"toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3",
 		)
 		expect(oneLine(sql)).toContain(
-			"AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))",
+			"AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))",
 		)
 	})
 

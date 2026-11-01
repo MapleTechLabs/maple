@@ -4,6 +4,7 @@ import { getSpanDetail } from "@maple/web-data/warehouse/traces"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../../data/load-failure"
+import { writeClipboard } from "../../../kit/clipboard"
 import { Message } from "./message"
 
 /** `SpanLogs`' page size; a full page reads "100+". */
@@ -50,9 +51,10 @@ export const WriteSpanClipboard = Command.define("WriteSpanClipboard", {
 	args: { id: Schema.String, text: Schema.String, generation: Schema.Number },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
 	execute: ({ id, text, generation }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
-			Effect.as(Message.SucceededCopy({ id, generation })),
-			Effect.orElseSucceed(() => Message.FailedCopy({ id, generation })),
+		writeClipboard(text).pipe(
+			Effect.map((isOk) =>
+				isOk ? Message.SucceededCopy({ id, generation }) : Message.FailedCopy({ id, generation }),
+			),
 		),
 })
 

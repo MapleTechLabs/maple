@@ -31,3 +31,23 @@ extension ErrorIssue {
 		)
 	}
 }
+
+extension ErrorIssueDetail {
+	/// See `ErrorIssue.displayTitle`.
+	var displayTitle: String {
+		WidgetIssueTitle.title(
+			exceptionType: exceptionType,
+			errorLabel: errorLabel,
+			exceptionMessage: exceptionMessage
+		)
+	}
+
+	/// See `ErrorIssue.displaySubtitle`.
+	var displaySubtitle: String? {
+		WidgetIssueTitle.subtitle(
+			exceptionType: exceptionType,
+			errorLabel: errorLabel,
+			exceptionMessage: exceptionMessage
+		)
+	}
+}

@@ -4,13 +4,14 @@ import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
 import { platformMeta, platformTile } from "../kit/platforms"
 import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/domain/primitives"
 import { AppRoute, hrefOf } from "../../../route"
@@ -18,20 +19,39 @@ import * as ToggleGroup from "../../../ui/toggle-group"
 import { integrationPlatformOf, orderSources, sourceHref, viaLabel } from "../kit/shared"
 import { needsAttention, sourceStatusBadge } from "../kit/status"
 import { signalCounts, type VolumeTotals, volumeSize } from "../kit/volume"
-import { statusDot } from "../../../ui/status-dot"
+import { countChipItem } from "../../integrations/kit/count-chip"
 import { Message } from "./message"
 import type { Model, SourceKind } from "./model"
 
 type H = HtmlBuilder<Message>
 
 // The whole row opens on click; the name is the real link for keyboards and screen readers.
-const NAME_LINK_CLASS = "truncate text-sm font-medium outline-none hover:underline focus-visible:underline"
+const NAME_LINK_CLASS = "truncate text-sm font-medium outline-none hover:underline active:underline focus-visible:underline"
 
-const connectButton = (h: H): Html =>
-	linkButton(h, { size: "sm", href: "/sources/new" }, [
-		icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+/** `outline` keeps one filled CTA on the page when the empty state shows its own. */
+const connectButton = (h: H, variant?: "outline"): Html =>
+	linkButton(h, { size: "sm", href: "/sources/new", variant }, [
+		icon(h, "PlusIcon", {
+			attributes: [h.DataAttribute("icon", "inline-start")],
+			className: variant === "outline" ? "text-primary" : undefined,
+		}),
 		"Connect source",
 	])
+
+const hasNoAddedSources = (rows: ReadonlyArray<V2Source>): boolean =>
+	rows.every((source) => source.is_default)
+
+/** Mirrors `body`: the empty state renders once the list loaded with no added sources. */
+const showsEmptyState = (model: Model): boolean =>
+	model.nowMs !== null &&
+	AsyncData.match(model.list.data, {
+		onIdle: () => false,
+		onLoading: () => false,
+		onFailure: () => false,
+		onStale: () => false,
+		onSuccess: hasNoAddedSources,
+		onRefreshing: hasNoAddedSources,
+	})
 
 /** Volume by source id: `null` while the summary loads, empty when it failed. */
 type UsageBySource = ReadonlyMap<SourceId, VolumeTotals> | null
@@ -148,22 +168,8 @@ const kindOf = (source: V2Source): Exclude<SourceKind, "all"> =>
 
 const KIND_LABELS = { all: "All", push: "OpenTelemetry", integration: "Integrations" } as const
 
-// styles: the Cloudflare zone board's count chips (view-cloudflare-board.ts `countChip`).
-const CHIP_CLASS =
-	"group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs"
-
-const kindChip = (h: H, kind: SourceKind, count: number): ToggleGroup.ToggleGroupItem => ({
-	value: kind,
-	label: KIND_LABELS[kind],
-	className: CHIP_CLASS,
-	children: [
-		KIND_LABELS[kind],
-		h.span(
-			[h.Class("tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground")],
-			[String(count)],
-		),
-	],
-})
+const kindChip = (h: H, kind: SourceKind, count: number): ToggleGroup.ToggleGroupItem =>
+	countChipItem(h, { value: kind, label: KIND_LABELS[kind], count })
 
 const kindFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): Html =>
 	ToggleGroup.view(h, {
@@ -189,23 +195,7 @@ const attentionFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): 
 				isConnected: false,
 				size: "xs",
 				items: [
-					{
-						value: "attention",
-						label: "Needs attention",
-						className: CHIP_CLASS,
-						children: [
-							statusDot(h, { tone: "warn" }),
-							"Needs attention",
-							h.span(
-								[
-									h.Class(
-										"tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground",
-									),
-								],
-								[String(count)],
-							),
-						],
-					},
+					countChipItem(h, { value: "attention", label: "Needs attention", count, tone: "warn" }),
 				],
 			})
 }
@@ -216,7 +206,7 @@ const availableStrip = (h: H, sources: ReadonlyArray<V2Source>): Html | null => 
 	const missing = PULL_SOURCE_PLATFORMS.filter((platform: PullSourcePlatform) => !present.has(platform))
 	if (missing.length === 0) return null
 	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-4 py-3")],
+		[h.Class("flex flex-wrap items-center gap-2 rounded-md border border-dashed p-4")],
 		[
 			h.span([h.Class("text-muted-foreground mr-auto text-xs")], ["Pull more data in without an SDK"]),
 			...missing.map((platform) =>
@@ -251,10 +241,11 @@ const orgTotal = (
 			bytes: sum.bytes + entry.bytes,
 		}
 	}, NO_VOLUME)
-	return h.span(
-		[h.Class("text-muted-foreground ml-auto text-xs tabular-nums"), h.Title(signalCounts(totals))],
-		[h.span([h.Class("text-foreground font-medium")], [volumeSize(totals)]), " stored in the last 24h"],
-	)
+	return toolbarStat(h, {
+		value: volumeSize(totals),
+		label: "stored in the last 24h",
+		attributes: [h.Title(signalCounts(totals))],
+	})
 }
 
 const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: number): Html => {
@@ -271,14 +262,14 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 	return h.div(
 		[h.Class("flex flex-col gap-4")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-3")],
-				[
-					kindFilter(h, model, sources),
-					...(attention === null ? [] : [attention]),
-					...(total === null ? [] : [total]),
-				],
-			),
+			listToolbar(h, {
+				className: "pb-0",
+				leading: h.div(
+					[h.Class("flex flex-wrap items-center gap-3")],
+					[kindFilter(h, model, sources), ...(attention === null ? [] : [attention])],
+				),
+				trailing: total === null ? [] : [total],
+			}),
 			table(h, { variant: "card", className: "table-fixed" }, [
 				tableHeader(h, [
 					tableRow(h, [
@@ -298,12 +289,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 			...(added.length === 0
 				? [emptyState(h)]
 				: shown.length === 0
-					? [
-							h.p(
-								[h.Class("text-muted-foreground px-1 text-sm")],
-								["No sources match these filters."],
-							),
-						]
+					? [emptyMessage(h, {}, ["No sources match these filters."])]
 					: []),
 			...(strip === null ? [] : [strip]),
 		],
@@ -328,5 +314,9 @@ const body = (h: H, model: Model): Html => {
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
-	dashboardPage(h, { actions: connectButton(h) }, [body(h, model)]),
+	dashboardPage(
+		h,
+		{ title: "Sources", actions: connectButton(h, showsEmptyState(model) ? "outline" : undefined) },
+		[body(h, model)],
+	),
 )

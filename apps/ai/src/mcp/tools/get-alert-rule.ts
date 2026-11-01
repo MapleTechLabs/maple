@@ -5,8 +5,14 @@ import { GetAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
-import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
-import { formatCondition, ruleConfigWarnings, ruleNotFound, toAlertRuleRow } from "../lib/alert-rules"
+import {
+	formatCheckInterval,
+	formatCondition,
+	ruleConfigWarnings,
+	ruleNotFound,
+	slowedNotice,
+	toAlertRuleRow,
+} from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 
@@ -31,7 +37,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 		description:
 			"Get full configuration details of a specific alert rule including thresholds, service filters, evaluation settings, and notification destinations. Use list_alert_rules to find rule IDs.",
 		parameters: Schema.Struct({
-			rule_id: P.text("Alert rule ID"),
+			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 		}),
 		output: GetAlertRuleOutput,
 		hints: { readOnly: true },
@@ -83,6 +89,8 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					notificationTitle: rule.notificationTemplate?.title ?? null,
 					notificationBody: rule.notificationTemplate?.body ?? null,
 					lastEvaluationError: rule.lastEvaluationError,
+					lastEvaluationErrorKind: rule.lastEvaluationErrorKind,
+					slowedAt: rule.slowedAt,
 					lastEvaluatedAt: rule.lastEvaluatedAt,
 					...(destinations === undefined ? undefined : { destinations }),
 				},
@@ -96,12 +104,16 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					["Severity", rule.severity],
 					["Signal", rule.signalType],
 					["Condition", formatCondition(rule)],
-					[
-						"Window",
-						`${rule.windowMinutes}m, checked every ${alertEvaluationIntervalMinutes(rule.windowMinutes)}m`,
-					],
+					["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+					["Slowed down at", rule.slowedAt ?? undefined],
 					["Last evaluated", rule.lastEvaluatedAt ?? undefined],
 					["Last evaluation error", rule.lastEvaluationError ?? undefined],
+					[
+						"Last error kind",
+						rule.lastEvaluationError == null
+							? undefined
+							: (rule.lastEvaluationErrorKind ?? undefined),
+					],
 				]),
 				doc.heading("Scope"),
 				doc.fields([
@@ -178,7 +190,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				if (rule.notificationBody) blocks.push(doc.text("Body:"), doc.code("", rule.notificationBody))
 			}
 
-			const warnings = ruleConfigWarnings(rule)
+			const warnings = [...ruleConfigWarnings(rule), ...slowedNotice(rule)]
 			return {
 				title: `Alert Rule: ${rule.name}`,
 				...(warnings.length > 0 ? { notices: warnings } : undefined),

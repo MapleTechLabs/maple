@@ -95,7 +95,7 @@ describe("gcpWorkloadStrips", () => {
 		const strips = gcpWorkloadStrips("cloudRun", cloudRun([4, 4, 4, 4, 4, 4]), WINDOW)
 		const serverErrors = strips.find((strip) => strip.label === "5xx")
 		expect(serverErrors?.rows.map((row) => row.value)).toEqual([0, 0, 500, 500, 0, 0])
-		expect(serverErrors?.summary).toEqual({ value: "1.0K", caption: "14.3% of 7.0K", alert: true })
+		expect(serverErrors?.summary).toEqual({ value: "1K", caption: "14.3% of 7K", alert: true })
 	})
 
 	it("draws latency in milliseconds from the seconds Google stores", () => {
@@ -189,7 +189,7 @@ describe("gcpRailFacts", () => {
 			point(1, "gcp.cloud_run.container.billable_time", "", 3600),
 		]
 		expect(gcpRailFacts("cloudRun", points, BUCKET_SECONDS)).toEqual([
-			{ label: "billable", value: "2.0h in window" },
+			{ label: "billable", value: "2h in window" },
 		])
 	})
 })

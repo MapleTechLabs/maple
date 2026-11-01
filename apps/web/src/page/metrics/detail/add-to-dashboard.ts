@@ -85,7 +85,11 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 			yield* readDocument(orgId, dashboardId)
 			yield* Effect.forkDetach(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
-					withAddedWidget(document, { id, ...widget, layout: defaultWidgetLayout("chart") }, nowIso),
+					withAddedWidget(
+						document,
+						{ id, ...widget, layout: defaultWidgetLayout("chart") },
+						nowIso,
+					),
 				),
 			)
 		}).pipe(
@@ -182,7 +186,11 @@ export const update = (model: Model, message: Message, context: Context): Return
 				: Result.match(result, {
 						onSuccess: () => closedTo({ ...model, addingTo: null }, dashboardId),
 						onFailure: (failure) => ({
-							model: { ...model, addingTo: null, error: { title: "Failed to add widget", failure } },
+							model: {
+								...model,
+								addingTo: null,
+								error: { title: "Couldn't add widget", failure },
+							},
 						}),
 					}),
 		CompletedCreateDashboard: ({ result }) =>
@@ -192,7 +200,7 @@ export const update = (model: Model, message: Message, context: Context): Return
 					model: {
 						...model,
 						isCreating: false,
-						error: { title: "Failed to create dashboard", failure },
+						error: { title: "Couldn't create dashboard", failure },
 					},
 				}),
 			}),
@@ -215,7 +223,7 @@ const choiceRow = (h: H, dashboard: DashboardChoice): Html =>
 			h.Type("button"),
 			h.OnClick(Message.ClickedDashboard({ dashboardId: dashboard.id })),
 			h.Class(
-				"flex w-full items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm transition-colors hover:bg-accent",
+				"flex w-full items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm hover:bg-accent active:bg-accent",
 			),
 		],
 		[
@@ -247,7 +255,7 @@ const body = (h: H, model: Model): Html =>
 						className: "h-8 flex-1 text-sm",
 						attributes: [
 							h.Value(model.newName),
-							h.Placeholder("New dashboard name..."),
+							h.Placeholder("New dashboard name…"),
 							h.OnInput((value) => Message.ChangedNewName({ value })),
 							h.OnKeyDownPreventDefault((key) =>
 								key === "Enter" ? Option.some(Message.ClickedCreate()) : Option.none(),

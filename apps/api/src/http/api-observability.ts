@@ -21,6 +21,9 @@ const OAUTH_CALLBACK_PATH =
 // for opting a subscriber out; `DigestService.unsubscribeByToken` owns the span.
 const EMAIL_UNSUBSCRIBE_PATH = /^\/api\/email\/unsubscribe(?:\?|$)/
 
+// An uptime heartbeat ping's path segment is the monitor's secret token.
+const HEARTBEAT_PING_PATH = /^\/hb\//
+
 // The `TracerDisabledWhen` filter and the header-redaction list — both
 // references `HttpMiddleware.tracer` reads regardless of which Tracer is
 // active. The Worker registers this layer with alchemy's `Telemetry.layer`, so
@@ -37,6 +40,7 @@ export const ApiObservabilityLive = Layer.mergeAll(
 			request.method === "OPTIONS" ||
 			OAUTH_CALLBACK_PATH.test(request.url) ||
 			EMAIL_UNSUBSCRIBE_PATH.test(request.url) ||
+			HEARTBEAT_PING_PATH.test(request.url) ||
 			/\.(png|ico|jpg|jpeg|gif|css|js|svg|webp|woff2?)(\?.*)?$/i.test(request.url),
 	),
 	// Spans record only the allowlisted headers (`MapleHttpTracingLive`), none of
@@ -53,5 +57,7 @@ export const ApiObservabilityLive = Layer.mergeAll(
 		"x-hub-signature-256",
 		// Svix (Clerk / Autumn webhooks): replayable alongside its body within the tolerance window.
 		"svix-signature",
+		// RFC 9449 proofs: short-lived, but a captured one replays within its window.
+		"dpop",
 	]),
 )

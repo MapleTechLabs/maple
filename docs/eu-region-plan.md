@@ -43,8 +43,8 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 | Repository sandbox (`apps/sandbox`)               | prd Worker, US                                        | per instance, EU Worker                                                                 |
 | Landing, billing                                  | shared                                                | shared, no customer data                                                                |
 | GitHub App, chat connector apps                   | US apps                                               | EU apps of their own, see Phase 0 step 8                                                |
-| OAuth clients (Cloudflare, PlanetScale, Hazel)    | US redirect URIs                                      | same clients, EU redirect URIs added                                                    |
-| Scraper (Railway)                                 | US service                                            | EU service of its own                                                                   |
+| OAuth clients (Cloudflare, PlanetScale)           | US redirect URIs                                      | same clients, EU redirect URIs added                                                    |
+| Scraper (Fargate)                                 | US service                                            | EU service of its own, in the EU ingest VPC                                             |
 
 The landing site stays one site. Billing metadata is not customer telemetry. The GitHub App was
 first listed here as shared, which does not work: an App has one webhook URL and one post-install
@@ -100,7 +100,6 @@ across regions because there is no routing.
       allowlist). The US client is reusable; add the EU URL to its allowlist:
         - Cloudflare OAuth: `https://api.eu.maple.dev/api/integrations/cloudflare/callback`
         - PlanetScale OAuth: `https://api.eu.maple.dev/api/integrations/planetscale/callback`
-        - Hazel OAuth: `https://api.eu.maple.dev/api/integrations/hazel/callback`
     - **One URL per app** (registered on the app, not sent per request). These need an EU app:
         - **GitHub App.** Register "Maple EU" per `docs/github-app-setup.md` with webhook
           `https://api.eu.maple.dev/api/integrations/github/webhook` and callback
@@ -113,10 +112,9 @@ across regions because there is no routing.
           `https://api.eu.maple.dev/oauth/chat/discord/callback` on it, and set its
           `MAPLE_DISCORD_CLIENT_ID`, `MAPLE_DISCORD_CLIENT_SECRET` and `MAPLE_DISCORD_BOT_TOKEN`
           in `prod-eu` together.
-    - **Scraper.** `apps/scraper` is one Railway service polling the US API's target list, so EU
-      Prometheus and PlanetScale metrics targets are never scraped. Deploy a second service in an
-      EU Railway region with `MAPLE_API_URL=https://api.eu.maple.dev`,
-      `MAPLE_INGEST_URL=https://ingest.eu.maple.dev` and `prod-eu`'s `SD_INTERNAL_TOKEN`.
+    - **Scraper (deployed).** EU prd runs its own scraper on Fargate, polling `api.eu.maple.dev`
+      for scrape targets and uptime monitors with `prod-eu`'s `SD_INTERNAL_TOKEN`. That token is
+      still the same value as `prod`'s; rotate it to an EU-only value.
 
     Until the EU GitHub App exists, remove its keys from `prod-eu`: connecting then fails
     up front with "not configured" instead of sending the user through a flow that cannot finish.

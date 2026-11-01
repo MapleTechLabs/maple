@@ -111,19 +111,15 @@ describe("reviving a page left earlier", () => {
 		])
 	})
 
-	test("the overview comes back with no setup read or test send left waiting, and re-reads its entry", () => {
+	test("the overview comes back with no setup read left waiting, and re-reads its entry", () => {
 		const { model } = initWith(true)({ search: {} }, context)
-		const setup =
-			model.setup === null ? null : { ...model.setup, isOverviewInFlight: true, isSendingTest: true }
+		const setup = model.setup === null ? null : { ...model.setup, isOverviewInFlight: true }
 		const back = reviveOverview(
 			{ ...model, setup, isReloading: true, refreshVersion: 2 },
 			{ search: {} },
 			context,
 		)
-		expect([back.model.setup?.isOverviewInFlight, back.model.setup?.isSendingTest]).toEqual([
-			false,
-			false,
-		])
+		expect(back.model.setup?.isOverviewInFlight).toBe(false)
 		expect([back.model.isReloading, back.model.refreshVersion]).toEqual([false, 0])
 		expect((back.commands ?? []).map((command) => command.name)).toContain("ReadOverviewEntry")
 	})

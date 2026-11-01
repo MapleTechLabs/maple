@@ -12,6 +12,7 @@ import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../k
 import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "../../../ui/search-input"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 
 // The errors stat strip, list toolbar, search and the sort and severity selects.
 
@@ -59,7 +60,7 @@ export const statStrip = (h: H, model: Model): Html | null =>
 									stat(h, formatErrorRate(summary.errorRate), "of all spans"),
 								],
 							),
-							h.span([h.Class("text-xs text-muted-foreground/60")], ["in the last 24 hours"]),
+							h.span([h.Class("text-xs text-foreground-subtle")], ["in the last 24 hours"]),
 						],
 					),
 	})
@@ -123,7 +124,7 @@ const toolbarSearch = (h: H, draft: string): Html =>
 		id: "errors-search",
 		size: "sm",
 		className: cn("max-w-sm", "w-52"),
-		placeholder: "Search issues...",
+		placeholder: "Search issues…",
 		value: draft,
 		onInput: (value) => Message.ChangedSearchDraft({ value }),
 		onClear: Message.ChangedSearchDraft({ value: "" }),
@@ -131,55 +132,47 @@ const toolbarSearch = (h: H, draft: string): Html =>
 
 /** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
 export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2 gap-y-1.5 border-b border-border/60 px-2 py-1.5")],
-		[
+	listToolbar(h, {
+		leading: h.submodel({
+			slotId: "errors-view-tabs",
+			model: model.tabs,
+			view: TabsView.view,
+			viewInputs: {
+				labels: VIEW_LABELS,
+				ariaLabel: "Filter errors",
+				tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
+				panel: () => undefined,
+			},
+			toParentMessage: (message) => Message.GotTabsMessage({ message }),
+		}),
+		trailing: [
+			toolbarSearch(h, model.searchDraft),
 			h.submodel({
-				slotId: "errors-view-tabs",
-				model: model.tabs,
-				view: TabsView.view,
+				slotId: model.sortSelect.id,
+				model: model.sortSelect,
+				view: SelectView.view,
 				viewInputs: {
-					labels: VIEW_LABELS,
-					ariaLabel: "Filter errors",
-					tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
-					panel: () => undefined,
+					entries: SORT_ENTRIES,
+					size: "sm",
+					className: "h-7 w-32 text-xs",
+					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
-				toParentMessage: (message) => Message.GotTabsMessage({ message }),
+				toParentMessage: (message) => Message.GotSortSelectMessage({ message }),
 			}),
-			h.div(
-				[h.Class("ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2")],
-				[
-					toolbarSearch(h, model.searchDraft),
-					h.submodel({
-						slotId: model.sortSelect.id,
-						model: model.sortSelect,
-						view: SelectView.view,
-						viewInputs: {
-							entries: SORT_ENTRIES,
-							size: "sm",
-							className: "h-7 w-[126px] text-xs",
-							toView: (parts) => h.div([h.Class("contents")], parts),
-						},
-						toParentMessage: (message) => Message.GotSortSelectMessage({ message }),
-					}),
-					h.submodel({
-						slotId: model.severitySelect.id,
-						model: model.severitySelect,
-						view: SelectView.view,
-						viewInputs: {
-							entries: SEVERITY_ENTRIES,
-							size: "sm",
-							className: "h-7 w-[122px] text-xs",
-							renderValue: (value) => severityContent(h, value, SEVERITY_TRIGGER_LABEL),
-							renderItem: (option) => severityContent(h, option.value, SEVERITY_FILTER_LABEL),
-							toView: (parts) => h.div([h.Class("contents")], parts),
-						},
-						toParentMessage: (message) => Message.GotSeveritySelectMessage({ message }),
-					}),
-					...(count === null
-						? []
-						: [h.span([h.Class("text-xs text-muted-foreground tabular-nums")], count)]),
-				],
-			),
+			h.submodel({
+				slotId: model.severitySelect.id,
+				model: model.severitySelect,
+				view: SelectView.view,
+				viewInputs: {
+					entries: SEVERITY_ENTRIES,
+					size: "sm",
+					className: "h-7 w-32 text-xs",
+					renderValue: (value) => severityContent(h, value, SEVERITY_TRIGGER_LABEL),
+					renderItem: (option) => severityContent(h, option.value, SEVERITY_FILTER_LABEL),
+					toView: (parts) => h.div([h.Class("contents")], parts),
+				},
+				toParentMessage: (message) => Message.GotSeveritySelectMessage({ message }),
+			}),
+			...(count === null ? [] : [toolbarCount(h, count)]),
 		],
-	)
+	})

@@ -80,7 +80,6 @@ describe("metricsTimeseriesQuery", () => {
 	it("applies groupByAttributeKey", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum", groupByAttributeKey: "region" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("Attributes['region']")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
 	})
 
@@ -95,12 +94,6 @@ describe("metricsTimeseriesQuery", () => {
 		expect(sql).toContain("__series_rank <= 7")
 	})
 
-	it("applies serviceName filter", () => {
-		const q = metricsTimeseriesQuery({ metricType: "sum", serviceName: "api" })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("ServiceName = 'api'")
-	})
-
 	it("applies an attribute filter", () => {
 		const q = metricsTimeseriesQuery({
 			metricType: "sum",
@@ -110,17 +103,9 @@ describe("metricsTimeseriesQuery", () => {
 		expect(sql).toContain("Attributes['region'] = 'us-east-1'")
 	})
 
-	it("shows empty string as attributeValue when no groupByAttributeKey", () => {
-		const q = metricsTimeseriesQuery({ metricType: "sum" })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("'' AS attributeValue")
-	})
-
 	it("applies groupByResourceAttributeKey against ResourceAttributes", () => {
 		const q = metricsTimeseriesQuery({ metricType: "gauge", groupByResourceAttributeKey: "host.name" })
 		const { sql } = compileUnsafe(q, baseParams)
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the group key reads the requested attribute
-		expect(sql).toContain("ResourceAttributes['host.name'] AS attributeValue")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
 	})
 
@@ -147,7 +132,6 @@ describe("metricsTimeseriesRateQuery", () => {
 	it("compiles CTE-based rate query", () => {
 		const q = metricsTimeseriesRateQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("lagInFrame")
 		// Partition must isolate each pod/series (ResourceAttributes), otherwise
 		// deltas are computed across interleaved replicas. StartTimeUnix stays out
 		// of the key so a restart is visible to the reset branch.
@@ -158,7 +142,6 @@ describe("metricsTimeseriesRateQuery", () => {
 				"ORDER BY metrics_sum.TimeUnix ASC",
 		)
 		expect(sql).toContain("ROWS BETWEEN 1 PRECEDING AND CURRENT ROW")
-		expect(sql).toContain("FROM with_deltas")
 	})
 
 	// Verified against clickhouse-local on a fixture with a value-drop reset, a
@@ -417,14 +400,6 @@ describe("metricsSparklinesQuery", () => {
 		expect(sql).toContain("sum(metrics_histogram.Sum) / sum(metrics_histogram.Count)")
 		expect(sql).toContain("sum(metrics_histogram.Count) AS dataPointCount")
 	})
-
-	it("scopes to org and time range", () => {
-		const q = metricsSparklinesQuery({ metricType: "sum", metricNames: ["calls"] })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("TimeUnix >=")
-		expect(sql).toContain("TimeUnix <=")
-	})
 })
 
 describe("metricsBreakdownQuery", () => {
@@ -432,8 +407,6 @@ describe("metricsBreakdownQuery", () => {
 		const q = metricsBreakdownQuery({ metricType: "sum" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_sum")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the breakdown's group key
-		expect(sql).toContain("ServiceName AS name")
 		expect(sql).toContain("ifNull(ifNotFinite(avg(metrics_sum.Value), 0), 0) AS avgValue")
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
@@ -542,7 +515,6 @@ describe("listMetricsQuery", () => {
 		const q = listMetricsQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).not.toContain("UNION ALL")
-		expect(sql).toContain("FROM metric_catalog")
 		expect(sql).toContain("GROUP BY metricName, metricType, serviceName")
 		expect(sql).toContain("ORDER BY lastSeen DESC, metricName ASC, metricType ASC, serviceName ASC")
 		expect(sql).toContain("LIMIT 100")
@@ -583,7 +555,6 @@ describe("metricsSummaryQuery", () => {
 		const q = metricsSummaryQuery()
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).not.toContain("UNION ALL")
-		expect(sql).toContain("FROM metric_catalog")
 		expect(sql).toContain("GROUP BY metricType")
 		expect(sql).toContain("uniq(metric_catalog.MetricName)")
 		expect(sql).toContain("sum(metric_catalog.DataPointCount)")

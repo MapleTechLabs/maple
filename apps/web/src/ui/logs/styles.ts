@@ -11,12 +11,20 @@ export const rowClass = <Message>(h: HtmlBuilder<Message>, value: string): Attri
 
 // styles: packages/ui/src/components/logs/log-attribute-chip.tsx
 export const CHIP_TONE_CLASSES = {
-	crit: "bg-severity-error/10 text-severity-error border-severity-error/20 hover:bg-severity-error/15",
-	warn: "bg-severity-warn/10 text-severity-warn border-severity-warn/20 hover:bg-severity-warn/15",
-	emphasis: "bg-muted text-foreground/80 border-border hover:bg-muted/80",
-	muted: "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70",
+	crit: "bg-severity-error-a2 text-severity-error border-severity-error-a3 hover:bg-severity-error-a3 active:bg-severity-error-a3",
+	warn: "bg-severity-warn-a2 text-severity-warn border-severity-warn-a3 hover:bg-severity-warn-a3 active:bg-severity-warn-a3",
+	emphasis: "bg-muted text-foreground-soft border-border hover:bg-surface-strong active:bg-surface-strong",
+	muted: "bg-surface-sunken text-muted-foreground border-border-subtle hover:bg-surface-strong active:bg-surface-strong",
+} satisfies Record<ChipTone, string>
+/** The chip's key steps back from its value; error and warning keys keep their tone colour. */
+export const CHIP_KEY_TONE_CLASSES = {
+	crit: "opacity-70",
+	warn: "opacity-70",
+	// Full muted tone keeps the key at AA against the chip; the bright value carries the hierarchy.
+	emphasis: "text-muted-foreground",
+	muted: "opacity-70",
 } satisfies Record<ChipTone, string>
 export const CHIP_CLASS =
-	"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded-sm border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 export const CHIP_FILTER_ACTION_CLASS =
-	"inline-flex h-6 items-center gap-1 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex h-6 items-center gap-1 rounded-sm px-1.5 text-2xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

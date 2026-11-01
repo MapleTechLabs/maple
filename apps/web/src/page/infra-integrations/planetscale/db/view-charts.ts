@@ -47,7 +47,7 @@ const GRID: ReadonlyArray<PlanetScaleMetric> = [
 
 export const CHART_SCOPE_EXPLANATION = "Every branch in this database, combined."
 export const FALLBACK_EXPLANATION = {
-	chart: "PlanetScale reports these gauges per branch, but the history endpoint answers one branch or the whole database — so this shows every branch combined.",
+	chart: "PlanetScale reports these gauges per branch, but the history endpoint answers one branch or the whole database, so this shows every branch combined.",
 	insights:
 		"PlanetScale's Query Insights API answers one branch at a time, so this shows the resolved branch only.",
 } as const
@@ -191,7 +191,7 @@ export const chartsSection = (
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
 		errorState(h, {
 			failure,
-			title: "Failed to load database metrics",
+			title: "Couldn't load database metrics",
 			onRetry: Message.ClickedRetryTimeseries(),
 		})
 	return AsyncData.match(model.timeseries.data, {

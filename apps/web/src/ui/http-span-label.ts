@@ -55,7 +55,7 @@ export const httpSpanLabel = <M>(h: HtmlBuilder<M>, options: HttpSpanLabelOption
 				[
 					h.Class(
 						cn(
-							"shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-3xs font-bold leading-none text-white",
+							"shrink-0 inline-flex items-center gap-0.5 rounded-sm px-1 py-0.5 text-3xs font-bold leading-none text-white",
 							HTTP_METHOD_COLORS[info.method] ?? "bg-[#5A5248]",
 						),
 					),
