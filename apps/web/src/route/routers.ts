@@ -150,7 +150,11 @@ const routers = {
 	),
 	SecurityExposure: pipe(path("security", "exposure"), Route.mapTo(AppRoute.SecurityExposure)),
 	SecurityRuntimes: pipe(path("security", "runtimes"), Route.mapTo(AppRoute.SecurityRuntimes)),
-	SecurityDependencies: pipe(path("security", "dependencies"), Route.mapTo(AppRoute.SecurityDependencies)),
+	SecurityDependencies: pipe(
+		path("security", "dependencies"),
+		search(Search.SecurityDependenciesSearch),
+		Route.mapTo(AppRoute.SecurityDependencies),
+	),
 	SecurityRun: pipe(
 		path("security", "runs"),
 		slash(schemaSegment("runId", SecurityAuditRunId)),

@@ -2,7 +2,7 @@ import { definePage } from "../../contract"
 import { breadcrumbsOf } from "../kit/layout"
 import { Message, Model } from "./model"
 import { subscriptions } from "./subscription"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view } from "./view"
 
 /**
@@ -17,6 +17,7 @@ export const page = definePage(
 		key: () => "security-dependencies",
 		init,
 		update,
+		routeChanged,
 		view,
 		subscriptions,
 		breadcrumbs: () => breadcrumbsOf("dependencies"),

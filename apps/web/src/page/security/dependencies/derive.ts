@@ -7,6 +7,7 @@ import {
 	type DependencyScanRepository,
 	type VcsRepositoryId,
 } from "@maple/domain/http"
+import { compareVersions } from "@maple/lockfiles/versions"
 import { Duration, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -99,8 +100,18 @@ export const filteredFindings = (
 export const statusFilterOf = (model: Model): StatusFilter =>
 	STATUS_FILTERS.find((status) => status === model.statusSelect.value) ?? "open"
 
+/** The repository the URL focuses, once it is one of the connected ones. */
+export const focusedRepositoryOf = (model: Model): DependencyScanRepository | null =>
+	repositoriesOf(model).find((repository) => repository.id === model.repositorySelect.value) ?? null
+
 export const repositoryFilterOf = (model: Model): VcsRepositoryId | null =>
-	repositoriesOf(model).find((repository) => repository.id === model.repositorySelect.value)?.id ?? null
+	focusedRepositoryOf(model)?.id ?? null
+
+export const openFindingsOf = (
+	findings: ReadonlyArray<DependencyFindingView>,
+	repositoryId: VcsRepositoryId,
+): ReadonlyArray<DependencyFindingView> =>
+	findings.filter((finding) => finding.status === "open" && finding.repositoryId === repositoryId)
 
 export type SeverityCounts = Readonly<Record<AdvisorySeverity, number>>
 
@@ -157,3 +168,143 @@ export const reasonErrorOf = (reason: string): string | null =>
 
 /** A commit as its first seven characters, as GitHub abbreviates it. */
 export const shortSha = (sha: string): string => sha.slice(0, 7)
+
+const SEVERITY_RANK = {
+	critical: 0,
+	high: 1,
+	medium: 2,
+	low: 3,
+	unknown: 4,
+} satisfies Record<AdvisorySeverity, number>
+
+/** How directly the code leans on a package: a direct one is the bump a person makes. */
+const RELATION_RANK = {
+	direct: 0,
+	dev: 1,
+	transitive: 2,
+	unknown: 3,
+} satisfies Record<DependencyRelation, number>
+
+/** One package bump in a repository: the version that clears every open advisory it can. */
+export type UpgradeStep = Readonly<{
+	key: string
+	ecosystem: DependencyFindingView["ecosystem"]
+	packageName: string
+	installed: ReadonlyArray<string>
+	/** The highest fixed version across its advisories; null when none has a fix yet. */
+	target: string | null
+	/** Open advisories the bump clears, once each however many lockfiles carry them. */
+	fixes: ReadonlyArray<DependencyFindingView>
+	/** Open advisories on the package with no fixed version yet, once each. */
+	unfixed: ReadonlyArray<DependencyFindingView>
+	severity: AdvisorySeverity
+	relation: DependencyRelation
+	lockfiles: ReadonlyArray<string>
+	/** Spans its running services served over the last day; 0 when none runs it. */
+	productionSpans: number
+	services: ReadonlyArray<string>
+}>
+
+const worst = <A extends string>(values: ReadonlyArray<A>, rank: Record<A, number>, fallback: A): A =>
+	values.reduce((best, value) => (rank[value] < rank[best] ? value : best), fallback)
+
+const unique = (values: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(values)]
+
+/** A finding is per lockfile; the plan counts each advisory once. */
+const byAdvisory = (findings: ReadonlyArray<DependencyFindingView>): ReadonlyArray<DependencyFindingView> => [
+	...new Map(findings.map((finding) => [finding.advisoryId, finding] as const)).values(),
+]
+
+const stepOf = (key: string, findings: ReadonlyArray<DependencyFindingView>): UpgradeStep => {
+	const [first] = findings
+	const ecosystem = first?.ecosystem ?? "npm"
+	const fixes = byAdvisory(findings.filter((finding) => finding.fixedIn !== null))
+	const target = fixes.reduce<string | null>(
+		(highest, finding) =>
+			finding.fixedIn !== null &&
+			(highest === null || compareVersions(ecosystem, finding.fixedIn, highest) > 0)
+				? finding.fixedIn
+				: highest,
+		null,
+	)
+	// The same service appears once per finding; count each one's traffic once.
+	const spans = new Map(
+		findings.flatMap((finding) =>
+			finding.production.map(
+				(service) =>
+					[`${service.serviceName}/${service.environment}@${service.commitSha}`, service] as const,
+			),
+		),
+	)
+	const services = [...spans.values()].sort((a, b) => b.spanCount - a.spanCount)
+	return {
+		key,
+		ecosystem,
+		packageName: first?.packageName ?? "",
+		installed: unique(findings.flatMap((finding) => finding.versions)).toSorted((a, b) =>
+			compareVersions(ecosystem, a, b),
+		),
+		target,
+		fixes,
+		unfixed: byAdvisory(findings.filter((finding) => finding.fixedIn === null)).filter(
+			(finding) => !fixes.some((fixed) => fixed.advisoryId === finding.advisoryId),
+		),
+		severity: worst(
+			findings.map((finding) => finding.severity),
+			SEVERITY_RANK,
+			"unknown",
+		),
+		relation: worst(
+			findings.map((finding) => finding.relation),
+			RELATION_RANK,
+			"unknown",
+		),
+		lockfiles: unique(findings.map((finding) => finding.lockfilePath)),
+		productionSpans: services.reduce((sum, service) => sum + service.spanCount, 0),
+		services: unique(services.map((service) => service.serviceName)),
+	}
+}
+
+/**
+ * A repository's open findings as package bumps, the one to make first on top: worst severity,
+ * then direct before transitive, then what production runs, then the most advisories cleared. Packages with no fix go last.
+ */
+export const upgradePlanOf = (findings: ReadonlyArray<DependencyFindingView>): ReadonlyArray<UpgradeStep> => {
+	const groups = new Map<string, ReadonlyArray<DependencyFindingView>>()
+	findings
+		.filter((finding) => finding.status === "open")
+		.forEach((finding) => {
+			const key = `${finding.repositoryId}/${finding.ecosystem}/${finding.packageName}`
+			groups.set(key, [...(groups.get(key) ?? []), finding])
+		})
+	return [...groups.entries()]
+		.map(([key, group]) => stepOf(key, group))
+		.toSorted(
+			(a, b) =>
+				Number(a.target === null) - Number(b.target === null) ||
+				SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+				RELATION_RANK[a.relation] - RELATION_RANK[b.relation] ||
+				b.productionSpans - a.productionSpans ||
+				b.fixes.length - a.fixes.length,
+		)
+}
+
+/** A repository's plan in a line's worth of numbers. */
+export type PlanSummary = Readonly<{ upgrades: number; fixable: number; unfixed: number; open: number }>
+
+export const planSummaryOf = (plan: ReadonlyArray<UpgradeStep>): PlanSummary =>
+	plan.reduce<PlanSummary>(
+		(sum, step) => ({
+			upgrades: sum.upgrades + (step.target === null ? 0 : 1),
+			fixable: sum.fixable + step.fixes.length,
+			unfixed: sum.unfixed + step.unfixed.length,
+			open: sum.open + step.fixes.length + step.unfixed.length,
+		}),
+		{ upgrades: 0, fixable: 0, unfixed: 0, open: 0 },
+	)
+
+/** Services that ran one of the repository's commits over the last day. */
+export const runningServicesOf = (repository: DependencyScanRepository): ReadonlyArray<string> =>
+	unique(
+		repository.runningCommits.flatMap((commit) => commit.services.map((service) => service.serviceName)),
+	)

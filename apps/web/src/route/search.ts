@@ -950,5 +950,11 @@ export const SecurityFindingsSearch = Schema.Struct({
 export const SecurityRunsSearch = Schema.Struct({
 	target: Schema.optional(Schema.String),
 })
+/** One repository's breakdown on the Dependencies tab; absent shows them all. */
+export const SecurityDependenciesSearch = Schema.Struct({
+	repo: Schema.optional(Schema.String),
+})
+
 export type SecurityFindingsSearch = typeof SecurityFindingsSearch.Type
 export type SecurityRunsSearch = typeof SecurityRunsSearch.Type
+export type SecurityDependenciesSearch = typeof SecurityDependenciesSearch.Type

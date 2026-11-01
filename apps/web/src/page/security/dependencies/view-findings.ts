@@ -147,10 +147,10 @@ const toolbar = (
 const muted = (h: H, text: string, className?: string): Html =>
 	h.span([h.Class(cn("text-xs text-muted-foreground", className))], [text])
 
-type ProductionScanState = "running" | "unscanned" | "failed"
+export type ProductionScanState = "running" | "unscanned" | "failed"
 
 /** Repositories whose running commits are not all scanned: one scanning, one with no scan yet, or one failed. */
-const productionScanStates = (
+export const productionScanStates = (
 	repositories: ReadonlyArray<DependencyScanRepository>,
 ): ReadonlyMap<string, ProductionScanState> =>
 	new Map(
@@ -167,6 +167,24 @@ const productionScanStates = (
 export const productionSpans = (finding: DependencyFindingView): number =>
 	finding.production.reduce((sum, service) => sum + service.spanCount, 0)
 
+/**
+ * What to say when no running service carries a package: a running commit not scanned yet may,
+ * and "Not running" holds only when every running commit was read.
+ */
+export const notRunningLabel = (
+	production: DependencyProductionCoverage,
+	scan: ProductionScanState | undefined,
+): string =>
+	scan === "running"
+		? "Scanning"
+		: scan === "unscanned"
+			? "Not scanned yet"
+			: scan === "failed"
+				? "Scan failed"
+				: production.available && production.complete && production.linkedServices > 0
+					? "Not running"
+					: "Unknown"
+
 /** The busiest service running the finding, and how many more; unknown without commit telemetry. */
 const productionCell = (
 	h: H,
@@ -175,20 +193,7 @@ const productionCell = (
 	scans: ReadonlyMap<string, ProductionScanState>,
 ): Html => {
 	const [busiest] = finding.production
-	// A running commit not scanned yet may carry the finding: no answer until its scan lands.
-	const scan = scans.get(finding.repositoryId)
-	if (busiest === undefined && scan !== undefined)
-		return muted(
-			h,
-			scan === "running" ? "Scanning" : scan === "unscanned" ? "Not scanned yet" : "Scan failed",
-		)
-	if (busiest === undefined)
-		return muted(
-			h,
-			production.available && production.complete && production.linkedServices > 0
-				? "Not running"
-				: "Unknown",
-		)
+	if (busiest === undefined) return muted(h, notRunningLabel(production, scans.get(finding.repositoryId)))
 	const others = new Set(finding.production.map((service) => service.serviceName)).size - 1
 	return h.span(
 		[h.Class("flex min-w-0 max-w-48 flex-col")],

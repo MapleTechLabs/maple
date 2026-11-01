@@ -31,7 +31,7 @@ const TABS: ReadonlyArray<{ tab: SecurityTab; label: string; icon: IconName; hre
 		tab: "dependencies",
 		label: "Dependencies",
 		icon: "CubeIcon",
-		href: hrefOf(AppRoute.SecurityDependencies()),
+		href: hrefOf(AppRoute.SecurityDependencies({ search: {} })),
 	},
 ]
 

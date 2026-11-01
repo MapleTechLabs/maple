@@ -1,4 +1,5 @@
 import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
+import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
@@ -7,7 +8,7 @@ import { icon } from "../../../ui/icon"
 import { textLink } from "../../../ui/text-link"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { placeholder } from "../kit/parts"
-import { openSeverityCounts, scannedCount } from "./derive"
+import { openSeverityCounts, planSummaryOf, scannedCount, upgradePlanOf } from "./derive"
 import type { Message, Model } from "./model"
 import { scanButton } from "./view-repositories"
 
@@ -73,11 +74,41 @@ export const firstScan = (
 	)
 }
 
-export const severityRail = (
+/** The fifth tile: how many repositories were scanned, or the focused one's upgrade count. */
+const scopeTile = (
 	h: H,
 	findings: ReadonlyArray<DependencyFindingView>,
 	repositories: ReadonlyArray<DependencyScanRepository>,
+	focused: DependencyScanRepository | null,
 ): Html => {
+	if (focused === null)
+		return statRailItem(h, {
+			eyebrow: "Repositories",
+			value: `${scannedCount(repositories)} / ${repositories.length}`,
+			compact: true,
+			subline: "scanned / connected",
+		})
+	const plan = planSummaryOf(upgradePlanOf(findings))
+	return statRailItem(h, {
+		eyebrow: "Upgrades",
+		value: String(plan.upgrades),
+		compact: true,
+		subline:
+			plan.open === 0
+				? "nothing open"
+				: `clear ${plan.fixable} of ${countLabel(plan.open, "advisory", "advisories")}`,
+	})
+}
+
+/** Open findings by severity, the whole org's or the focused repository's alone. */
+export const severityRail = (
+	h: H,
+	allFindings: ReadonlyArray<DependencyFindingView>,
+	repositories: ReadonlyArray<DependencyScanRepository>,
+	focused: DependencyScanRepository | null,
+): Html => {
+	const findings =
+		focused === null ? allFindings : allFindings.filter((finding) => finding.repositoryId === focused.id)
 	const counts = openSeverityCounts(findings)
 	return statRail(h, { columns: 5 }, [
 		statRailItem(h, {
@@ -101,12 +132,7 @@ export const severityRail = (
 			compact: true,
 			subline: counts.unknown > 0 ? `open, and ${counts.unknown} unrated` : "open",
 		}),
-		statRailItem(h, {
-			eyebrow: "Repositories",
-			value: `${scannedCount(repositories)} / ${repositories.length}`,
-			compact: true,
-			subline: "scanned / connected",
-		}),
+		scopeTile(h, findings, repositories, focused),
 	])
 }
 
