@@ -188,7 +188,9 @@ export const scanSummaryOf = (row: DependencyScanRow): DependencyScanSummary => 
 export const findingViewOf = (
 	row: DependencyFindingRow,
 	repositoryFullName: string,
+	production: ReadonlyArray<DependencyRunningService>,
 ): DependencyFindingView => ({
+	production,
 	id: row.id,
 	repositoryId: row.repositoryId,
 	repositoryFullName,
@@ -478,10 +480,13 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					).length,
 				})
 				return {
-					findings: ranked.map(({ row, services }) => ({
-						...findingViewOf(row, names.get(row.repositoryId) ?? "unknown repository"),
-						production: services.map(toRunningService),
-					})),
+					findings: ranked.map(({ row, services }) =>
+						findingViewOf(
+							row,
+							names.get(row.repositoryId) ?? "unknown repository",
+							services.map(toRunningService),
+						),
+					),
 					production: {
 						available: production.available,
 						runningServices: production.runningServices,
@@ -517,12 +522,14 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 				const repository = yield* vcs
 					.getRepositoryById(orgId, row.repositoryId)
 					.pipe(Effect.mapError(persistence("Could not read the repository")))
+				// Production is the list read's to add; the page re-reads findings after a triage.
 				return findingViewOf(
 					row,
 					Option.match(repository, {
 						onNone: () => "unknown repository",
 						onSome: (r) => r.fullName,
 					}),
+					[],
 				)
 			})
 

@@ -24,8 +24,6 @@ export const STATUS_FILTER_LABEL = {
 	all: "All",
 } satisfies Record<StatusFilter, string>
 
-/** Worst first; `unknown` is an advisory with no score, read as "Unrated". */
-export const SEVERITIES: ReadonlyArray<AdvisorySeverity> = ["critical", "high", "medium", "low", "unknown"]
 
 export const SEVERITY_LABEL = {
 	critical: "Critical",
