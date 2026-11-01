@@ -98,6 +98,8 @@ const disconnected = () =>
 
 const selection = Schema.decodeUnknownSync(GithubInstallationSelection)({
 	state: "selection-1",
+	needsApproval: [],
+	installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
 	installations: [
 		{ id: "101", accountLogin: "personal", accountType: "user", repositorySelection: "all" },
 		{ id: "202", accountLogin: "acme", accountType: "organization", repositorySelection: "selected" },
@@ -146,18 +148,20 @@ describe("github connect flow", () => {
 				),
 			),
 			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
-			expectView(role("button", { name: "Install on GitHub" })).toExist(),
-			expectView(role("button", { name: "Connect existing installation" })).toExist(),
+			expectView(role("button", { name: "Connect GitHub" })).toExist(),
+			expectView(role("button", { name: "Install on GitHub" })).not.toExist(),
 			expectView(role("button", { name: "Continue" })).toBeDisabled(),
 		)
 	})
 
-	test("an existing installation authorizes without starting another install", () => {
-		const entered = inner(disconnected(), IntegrationMessage.ClickedConnectExistingGithub())
-		expect(entered.integrations.connect.active).toEqual({
+	test("Connect authorizes first; only the account picker opens the install page", () => {
+		const entered = inner(disconnected(), IntegrationMessage.ClickedConnect())
+		expect(entered.integrations.connect.active).toEqual({ provider: "github", attempt: 1 })
+		const elsewhere = inner(discovered().model, IntegrationMessage.ClickedInstallGithubElsewhere())
+		expect(elsewhere.integrations.connect.active).toEqual({
 			provider: "github",
 			attempt: 1,
-			githubMode: "existing",
+			githubMode: "install",
 		})
 	})
 
@@ -177,8 +181,32 @@ describe("github connect flow", () => {
 		},
 	)
 
+	test("an account GitHub withheld the role for explains the approval and still offers install", () => {
+		const returned = inner(
+			disconnected(),
+			IntegrationMessage.ReceivedConnectMessage({
+				provider: "github",
+				status: "success",
+				message: "Choose an account",
+				github: Schema.decodeUnknownSync(GithubInstallationSelection)({
+					...selection,
+					installations: [],
+					needsApproval: ["acme"],
+				}),
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(returned),
+			expectView(text("No GitHub account is ready to connect yet.")).toExist(),
+			expectView(text(/approve the app's pending permission request/)).toExist(),
+			expectView(role("button", { name: "Install on another GitHub account" })).toExist(),
+			expectView(role("button", { name: "Continue" })).toBeDisabled(),
+		)
+	})
+
 	test("an authorization failure ends the waiting state and keeps recovery available", () => {
-		const started = inner(disconnected(), IntegrationMessage.ClickedConnectExistingGithub())
+		const started = inner(disconnected(), IntegrationMessage.ClickedConnect())
 		const failed = inner(
 			started,
 			IntegrationMessage.ReceivedConnectMessage({
@@ -191,7 +219,7 @@ describe("github connect flow", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			expectView(text("Waiting for GitHub to send you back…")).not.toExist(),
-			expectView(role("button", { name: "Connect existing installation" })).toExist(),
+			expectView(role("button", { name: "Connect GitHub" })).toExist(),
 		)
 	})
 
@@ -268,7 +296,7 @@ describe("github connect flow", () => {
 			{ update: pageUpdate, view },
 			given(failed.model),
 			expectView(role("button", { name: "Connect acme" })).not.toExist(),
-			expectView(role("button", { name: "Connect existing installation" })).toExist(),
+			expectView(role("button", { name: "Connect GitHub" })).toExist(),
 			expectView(role("button", { name: "Continue" })).toBeDisabled(),
 		)
 	})
@@ -379,7 +407,7 @@ describe("github connect flow", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			expectView(text("GitHub rate limit exhausted. Reconnect to retry.")).toExist(),
-			expectView(role("button", { name: "Connect existing installation" })).toExist(),
+			expectView(role("button", { name: "Reconnect GitHub" })).toExist(),
 		)
 		const returned = inner(
 			failed,
@@ -415,7 +443,7 @@ describe("github connect flow", () => {
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(text("Repository discovery failed")).toExist(),
-			click(role("button", { name: "Connect existing installation" })),
+			click(role("button", { name: "Reconnect GitHub" })),
 			Subscription.emit(
 				Message.GotIntegrationsMessage({
 					message: IntegrationMessage.ReceivedConnectMessage({

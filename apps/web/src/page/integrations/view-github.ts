@@ -26,20 +26,26 @@ import { repositoriesPanels, repoDialogs } from "./view-github-repos"
 
 const ACCOUNT_TYPE = { organization: "Organization", user: "Personal account" } as const
 
-export const githubConnectExistingButton = (
-	h: H,
-	model: Model,
-	label = "Connect existing installation",
-): Html =>
+/** Starts GitHub authorization again, which finds installations made outside Maple too. */
+export const githubReconnectButton = (h: H, model: Model, label = "Reconnect GitHub"): Html =>
 	button(
 		h,
 		{
 			variant: "outline",
 			className: "w-fit",
 			isDisabled: model.connect.isStarting || model.githubCard.selectingInstallation !== null,
-			attributes: [h.OnClick(Message.ClickedConnectExistingGithub())],
+			isLoading: model.connect.isStarting,
+			attributes: [h.OnClick(Message.ClickedConnect())],
 		},
 		[label],
+	)
+
+const needsApprovalNote = (h: H, login: string): Html =>
+	h.p(
+		[h.Class("text-sm text-muted-foreground")],
+		[
+			`Maple could not confirm you are an owner of ${login}: GitHub did not share organization roles with the Maple app. An owner of ${login} can approve the app's pending permission request (organization Settings > GitHub Apps > Review request), then connect again.`,
+		],
 	)
 
 export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html> => {
@@ -48,7 +54,11 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 	return [
 		h.p(
 			[h.Class("text-sm text-muted-foreground")],
-			["Choose the GitHub account to connect to this Maple organization."],
+			[
+				selection.installations.length > 0
+					? "Choose the GitHub account to connect to this Maple organization."
+					: "No GitHub account is ready to connect yet.",
+			],
 		),
 		h.div(
 			[h.Class("flex flex-col gap-2")],
@@ -95,7 +105,17 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 				),
 			),
 		),
-		githubConnectExistingButton(h, model, "Authorize again"),
+		...selection.needsApproval.map((login) => needsApprovalNote(h, login)),
+		button(
+			h,
+			{
+				variant: "outline",
+				className: "w-fit",
+				isDisabled: model.connect.isStarting || model.githubCard.selectingInstallation !== null,
+				attributes: [h.OnClick(Message.ClickedInstallGithubElsewhere())],
+			},
+			[icon(h, "GithubIcon"), "Install on another GitHub account"],
+		),
 	]
 }
 
@@ -262,7 +282,7 @@ const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: 
 			: !status.connected && status.repositoryDiscovery?._tag === "Failed"
 				? integrationNotice(h, {
 						message: status.repositoryDiscovery.message,
-						action: githubConnectExistingButton(h, model),
+						action: githubReconnectButton(h, model),
 					})
 				: status.connected
 					? connectedView(h, model, status, timeZone)
@@ -372,19 +392,9 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 						},
 						[icon(h, "ArrowRotateClockwiseIcon"), "Reconnect GitHub"],
 					),
-					button(
-						h,
-						{
-							variant: "outline",
-							isDisabled:
-								model.connect.isStarting || model.githubCard.selectingInstallation !== null,
-							attributes: [h.OnClick(Message.ClickedConnectExistingGithub())],
-						},
-						["Connect existing installation"],
-					),
 					h.p(
 						[h.Class("text-xs text-muted-foreground")],
-						["You'll be sent to GitHub to reinstall the Maple app."],
+						["GitHub opens in a new window to reconnect the Maple app."],
 					),
 				],
 			),

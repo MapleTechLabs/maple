@@ -239,7 +239,7 @@ const requireInstallation = (params: URLSearchParams): string | null =>
 			? "Installation requested. An org admin must approve it on GitHub, then reconnect."
 			: "Missing installation_id in callback"
 		: !params.get("state")
-			? "The GitHub app is installed, but this return has no Maple connection request. Open the GitHub source in Maple and choose Connect existing installation."
+			? "The GitHub app is installed, but this return has no Maple connection request. Open the GitHub source in Maple and click Connect GitHub."
 			: null
 
 const ROUTES: ReadonlyArray<CallbackRoute> = [

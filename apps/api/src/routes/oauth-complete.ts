@@ -160,8 +160,9 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 	const completeGithub = (params: URLSearchParams, initiator: OAuthFlowInitiator) => {
 		const installationId = params.get("installation_id")
 		const state = params.get("state")
-		// Present only with OAuth-on-install enabled; proves the user owns the install.
+		// From user authorization or OAuth-on-install; proves who the GitHub user is.
 		const code = params.get("code") ?? undefined
+		// Authorization alone (no installation yet): list what this user can connect.
 		if (!installationId && code && state && params.get("setup_action") !== "request") {
 			return github.discoverInstallations(code, state, initiator).pipe(
 				Effect.map(

@@ -37,7 +37,8 @@ export const IntegrationCallbackEvents = Context.Reference<ReturnType<typeof bro
 export const ConnectAttempt = Schema.Struct({
 	provider: ConnectProvider,
 	attempt: Schema.Number,
-	githubMode: Schema.optionalKey(Schema.Literals(["install", "existing"])),
+	/** GitHub only: open the App install page instead of user authorization. */
+	githubMode: Schema.optionalKey(Schema.Literal("install")),
 })
 export type ConnectAttempt = typeof ConnectAttempt.Type
 
@@ -135,7 +136,7 @@ export const currentReturnPath = Effect.sync(() =>
 export const startConnect = (
 	provider: ConnectProvider,
 	returnTo: IntegrationReturnPath,
-	githubMode?: "install" | "existing",
+	githubMode?: "install",
 ) =>
 	Effect.gen(function* () {
 		const internal = yield* MapleInternalApiClient

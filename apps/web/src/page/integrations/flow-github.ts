@@ -55,9 +55,7 @@ export const githubFlow = (model: Model): FlowSpec => {
 								? `${countLabel(repos, "repository", "repositories")} granted`
 								: model.connect.active !== null
 									? "Waiting for GitHub to send you back."
-									: model.githubCard.selection !== null
-										? "Choose an account to finish connecting."
-										: "Install the app or connect an existing installation to continue.",
+									: "Connect GitHub to continue.",
 			choose: "",
 			live:
 				status?.repositoryDiscovery?._tag === "Pending"

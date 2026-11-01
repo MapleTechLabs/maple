@@ -294,9 +294,9 @@ export const repositoriesPanels = (
 									{
 										variant: "outline",
 										isDisabled: model.connect.isStarting,
-										attributes: [h.OnClick(Message.ClickedConnectExistingGithub())],
+										attributes: [h.OnClick(Message.ClickedConnect())],
 									},
-									["Connect existing installation"],
+									["Reconnect GitHub"],
 								),
 							],
 						)

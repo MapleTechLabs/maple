@@ -40,6 +40,7 @@ const finish = (storage: ReturnStorage, now: number) => {
 			storage,
 			now,
 			handOff: () => Effect.succeed(false),
+			redirect: () => Effect.void,
 			complete: (request) =>
 				Effect.sync(() => {
 					posted.push(request)
@@ -70,6 +71,8 @@ describe("an OAuth return captured at boot", () => {
 	test("an existing GitHub installation's account choices reach the opener and the full-page return", () => {
 		const github = new GithubInstallationSelection({
 			state: "verified-choice",
+			needsApproval: [],
+			installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
 			installations: [
 				{
 					id: "101",
@@ -99,12 +102,38 @@ describe("an OAuth return captured at boot", () => {
 							forwarded.push(selection)
 							return hasOpener
 						}),
+					redirect: () => Effect.die("an account choice is not redirected"),
 				}),
 			)
 			expect(outcome?.github).toEqual(github)
 			expect(outcome?.isHandedOff).toBe(hasOpener)
 		}
 		expect(forwarded).toEqual([github, github])
+	})
+
+	test("a GitHub authorization with nothing to choose sends the window on to install", () => {
+		const github = new GithubInstallationSelection({
+			state: "empty-choice",
+			needsApproval: [],
+			installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
+			installations: [],
+		})
+		const storage = memoryStorage()
+		boot(storage, encodeOAuthReturnHash({ flow: "github", query: "code=c-1&state=s-1" }))
+		const redirected: Array<string> = []
+		const handedOff: Array<string> = []
+		const outcome = Effect.runSync(
+			completeOAuthReturnWith({
+				storage,
+				now: BOOT_AT + 500,
+				complete: () => Effect.succeed({ status: "success", message: "ok", chat: null, github }),
+				handOff: (provider) => Effect.sync(() => (handedOff.push(provider), true)),
+				redirect: (url) => Effect.sync(() => void redirected.push(url)),
+			}),
+		)
+		expect(redirected).toEqual([github.installUrl])
+		expect(handedOff).toEqual([])
+		expect(outcome?.isHandedOff).toBe(true)
 	})
 
 	test("completes after a sign-in round trip, and only once", () => {

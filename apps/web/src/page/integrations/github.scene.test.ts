@@ -80,7 +80,7 @@ describe("github card", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			expectView(text("GitHub rate limit exhausted.")).toExist(),
-			expectView(role("button", { name: "Connect existing installation" })).toExist(),
+			expectView(role("button", { name: "Reconnect GitHub" })).toExist(),
 		)
 		const choices = pageUpdate(
 			failed,
@@ -90,6 +90,8 @@ describe("github card", () => {
 				message: "Choose an account",
 				github: new GithubInstallationSelection({
 					state: "selection-2",
+					needsApproval: [],
+					installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
 					installations: [
 						{
 							id: "202",

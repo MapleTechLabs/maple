@@ -103,7 +103,8 @@ export const Message = defineMessageUnion({
 	CompletedChatToast: {},
 	/** The header or card Connect button: a new popup attempt for the page's provider. */
 	ClickedConnect: {},
-	ClickedConnectExistingGithub: {},
+	/** The GitHub account picker's "Install on another GitHub account". */
+	ClickedInstallGithubElsewhere: {},
 	ClickedSelectGithubInstallation: { installationId: Schema.String },
 	CompletedSelectGithubInstallation: {
 		state: Schema.String,

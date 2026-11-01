@@ -12,7 +12,7 @@ import { subscriptions } from "./subscription"
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))
 
 describe("GitHub connect request", () => {
-	test.each(["install", "existing"])("the %s action reaches the authorization endpoint", async (mode) => {
+	test.each(["authorize", "install"])("the %s action reaches the start endpoint", async (mode) => {
 		await Effect.gen(function* () {
 			const sent = yield* Ref.make<ReadonlyArray<unknown>>([])
 			const http = HttpClient.make((request) =>
@@ -49,14 +49,14 @@ describe("GitHub connect request", () => {
 			const response = yield* startConnect(
 				"github",
 				returnTo,
-				mode === "existing" ? "existing" : undefined,
+				mode === "install" ? "install" : undefined,
 			).pipe(Effect.provide(clients))
 			expect(response.redirectUrl).toBe("https://github.test/connect")
 			expect(yield* Ref.get(sent)).toEqual([
 				{
 					method: "POST",
 					url: "https://api.test/internal/integrations/github/start",
-					body: mode === "existing" ? { returnTo, mode: "existing" } : { returnTo },
+					body: mode === "install" ? { returnTo, mode: "install" } : { returnTo },
 				},
 			])
 		}).pipe(Effect.runPromise)

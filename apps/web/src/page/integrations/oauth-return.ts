@@ -91,7 +91,15 @@ export interface OAuthReturnDeps<R> {
 		message: string,
 		github?: GithubInstallationSelection,
 	) => Effect.Effect<boolean>
+	/** Sends this window on to another page (the GitHub App install). */
+	readonly redirect: (url: string) => Effect.Effect<void>
 }
+
+/** GitHub authorization found nothing to connect or explain: go straight on to install. */
+const isNothingToChoose = (
+	github: GithubInstallationSelection | undefined,
+): github is GithubInstallationSelection =>
+	github !== undefined && github.installations.length === 0 && github.needsApproval.length === 0
 
 /** The return stashed at boot (`oauth-return-boot.ts`), finished once; `null` when there is none. */
 export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>
@@ -101,6 +109,18 @@ export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>
 		const request = stashed.value
 		const response = yield* deps.complete(request)
 		const provider = PROVIDER_OF[request.flow]
+		if (response.status === "success" && isNothingToChoose(response.github)) {
+			yield* deps.redirect(response.github.installUrl)
+			// The install return finishes the connect; nothing for this page or its opener yet.
+			return OAuthReturnOutcome.make({
+				provider,
+				connector: request.connector ?? null,
+				status: response.status,
+				message: "Opening GitHub to install the Maple app.",
+				chat: response.chat,
+				isHandedOff: true,
+			})
+		}
 		const isHandedOff =
 			provider === null
 				? false
@@ -126,6 +146,7 @@ export const completeOAuthReturn: Effect.Effect<OAuthReturnOutcome | null, never
 			storage: browserStorage,
 			now,
 			handOff,
+			redirect: (url) => Effect.sync(() => window.location.assign(url)),
 			complete: (request) =>
 				client.integrations
 					.oauthComplete({ payload: request })

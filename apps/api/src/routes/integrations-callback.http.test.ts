@@ -95,11 +95,7 @@ describe("provider callbacks", () => {
 	it.each([
 		["an install awaiting org approval", "?code=c&setup_action=request", "Installation requested"],
 		["a return without authorization or an installation", "?state=s", "Missing installation_id"],
-		[
-			"an install started on GitHub without a state",
-			"?code=c&installation_id=1",
-			"Connect existing installation",
-		],
+		["an install started on GitHub without a state", "?code=c&installation_id=1", "Connect GitHub"],
 	])("refuses %s on the API page and hands nothing on", async (_name, query, message) => {
 		const { handler, dispose, runtime } = makeHarness()
 		const response = await handler(get(`${GITHUB_CALLBACK_PATH}${query}`))

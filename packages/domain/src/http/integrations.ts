@@ -813,7 +813,8 @@ export class GithubStartConnectRequest extends Schema.Class<GithubStartConnectRe
 	"GithubStartConnectRequest",
 )({
 	returnTo: Schema.optionalKey(IntegrationReturnPath),
-	mode: Schema.optionalKey(Schema.Literals(["install", "existing"])),
+	/** Open the App install page instead of user authorization ("Install on another GitHub account"). */
+	mode: Schema.optionalKey(Schema.Literal("install")),
 }) {}
 
 export class GithubStartConnectResponse extends Schema.Class<GithubStartConnectResponse>(

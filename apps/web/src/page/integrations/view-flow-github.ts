@@ -23,7 +23,7 @@ import { activeRepos, githubReach } from "./flow-github"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { githubStatusOf } from "./update-github"
-import { githubConnectExistingButton, githubDeactivated, githubInstallationPicker } from "./view-github"
+import { githubDeactivated, githubInstallationPicker, githubReconnectButton } from "./view-github"
 import { SYNC_PRESENTATION } from "./view-github-repos"
 
 // GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
@@ -188,22 +188,10 @@ const connectStep = (h: H, model: Model): Html => {
 												h.p(
 													[h.Class("text-sm text-muted-foreground")],
 													[
-														"GitHub opens in a new window. Pick the organization or account, then choose All repositories or Selected repositories. Maple reads code metadata, deployments and checks, and writes pull request comments.",
+														"GitHub opens in a new window. Approve Maple, then pick an account where the app is installed, or install it and choose All repositories or Selected repositories. Maple reads code metadata, deployments and checks, and writes pull request comments.",
 													],
 												),
-												h.div(
-													[h.Class("flex flex-wrap gap-2")],
-													[
-														installButton(h, model, "Install on GitHub"),
-														githubConnectExistingButton(h, model),
-													],
-												),
-												h.p(
-													[h.Class("text-sm text-muted-foreground")],
-													[
-														"Already installed the app? Connect the existing installation without reinstalling it.",
-													],
-												),
+												installButton(h, model, "Connect GitHub"),
 											],
 					),
 			hasSelection
@@ -226,11 +214,9 @@ const connectStep = (h: H, model: Model): Html => {
 										})
 									: statusRow(h, {
 											tone: "idle",
-											text: hasSelection
-												? "Choose an account to finish connecting."
-												: "Install the app or connect an existing installation to continue.",
+											text: "Not connected yet. This step completes on its own when GitHub sends you back.",
 										}),
-			...(discovery?._tag === "Failed" && !hasSelection ? [githubConnectExistingButton(h, model)] : []),
+			...(discovery?._tag === "Failed" && !hasSelection ? [githubReconnectButton(h, model)] : []),
 		],
 		readsRail(h),
 	)
@@ -377,7 +363,7 @@ const liveStep = (h: H, model: Model): Html => {
 								],
 			}),
 			...(discoveryFailed
-				? [githubConnectExistingButton(h, model)]
+				? [githubReconnectButton(h, model)]
 				: status !== null && !status.connected && !isDiscovering
 					? [installButton(h, model, "Reconnect GitHub")]
 					: []),

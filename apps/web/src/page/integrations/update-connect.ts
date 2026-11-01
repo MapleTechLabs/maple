@@ -45,7 +45,7 @@ export const refreshProvider = (
 	mode: Keyed.ReadMode = "Supersede",
 ): Return => requestStatus(model, context, STATUS_OF[provider], mode)
 
-export const clickedConnect = (model: Model, githubMode?: "install" | "existing"): Return => {
+export const clickedConnect = (model: Model, githubMode?: "install"): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (
 		!Schema.is(ConnectProvider)(integration) ||

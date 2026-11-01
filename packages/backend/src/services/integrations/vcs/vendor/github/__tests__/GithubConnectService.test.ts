@@ -109,10 +109,9 @@ const connectLayer = (
 	return Layer.mergeAll(service, data)
 }
 
-const startExisting = (service: GithubConnectService["Service"]) =>
+const startAuthorize = (service: GithubConnectService["Service"]) =>
 	service.startConnect(INITIATOR.orgId, INITIATOR.userId, {
 		callbackUrl: "https://api.example.com/api/integrations/github/callback",
-		mode: "existing",
 	})
 
 describe("connecting an existing GitHub installation", () => {
@@ -125,10 +124,15 @@ describe("connecting an existing GitHub installation", () => {
 			return Effect.gen(function* () {
 				const service = yield* GithubConnectService
 				const repo = yield* VcsRepository
-				const started = yield* startExisting(service)
+				const started = yield* startAuthorize(service)
 				const url = new URL(started.redirectUrl)
 				assert.strictEqual(url.pathname, "/login/oauth/authorize")
 				assert.strictEqual(url.searchParams.get("state"), started.state)
+				assert.strictEqual(url.searchParams.get("client_id"), "Iv1.testclientid")
+				assert.strictEqual(
+					url.searchParams.get("redirect_uri"),
+					"https://api.example.com/api/integrations/github/callback",
+				)
 				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 				assert.deepStrictEqual(
 					selection.installations.map((installation) => [
@@ -179,7 +183,7 @@ describe("connecting an existing GitHub installation", () => {
 		})
 		return Effect.gen(function* () {
 			const service = yield* GithubConnectService
-			const started = yield* startExisting(service)
+			const started = yield* startAuthorize(service)
 			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 			assert.deepStrictEqual(
 				selection.installations.map((installation) => installation.id),
@@ -197,10 +201,10 @@ describe("connecting an existing GitHub installation", () => {
 	})
 
 	for (const role of [
-		{ name: "member", response: orgMembershipResponse("member") },
-		{ name: "unverifiable", response: () => jsonResponse({}, { status: 403 }) },
+		{ name: "member", response: orgMembershipResponse("member"), needsApproval: [] },
+		{ name: "unverifiable", response: () => jsonResponse({}, { status: 403 }), needsApproval: ["octo"] },
 	]) {
-		it.effect(`refuses discovery when GitHub does not prove account admin (${role.name})`, () => {
+		it.effect(`offers nothing to connect when GitHub does not prove account admin (${role.name})`, () => {
 			const testDb = createTestDb(trackedDbs)
 			const sent: Array<VcsSyncJob> = []
 			const http = scriptedHttp([
@@ -211,18 +215,78 @@ describe("connecting an existing GitHub installation", () => {
 			])
 			return Effect.gen(function* () {
 				const service = yield* GithubConnectService
-				const started = yield* startExisting(service)
-				const error = findError(
-					yield* service
-						.discoverInstallations(TEST_CODE, started.state, INITIATOR)
-						.pipe(Effect.exit),
+				const started = yield* startAuthorize(service)
+				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+				assert.deepStrictEqual(selection.installations, [])
+				assert.deepStrictEqual(selection.needsApproval, role.needsApproval)
+				assert.ok(
+					findError(
+						yield* service.selectInstallation("42", selection.state, INITIATOR).pipe(Effect.exit),
+					) instanceof IntegrationsValidationError,
 				)
-				assert.ok(error instanceof IntegrationsValidationError)
 				assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, false)
 				assert.strictEqual(sent.length, 0)
 			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 		})
 	}
+
+	it.effect("skips an installation GitHub fails to read and still offers the rest", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		const http = fakeGithubHttp((request) => {
+			const url = new URL(request.url)
+			if (url.pathname === "/login/oauth/access_token") return oauthTokenResponse()
+			if (url.pathname === "/user/installations") return userInstallationsResponse([42, 43])()
+			if (url.pathname === "/app/installations/42") return jsonResponse({}, { status: 500 })
+			if (url.pathname === "/app/installations/43") return installationResponse(43, "second")
+			return orgMembershipResponse()()
+		})
+		return Effect.gen(function* () {
+			const service = yield* GithubConnectService
+			const started = yield* startAuthorize(service)
+			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+			assert.deepStrictEqual(
+				selection.installations.map((installation) => installation.id),
+				["43"],
+			)
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+	})
+
+	it.effect("with no installation, the install URL carries a state the install return redeems", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		const http = fakeGithubHttp((request) => {
+			const url = new URL(request.url)
+			if (url.pathname === "/login/oauth/access_token") return oauthTokenResponse()
+			if (url.pathname === "/user/installations") return userInstallationsResponse([])()
+			throw new Error(`unexpected ${url.pathname}`)
+		})
+		return Effect.gen(function* () {
+			const service = yield* GithubConnectService
+			const started = yield* startAuthorize(service)
+			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+			assert.deepStrictEqual(selection.installations, [])
+			const installUrl = new URL(selection.installUrl)
+			assert.strictEqual(installUrl.pathname, "/apps/maple-test-app/installations/new")
+			const installState = installUrl.searchParams.get("state") ?? ""
+			assert.notStrictEqual(installState, selection.state)
+			// The authorization state is spent; only the fresh install state continues the flow.
+			assert.ok(
+				findError(
+					yield* service
+						.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+						.pipe(Effect.exit),
+				) instanceof IntegrationsValidationError,
+			)
+			assert.ok(
+				findError(
+					yield* service
+						.discoverInstallations(TEST_CODE, installState, INITIATOR)
+						.pipe(Effect.exit),
+				) instanceof IntegrationsValidationError,
+			)
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+	})
 
 	for (const other of [
 		{ ...INITIATOR, userId: asUserId("other-user") },
@@ -234,7 +298,7 @@ describe("connecting an existing GitHub installation", () => {
 			const http = scriptedHttp(connectResponders(installationResponse))
 			return Effect.gen(function* () {
 				const service = yield* GithubConnectService
-				const started = yield* startExisting(service)
+				const started = yield* startAuthorize(service)
 				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 				const error = findError(
 					yield* service.selectInstallation("42", selection.state, other).pipe(Effect.exit),
@@ -254,7 +318,7 @@ describe("connecting an existing GitHub installation", () => {
 			const http = scriptedHttp(connectResponders())
 			return Effect.gen(function* () {
 				const service = yield* GithubConnectService
-				const started = yield* startExisting(service)
+				const started = yield* startAuthorize(service)
 				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 				if (refusal === "expired") yield* TestClock.adjust("11 minutes")
 				const attempt =
@@ -279,7 +343,7 @@ describe("connecting an existing GitHub installation", () => {
 		return Effect.gen(function* () {
 			const service = yield* GithubConnectService
 			const repo = yield* VcsRepository
-			const started = yield* startExisting(service)
+			const started = yield* startAuthorize(service)
 			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 			yield* repo.upsertInstallation({
 				orgId: asOrgId("other-org"),
@@ -372,6 +436,7 @@ describe("GithubConnectService", () => {
 					const repo = yield* VcsRepository
 					const start = yield* service.startConnect(INITIATOR.orgId, INITIATOR.userId, {
 						callbackUrl: "https://api.example.com/callback",
+						mode: "install",
 					})
 					yield* service.completeConnect("42", start.state, TEST_CODE, INITIATOR)
 					const installation = Option.getOrThrow(yield* repo.resolveInstallation("github", "42"))
@@ -404,6 +469,7 @@ describe("GithubConnectService", () => {
 			const svc = yield* GithubConnectService
 			const { redirectUrl, state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 				callbackUrl: "https://api.localhost/api/integrations/github/callback",
+				mode: "install",
 			})
 			assert.ok(state.length > 0)
 			assert.ok(redirectUrl.startsWith("https://github.com/apps/maple-test-app/installations/new"))
@@ -423,6 +489,7 @@ describe("GithubConnectService", () => {
 
 			const { state } = yield* svc.startConnect(orgId, userId, {
 				callbackUrl: "https://tunnel.example/api/integrations/github/callback",
+				mode: "install",
 				returnTo: "https://web.localhost/integrations?integration=github",
 			})
 
@@ -463,6 +530,7 @@ describe("GithubConnectService", () => {
 			const repo = yield* VcsRepository
 			const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
@@ -483,6 +551,7 @@ describe("GithubConnectService", () => {
 			const repo = yield* VcsRepository
 			const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 
 			// No `code` argument → rejected before any installation row is written.
@@ -503,6 +572,7 @@ describe("GithubConnectService", () => {
 			const repo = yield* VcsRepository
 			const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
@@ -577,6 +647,7 @@ describe("GithubConnectService", () => {
 					const repo = yield* VcsRepository
 					const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 						callbackUrl: "https://tunnel.example/cb",
+						mode: "install",
 					})
 					const exit = yield* svc
 						.completeConnect("42", state, TEST_CODE, INITIATOR)
@@ -628,6 +699,7 @@ describe("GithubConnectService", () => {
 				const repo = yield* VcsRepository
 				const { state } = yield* svc.startConnect(INITIATOR.orgId, INITIATOR.userId, {
 					callbackUrl: "https://tunnel.example/cb",
+					mode: "install",
 				})
 				const exit = yield* svc
 					.completeConnect("42", state, TEST_CODE, INITIATOR)
@@ -663,6 +735,7 @@ describe("GithubConnectService", () => {
 			// First connect (with code) establishes the org-owned installation row.
 			const first = yield* svc.startConnect(orgId, asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 			yield* svc.completeConnect("42", first.state, TEST_CODE, INITIATOR)
 			assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "42")))
@@ -673,6 +746,7 @@ describe("GithubConnectService", () => {
 			// Second connect from the SAME org, no code → still allowed (reconnect).
 			const second = yield* svc.startConnect(orgId, asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 			const result = yield* svc.completeConnect("42", second.state, undefined, INITIATOR)
 			assert.strictEqual(result.orgId, orgId)
@@ -699,6 +773,7 @@ describe("GithubConnectService", () => {
 			const repo = yield* VcsRepository
 			const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 			// Someone else's browser came back with the initiator's state and their own install.
 			const exit = yield* svc
@@ -737,6 +812,7 @@ describe("GithubConnectService", () => {
 			const repo = yield* VcsRepository
 			const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 
 			// Advance past the 10-minute STATE_TTL_MS before the callback returns.
@@ -757,6 +833,7 @@ describe("GithubConnectService", () => {
 			const svc = yield* GithubConnectService
 			const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 
 			// First callback succeeds and enqueues exactly one created sync job.
@@ -783,6 +860,7 @@ describe("GithubConnectService", () => {
 			// Connect, then seed repos + commits the way the sync engine would.
 			const { state } = yield* svc.startConnect(orgId, userId, {
 				callbackUrl: "https://tunnel.example/api/integrations/github/callback",
+				mode: "install",
 			})
 			yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR)
 			yield* upsertReposFor(repo, "42", [
@@ -843,6 +921,7 @@ describe("GithubConnectService", () => {
 
 				const { state } = yield* svc.startConnect(orgId, userId, {
 					callbackUrl: "https://tunnel.example/api/integrations/github/callback",
+					mode: "install",
 				})
 				yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR)
 				yield* upsertReposFor(repo, "42", [
@@ -889,6 +968,7 @@ describe("GithubConnectService", () => {
 
 				const { state } = yield* svc.startConnect(orgId, userId, {
 					callbackUrl: "https://tunnel.example/api/integrations/github/callback",
+					mode: "install",
 				})
 				yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR)
 				yield* upsertReposFor(repo, "42", [
@@ -934,6 +1014,7 @@ describe("GithubConnectService", () => {
 
 				const { state } = yield* svc.startConnect(orgId, userId, {
 					callbackUrl: "https://tunnel.example/api/integrations/github/callback",
+					mode: "install",
 				})
 				yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR)
 
@@ -1019,6 +1100,7 @@ describe("GithubConnectService", () => {
 
 			const { state } = yield* svc.startConnect(orgId, userId, {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 			yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR)
 			yield* upsertReposFor(repo, "42", [
@@ -1064,6 +1146,7 @@ describe("GithubConnectService", () => {
 			const orgId = asOrgId("org_test")
 			const { state } = yield* svc.startConnect(orgId, asUserId("user_1"), {
 				callbackUrl: "https://tunnel.example/cb",
+				mode: "install",
 			})
 			yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR)
 			yield* upsertReposFor(repo, "42", [
@@ -1215,6 +1298,7 @@ describe("GithubConnectService", () => {
 
 				const { state } = yield* svc.startConnect(orgId, userId, {
 					callbackUrl: "https://tunnel.example/cb",
+					mode: "install",
 				})
 				yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR)
 				yield* upsertReposFor(repo, "42", [

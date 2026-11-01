@@ -52,12 +52,18 @@ export class GithubInstallationChoice extends Schema.Class<GithubInstallationCho
 	repositorySelection: VcsRepoSelection,
 }) {}
 
-/** Only verified installation ids are held by this short-lived, single-use selection. */
+/**
+ * What GitHub user authorization found. `state` is a short-lived, single-use selection over
+ * the verified `installations`; `needsApproval` lists accounts whose org withheld the user's
+ * role; `installUrl` installs the app on another account.
+ */
 export class GithubInstallationSelection extends Schema.Class<GithubInstallationSelection>(
 	"GithubInstallationSelection",
 )({
 	state: Schema.String,
 	installations: Schema.Array(GithubInstallationChoice),
+	needsApproval: Schema.Array(Schema.String),
+	installUrl: Schema.String,
 }) {}
 
 export class OAuthCompleteResponse extends Schema.Class<OAuthCompleteResponse>("OAuthCompleteResponse")({

@@ -266,7 +266,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return callback === null ? { model } : navigateTo(model, hrefOfSearch(callback.next), true)
 		},
 		ClickedConnect: () => Connect.clickedConnect(model),
-		ClickedConnectExistingGithub: () => Connect.clickedConnect(model, "existing"),
+		ClickedInstallGithubElsewhere: () => Connect.clickedConnect(model, "install"),
 		ClickedSelectGithubInstallation: ({ installationId }) =>
 			Github.clickedInstallation(model, installationId),
 		CompletedSelectGithubInstallation: ({ state, installationId, failure }) =>
