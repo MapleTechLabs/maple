@@ -335,10 +335,22 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							"maple.depscan.package_count": packages.length,
 							"maple.depscan.match_count": matches.length,
 						})
+						// A branch that moved on while this scan read it gets a newer scan; this one must not
+						// reconcile over it, whichever of the two settles last.
+						const headNow = defaultBranchHead
+							? yield* provider
+									.resolveRef(installation, repo, ref)
+									.pipe(Effect.mapError(scanError(`Could not resolve ${ref}`)))
+							: Option.none()
+						const movedTo = Option.filter(headNow, (sha) => sha !== commitSha)
 						return yield* store
 							.completeScan({
 								orgId,
 								scanId: started.id,
+								incomplete: Option.match(movedTo, {
+									onNone: () => undefined,
+									onSome: (sha) => `${ref} moved on to ${sha.slice(0, 7)} during the scan`,
+								}),
 								// A lockfile past the cap is recorded, so its findings are kept rather than read as deleted.
 								lockfiles: [
 									...reads.map((read) => read.lockfile),
