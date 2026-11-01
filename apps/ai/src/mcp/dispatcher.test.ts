@@ -115,9 +115,19 @@ describe("MCP dispatcher", () => {
 	)
 
 	describe("tool audience", () => {
-		// The sandbox tools execute code inside a container holding the org's source, and the
-		// pull request tools act on the org's behalf. A third-party MCP client sees neither.
-		const AGENT_TOOLS = ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]
+		// The sandbox and GitHub tools read the org's source, commits and CI, and the pull
+		// request tools act on the org's behalf. A third-party MCP client sees none of them.
+		const AGENT_TOOLS = [
+			"sandbox_grep",
+			"sandbox_list_files",
+			"sandbox_read_file",
+			"sandbox_exec",
+			"list_source_repositories",
+			"search_source_code",
+			"read_source_file",
+			"ci_runs",
+			"compare_commits",
+		]
 		const INTERNAL_TOOLS = ["pr_changed_files", "pr_context", "pr_file_diff", ...AGENT_TOOLS]
 
 		it("keeps the sandbox tools agent-only and the pull request tools internal", () => {
