@@ -189,7 +189,7 @@ const withoutId = <A extends string>(ids: ReadonlyArray<A>, id: A): ReadonlyArra
 	ids.filter((existing) => existing !== id)
 
 const destinationById = (model: Model, id: AlertDestinationId) =>
-	Option.map(
+	Option.flatMap(
 		Array.findFirst(model.destinations ?? [], (row) => row.id === id),
 		rowToAlertDestinationDocument,
 	)
@@ -367,7 +367,7 @@ const pickedFromMenu = (model: Model, menuId: string, value: string): Return => 
 		})
 	}
 	return Option.match(
-		Option.map(
+		Option.flatMap(
 			Array.findFirst(model.destinations ?? [], (row) => row.id === target),
 			rowToAlertDestinationDocument,
 		),

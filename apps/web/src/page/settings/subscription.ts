@@ -12,7 +12,7 @@ import { isRunActive } from "./data-platform/update"
 import { Message as AutomationMessage } from "./automation/model"
 import { destinationRows } from "../alerts/shared/collections"
 import { collectionLoadFailed } from "../alerts/shared/collection-load"
-import { rowToAlertDestinationDocument } from "@maple/web-data/collections/alerts"
+import { rowsToAlertDestinationDocuments } from "@maple/web-data/collections/alerts"
 import type { Model } from "./model"
 import { pollTicks } from "../../data/poll"
 
@@ -99,7 +99,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						? destinationRows(orgId, (rows) =>
 								Message.GotAutomationMessage({
 									message: AutomationMessage.UpdatedDestinations({
-										destinations: rows.map(rowToAlertDestinationDocument),
+										destinations: rowsToAlertDestinationDocuments(rows),
 									}),
 								}),
 							)
