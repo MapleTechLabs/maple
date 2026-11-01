@@ -476,6 +476,43 @@
 		}
 	},
 	{
+		"name": "a mask can complete a detector match an earlier pass rejected",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["metrics"],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [],
+					"detectors": ["ipv6", "iban"],
+					"patterns": [],
+					"scopes": ["attributes"],
+					"method": "mask"
+				}
+			}
+		],
+		"input": {
+			"signal": "metrics",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"password": "2001:db8::1:GB82WEST12345698765432"
+			},
+			"name": "GET /health"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"password": "[REDACTED:ipv6][REDACTED:iban]"
+			}
+		}
+	},
+	{
 		"name": "phone detector",
 		"salt": "fixture-salt",
 		"rules": [
