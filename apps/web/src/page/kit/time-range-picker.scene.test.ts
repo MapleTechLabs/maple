@@ -16,6 +16,7 @@ import {
 import { describe, expect, test } from "vitest"
 import * as Popover from "../../ui/popover"
 import * as CustomRange from "./custom-range"
+import { presetSpanLabel } from "./time-controls"
 import {
 	formatUtcOffset,
 	init,
@@ -59,6 +60,13 @@ describe("time range picker preset rail", () => {
 		expect(isActivePreset("30d", "1mo")).toBe(false)
 		expect(isActivePreset("today", "24h")).toBe(false)
 		expect(isActivePreset(undefined, "24h")).toBe(false)
+	})
+
+	test("a preset reads as the span it covers in comparison copy", () => {
+		expect(presetSpanLabel("1mo")).toBe("month")
+		expect(presetSpanLabel("1w")).toBe("week")
+		expect(presetSpanLabel("2w")).toBe("2 weeks")
+		expect(presetSpanLabel("today")).toBe("day")
 	})
 })
 

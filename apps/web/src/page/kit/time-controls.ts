@@ -51,6 +51,15 @@ export const presetLabel = (shorthand: string): string => {
 	return `Last ${amount} ${amount === 1 ? singular : plural}`
 }
 
+/** The span a preset names, for "vs previous …" copy: "1mo" is "month", "2w" is "2 weeks". */
+export const presetSpanLabel = (shorthand: string): string => {
+	const label = presetLabel(shorthand)
+	if (label === "Today") return "day"
+	if (!label.startsWith("Last ")) return label
+	const span = label.slice("Last ".length)
+	return span.startsWith("1 ") ? span.slice(2) : span
+}
+
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 /** `resolveSearchPreset`: the URL's own preset, else the default unless it pins an absolute range. */
