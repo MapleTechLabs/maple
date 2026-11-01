@@ -29,6 +29,7 @@ const installation = Schema.decodeUnknownSync(VcsInstallation)({
 	status: "active",
 	suspendedAt: null,
 	ciTracesEnabled: true,
+	repositoryDiscovery: null,
 	installedByUserId: "user_scan",
 	createdAt: 0,
 	updatedAt: 0,

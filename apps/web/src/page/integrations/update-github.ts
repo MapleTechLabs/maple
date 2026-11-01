@@ -12,10 +12,12 @@ import {
 	SetCiTraces,
 	SetTrackedBranch,
 	SpinGithubRefresh,
+	SelectGithubInstallation,
 } from "./github"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
+import { TrackConnected } from "./command"
 
 // `GithubIntegrationCard`'s state changes.
 
@@ -36,6 +38,47 @@ const refresh = (model: Model, context: PageContext): Return =>
 
 export const githubStatusOf = (model: Model) =>
 	Option.getOrNull(AsyncData.getData(model.statuses.github.data))
+
+export const clickedInstallation = (model: Model, installationId: string): Return => {
+	const selection = model.githubCard.selection
+	if (
+		selection === null ||
+		model.githubCard.selectingInstallation !== null ||
+		!selection.installations.some((installation) => installation.id === installationId)
+	)
+		return { model }
+	return {
+		model: withCard(model, { selectingInstallation: installationId }),
+		commands: [SelectGithubInstallation({ state: selection.state, installationId })],
+	}
+}
+
+export const completedInstallation = (
+	model: Model,
+	context: PageContext,
+	state: string,
+	installationId: string,
+	failure: LoadFailure | null,
+): Return => {
+	if (
+		model.githubCard.selection?.state !== state ||
+		model.githubCard.selectingInstallation !== installationId
+	)
+		return { model }
+	const settled = withCard(model, { selection: null, selectingInstallation: null })
+	if (failure !== null)
+		return toast(
+			settled,
+			"error",
+			"Couldn't connect GitHub",
+			`${failure.message} Click Connect GitHub to retry.`,
+		)
+	return chain(settled, [
+		(next) => ({ model: next, commands: [TrackConnected({ provider: "github" })] }),
+		(next) => toast(next, "success", "GitHub connected"),
+		(next) => refresh(next, context),
+	])
+}
 
 const repoOf = (model: Model, repoId: VcsRepositoryId): GithubRepoSummary | undefined =>
 	githubStatusOf(model)?.repositories.find((repo) => repo.id === repoId)
@@ -203,12 +246,16 @@ export const gotBranchDialog = (model: Model, message: Dialog.Message): Return =
 export const confirmedBranch = (model: Model): Return => {
 	const pending = model.githubCard.pendingBranch
 	const card = model.githubCard
-	if (pending === null || card.savingBranches.some((entry) => entry.repoId === pending.repoId)) return { model }
-	return chain(withCard(model, { pendingBranch: null, savingBranches: [...card.savingBranches, pending] }), [
-		(next) => branchDialogStep(next, Dialog.close(next.githubCard.branchDialog)),
-		(next) => popoverStep(next, pending.repoId, Popover.close(popoverOf(next, pending.repoId))),
-		(next) => ({ model: next, commands: [SetTrackedBranch(pending)] }),
-	])
+	if (pending === null || card.savingBranches.some((entry) => entry.repoId === pending.repoId))
+		return { model }
+	return chain(
+		withCard(model, { pendingBranch: null, savingBranches: [...card.savingBranches, pending] }),
+		[
+			(next) => branchDialogStep(next, Dialog.close(next.githubCard.branchDialog)),
+			(next) => popoverStep(next, pending.repoId, Popover.close(popoverOf(next, pending.repoId))),
+			(next) => ({ model: next, commands: [SetTrackedBranch(pending)] }),
+		],
+	)
 }
 
 export const completedTrackedBranch = (

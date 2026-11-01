@@ -94,14 +94,26 @@ describe("provider callbacks", () => {
 
 	it.each([
 		["an install awaiting org approval", "?code=c&setup_action=request", "Installation requested"],
-		["a return without an installation", "?code=c&state=s", "Missing installation_id"],
-		["an install started on GitHub without a state", "?code=c&installation_id=1", "Missing state"],
+		["a return without authorization or an installation", "?state=s", "Missing installation_id"],
+		["an install started on GitHub without a state", "?code=c&installation_id=1", "Connect GitHub"],
 	])("refuses %s on the API page and hands nothing on", async (_name, query, message) => {
 		const { handler, dispose, runtime } = makeHarness()
 		const response = await handler(get(`${GITHUB_CALLBACK_PATH}${query}`))
 		expect(response.status).toBe(400)
 		expect(response.headers.get("location")).toBeNull()
 		expect(await response.text()).toContain(message)
+		await runtime.dispose()
+		await dispose()
+	})
+
+	it("hands existing-installation authorization to the dashboard without an installation id", async () => {
+		const { handler, dispose, runtime } = makeHarness()
+		const response = await handler(get(`${GITHUB_CALLBACK_PATH}?code=existing-code&state=existing-state`))
+		expect(response.status).toBe(302)
+		const location = new URL(response.headers.get("location") ?? "")
+		const handed = Option.getOrThrow(decodeOAuthReturnHash(location.hash))
+		expect(handed.flow).toBe("github")
+		expect(new URLSearchParams(handed.query).get("code")).toBe("existing-code")
 		await runtime.dispose()
 		await dispose()
 	})

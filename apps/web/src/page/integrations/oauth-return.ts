@@ -1,4 +1,5 @@
 import {
+	GithubInstallationSelection,
 	OAuthChatOutcome,
 	OAuthCompleteStatus,
 	type OAuthCompleteRequest,
@@ -31,6 +32,7 @@ export const OAuthReturnOutcome = Schema.Struct({
 	status: OAuthCompleteStatus,
 	message: Schema.String,
 	chat: Schema.NullOr(OAuthChatOutcome),
+	github: Schema.optionalKey(GithubInstallationSelection),
 	/** The tab that opened this popup got the outcome and reacts to it; this window closes on success. */
 	isHandedOff: Schema.Boolean,
 })
@@ -41,6 +43,7 @@ interface CallbackMessage {
 	readonly type: string
 	readonly status: string
 	readonly message: string
+	github?: GithubInstallationSelection
 }
 
 interface Opener {
@@ -61,6 +64,7 @@ export const RelayMessage = Schema.Struct({
 	provider: ConnectProvider,
 	status: Schema.String,
 	message: Schema.String,
+	github: Schema.optionalKey(GithubInstallationSelection),
 })
 const decodeRelay = Schema.decodeUnknownOption(RelayMessage)
 
@@ -73,21 +77,29 @@ export const relayOf = (data: unknown): Option.Option<typeof RelayMessage.Type> 
  * sends COOP, like Cloudflare's dashboard, severs it) the outcome is relayed to the other tabs.
  * True only when the opener took it.
  */
-const handOff = (provider: ConnectProvider, status: string, message: string) =>
+const handOff = (
+	provider: ConnectProvider,
+	status: string,
+	message: string,
+	github?: GithubInstallationSelection,
+) =>
 	Effect.sync(() => {
 		const opener: unknown = window.opener
 		if (!isOpener(opener) || opener.closed) {
 			const channel = new BroadcastChannel(RELAY_CHANNEL)
-			channel.postMessage({ sender: RELAY_SENDER, provider, status, message })
+			const relay = { sender: RELAY_SENDER, provider, status, message }
+			channel.postMessage(github === undefined ? relay : { ...relay, github })
 			channel.close()
 			return false
 		}
-		opener.postMessage({ type: `maple:integration:${provider}`, status, message }, window.location.origin)
+		const payload: CallbackMessage = { type: `maple:integration:${provider}`, status, message }
+		if (github !== undefined) payload.github = github
+		opener.postMessage(payload, window.location.origin)
 		if (status === "success") setTimeout(() => window.close(), 600)
 		return true
 	})
 
-type CompletionResult = Pick<OAuthCompleteResponse, "status" | "message" | "chat">
+type CompletionResult = Pick<OAuthCompleteResponse, "status" | "message" | "chat" | "github">
 
 const UNREACHABLE: CompletionResult = {
 	status: "error",
@@ -100,8 +112,24 @@ export interface OAuthReturnDeps<R> {
 	readonly storage: ReturnStorage
 	readonly now: number
 	readonly complete: (request: OAuthCompleteRequest) => Effect.Effect<CompletionResult, never, R>
-	readonly handOff: (provider: ConnectProvider, status: string, message: string) => Effect.Effect<boolean>
+	readonly handOff: (
+		provider: ConnectProvider,
+		status: string,
+		message: string,
+		github?: GithubInstallationSelection,
+	) => Effect.Effect<boolean>
+	/** Sends this window on to another page (the GitHub App install). */
+	readonly redirect: (url: string) => Effect.Effect<void>
 }
+
+/** GitHub authorization found no installation at all: go straight on to install. */
+const isNothingToChoose = (
+	github: GithubInstallationSelection | undefined,
+): github is GithubInstallationSelection =>
+	github !== undefined &&
+	github.installations.length === 0 &&
+	github.needsApproval.length === 0 &&
+	github.unavailable === 0
 
 /** The return stashed at boot (`oauth-return-boot.ts`), finished once; `null` when there is none. */
 export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>
@@ -111,16 +139,33 @@ export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>
 		const request = stashed.value
 		const response = yield* deps.complete(request)
 		const provider = PROVIDER_OF[request.flow]
+		if (response.status === "success" && isNothingToChoose(response.github)) {
+			yield* deps.redirect(response.github.installUrl)
+			// The install return finishes the connect; nothing for this page or its opener yet.
+			return OAuthReturnOutcome.make({
+				provider,
+				connector: request.connector ?? null,
+				status: response.status,
+				message: "Opening GitHub to install the Maple app.",
+				chat: response.chat,
+				isHandedOff: true,
+			})
+		}
 		const isHandedOff =
-			provider === null ? false : yield* deps.handOff(provider, response.status, response.message)
-		return {
+			provider === null
+				? false
+				: yield* deps.handOff(provider, response.status, response.message, response.github)
+		const outcome = {
 			provider,
 			connector: request.connector ?? null,
 			status: response.status,
 			message: response.message,
 			chat: response.chat,
 			isHandedOff,
-		} satisfies OAuthReturnOutcome
+		}
+		return OAuthReturnOutcome.make(
+			response.github === undefined ? outcome : { ...outcome, github: response.github },
+		)
 	})
 
 export const completeOAuthReturn: Effect.Effect<OAuthReturnOutcome | null, never, MapleInternalApiClient> =
@@ -131,6 +176,7 @@ export const completeOAuthReturn: Effect.Effect<OAuthReturnOutcome | null, never
 			storage: browserStorage,
 			now,
 			handOff,
+			redirect: (url) => Effect.sync(() => window.location.assign(url)),
 			complete: (request) =>
 				client.integrations
 					.oauthComplete({ payload: request })

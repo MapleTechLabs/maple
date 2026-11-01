@@ -1,6 +1,7 @@
+import { GithubInstallationSelection } from "@maple/domain/http"
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { apiOrigins } from "../../lib/services/common/api-base-url"
-import type { ConnectProvider } from "./connect"
+import { type ConnectProvider, IntegrationCallbackEvents } from "./connect"
 import { RELAY_CHANNEL, relayOf } from "./oauth-return"
 
 // A connect popup's outcome, from the popup itself (`postMessage` to its opener) or, when a
@@ -10,6 +11,8 @@ export interface ConnectReturn {
 	readonly provider: ConnectProvider
 	readonly status: string
 	readonly message: string | null
+	/** GitHub only: the accounts its authorization found, for the picker. */
+	readonly github?: GithubInstallationSelection
 }
 
 /** The callback page's `postMessage` payload; anything else on the channel is ignored. */
@@ -17,6 +20,7 @@ const CallbackData = Schema.Struct({
 	type: Schema.String,
 	status: Schema.optional(Schema.String),
 	message: Schema.optional(Schema.String),
+	github: Schema.optionalKey(GithubInstallationSelection),
 })
 const decodeCallback = Schema.decodeUnknownOption(CallbackData)
 
@@ -26,16 +30,27 @@ export const isCallbackOrigin = (origin: string, ownOrigin: string): boolean =>
 
 /** The popup's own report to this tab, its opener. */
 export const openerReturns = (provider: ConnectProvider): Stream.Stream<ConnectReturn> =>
-	Stream.fromEventListener<MessageEvent>(window, "message").pipe(
-		Stream.filter((event) => isCallbackOrigin(event.origin, window.location.origin)),
-		Stream.flatMap((event) =>
-			Option.match(decodeCallback(event.data), {
-				onNone: () => Stream.empty,
-				onSome: (data) =>
-					data.type === `maple:integration:${provider}`
-						? Stream.make({ provider, status: data.status ?? "", message: data.message ?? null })
-						: Stream.empty,
-			}),
+	Stream.unwrap(
+		Effect.map(IntegrationCallbackEvents, ({ ownOrigin, messages }) =>
+			messages.pipe(
+				Stream.filter((event) => isCallbackOrigin(event.origin, ownOrigin)),
+				Stream.flatMap((event) =>
+					Option.match(decodeCallback(event.data), {
+						onNone: () => Stream.empty,
+						onSome: (data): Stream.Stream<ConnectReturn> => {
+							if (data.type !== `maple:integration:${provider}`) return Stream.empty
+							const callback = {
+								provider,
+								status: data.status ?? "",
+								message: data.message ?? null,
+							}
+							return Stream.make(
+								data.github === undefined ? callback : { ...callback, github: data.github },
+							)
+						},
+					}),
+				),
+			),
 		),
 	)
 
@@ -47,8 +62,11 @@ export const relayedReturns: Stream.Stream<ConnectReturn> = Stream.callback<Conn
 			channel.onmessage = (event: MessageEvent) =>
 				Option.match(relayOf(event.data), {
 					onNone: () => undefined,
-					onSome: ({ provider, status, message }) => {
-						Queue.offerUnsafe(queue, { provider, status, message })
+					onSome: ({ provider, status, message, github }) => {
+						Queue.offerUnsafe(
+							queue,
+							github === undefined ? { provider, status, message } : { provider, status, message, github },
+						)
 					},
 				})
 			return channel

@@ -5,7 +5,7 @@ import {
 	LinearStartConnectRequest,
 	SupabaseConnectRequest,
 } from "@maple/domain/http"
-import { Effect, Result, Schema } from "effect"
+import { Context, Effect, Result, Schema, Stream } from "effect"
 import { toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 
@@ -14,8 +14,24 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-cli
 export const ConnectProvider = Schema.Literals(["cloudflare", "linear", "github", "planetscale", "supabase"])
 export type ConnectProvider = typeof ConnectProvider.Type
 
+const browserCallbackEvents = () => ({
+	ownOrigin: window.location.origin,
+	messages: Stream.fromEventListener<MessageEvent>(window, "message"),
+})
+
+/** The browser's callback channel; its event source and origin travel together. */
+export const IntegrationCallbackEvents = Context.Reference<ReturnType<typeof browserCallbackEvents>>(
+	"@maple/web/IntegrationCallbackEvents",
+	{ defaultValue: browserCallbackEvents },
+)
+
 /** One attempt: the popup is out while this is set; a new attempt restarts the flow. */
-export const ConnectAttempt = Schema.Struct({ provider: ConnectProvider, attempt: Schema.Number })
+export const ConnectAttempt = Schema.Struct({
+	provider: ConnectProvider,
+	attempt: Schema.Number,
+	/** GitHub only: open the App install page instead of user authorization. */
+	githubMode: Schema.optionalKey(Schema.Literal("install")),
+})
 export type ConnectAttempt = typeof ConnectAttempt.Type
 
 export const ConnectModel = Schema.Struct({
@@ -101,7 +117,11 @@ export const currentReturnPath = Effect.sync(() =>
 )
 
 /** The provider's start mutation, answering the authorize URL. */
-export const startConnect = (provider: ConnectProvider, returnTo: IntegrationReturnPath) =>
+export const startConnect = (
+	provider: ConnectProvider,
+	returnTo: IntegrationReturnPath,
+	githubMode?: "install",
+) =>
 	Effect.gen(function* () {
 		const internal = yield* MapleInternalApiClient
 		const v2 = yield* MapleApiV2Client
@@ -116,7 +136,9 @@ export const startConnect = (provider: ConnectProvider, returnTo: IntegrationRet
 				})
 			case "github":
 				return yield* internal.integrations.githubStart({
-					payload: new GithubStartConnectRequest({ returnTo }),
+					payload: new GithubStartConnectRequest(
+						githubMode === undefined ? { returnTo } : { returnTo, mode: githubMode },
+					),
 				})
 			case "planetscale": {
 				const response = yield* v2.planetscaleIntegration.connect({

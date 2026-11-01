@@ -19,14 +19,22 @@ Once connected, the integration does three things:
 
 ## Set up
 
-### 1. Install the GitHub App
+### 1. Connect the GitHub App
 
-In Maple, open **Sources**, click **Connect source** and pick **GitHub**. Click **Install on GitHub**. GitHub opens in a new window and walks you through installing the **Maple GitHub App**. During install you choose the scope:
+In Maple, open **Sources**, click **Connect source** and pick **GitHub**. Click **Connect GitHub**. GitHub opens in a new window and asks you to authorize Maple. If the **Maple GitHub App** is not installed on any account you own, GitHub then walks you through installing it. During install you choose the scope:
 
 - **All repositories**: Maple syncs every repository the account can access, including ones added later.
 - **Only select repositories**: Maple syncs only the repositories you pick. You can change the selection from GitHub at any time.
 
 When the install completes, GitHub sends you back and Maple shows the account and repository scope. Maple discovers repositories and queues a backfill for each. Each row moves from **Queued** to **Syncing** to **Synced**.
+
+#### If the app is already installed
+
+Click **Connect GitHub** as usual. After you authorize Maple, it lists the accounts where the app is installed and you administer them: the personal account you own, or organizations you are an owner of. Pick one to connect it to this Maple organization. Maple keeps the installation's existing repository selection; you do not need to reinstall the app. To add an account that does not have the app yet, click **Install on another GitHub account**.
+
+If Maple cannot confirm you own an organization, GitHub has not shared organization roles with the app yet. An owner of that organization approves the app's pending permission request (organization **Settings > GitHub Apps > Review request**), then you connect again.
+
+Maple shows **Discovering repositories** until the sync worker finishes listing them, including while GitHub asks it to wait before retrying. A completed discovery with no repositories shows that no repositories were granted. A failed discovery shows its error and lets you reconnect to retry.
 
 ### 2. Pick a tracked branch per repository
 
