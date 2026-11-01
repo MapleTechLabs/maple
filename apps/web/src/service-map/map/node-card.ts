@@ -56,9 +56,9 @@ export const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } satisfi
 >
 
 const SELECTED_BORDER_CLASS = {
-	crit: "border-severity-error ring-[3px] ring-severity-error/15",
-	warn: "border-severity-warn ring-[3px] ring-severity-warn/15",
-	neutral: "border-foreground/40 ring-[3px] ring-foreground/15",
+	crit: "border-severity-error ring-[3px] ring-severity-error-a2",
+	warn: "border-severity-warn ring-[3px] ring-severity-warn-a2",
+	neutral: "border-border-strong ring-[3px] ring-foreground/15",
 } satisfies Record<ErrorRateLevel, string>
 
 export const selectedBorderClass = (errorRate: number): string =>

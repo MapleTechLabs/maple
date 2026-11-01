@@ -180,7 +180,7 @@ export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): Rea
 					h.summary(
 						[
 							h.Class(
-								"flex w-fit cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden",
+								"flex w-fit cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground [&::-webkit-details-marker]:hidden",
 							),
 						],
 						[

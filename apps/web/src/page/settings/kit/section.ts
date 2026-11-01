@@ -74,7 +74,7 @@ export const adminOnlyNote = <M>(h: HtmlBuilder<M>, children: Children, classNam
 	h.p([h.Class(cn("font-prose text-xs text-muted-foreground", className))], children)
 
 /** The one inline link style across settings: primary text, underlined on hover. */
-export const INLINE_LINK_CLASS = "text-primary underline-offset-4 hover:underline"
+export const INLINE_LINK_CLASS = "text-primary underline-offset-4 hover:underline active:underline"
 
 /** The centered one-line note a list section shows for empty or failed loads. */
 export const sectionNote = <M>(h: HtmlBuilder<M>, text: string): Html => emptyMessage(h, {}, [text])

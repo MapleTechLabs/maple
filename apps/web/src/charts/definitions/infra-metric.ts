@@ -28,7 +28,7 @@ import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
-import { verticalGradient } from "./fixed-metric-axes"
+import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
@@ -48,7 +48,7 @@ type InfraDatum = InfraPoint | InfraCell
 const isCell = (datum: InfraDatum): datum is InfraCell => typeof datum.point === "object"
 const rowOf = (datum: InfraDatum): InfraPoint => (isCell(datum) ? datum.point : datum)
 
-const STROKE_WIDTH = 1.5
+const STROKE_WIDTH = SERIES_STROKE_WIDTH
 const THRESHOLD_FRACTION = 0.8
 const UNITS: ReadonlyArray<ChartUnit> = [
 	"percent",

@@ -13,11 +13,7 @@ import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
-import {
-	hydrateDestinationRow,
-	type DestinationSecretConfig,
-	type EnrichedDestinationSecretConfig,
-} from "./AlertDestinationHydration"
+import { hydrateDestinationRow } from "./AlertDestinationHydration"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { LinearIssueTracker } from "./LinearIssueTracker"
@@ -133,14 +129,6 @@ const make: Effect.Effect<
 				),
 			)
 
-	const enrichSecretConfig = (
-		_row: AlertDestinationRow,
-		secretConfig: DestinationSecretConfig,
-	): Effect.Effect<EnrichedDestinationSecretConfig, NotificationDispatchError> =>
-		// Hazel-OAuth webhooks now embed their delivery token in the URL path,
-		// so no enrichment is required at dispatch time.
-		Effect.succeed(secretConfig)
-
 	const dispatchOne = Effect.fn("NotificationDispatcher.dispatchOne")(function* (
 		row: AlertDestinationRow,
 		request: NotificationRequest,
@@ -157,11 +145,10 @@ const make: Effect.Effect<
 			onSecretConfigInvalid: () =>
 				new NotificationDispatchError({ message: "Stored destination secret is invalid" }),
 		})
-		const enrichedSecret = yield* enrichSecretConfig(row, hydrated.secretConfig)
 		const context: DispatchContext = {
 			destination: row,
 			publicConfig: hydrated.publicConfig,
-			secretConfig: enrichedSecret,
+			secretConfig: hydrated.secretConfig,
 			deliveryKey: request.deliveryKey,
 			ruleId: request.ruleId,
 			ruleName: request.ruleName,

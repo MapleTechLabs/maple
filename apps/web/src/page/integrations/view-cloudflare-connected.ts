@@ -138,7 +138,7 @@ const statCards = (h: H, usage: CloudflareUsageResponse | null): Html => {
 				[
 					h.Href(hrefOf(AppRoute.InfraCloudflare({ search: {} }))),
 					h.Class(
-						"inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground hover:text-foreground",
+						"inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 					),
 				],
 				["Open", icon(h, "ArrowRightIcon", { size: 12 })],

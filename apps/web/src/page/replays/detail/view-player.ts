@@ -343,7 +343,7 @@ const urlBar = (h: H, urlInitial: string): Html =>
 					),
 				],
 				[
-					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0 opacity-70" }),
+					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0" }),
 					h.span(
 						[h.Class("truncate font-mono")],
 						[urlInitial ? hostFromUrl(urlInitial) : "about:blank"],
@@ -401,7 +401,7 @@ export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: 
 		h,
 		{
 			className: cn(
-				"block shadow-sm",
+				"block shadow-raised",
 				"rounded-b-none shadow-none",
 				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-black",
 			),
@@ -460,7 +460,7 @@ const scrubber = (h: H, model: Model, surface: TrackSurface): Html => {
 			h.div(
 				[
 					h.Class(
-						"absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100",
+						"absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-raised transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100",
 					),
 					h.Style({ left: `${pct}%` }),
 				],
@@ -509,7 +509,8 @@ const settings = (h: H, speed: number, isSkippingIdle: boolean, isFullscreen: bo
 				{
 					label: isFullscreen ? "Exit fullscreen" : "Enter fullscreen",
 					size: "icon",
-					className: "text-muted-foreground hover:text-foreground max-sm:ml-auto",
+					className:
+						"text-muted-foreground hover:text-foreground active:text-foreground max-sm:ml-auto",
 					attributes: [h.OnClick(Message.ClickedFullscreen())],
 				},
 				[icon(h, isFullscreen ? "MinimizeIcon" : "MaximizeIcon")],

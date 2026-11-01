@@ -151,7 +151,7 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 							key: `${options.section}:${group.namespace}`,
 							defaultOpen: group.entries.length <= 8 || query !== "",
 							triggerClassName:
-								"group flex w-full items-center gap-1.5 px-1.5 py-1.5 text-2xs text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground",
+								"group flex w-full items-center gap-1.5 px-1.5 py-1.5 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 							trigger: [
 								icon(h, "ChevronRightIcon", {
 									size: 12,
@@ -224,7 +224,7 @@ export const attributesSection = (h: H, context: RowContext, options: TableOptio
 							key: `${options.section}:internal`,
 							defaultOpen: false,
 							triggerClassName:
-								"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground transition-colors group",
+								"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground group",
 							trigger: [
 								icon(h, "ChevronRightIcon", {
 									size: 10,

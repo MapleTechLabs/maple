@@ -66,13 +66,18 @@ export const refreshControls = <M>(h: HtmlBuilder<M>, options: RefreshControlsOp
 									{
 										variant: "outline",
 										size: "sm",
-										className: "relative -ml-px rounded-l-none before:rounded-l-none focus-visible:z-10",
+										className:
+											"relative -ml-px rounded-l-none before:rounded-l-none focus-visible:z-10",
 										attributes: [
 											h.Title(
-												isOn ? `Reloading every ${formatRefreshInterval(seconds)}` : "Auto-refresh is off",
+												isOn
+													? `Reloading every ${formatRefreshInterval(seconds)}`
+													: "Auto-refresh is off",
 											),
 											h.AriaLabel(
-												isOn ? `Auto-refresh every ${formatRefreshInterval(seconds)}` : "Auto-refresh off",
+												isOn
+													? `Auto-refresh every ${formatRefreshInterval(seconds)}`
+													: "Auto-refresh off",
 											),
 											...trigger,
 										],
@@ -82,7 +87,7 @@ export const refreshControls = <M>(h: HtmlBuilder<M>, options: RefreshControlsOp
 											[h.Class(cn("tabular-nums", !isOn && "text-muted-foreground"))],
 											[formatRefreshInterval(seconds)],
 										),
-										icon(h, "ChevronDownIcon", { className: "size-3.5 opacity-60" }),
+										icon(h, "ChevronDownIcon", { className: "size-3.5" }),
 									],
 								),
 							),

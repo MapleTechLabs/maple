@@ -209,7 +209,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: { ...model, isStartingInvestigation: false },
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to start investigation",
+						title: "Couldn't start investigation",
 						description: failure.message,
 					}),
 				}),

@@ -76,7 +76,8 @@ export const panelShell = (
 										size: "icon-xs",
 										label: isCollapsed ? "Expand query" : "Collapse query",
 										hasTooltip: false,
-										className: "text-muted-foreground hover:text-foreground",
+										className:
+											"text-muted-foreground hover:text-foreground active:text-foreground",
 										attributes: [h.OnClick(Message.ToggledProductPanel())],
 									},
 									[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],

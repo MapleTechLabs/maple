@@ -25,7 +25,7 @@ import type { Model } from "./model"
 type Return = PageReturn<Model, Message>
 type H = HtmlBuilder<Message>
 
-const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 const PULL_REQUEST_STATE_TONE = {
 	open: IN_FLIGHT_SOFT,
 	merged: TONE_SOFT.done,
@@ -171,7 +171,7 @@ const pasteField = (h: H, model: Model): Html =>
 				[
 					h.a(
 						[
-							h.Class("underline hover:no-underline"),
+							h.Class("underline hover:no-underline active:no-underline"),
 							h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
 						],
 						["Connect GitHub"],
@@ -265,16 +265,34 @@ const REPOSITORY_IDS = {
 }
 
 /** The repository `Select`, shown when the org has more than one. */
-const repositoryField = (h: H, model: Model, repositories: ReadonlyArray<string>, value: string | null): Html => {
-	const state = { isInvalid: false, isDirty: false, isFilled: value !== null, isFocused: false, isTouched: false }
+const repositoryField = (
+	h: H,
+	model: Model,
+	repositories: ReadonlyArray<string>,
+	value: string | null,
+): Html => {
+	const state = {
+		isInvalid: false,
+		isDirty: false,
+		isFilled: value !== null,
+		isFocused: false,
+		isTouched: false,
+	}
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		fieldLabel(h, { ids: REPOSITORY_IDS, className: "text-xs text-muted-foreground", state }, "Repository"),
+		fieldLabel(
+			h,
+			{ ids: REPOSITORY_IDS, className: "text-xs text-muted-foreground", state },
+			"Repository",
+		),
 		h.submodel({
 			slotId: model.repositorySelect.id,
 			model: { ...model.repositorySelect, value: value ?? "" },
 			view: SelectView.view,
 			viewInputs: {
-				entries: repositories.map((name) => ({ _tag: "Item" as const, item: { value: name, label: name } })),
+				entries: repositories.map((name) => ({
+					_tag: "Item" as const,
+					item: { value: name, label: name },
+				})),
 				labelledBy: REPOSITORY_IDS.label,
 				size: "sm",
 				className: "w-full text-xs",
@@ -304,7 +322,10 @@ export const attachDialog = (h: H, model: Model): Html => {
 		isReturningFocus: false,
 		panelClassName: "space-y-3",
 		fields: isConnected
-			? [...(names.length > 1 ? [repositoryField(h, model, names, repository)] : []), pickerField(h, model)]
+			? [
+					...(names.length > 1 ? [repositoryField(h, model, names, repository)] : []),
+					pickerField(h, model),
+				]
 			: [pasteField(h, model)],
 	})
 }

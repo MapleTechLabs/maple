@@ -1,28 +1,31 @@
 import { cacheResultStyles, getCacheInfo } from "@maple/ui/lib/cache"
+import { CLOUDFLARE_ACCENT_CLASS } from "@maple/ui/lib/cloud-platforms/accents"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { getHttpInfo, HTTP_METHOD_COLORS, httpStatusTone } from "@maple/ui/lib/http"
-import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
+import { getSpanKindLabel } from "@maple/ui/lib/span-kind"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { severityTone, TONE_COLOR, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../../ui/display"
 import { icon } from "../../../../ui/icon"
 import { iconButton } from "../../../../ui/icon-button"
+import { traceStatusBadge } from "../../../../ui/trace-badges"
 import { truncatedId } from "../../../../ui/truncated-id"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { serviceDot } from "../../../../ui/values"
 import type { SpanNodeData } from "../trace-data"
 import { Message } from "./model"
 import { rowPlatform } from "./platform"
+import { type Mark, serviceRuntime, spanTech } from "./tech"
 import { countDescendants, type TreeRow, treeLevel } from "./tree"
 
 // `SpanRow` (packages/ui/src/components/traces/span-row.tsx) and `PixelDurationBar`.
 
 // copied: `outcomeBadgeStyle(true)` (cloud-platforms/types.ts pulls in the React icon set).
-const BAD_OUTCOME_STYLE = "bg-severity-error/15 text-severity-error border-severity-error/30"
+const BAD_OUTCOME_STYLE = "bg-severity-error-a2 text-severity-error border-severity-error-a3"
 
 const MAX_INDENT_DEPTH = 10
 const TOTAL_BLOCKS = 27
@@ -51,7 +54,7 @@ const treeGuides = (h: HtmlBuilder<Message>, row: TreeRow, isExpanded: boolean):
 		h.div(
 			[
 				h.AriaHidden(true),
-				h.Class("relative -my-1.5 shrink-0 self-stretch"),
+				h.Class("relative shrink-0 self-stretch"),
 				h.Style({ width: `${shown * COLUMN_PX}px`, "margin-right": shown === 0 ? "-8px" : "0px" }),
 			],
 			[
@@ -107,8 +110,9 @@ const treeGuides = (h: HtmlBuilder<Message>, row: TreeRow, isExpanded: boolean):
 	]
 }
 
+// The status column carries Ok; the tree only flags errors.
 const statusFill = (statusCode: string): string =>
-	statusCode === "Error" ? TONE_FILL.crit : statusCode === "Ok" ? TONE_FILL.ok : TONE_FILL.neutral
+	statusCode === "Error" ? TONE_FILL.crit : TONE_FILL.neutral
 
 /** A parent's chevron, or a leaf's status square where the elbow lands. */
 const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean): Html =>
@@ -126,11 +130,11 @@ const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean
 				[icon(h, isExpanded ? "ChevronDownIcon" : "ChevronRightIcon")],
 			)
 		: h.div(
-				[h.Class("flex h-7 w-6 shrink-0 items-center justify-center")],
+				[h.Class("flex size-6 shrink-0 items-center justify-center")],
 				[
 					h.span(
 						[
-							h.Class(cn("size-2 rounded-[2px]", statusFill(span.statusCode))),
+							h.Class(cn("size-2 rounded-xs", statusFill(span.statusCode))),
 							h.Title(span.statusCode === "" ? "Unset" : span.statusCode),
 						],
 						[],
@@ -153,15 +157,25 @@ const pixelBar = (
 				((i + 1) / TOTAL_BLOCKS) * 100 > leftPercent && (i / TOTAL_BLOCKS) * 100 < spanEnd
 			return h.div(
 				[
-					h.Attribute(
-						"class",
-						`w-[5px] h-2.5 rounded-[1px] shrink-0 ${isActive ? color : "bg-muted"}`,
-					),
+					h.Attribute("class", `w-[5px] h-2.5 rounded-2xs shrink-0 ${isActive ? "" : "bg-muted"}`),
+					...(isActive ? [h.Style({ "background-color": color })] : []),
 				],
 				[],
 			)
 		}),
 	)
+}
+
+const markIcon = (h: HtmlBuilder<Message>, mark: Mark): Html =>
+	h.span(
+		[h.Class("flex shrink-0"), h.Role("img"), h.AriaLabel(mark.label), h.Title(mark.label)],
+		[icon(h, mark.icon, { size: 12, className: mark.className })],
+	)
+
+/** What the span called (Postgres, Kafka, an LLM), left of its name; nothing when unknown. */
+const techIcon = (h: HtmlBuilder<Message>, span: SpanNodeData): ReadonlyArray<Html> => {
+	const tech = spanTech({ ...span.spanAttributes })
+	return tech === null ? [] : [markIcon(h, tech)]
 }
 
 const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Html => {
@@ -170,14 +184,14 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-stretch px-2 bg-surface-sunken",
-					ctx.isSelected && "bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]",
+					"@container/row group flex h-7 items-stretch px-2 bg-surface-sunken",
+					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
 			),
 		],
 		[
 			h.div(
-				[h.Class("flex items-center gap-2 flex-1 min-w-0 overflow-hidden py-1.5")],
+				[h.Class("flex items-center gap-2 flex-1 min-w-0 overflow-hidden")],
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
@@ -201,7 +215,7 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 				],
 			),
 			h.div(
-				[h.Class("flex items-center gap-2 shrink-0 ml-2 py-1.5")],
+				[h.Class("flex items-center gap-2 shrink-0 ml-2")],
 				[
 					h.div([h.Class("hidden w-48 @min-[560px]/row:block")], []),
 					truncatedId(h, {
@@ -218,26 +232,27 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 
 type HttpInfo = NonNullable<ReturnType<typeof getHttpInfo>>
 
-/** The service where the call path enters it; a child in its parent's service keeps only the platform. */
+/** The Cloudflare Worker mark, else the service's runtime or Effect. */
+const serviceMark = (span: SpanNodeData): Mark | null => {
+	// Workers report `cloud.platform` on the resource; Worker spans may carry it themselves.
+	const isWorker =
+		rowPlatform({ ...span.spanAttributes })?.id === "cloudflare" ||
+		span.resourceAttributes["cloud.platform"] === "cloudflare.workers"
+	if (isWorker)
+		return { icon: "CloudflareIcon", label: "Cloudflare Worker", className: CLOUDFLARE_ACCENT_CLASS }
+	return serviceRuntime({ ...span.resourceAttributes })
+}
+
+/** The service where the call path enters it, with what runs it; a child in its parent's service shows none. */
 const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html> => {
 	const span = row.node
-	const platform = rowPlatform({ ...span.spanAttributes })
-	const platformIcon =
-		platform === null
-			? []
-			: [
-					icon(h, platform.icon, {
-						size: 12,
-						className: cn("shrink-0", platform.accentClassName),
-						attributes: [h.AriaLabel(platform.label)],
-					}),
-				]
-	if (row.parent !== null && row.parent.serviceName === span.serviceName) return platformIcon
+	if (row.parent !== null && row.parent.serviceName === span.serviceName) return []
+	const mark = serviceMark(span)
 	return [
 		h.span(
 			[h.Class("flex min-w-0 max-w-[30%] shrink items-center gap-1.5 font-mono text-3xs")],
 			[
-				...platformIcon,
+				...(mark === null ? [] : [markIcon(h, mark)]),
 				serviceDot(h, { serviceName: span.serviceName, className: "size-1.5" }),
 				h.span(
 					[
@@ -247,7 +262,11 @@ const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html
 					],
 					[span.serviceName],
 				),
-				h.span([h.Class("shrink-0 text-foreground-subtle")], [getSpanKindLabel(span.spanKind)]),
+				// The kind yields first on narrow rows so the service name stays readable.
+				h.span(
+					[h.Class("hidden shrink-0 text-foreground-subtle @min-[720px]/row:inline")],
+					[getSpanKindLabel(span.spanKind)],
+				),
 			],
 		),
 	]
@@ -346,49 +365,31 @@ const locationLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Htm
 	]
 }
 
-/** The status cell: cache result, else the HTTP code, else the span status. */
+const STATUS_CELL = "w-14 justify-center"
+
+/** The status cell: cache result, else the HTTP code, else the span status; soft badges as in the traces list. */
 const statusCell = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpInfo | null): Html => {
 	const cacheInfo = getCacheInfo({ ...span.spanAttributes })
 	if (cacheInfo?.result === "hit" || cacheInfo?.result === "miss") {
 		return badge(
 			h,
-			{
-				variant: "outline",
-				className: cn(
-					"text-3xs w-14 justify-center font-medium",
-					cacheResultStyles[cacheInfo.result],
-				),
-			},
+			{ variant: "outline", className: cn(STATUS_CELL, cacheResultStyles[cacheInfo.result]) },
 			[cacheInfo.result === "hit" ? "HIT" : "MISS"],
 		)
 	}
 	const code = httpInfo?.statusCode ?? null
 	if (code !== null && code !== 0) {
-		const tone = httpStatusTone(code)
-		return h.span(
-			[
-				h.Class(
-					cn(
-						"w-14 text-center font-mono text-xs font-medium",
-						tone !== "neutral"
-							? TONE_TEXT[tone]
-							: code >= 300
-								? "text-chart-p50"
-								: "text-severity-info",
-					),
-				),
-			],
-			[String(code)],
-		)
+		return traceStatusBadge(h, {
+			hasError: span.statusCode === "Error",
+			httpStatusCode: code,
+			className: STATUS_CELL,
+		})
 	}
 	return badge(
 		h,
 		{
-			variant: "outline",
-			className: cn(
-				"text-3xs w-14 justify-center font-medium",
-				getSpanStatusBadgeClass(span.statusCode),
-			),
+			variant: "secondary",
+			className: cn(STATUS_CELL, TONE_SOFT[severityTone(span.statusCode)]),
 		},
 		[span.statusCode === "" ? "Unset" : span.statusCode],
 	)
@@ -405,18 +406,17 @@ const rightSection = (
 		ctx.totalDurationMs > 0 ? ((spanStartMs(span) - traceStartMs) / ctx.totalDurationMs) * 100 : 0
 	const widthPercent = ctx.totalDurationMs > 0 ? (span.durationMs / ctx.totalDurationMs) * 100 : 0
 	const httpTone = httpStatusTone(httpInfo?.statusCode)
+	// Errors and HTTP warnings keep their tone; everything else takes the service colour, as on the Timeline tab.
 	const barColor =
-		httpTone === "crit"
-			? TONE_FILL.crit
+		httpTone === "crit" || span.statusCode === "Error"
+			? TONE_COLOR.crit
 			: httpTone === "warn"
-				? TONE_FILL.warn
-				: span.statusCode === "Error"
-					? TONE_FILL.crit
-					: "bg-primary"
+				? TONE_COLOR.warn
+				: getServiceColor(span.serviceName)
 	const platform = rowPlatform({ ...span.spanAttributes })
 	const outcome = Option.fromNullishOr(platform?.outcome).pipe(Option.filter((o) => o.bad))
 	return h.div(
-		[h.Class("flex items-center gap-2 shrink-0 ml-2 py-1.5")],
+		[h.Class("flex items-center gap-2 shrink-0 ml-2")],
 		[
 			pixelBar(h, leftPercent, Math.max(widthPercent, 1), barColor),
 			h.span(
@@ -461,9 +461,9 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-stretch hover:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-					span.statusCode === "Error" && "bg-severity-error/5",
-					ctx.isSelected && "bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]",
+					"@container/row group flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					span.statusCode === "Error" && "bg-severity-error-a1",
+					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
 			),
 			h.Role("button"),
@@ -473,10 +473,11 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		],
 		[
 			h.div(
-				[h.Class("@container flex items-center gap-2 flex-1 min-w-0 overflow-hidden py-1.5")],
+				[h.Class("@container flex items-center gap-2 flex-1 min-w-0 overflow-hidden")],
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
+					...techIcon(h, span),
 					nameLabel(h, span, httpInfo),
 					...serviceLabel(h, row),
 					...edgeLabel(h, span),

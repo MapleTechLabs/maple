@@ -42,7 +42,7 @@ const versionItem = (
 					h.Class(
 						cn(
 							"group relative w-full pl-7 pr-3 py-2.5 text-left transition-colors",
-							"hover:bg-surface-sunken",
+							"hover:bg-surface-sunken active:bg-surface-sunken",
 							rowSelectedClass(isPreviewing),
 						),
 					),
@@ -81,7 +81,7 @@ const versionItem = (
 															h,
 															{
 																variant: "tag",
-																className: "bg-primary/10 text-primary",
+																className: "bg-primary-a2 text-primary",
 															},
 															["Current"],
 														),
@@ -191,8 +191,8 @@ const list = (h: H, model: Model, versions: ReadonlyArray<VersionRow>, clock: Cl
 export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 	const versions = model.history.versions
 	const count = AsyncData.getOrElse(versions, () => []).length
-	return h.aside(
-		[h.Class("flex h-full w-80 shrink-0 flex-col border-l bg-background")],
+	return h.div(
+		[h.Class("flex h-full flex-col")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 border-b px-4 py-3")],
@@ -204,7 +204,8 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 						{
 							label: "Close history panel",
 							size: "icon-xs",
-							className: "ml-auto text-muted-foreground hover:text-foreground",
+							className:
+								"ml-auto text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(Message.ClickedCloseHistory())],
 						},
 						[icon(h, "XmarkIcon")],
@@ -237,7 +238,7 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 /** `PreviewBanner` and its restore confirmation. */
 export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Clock): ReadonlyArray<Html> => [
 	h.div(
-		[h.Class("mb-4 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2")],
+		[h.Class("mb-4 flex items-center gap-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2")],
 		[
 			icon(h, "HistoryIcon", { className: "size-4 shrink-0 text-primary" }),
 			h.div(

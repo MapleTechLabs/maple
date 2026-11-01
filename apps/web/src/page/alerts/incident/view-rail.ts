@@ -64,7 +64,7 @@ const groupsSection = <M>(
 							? h.a(
 									[
 										h.Href(incidentHref(open.id)),
-										h.Class("min-w-0 flex-1 truncate hover:underline"),
+										h.Class("min-w-0 flex-1 truncate hover:underline active:underline"),
 									],
 									[row.group_key],
 								)
@@ -142,7 +142,7 @@ const evidenceSection = <M>(
 												}),
 											),
 										),
-										h.Class("hover:underline"),
+										h.Class("hover:underline active:underline"),
 									],
 									["Linked error issue"],
 								),
@@ -165,7 +165,7 @@ const evidenceSection = <M>(
 									}),
 								),
 							),
-							h.Class("hover:underline"),
+							h.Class("hover:underline active:underline"),
 						],
 						[incident.signalType === "error_rate" ? "Error traces" : "Traces"],
 					),
@@ -176,7 +176,7 @@ const evidenceSection = <M>(
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Logs({ search: { services: servicesSearch, ...range } }))),
-							h.Class("hover:underline"),
+							h.Class("hover:underline active:underline"),
 						],
 						["Logs"],
 					),
@@ -207,14 +207,23 @@ const ruleSection = <M>(
 		h,
 		["Rule"],
 		h.a(
-			[h.Href(createHref({ ruleId: rule.id })), h.Class("text-primary text-xs hover:underline")],
+			[
+				h.Href(createHref({ ruleId: rule.id })),
+				h.Class("text-primary text-xs hover:underline active:underline"),
+			],
 			["Edit rule"],
 		),
 		[
 			h.div(
 				[h.Class("space-y-2")],
 				[
-					h.a([h.Href(ruleHref(rule.id)), h.Class("block text-sm hover:underline")], [rule.name]),
+					h.a(
+						[
+							h.Href(ruleHref(rule.id)),
+							h.Class("block text-sm hover:underline active:underline"),
+						],
+						[rule.name],
+					),
 					h.p([h.Class("text-muted-foreground text-xs leading-relaxed")], [summary]),
 					h.p(
 						[h.Class("text-muted-foreground text-xs")],

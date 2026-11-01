@@ -95,6 +95,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/mobile_devices/{token}/live_activities/{incident_id}",
 			"DELETE /v2/scrape_targets/{id}",
 			"DELETE /v2/sources/{id}",
+			"DELETE /v2/status_page_incidents/{id}",
+			"DELETE /v2/status_pages/{id}",
+			"DELETE /v2/status_pages/{id}/break_glass",
+			"DELETE /v2/status_pages/{id}/components/{component_id}",
 			"DELETE /v2/uptime_monitors/{id}",
 			"DELETE /v2/widget_credentials/{installation_id}",
 			"GET /v2/agent_feedback",
@@ -170,6 +174,12 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/sources/usage",
 			"GET /v2/sources/{id}",
 			"GET /v2/sources/{id}/usage",
+			"GET /v2/status_page_incidents",
+			"GET /v2/status_page_incidents/{id}",
+			"GET /v2/status_pages",
+			"GET /v2/status_pages/{id}",
+			"GET /v2/status_pages/{id}/components",
+			"GET /v2/status_pages/{id}/config",
 			"GET /v2/support/slack_channel",
 			"GET /v2/traces/{trace_id}",
 			"GET /v2/traces/{trace_id}/spans/{span_id}",
@@ -187,6 +197,9 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PATCH /v2/integrations/gcp/connectors/{id}",
 			"PATCH /v2/scrape_targets/{id}",
 			"PATCH /v2/sources/{id}",
+			"PATCH /v2/status_page_incidents/{id}",
+			"PATCH /v2/status_pages/{id}",
+			"PATCH /v2/status_pages/{id}/components/{component_id}",
 			"PATCH /v2/uptime_monitors/{id}",
 			"POST /v2/agent_feedback",
 			"POST /v2/alerts/destinations",
@@ -253,6 +266,14 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/sources/{id}/pause",
 			"POST /v2/sources/{id}/resume",
 			"POST /v2/sources/{id}/roll",
+			"POST /v2/status_page_incidents",
+			"POST /v2/status_page_incidents/{id}/updates",
+			"POST /v2/status_pages",
+			"POST /v2/status_pages/preview",
+			"POST /v2/status_pages/{id}/components",
+			"POST /v2/status_pages/{id}/components/reorder",
+			"POST /v2/status_pages/{id}/publish",
+			"POST /v2/status_pages/{id}/rotate_break_glass",
 			"POST /v2/support/slack_channel/invite",
 			"POST /v2/traces/breakdown",
 			"POST /v2/traces/search",
@@ -266,6 +287,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PUT /v2/error_issues/{id}/severity",
 			"PUT /v2/mobile_devices/{token}",
 			"PUT /v2/mobile_devices/{token}/live_activities/{incident_id}",
+			"PUT /v2/status_pages/{id}/config",
 			"PUT /v2/widget_credentials/{installation_id}",
 		])
 	})
@@ -782,7 +804,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		}
 	})
 
-	it("preserves Hazel provisioning failures on alert destination mutations", () => {
+	it("preserves integration lookup failures on alert destination mutations", () => {
 		for (const [method, path] of [
 			["post", "/v2/alerts/destinations"],
 			["patch", "/v2/alerts/destinations/{id}"],

@@ -185,7 +185,7 @@ export const completedCheck = (
 	if (failure !== null) {
 		return quiet
 			? { model: settled }
-			: toast(settled, "error", "Failed to check the AWS connection", failure.message)
+			: toast(settled, "error", "Couldn't check the AWS connection", failure.message)
 	}
 	const before = connectionsOf(model).find((entry) => entry.id === id)
 	const justVerified = before?.verified_at === null && connection?.verified_at != null
@@ -262,7 +262,7 @@ export const completedDisconnect = (
 	error: string | null,
 ): Return => {
 	const settled = withCard(model, { isDisconnecting: false })
-	if (removed === null) return toast(settled, "error", "Failed to disconnect AWS", error ?? "")
+	if (removed === null) return toast(settled, "error", "Couldn't disconnect AWS", error ?? "")
 	const card = settled.awsCard
 	const stacks = [removed, ...card.removed.filter((stack) => stack.connectionId !== removed.connectionId)]
 	return chain(

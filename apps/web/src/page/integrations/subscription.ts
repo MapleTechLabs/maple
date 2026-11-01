@@ -1,21 +1,13 @@
 import { Duration, Effect, Option, Queue, Schema, Stream } from "effect"
-import { GithubInstallationSelection } from "@maple/domain/http"
 import { AsyncData, Subscription } from "foldkit"
 import { gcpConnectionState } from "../../components/integrations/gcp-connector-state"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
-import { apiOrigins } from "../../lib/services/common/api-base-url"
 import { integrationOfSearch } from "./catalog"
-import {
-	ConnectAttempt,
-	ConnectProvider,
-	currentReturnPath,
-	IntegrationCallbackEvents,
-	PROVIDERS,
-	startConnect,
-} from "./connect"
+import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startConnect } from "./connect"
 import { Message } from "./message"
+import { openerReturns, relayedReturns } from "./connect-returns"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
 import { githubStatusOf } from "./update-github"
@@ -267,45 +259,13 @@ const listeningProvider = (model: Model): ConnectProvider | null => {
 	return Schema.is(ConnectProvider)(integration) ? integration : null
 }
 
-/** The callback page's `postMessage` payload; anything else on the channel is ignored. */
-const CallbackData = Schema.Struct({
-	type: Schema.String,
-	status: Schema.optional(Schema.String),
-	message: Schema.optional(Schema.String),
-	github: Schema.optionalKey(GithubInstallationSelection),
-})
-const decodeCallback = Schema.decodeUnknownOption(CallbackData)
-
-/** The callback page is the API's: served from its origin, or this one through the proxy. */
-export const isCallbackOrigin = (origin: string, ownOrigin: string): boolean =>
-	origin === ownOrigin || apiOrigins.includes(origin)
-
 const callbackMessages = (provider: ConnectProvider) =>
-	Stream.unwrap(
-		Effect.map(IntegrationCallbackEvents, ({ ownOrigin, messages }) =>
-			messages.pipe(
-				Stream.filter((event) => isCallbackOrigin(event.origin, ownOrigin)),
-				Stream.flatMap((event) =>
-					Option.match(decodeCallback(event.data), {
-						onNone: () => Stream.empty,
-						onSome: (data) => {
-							if (data.type !== `maple:integration:${provider}`) return Stream.empty
-							const message = {
-								provider,
-								status: data.status ?? "",
-								message: data.message ?? null,
-							}
-							return Stream.make(
-								Message.ReceivedConnectMessage(
-									data.github === undefined ? message : { ...message, github: data.github },
-								),
-							)
-						},
-					}),
-				),
-			),
-		),
-	)
+	Stream.map(openerReturns(provider), (callback) => Message.ReceivedConnectMessage(callback))
+
+/** Every provider's status lives on this page, so every relayed return re-reads one. */
+const relayMessages = Stream.map(relayedReturns, ({ provider, status, message }) =>
+	Message.ReceivedConnectRelay({ provider, status, message: message ?? "" }),
+)
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
@@ -470,6 +430,13 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ provider: listeningProvider(model) }),
 				dependenciesToStream: ({ provider }) =>
 					provider === null ? Stream.empty : callbackMessages(provider),
+			},
+		),
+		connectRelay: entry(
+			{},
+			{
+				modelToDependencies: () => ({}),
+				dependenciesToStream: () => relayMessages,
 			},
 		),
 	}),

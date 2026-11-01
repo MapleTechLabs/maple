@@ -61,7 +61,15 @@ import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
 import { identityOf, isSameIdentity } from "./platform/session-identity"
-import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
+import {
+	AppRoute,
+	flaggedRouteRedirect,
+	hrefOf,
+	isPublicRoute,
+	type Redirect,
+	routeRedirect,
+	urlToAppRoute,
+} from "./route"
 import { completeRangeOf, isWithin, withSessionRange } from "./route/session-time-range"
 import * as Shell from "./shell"
 import * as OrgSwitcher from "./shell/clerk-org-switcher"
@@ -394,7 +402,11 @@ const isPlanGated = (model: Model) => Option.exists(planGateOf(model), isRouteHe
 
 const loadPage: Step = (model) =>
 	Option.match(
-		Option.filter(pageContextOf(model), () => !isPlanGated(model)),
+		// A flag-gated route is on its way home: no page, so nothing it would fetch.
+		Option.filter(
+			pageContextOf(model),
+			() => !isPlanGated(model) && Option.isNone(flagRedirectOf(model)),
+		),
 		{
 			// Leaving every page (signed out) releases what the last one held, like any page change.
 			// Parked pages go too: none may come back in the next session or org.
@@ -512,7 +524,7 @@ const onboardingOut =
 							model,
 							PageOutMessage.RequestedToast({
 								type: "error",
-								title: "Failed to update your plan",
+								title: "Couldn't update your plan",
 								description: message,
 							}),
 						),
@@ -685,6 +697,14 @@ export const planGateOf = (model: Model): Option.Option<Gate> =>
 const isWrongRegion = (model: Model): boolean =>
 	Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
 
+/** A rollout-gated route the active Clerk org is outside of; self-hosted has every rollout. */
+const flagRedirectOf = (model: Model): Option.Option<Redirect> =>
+	isClerkAuthEnabled
+		? Option.flatMap(clerkOrganizationOf(model), (organization) =>
+				flaggedRouteRedirect(model.route, organization.flags),
+			)
+		: Option.none()
+
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {
 		Resolving: () => Option.none<Redirect>(),
@@ -692,6 +712,7 @@ const followRedirects: Step = (model) => {
 		SignedIn: () =>
 			Option.orElse(routeRedirect(model.route), () => sessionRedirect(model)).pipe(
 				Option.orElse(() => Option.flatMap(planGateOf(model), (gate) => gate.redirect)),
+				Option.orElse(() => flagRedirectOf(model)),
 			),
 	})
 	return Option.match(maybeRedirect, {

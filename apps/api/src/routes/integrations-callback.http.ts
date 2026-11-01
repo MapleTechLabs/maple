@@ -9,12 +9,10 @@ import { Env } from "@maple/backend/platform/Env"
 import { PLANETSCALE_CALLBACK_PATH } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { SUPABASE_CALLBACK_PATH } from "@maple/backend/services/auth/SupabaseOAuthService"
 
-export const HAZEL_CALLBACK_PATH = "/api/integrations/hazel/callback"
 export const LINEAR_CALLBACK_PATH = "/api/integrations/linear/callback"
 export const GITHUB_CALLBACK_PATH = "/api/integrations/github/callback"
 export const CLOUDFLARE_CALLBACK_PATH = "/api/integrations/cloudflare/callback"
 
-const HAZEL_MESSAGE_TYPE = "maple:integration:hazel"
 const LINEAR_MESSAGE_TYPE = "maple:integration:linear"
 const GITHUB_MESSAGE_TYPE = "maple:integration:github"
 const CLOUDFLARE_MESSAGE_TYPE = "maple:integration:cloudflare"
@@ -243,15 +241,6 @@ const requireInstallation = (params: URLSearchParams): string | null =>
 			: null
 
 const ROUTES: ReadonlyArray<CallbackRoute> = [
-	{
-		path: HAZEL_CALLBACK_PATH,
-		flow: "hazel",
-		provider: "hazel",
-		label: "Hazel",
-		page: "/integrations",
-		messageType: HAZEL_MESSAGE_TYPE,
-		precheck: requireCodeAndState,
-	},
 	{
 		path: LINEAR_CALLBACK_PATH,
 		flow: "linear",

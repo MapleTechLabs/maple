@@ -51,7 +51,7 @@ const containerRow = <M>(h: HtmlBuilder<M>, row: RestartRow): Html =>
 		],
 		[
 			h.span(
-				[h.Class("w-0 min-w-[200px] flex-1 truncate font-mono text-xs text-foreground")],
+				[h.Class("w-0 min-w-52 flex-1 truncate font-mono text-xs text-foreground")],
 				[row.containerName || EMPTY_VALUE],
 			),
 			h.span(
@@ -88,7 +88,7 @@ export const podContainerRestarts = <M>(h: HtmlBuilder<M>, restarts: Restarts): 
 				h,
 				{ ariaLabel: "Container restarts" },
 				[
-					columnHead(h, { label: "Container", width: "w-0 flex-1 min-w-[200px]" }),
+					columnHead(h, { label: "Container", width: "w-0 flex-1 min-w-52" }),
 					columnHead(h, { label: "In window", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Total", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Last terminated", align: "right", width: "w-40" }),

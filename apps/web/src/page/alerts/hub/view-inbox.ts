@@ -16,7 +16,7 @@ import {
 	blindSpots as deriveBlindSpots,
 	type FireLane,
 	fireLanes,
-	incidentScope,
+	incidentSubline,
 	incidentTitle,
 	incidentValues,
 } from "@maple/web-data/alerts/overview-derive"
@@ -155,7 +155,10 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 	const isHeld = incident.holdReason !== null
 	const tone = incident.severity === "critical" ? "text-severity-error" : "text-severity-warn"
 	return h.li(
-		[h.Key(incident.id), h.Class(cn(INCIDENT_GRID, "relative px-4 py-3 hover:bg-surface-sunken"))],
+		[
+			h.Key(incident.id),
+			h.Class(cn(INCIDENT_GRID, "relative px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken")),
+		],
 		[
 			h.span([
 				h.AriaHidden(true),
@@ -163,7 +166,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 					cn(
 						"absolute inset-y-2 left-0 w-0.5 rounded-full",
 						isHeld
-							? "bg-muted-foreground/50"
+							? "bg-foreground-subtle"
 							: incident.severity === "critical"
 								? "bg-severity-error"
 								: "bg-severity-warn",
@@ -192,13 +195,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 							),
 						],
 					),
-					h.p(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[
-							incident.ruleName,
-							...(incidentScope(incident) !== null ? [` · ${incidentScope(incident)}`] : []),
-						],
-					),
+					h.p([h.Class("truncate text-xs text-muted-foreground")], [incidentSubline(incident)]),
 				],
 			),
 			h.span(
@@ -309,7 +306,7 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 		[
 			h.a(
 				[
-					h.Class("truncate text-sm hover:underline"),
+					h.Class("truncate text-sm hover:underline active:underline"),
 					h.Href(ruleHref(lane.ruleId)),
 					h.Title(lane.ruleName),
 				],
@@ -324,7 +321,7 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 							cn(
 								"absolute inset-y-0 rounded-xs",
 								bar.held
-									? "bg-muted-foreground/60"
+									? "bg-foreground-subtle"
 									: bar.severity === "critical"
 										? "bg-severity-error"
 										: "bg-severity-warn",
@@ -381,7 +378,7 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 		[
 			h.Key(spot.rule.id),
 			h.Class(
-				"group relative grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-surface-sunken",
+				"group relative grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -466,7 +463,10 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 	const isNear = closeness !== null && closeness >= 0.75
 	const isFloor = rule.comparator === "lt" || rule.comparator === "lte"
 	return h.li(
-		[h.Key(rule.id), h.Class(cn(HEADROOM_GRID, "relative py-2.5 hover:bg-surface-sunken"))],
+		[
+			h.Key(rule.id),
+			h.Class(cn(HEADROOM_GRID, "relative py-2.5 hover:bg-surface-sunken active:bg-surface-sunken")),
+		],
 		[
 			h.div(
 				[h.Class("min-w-0")],
@@ -499,7 +499,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 									h.Class(
 										cn(
 											"absolute inset-y-0 left-0 rounded-xs",
-											isNear ? "bg-severity-warn" : "bg-muted-foreground/45",
+											isNear ? "bg-severity-warn" : "bg-foreground-faint",
 										),
 									),
 									h.Style({ width: `${Math.max(closeness * 100, 1.5)}%` }),

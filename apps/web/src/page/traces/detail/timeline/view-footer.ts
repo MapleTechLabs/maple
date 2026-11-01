@@ -22,14 +22,18 @@ export const footer = (h: H, model: Model): Html =>
 		],
 		[
 			h.div(
-				[h.Class("hidden shrink-0 items-center gap-3 text-foreground-faint @min-[560px]/timeline:flex")],
+				[
+					h.Class(
+						"hidden shrink-0 items-center gap-3 text-foreground-faint @min-[560px]/timeline:flex",
+					),
+				],
 				[
 					hint(h, "Drag", "zoom"),
 					hint(h, "W A S D", "navigate"),
 					hint(h, "/", "search"),
 					h.button(
 						[
-							h.Class("hover:text-foreground-soft"),
+							h.Class("hover:text-foreground-soft active:text-foreground-soft"),
 							h.Type("button"),
 							h.OnClick(Message.ClickedShortcuts()),
 						],
@@ -60,7 +64,7 @@ export const footer = (h: H, model: Model): Html =>
 								[
 									h.AriaHidden(true),
 									h.Class(
-										"size-2 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]",
+										"size-2 shrink-0 rounded-dot bg-severity-error [corner-shape:squircle]",
 									),
 								],
 								[],
@@ -100,7 +104,7 @@ export const shortcutsOverlay = (h: H): Html =>
 			h.div(
 				[
 					h.Class(
-						"max-h-[80%] w-[420px] max-w-[90%] overflow-y-auto border border-border bg-popover p-4 shadow-lg",
+						"max-h-[80%] w-[420px] max-w-[90%] overflow-y-auto border border-border bg-popover p-4 shadow-popup",
 					),
 					h.OnClick(Message.ClickedShortcutsSheet(), { propagation: "Stop" }),
 				],

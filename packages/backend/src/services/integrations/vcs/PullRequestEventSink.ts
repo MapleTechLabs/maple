@@ -1,8 +1,11 @@
 import type {
+	DependencyScanJob,
 	PullRequestChecklistJob,
 	PullRequestCiApprovedJob,
 	PullRequestCommentJob,
 	PullRequestEventJob,
+	VcsInstallation,
+	VcsRepo,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { Context, Effect, Layer } from "effect"
@@ -114,3 +117,19 @@ export class PullRequestCiApprovalSink extends Context.Service<
 	PullRequestCiApprovalSink,
 	PullRequestCiApprovalSinkApi
 >()("@maple/backend/services/integrations/vcs/PullRequestCiApprovalSink") {}
+
+/**
+ * Where a repository's dependency scan request goes once its repository row is resolved. Optional
+ * in `VcsSyncService`: a root without the scanner neither enqueues nor runs scans.
+ */
+export interface DependencyScanSinkApi {
+	readonly onScanRequested: (
+		installation: VcsInstallation,
+		repository: VcsRepo,
+		job: DependencyScanJob,
+	) => Effect.Effect<void>
+}
+
+export class DependencyScanSink extends Context.Service<DependencyScanSink, DependencyScanSinkApi>()(
+	"@maple/backend/services/integrations/vcs/DependencyScanSink",
+) {}

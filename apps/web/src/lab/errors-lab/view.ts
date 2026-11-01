@@ -42,7 +42,7 @@ const toggleGroup = <M, T>(
 									"h-6 rounded-sm px-2 text-xs transition-colors",
 									option.value === active
 										? "bg-muted text-foreground"
-										: "text-muted-foreground hover:text-foreground",
+										: "text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 							),
 						],
@@ -103,7 +103,8 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 					sparkWindow: fixture.sparkWindow,
 					picker: hub.picker !== null && hub.picker.issueId === signal.id ? hub.picker : null,
 					rowMenu:
-						hub.rowMenuTarget === signal.id && isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
+						hub.rowMenuTarget === signal.id &&
+						isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
 							? hub.rowMenu
 							: null,
 				}),

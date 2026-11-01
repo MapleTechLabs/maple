@@ -297,7 +297,8 @@ const signalText = (
 	}
 }
 
-const SIGNAL_LINK = "inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+const SIGNAL_LINK =
+	"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground"
 
 const signalView = (h: H, name: string, signal: Signal, link: Html | undefined): Html =>
 	h.div(

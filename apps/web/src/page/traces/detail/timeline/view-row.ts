@@ -127,7 +127,8 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 							// The native title carries the shortcut hint, so no tooltip trigger per row.
 							hasTooltip: false,
 							// No coarse-pointer hit area: it would cover the span label beside it.
-							className: "text-muted-foreground hover:text-foreground pointer-coarse:after:hidden",
+							className:
+								"text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 							attributes: [
 								h.Tabindex(-1),
 								h.Title(`${verb} — ⌥ for the whole subtree`),
@@ -191,10 +192,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 				? [
 						h.span(
 							[
-								attr(
-									h,
-									"flex items-center gap-0.5 shrink-0 text-4xs text-foreground-subtle",
-								),
+								attr(h, "flex items-center gap-0.5 shrink-0 text-4xs text-foreground-subtle"),
 								h.Title(countLabel(bar.childCount, "hidden span")),
 							],
 							[icon(h, "UiLayersIcon", { size: 9 }), String(bar.childCount)],
@@ -329,7 +327,11 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 							...(isLabelLeft ? [h.DataAttribute("side", "left")] : []),
 							...(isOffscreen ? [h.Style({ visibility: "hidden" })] : []),
 						],
-						[h.span([attr(h, "text-foreground-soft")], [bar.span.spanName]), " · ", durationLabel],
+						[
+							h.span([attr(h, "text-foreground-soft")], [bar.span.spanName]),
+							" · ",
+							durationLabel,
+						],
 					),
 				],
 			),
@@ -351,11 +353,11 @@ export const timelineRow = (h: H, bar: Bar, state: RowState): Html => {
 				h,
 				cn(
 					"absolute left-0 right-0 flex items-stretch cursor-pointer select-none",
-					"hover:bg-surface-sunken",
+					"hover:bg-surface-sunken active:bg-surface-sunken",
 					state.isHovered && "bg-surface-sunken",
-					state.isSelected && "bg-primary/10",
+					state.isSelected && "bg-primary-a2",
 					state.isFocused && "ring-1 ring-inset ring-primary/60",
-					state.isMatched && "ring-1 ring-inset ring-primary/40",
+					state.isMatched && "ring-1 ring-inset ring-primary-a4",
 					state.isDimmed && "opacity-40",
 				),
 			),

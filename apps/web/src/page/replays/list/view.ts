@@ -99,7 +99,7 @@ const activeUserFilter = (
 	config: Readonly<{ userId: string; count: number; label: string; clearLabel: string; onClear: Message }>,
 ): Html =>
 	h.div(
-		[h.Class("mb-3 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2")],
+		[h.Class("mb-3 flex items-center gap-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2")],
 		[
 			h.div(
 				[

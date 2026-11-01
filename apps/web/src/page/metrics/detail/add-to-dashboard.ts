@@ -189,7 +189,7 @@ export const update = (model: Model, message: Message, context: Context): Return
 							model: {
 								...model,
 								addingTo: null,
-								error: { title: "Failed to add widget", failure },
+								error: { title: "Couldn't add widget", failure },
 							},
 						}),
 					}),
@@ -200,7 +200,7 @@ export const update = (model: Model, message: Message, context: Context): Return
 					model: {
 						...model,
 						isCreating: false,
-						error: { title: "Failed to create dashboard", failure },
+						error: { title: "Couldn't create dashboard", failure },
 					},
 				}),
 			}),
@@ -223,7 +223,7 @@ const choiceRow = (h: H, dashboard: DashboardChoice): Html =>
 			h.Type("button"),
 			h.OnClick(Message.ClickedDashboard({ dashboardId: dashboard.id })),
 			h.Class(
-				"flex w-full items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm transition-colors hover:bg-accent",
+				"flex w-full items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm hover:bg-accent active:bg-accent",
 			),
 		],
 		[

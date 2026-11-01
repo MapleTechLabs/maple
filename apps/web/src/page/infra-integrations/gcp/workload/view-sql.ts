@@ -30,7 +30,7 @@ type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 const SHOWN = 5
-const STATEMENT = "w-0 min-w-[260px] flex-1"
+const STATEMENT = "w-0 min-w-64 flex-1"
 const NUMBER = "text-right font-mono text-xs tabular-nums"
 const SUB = "truncate font-mono text-3xs text-muted-foreground"
 const MANY_ROWS = 10_000
@@ -80,7 +80,7 @@ const statementRow = (
 			...(isPeeked ? [h.AriaCurrent("true")] : []),
 			h.Class(
 				cn(
-					"flex w-full cursor-pointer items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+					"flex w-full cursor-pointer items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
 					rowSelectedClass(isPeeked),
 				),
 			),
@@ -98,11 +98,7 @@ const statementRow = (
 			),
 			h.div([h.Class(cn("w-16 text-foreground-soft", NUMBER))], [formatNumber(row.calls)]),
 			h.div(
-				[
-					h.Class(
-						cn("w-20", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)),
-					),
-				],
+				[h.Class(cn("w-20", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)))],
 				[db === null ? EMPTY_VALUE : formatLatency(db)],
 			),
 			h.div(
@@ -199,7 +195,9 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 										[
 											h.Type("button"),
 											h.OnClick(Message.ClickedShowAllQueries()),
-											h.Class("shrink-0 text-primary hover:text-primary/80"),
+											h.Class(
+												"shrink-0 text-primary hover:text-primary/80 active:text-primary/80",
+											),
 										],
 										[inputs.showAll ? "Show fewer" : `Show all ${rows.length}`],
 									),
@@ -256,7 +254,7 @@ export const appWaitCallout = (
 			? `The gap is waiting for a connection: ${instanceName} sat at ${Math.round(peak.open)} of ${peak.max}${idle > 0 ? `, and ${idle} of them were idle in transaction` : ""}. Fix the pool, not the query.`
 			: "The time is spent outside the database: the network, or waiting on the connection pool."
 	return h.div(
-		[h.Class("@container rounded-md border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error-a4")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],
@@ -300,7 +298,7 @@ export const appWaitCallout = (
 							h.a(
 								[
 									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0",
+										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
 									),
 									h.Href(
 										hrefOf(

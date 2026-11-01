@@ -40,7 +40,7 @@ describe("you're live step", () => {
 		scene(
 			{ update, view },
 			given(atLive([], {})),
-			expectView(role("heading", { name: "Acme is ready for its first data." })).toExist(),
+			expectView(role("heading", { name: "Acme is ready for its first data" })).toExist(),
 			expectView(text("Connect Cloudflare")).toExist(),
 			expectView(text("Your first span, log or metric")).toExist(),
 		)
@@ -50,7 +50,7 @@ describe("you're live step", () => {
 		scene(
 			{ update, view },
 			given(atLive([], { cloudflare: true })),
-			expectView(role("heading", { name: "Acme is ready for its first data." })).toExist(),
+			expectView(role("heading", { name: "Acme is ready for its first data" })).toExist(),
 			expectView(text("Connect Cloudflare")).not.toExist(),
 			expectView(text("Connect AWS")).toExist(),
 		)
@@ -60,7 +60,7 @@ describe("you're live step", () => {
 		scene(
 			{ update, view },
 			given(atLive(["traces"], {})),
-			expectView(role("heading", { name: "Acme is live." })).toExist(),
+			expectView(role("heading", { name: "Acme is live" })).toExist(),
 			expectView(text("Your first span, log or metric")).not.toExist(),
 		)
 	})

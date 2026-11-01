@@ -37,8 +37,7 @@ import { sectionHeading } from "../../kit/section-heading"
 // `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
 export const HEALTH_WINDOW = 20
-export const DESTINATION_ROW_GRID =
-	"grid grid-cols-[minmax(0,1fr)_110px_140px_110px_auto] items-center gap-4"
+export const DESTINATION_ROW_GRID = "grid grid-cols-[minmax(0,1fr)_110px_140px_110px_auto] items-center gap-4"
 
 type H = HtmlBuilder<Message>
 
@@ -121,10 +120,11 @@ const destinationsSection = (
 				emptyActions(h, [
 					...(model.isAdmin
 						? [
-								button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedNewDestination())] }, [
-									icon(h, "PlusIcon"),
-									"Add destination",
-								]),
+								button(
+									h,
+									{ size: "sm", attributes: [h.OnClick(Message.ClickedNewDestination())] },
+									[icon(h, "PlusIcon"), "Add destination"],
+								),
 							]
 						: []),
 					docsLink(h, "destinations"),
@@ -139,7 +139,11 @@ const destinationsSection = (
 				[h.Class("min-w-[760px]")],
 				[
 					h.div(
-						[h.Class(cn(DESTINATION_ROW_GRID, "border-b px-4 py-2 text-xs text-muted-foreground"))],
+						[
+							h.Class(
+								cn(DESTINATION_ROW_GRID, "border-b px-4 py-2 text-xs text-muted-foreground"),
+							),
+						],
 						[
 							h.span([], ["Destination"]),
 							h.span([], ["Type"]),
@@ -210,7 +214,11 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 				[h.Class(DESTINATION_ROW_GRID)],
 				[
 					h.div(
-						[h.Class(cn("flex min-w-0 items-center gap-3", !destination.enabled && "opacity-60"))],
+						[
+							h.Class(
+								cn("flex min-w-0 items-center gap-3", !destination.enabled && "opacity-60"),
+							),
+						],
 						[
 							statusDot(h, { tone: healthTone(destination, recent), size: "lg" }),
 							providerLogo(h, {
@@ -241,7 +249,9 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 						[
 							!destination.enabled
 								? h.span(
-										destination.disabledAt != null ? [h.Class("text-severity-error")] : [],
+										destination.disabledAt != null
+											? [h.Class("text-severity-error")]
+											: [],
 										[destination.disabledAt != null ? "auto-disabled" : "disabled"],
 									)
 								: lastSuccess !== undefined
@@ -274,7 +284,9 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 									isDisabled: !model.isAdmin,
 									isLoading: model.testingDestinationIds.includes(destination.id),
 									attributes: [
-										h.OnClick(Message.ClickedTestDestination({ destinationId: destination.id })),
+										h.OnClick(
+											Message.ClickedTestDestination({ destinationId: destination.id }),
+										),
 									],
 								},
 								[icon(h, "CheckIcon"), "Test"],
@@ -286,7 +298,8 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 											model: model.menus[menuId] ?? Menu.init(menuId),
 											entries,
 											label: `Actions for ${destination.name}`,
-											toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+											toParentMessage: (message) =>
+												Message.GotRowMenuMessage({ menuId, message }),
 										}),
 									]
 								: []),
@@ -304,8 +317,8 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 const ATTEMPT_CLASS = new Map<AlertDeliveryEventDocument["status"], string>([
 	["success", "bg-severity-info"],
 	["failed", "bg-severity-error"],
-	["queued", "bg-muted-foreground/40"],
-	["processing", "bg-muted-foreground/40"],
+	["queued", "bg-foreground-faint"],
+	["processing", "bg-foreground-faint"],
 ])
 
 // TODO(tooltip): the strip's hover tooltip ("Last N attempts delivered") is not drawn yet.
@@ -322,9 +335,14 @@ const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, 
 							: `${failed} of the last ${recent.length} attempts failed`,
 					),
 				],
-				[...recent].reverse().map((event) =>
-					h.span([h.Key(event.id), h.Class(cn("w-1 rounded-[1px]", ATTEMPT_CLASS.get(event.status)))]),
-				),
+				[...recent]
+					.reverse()
+					.map((event) =>
+						h.span([
+							h.Key(event.id),
+							h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status))),
+						]),
+					),
 			)
 
 // DELIVERY LOG
@@ -358,11 +376,17 @@ const logTable = (
 				emptyHeader(h, [
 					emptyMedia(h, { variant: "icon" }, [icon(h, "TruckIcon", { size: 18 })]),
 					emptyTitle(h, ["No notifications sent yet"]),
-					emptyDescription(h, ["Once rules start triggering, delivery attempts will show up here."]),
+					emptyDescription(h, [
+						"Once rules start triggering, delivery attempts will show up here.",
+					]),
 				]),
 				emptyActions(h, [
 					...(model.isAdmin
-						? [linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, ["Create an alert rule"])]
+						? [
+								linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, [
+									"Create an alert rule",
+								]),
+							]
 						: []),
 					docsLink(h, "destinations"),
 				]),
@@ -394,8 +418,16 @@ const logTable = (
 							eyebrow(h, { className: "flex items-center gap-2" }, [
 								group.label,
 								h.span(
-									[h.Class("tracking-normal normal-case text-foreground-subtle tabular-nums")],
-									[String(group.events.length), " ", pluralize(group.events.length, "attempt")],
+									[
+										h.Class(
+											"tracking-normal normal-case text-foreground-subtle tabular-nums",
+										),
+									],
+									[
+										String(group.events.length),
+										" ",
+										pluralize(group.events.length, "attempt"),
+									],
 								),
 							]),
 						],
@@ -461,13 +493,23 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 							[
 								event.errorMessage ?? "Delivery failed",
 								...(event.responseCode != null
-									? [h.span([h.Class("text-muted-foreground")], [" · ", String(event.responseCode)])]
+									? [
+											h.span(
+												[h.Class("text-muted-foreground")],
+												[" · ", String(event.responseCode)],
+											),
+										]
 									: []),
 							],
 						),
 					]
 				: event.providerReference
-					? [h.span([h.Class("block truncate text-xs text-muted-foreground")], [event.providerReference])]
+					? [
+							h.span(
+								[h.Class("block truncate text-xs text-muted-foreground")],
+								[event.providerReference],
+							),
+						]
 					: [],
 			"max-w-0",
 		),

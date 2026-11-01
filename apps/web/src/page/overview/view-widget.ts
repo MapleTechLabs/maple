@@ -94,7 +94,7 @@ const titleHint = <M>(
 		: h.a(
 				[
 					h.AriaLabel(`About ${title}`),
-					h.Class("shrink-0 text-foreground-subtle hover:text-foreground"),
+					h.Class("shrink-0 text-foreground-subtle hover:text-foreground active:text-foreground"),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
 					h.DataAttribute("slot", "tooltip-trigger"),
 					h.Href(hint.href),

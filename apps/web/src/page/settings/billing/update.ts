@@ -694,7 +694,7 @@ export const update = (
 				onFailure: (error) =>
 					same({
 						model: { ...model, attaching: null },
-						outMessage: toast("error", "Failed to update your plan", error.message),
+						outMessage: toast("error", "Couldn't update your plan", error.message),
 					}),
 			}),
 		ElapsedCheckoutPoll: () =>

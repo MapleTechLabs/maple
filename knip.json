@@ -15,9 +15,11 @@
 		"apps/landing": {
 			// scripts/figures/*.mjs generate blog figures and covers, run by hand with node.
 			// iso/ is a vendored drawing kit; only part of its API is used.
+			// The fontsource packages are read by path in src/lib/docs-og.ts for OG images;
+			// the site itself serves the subsets from scripts/fonts/subset-fonts.py.
 			"entry": ["src/worker.ts", "tools/**/*.ts", "tools/**/*.js", "scripts/figures/*.mjs"],
 			"ignore": ["src/components/blog/foldkit/iso/**"],
-			"ignoreDependencies": ["@paper-design/shaders"]
+			"ignoreDependencies": ["@paper-design/shaders", "@fontsource-variable/geist", "@fontsource-variable/geist-mono"]
 		},
 		"apps/api": {
 			// src/worker.ts was auto-detected from wrangler.jsonc's `main` until the
@@ -35,7 +37,12 @@
 		// alchemy bundles it, so it is the app's one entry.
 		// The tool playground config is run by path from scripts/tool-playground.sh.
 		"apps/ai": {
-			"entry": ["src/worker.ts", "vitest.playground.config.ts", "src/evals/playground/*.playground.ts"]
+			"entry": [
+				"src/worker.ts",
+				"vitest.playground.config.ts",
+				"src/evals/playground/*.playground.ts",
+				"scripts/cold-path/*.{ts,mjs}"
+			]
 		},
 		"apps/alerting": {
 			"entry": ["src/worker.ts"]
@@ -44,6 +51,9 @@
 			"entry": ["src/worker.ts"]
 		},
 		"apps/electric-sync": {
+			"entry": ["src/worker.ts"]
+		},
+		"apps/status": {
 			"entry": ["src/worker.ts"]
 		},
 		// The sandbox Worker's entry is its own plain module (that is the point: a
@@ -76,6 +86,10 @@
 				"test/native-projector-modules.ts"
 			],
 			"ignoreBinaries": ["duckdb"]
+		},
+		"packages/backend": {
+			// The opt-in GitHub e2e test compares the dependency scanner with a locally installed osv-scanner.
+			"ignoreBinaries": ["osv-scanner"]
 		},
 		"packages/db": {
 			"entry": ["scripts/**/*.ts", "effect-orm.config.ts"]

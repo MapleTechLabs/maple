@@ -29,7 +29,7 @@ const SAMPLES_PAGE = 25
 const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	const paging = pagingOf(model)
 	return h.div(
-		[h.Class("flex h-9 items-center gap-[9px] px-6 font-mono text-xs")],
+		[h.Class("flex h-9 items-center gap-2 px-6 font-mono text-xs")],
 		[
 			h.span(
 				[h.Class("text-muted-foreground")],
@@ -39,7 +39,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 				? [
 						h.button(
 							[
-								h.Class("text-foreground transition-colors hover:text-primary"),
+								h.Class("text-foreground hover:text-primary active:text-primary"),
 								h.Type("button"),
 								h.OnClick(Message.ClickedLoadMore()),
 							],
@@ -53,7 +53,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 								h.button(
 									[
 										h.Class(
-											"text-severity-error transition-colors hover:text-foreground",
+											"text-severity-error hover:text-foreground active:text-foreground",
 										),
 										h.Type("button"),
 										h.OnClick(Message.ClickedLoadMore()),
@@ -136,7 +136,8 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current === 0,
-									className: "text-muted-foreground hover:text-foreground",
+									className:
+										"text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
 								},
 								[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
@@ -156,7 +157,8 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
-									className: "text-muted-foreground hover:text-foreground",
+									className:
+										"text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
 								},
 								[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
@@ -192,7 +194,7 @@ const sampleRow = (
 				[
 					h.Class(
 						cn(
-							"group relative flex w-full items-center gap-3.5 px-6 font-mono transition-colors hover:bg-surface-sunken",
+							"group relative flex w-full items-center gap-3.5 px-6 font-mono hover:bg-surface-sunken active:bg-surface-sunken",
 							options.isOpen ? "h-11" : "h-10",
 						),
 					),
@@ -217,7 +219,7 @@ const sampleRow = (
 					}),
 					h.span([h.Class("shrink-0 text-xs text-foreground")], [time]),
 					h.span(
-						[h.Class("flex min-w-0 shrink items-center gap-[5px] text-xs")],
+						[h.Class("flex min-w-0 shrink items-center gap-1.5 text-xs")],
 						[
 							h.span([h.Class("shrink-0 text-foreground-subtle")], ["session"]),
 							sessionLink(h, {
@@ -250,10 +252,13 @@ const sampleRow = (
 								h.span(
 									[
 										h.Class(
-											"hidden shrink-0 rounded-sm border border-border px-[5px] text-2xs leading-3.5 text-foreground-subtle md:block",
+											"hidden shrink-0 rounded-sm border border-border px-1.5 text-2xs leading-3.5 text-foreground-subtle md:block",
 										),
 									],
-									["variant ", h.span([h.Class("text-foreground-soft")], [options.variant])],
+									[
+										"variant ",
+										h.span([h.Class("text-foreground-soft")], [options.variant]),
+									],
 								),
 							]),
 					h.span([h.Class("grow")], []),
@@ -285,7 +290,7 @@ const sampleRow = (
 								)}`,
 							),
 							h.Class(
-								"relative flex shrink-0 items-center gap-[5px] text-2xs text-muted-foreground transition-colors hover:text-foreground",
+								"relative flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 						],
 						[

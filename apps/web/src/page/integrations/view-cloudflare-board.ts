@@ -114,14 +114,7 @@ const resourceRow = (
 			],
 		),
 		h.div(
-			[
-				h.Class(
-					cn(
-						"hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block",
-						status.detailClass,
-					),
-				),
-			],
+			[h.Class(cn("hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block", status.detailClass))],
 			detailView(h, status.detail),
 		),
 		h.div(
@@ -144,7 +137,7 @@ const resourceRow = (
 					h.Class(
 						cn(
 							rowClass,
-							"hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+							"hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 						),
 					),
 				],
@@ -314,7 +307,7 @@ export const workersCard = (
 			action: h.a(
 				[
 					h.Href(hrefOf(AppRoute.ServiceMap({ search: {} }))),
-					h.Class("text-xs text-muted-foreground transition-colors hover:text-foreground"),
+					h.Class("text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
 				],
 				["View on map →"],
 			),
@@ -322,7 +315,11 @@ export const workersCard = (
 		...(aggregate.kind === "issue" || aggregate.kind === "no-data"
 			? [
 					h.div(
-						[h.Class(cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass))],
+						[
+							h.Class(
+								cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass),
+							),
+						],
 						detailView(h, aggregate.detail),
 					),
 				]
@@ -384,7 +381,7 @@ export const workersCard = (
 											variant: "link",
 											size: "xs",
 											className:
-												"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground",
+												"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground active:text-foreground",
 											attributes: [h.OnClick(Message.ClickedWorkersExpand())],
 										},
 										[

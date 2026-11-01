@@ -50,10 +50,15 @@ type IncidentLine = Pick<
 /** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
 const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
 
-/** "Error rate 8.4% on checkout", or "checkout-api is down": what an incident is about, in one line. */
+/** Raw SQL and builder rules: "Raw SQL 5" says nothing, so the rule name is what fired. */
+export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalType">) =>
+	incident.signalType === "raw_query" || incident.signalType === "builder_query"
+
+/** "Error rate 8.4% on checkout", "checkout-api is down", or a query rule's name: what an incident is about, in one line. */
 export function incidentTitle(incident: IncidentLine): string {
 	if (isUptime(incident))
 		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
+	if (isQueryIncident(incident)) return incident.ruleName
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
 	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
@@ -62,6 +67,13 @@ export function incidentTitle(incident: IncidentLine): string {
 /** The group shown next to the rule name: an uptime incident's only when it is a real service. */
 export function incidentScope(incident: IncidentLine): string | null {
 	return isUptime(incident) ? incidentGroup(incident) : incident.groupKey
+}
+
+/** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */
+export function incidentSubline(incident: IncidentLine): string {
+	const scope = incidentScope(incident)
+	const lead = isQueryIncident(incident) ? signalLabels[incident.signalType] : incident.ruleName
+	return scope === null ? lead : `${lead} · ${scope}`
 }
 
 /** An empty cell, without an em dash. */

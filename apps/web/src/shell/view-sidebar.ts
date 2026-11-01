@@ -103,7 +103,7 @@ const searchRow = (h: HtmlBuilder<Message>, tip: RailTip): Html =>
 				h,
 				{
 					className:
-						"border border-sidebar-border bg-background text-muted-foreground hover:bg-background hover:text-foreground",
+						"border border-sidebar-border bg-background text-muted-foreground hover:bg-background active:bg-background hover:text-foreground active:text-foreground",
 					hasTooltip: true,
 					attributes: [...tip("Search"), h.OnClick(Message.ClickedSearch())],
 				},
@@ -339,7 +339,7 @@ export const shellSidebarFooter = (
 			[
 				h.AriaHidden(true),
 				h.Class(
-					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-[background-color,box-shadow] [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-[0_-6px_12px_rgb(0_0_0/0.35)]",
+					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-[background-color,box-shadow] [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
 				),
 			],
 			[],

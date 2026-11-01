@@ -7,7 +7,6 @@ import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
 import { googleChatTransport } from "./google-chat"
-import { hazelTransport } from "./hazel"
 import { pagerDutyTransport } from "./pagerduty"
 import { telegramTransport } from "./telegram"
 import { webhookTransport } from "./webhook"
@@ -108,21 +107,6 @@ describe("transport render: guard flags", () => {
 			),
 		],
 		[
-			"hazel-oauth",
-			hazelTransport.render(
-				inputFor({
-					type: "hazel-oauth",
-					hazelOrganizationId: "o",
-					hazelOrganizationName: "Acme",
-					hazelChannelId: "c",
-					hazelChannelName: "ops",
-					webhookId: "w",
-					webhookUrl: "https://hazel.test/api/webhooks/w/tok",
-					webhookToken: "tok",
-				}),
-			),
-		],
-		[
 			"telegram",
 			telegramTransport.render(
 				inputFor({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
@@ -144,7 +128,7 @@ describe("transport render: guard flags", () => {
 		// pagerduty + telegram post to compile-time vendor constants: there
 		// is no attacker-controlled URL to validate, so the guard would only cost a
 		// redirect walk.
-		assert.deepStrictEqual(guarded, ["webhook", "discord", "hazel-oauth", "google-chat"])
+		assert.deepStrictEqual(guarded, ["webhook", "discord", "google-chat"])
 	})
 
 	it("marks exactly the providers whose token rides in the URL path", () => {
@@ -152,7 +136,7 @@ describe("transport render: guard flags", () => {
 		// telegram is the first provider where this disagrees with `guarded`: a
 		// fixed vendor host, but the bot token rides in the path. google-chat carries its
 		// credential in the query string, which no span records.
-		assert.deepStrictEqual(sensitive, ["discord", "hazel-oauth", "telegram"])
+		assert.deepStrictEqual(sensitive, ["discord", "telegram"])
 	})
 
 	it("always produces a parseable JSON body", () => {
@@ -193,32 +177,14 @@ describe("transport render: templates", () => {
 		assert.strictEqual(body.routing_key, "k")
 	})
 
-	it("webhook and hazel ignore templates — they ship the canonical payload", () => {
-		for (const spec of [
-			webhookTransport.render(
-				inputFor(
-					{ type: "webhook", url: "https://hooks.test/x", signingSecret: null },
-					{ templated: TEMPLATED },
-				),
+	it("webhook ignores templates: it ships the canonical payload", () => {
+		const spec = webhookTransport.render(
+			inputFor(
+				{ type: "webhook", url: "https://hooks.test/x", signingSecret: null },
+				{ templated: TEMPLATED },
 			),
-			hazelTransport.render(
-				inputFor(
-					{
-						type: "hazel-oauth",
-						hazelOrganizationId: "o",
-						hazelOrganizationName: "Acme",
-						hazelChannelId: "c",
-						hazelChannelName: "ops",
-						webhookId: "w",
-						webhookUrl: "https://hazel.test/api/webhooks/w/tok",
-						webhookToken: "tok",
-					},
-					{ templated: TEMPLATED },
-				),
-			),
-		]) {
-			assert.strictEqual(spec.body, '{"canonical":"payload"}')
-		}
+		)
+		assert.strictEqual(spec.body, '{"canonical":"payload"}')
 	})
 })
 

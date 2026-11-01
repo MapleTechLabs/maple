@@ -7,6 +7,13 @@ import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { ListSourcesOutput } from "./sources"
 import { DeleteUptimeMonitorOutput, ListUptimeMonitorsOutput, UptimeMonitorMutationOutput } from "./uptime"
 import {
+	ApplyStatusPageConfigOutput,
+	GetStatusPageConfigOutput,
+	GetStatusPageOutput,
+	ListStatusPagesOutput,
+	StatusPageIncidentMutationOutput,
+} from "./status-pages"
+import {
 	DeleteIngestRuleOutput,
 	IngestRuleMutationOutput,
 	ListIngestRulesOutput,
@@ -127,6 +134,7 @@ export const McpToolOutputs = {
 	create_ingest_rule: IngestRuleMutationOutput,
 	create_scrape_target: ScrapeTargetMutationOutput,
 	create_dashboard: CreateDashboardOutput,
+	create_status_page_incident: StatusPageIncidentMutationOutput,
 	create_uptime_monitor: UptimeMonitorMutationOutput,
 	db_query_volume: DbQueryVolumeOutput,
 	delete_ingest_rule: DeleteIngestRuleOutput,
@@ -172,7 +180,14 @@ export const McpToolOutputs = {
 	list_infra: ListInfraOutput,
 	list_integrations: ListIntegrationsOutput,
 	list_sources: ListSourcesOutput,
+	list_status_pages: ListStatusPagesOutput,
 	list_uptime_monitors: ListUptimeMonitorsOutput,
+	get_status_page: GetStatusPageOutput,
+	get_status_page_config: GetStatusPageConfigOutput,
+	apply_status_page_config: ApplyStatusPageConfigOutput,
+	post_status_page_update: StatusPageIncidentMutationOutput,
+	resolve_status_page_incident: StatusPageIncidentMutationOutput,
+	schedule_status_page_maintenance: StatusPageIncidentMutationOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,

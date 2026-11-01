@@ -39,7 +39,10 @@ export const sectionPanel = <M>(
 
 export const panelLink = <M>(h: HtmlBuilder<M>, href: string, label: string): Html =>
 	h.a(
-		[h.Href(href), h.Class("text-2xs text-muted-foreground transition-colors hover:text-foreground")],
+		[
+			h.Href(href),
+			h.Class("text-2xs text-muted-foreground hover:text-foreground active:text-foreground"),
+		],
 		[`${label} →`],
 	)
 

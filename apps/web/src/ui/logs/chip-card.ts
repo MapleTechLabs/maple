@@ -156,7 +156,7 @@ const cardView = (h: HtmlBuilder<Message>, index: number, chip: LogChip, canFilt
 													h.Type("button"),
 													h.AriaLabel("Copy value"),
 													h.Class(
-														"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors hover:bg-surface-sunken",
+														"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 													),
 													h.Title("Click to copy"),
 													h.OnClick(Message.ClickedCardCopy({ part: "key" }), {

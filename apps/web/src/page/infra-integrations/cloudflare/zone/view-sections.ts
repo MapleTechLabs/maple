@@ -31,7 +31,7 @@ export type SectionContext = Readonly<{
 const MAX_LEGEND_CHIPS = 8
 
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken"
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
 
 export const SCOPE_IDS = {
 	dns: "cf-scope-dns",
@@ -149,7 +149,7 @@ export const dnsSection = (
 			h,
 			{ ariaLabel: "Top DNS query names", isWaiting },
 			[
-				columnHead(h, { label: "Query name", width: "w-0 flex-1 min-w-[220px]" }),
+				columnHead(h, { label: "Query name", width: "w-0 flex-1 min-w-56" }),
 				columnHead(h, { label: "Queries", align: "right", width: "w-24" }),
 				columnHead(h, { label: "NXDOMAIN", align: "right", width: "w-28" }),
 			],
@@ -162,7 +162,7 @@ export const dnsSection = (
 								h.div(
 									[
 										h.Class(
-											"w-0 min-w-[220px] flex-1 truncate font-mono text-xs text-foreground",
+											"w-0 min-w-56 flex-1 truncate font-mono text-xs text-foreground",
 										),
 									],
 									[row.queryName],
@@ -261,7 +261,7 @@ export const securitySection = (
 			h,
 			{ ariaLabel: "Top security rules", isWaiting },
 			[
-				columnHead(h, { label: "Rule", width: "w-0 flex-1 min-w-[200px]" }),
+				columnHead(h, { label: "Rule", width: "w-0 flex-1 min-w-52" }),
 				columnHead(h, { label: "Source", width: "w-32", hidden: "hidden md:flex" }),
 				columnHead(h, { label: "Action", width: "w-32" }),
 				columnHead(h, { label: "Host", width: "w-44", hidden: "hidden lg:flex" }),
@@ -277,7 +277,7 @@ export const securitySection = (
 							],
 							[
 								cell(
-									"w-0 min-w-[200px] flex-1 truncate font-mono text-xs text-foreground",
+									"w-0 min-w-52 flex-1 truncate font-mono text-xs text-foreground",
 									row.ruleId,
 								),
 								cell(

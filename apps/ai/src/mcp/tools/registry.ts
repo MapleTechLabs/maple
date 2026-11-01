@@ -1,7 +1,7 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, type SchemaAST } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
@@ -27,6 +27,7 @@ import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
 import { registerUptimeMonitorTools } from "./uptime-monitors"
 import { registerIngestRuleTools } from "./ingest-rules"
+import { registerStatusPageTools } from "./status-pages"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
 import { registerServiceDeploymentsTool } from "./service-deployments"
@@ -121,6 +122,8 @@ export interface MapleToolCatalogEntry {
 	readonly title: string
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
+	/** How arguments decode; `rejectUnknownKeys` tools refuse nested keys the schema lacks. */
+	readonly parseOptions: SchemaAST.ParseOptions
 	readonly outputSchema: Schema.Codec<unknown, unknown, never, never>
 	readonly hints: McpToolHints
 	readonly aliases: Readonly<Record<string, string>>
@@ -342,6 +345,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 			title: spec.title,
 			description: spec.description,
 			schema: spec.parameters,
+			parseOptions: { onExcessProperty: spec.rejectUnknownKeys === true ? "error" : "ignore" },
 			outputSchema: spec.output,
 			hints: spec.hints,
 			aliases: spec.aliases ?? {},
@@ -435,6 +439,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerIntegrationWriteTools(registrar)
 	registerUptimeMonitorTools(registrar)
 	registerIngestRuleTools(registrar)
+	registerStatusPageTools(registrar)
 	registerSourceCodeTools(registrar)
 	registerSandboxTools(registrar)
 	registerPullRequestTools(registrar)
@@ -509,7 +514,9 @@ export const readToolCall = (
 	return {
 		args: isArgumentRecord(normalized.args) ? normalized.args : {},
 		unknown: normalized.unknown.map((entry) => entry.key),
-		decodes: Schema.decodeUnknownOption(definition.schema)(normalized.args)._tag === "Some",
+		decodes:
+			Schema.decodeUnknownOption(definition.schema)(normalized.args, definition.parseOptions)._tag ===
+			"Some",
 	}
 }
 
@@ -538,6 +545,12 @@ const toDecodeErrorMessage = (
 		? formatDecodeFailure(definition.name, error, inputSchemaOf(definition), normalized)
 		: String(error)
 
+/** A registered tool this surface cannot see: a shared tool pointing at it is expected. */
+const isHiddenOn = (tool: string, surface: McpToolSurface): boolean => {
+	const target = mapleToolDefinitions.find((candidate) => candidate.name === tool)
+	return target !== undefined && !audienceAdmits(target.audience, surface)
+}
+
 /**
  * Whether a suggested call would decode on the surface it is shown on. A next call naming a
  * parameter that was renamed, or a tool the caller cannot see, is worse than none.
@@ -548,7 +561,7 @@ const isValidNextCall = (call: NextCall, surface: McpToolSurface): boolean => {
 	const normalized = normalizeFor(target, call.args)
 	return (
 		normalized.unknown.length === 0 &&
-		Schema.decodeUnknownOption(target.schema)(normalized.args)._tag === "Some"
+		Schema.decodeUnknownOption(target.schema)(normalized.args, target.parseOptions)._tag === "Some"
 	)
 }
 
@@ -559,11 +572,12 @@ const finish = Effect.fnUntraced(function* (
 	surface: McpToolSurface,
 ) {
 	const invalid = nextCallsOf(run.doc).filter((call) => !isValidNextCall(call, surface))
-	if (invalid.length > 0) {
+	const undecodable = invalid.filter((call) => !isHiddenOn(call.tool, surface))
+	if (undecodable.length > 0) {
 		yield* Effect.logWarning("MCP tool suggested a call that does not decode").pipe(
 			Effect.annotateLogs({
 				"maple.mcp.tool": definition.name,
-				"maple.mcp.next_calls": invalid.map((call) => call.tool).join(","),
+				"maple.mcp.next_calls": undecodable.map((call) => call.tool).join(","),
 			}),
 		)
 	}
@@ -617,7 +631,10 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 			? undefined
 			: { "maple.mcp.tool.aliased_arguments": normalized.renamed.map(([from]) => from).join(",") }),
 	})
-	const decoded = yield* Schema.decodeUnknownEffect(definition.schema)(normalized.args).pipe(
+	const decoded = yield* Schema.decodeUnknownEffect(definition.schema)(
+		normalized.args,
+		definition.parseOptions,
+	).pipe(
 		Effect.mapError(
 			(error) =>
 				new McpDecodeError({

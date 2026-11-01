@@ -249,6 +249,39 @@ const webAnalyticsAiFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+const securityTelemetryFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "security-telemetry",
+		name: "scannerSignaturesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.scannerSignaturesQuery(), window),
+	},
+	{
+		module: "security-telemetry",
+		name: "scannerExposedQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.scannerExposedQuery(), window),
+	},
+	{
+		module: "security-telemetry",
+		name: "scannerSourcesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.scannerSourcesQuery(), window),
+	},
+	{
+		module: "security-telemetry",
+		name: "scannerTimelineQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.scannerTimelineQuery({ bucketSeconds: 3600 }), window),
+	},
+	{
+		module: "security-telemetry",
+		name: "runtimeVersionsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.runtimeVersionsQuery(), window),
+	},
+]
+
 // Product-event funnel fixtures. The funnel SQL has four independent axes —
 // person-key resolution (with or without the identity_links join), a session
 // step 1 (UNION ALL of a session_replays branch), the population filter
@@ -1308,6 +1341,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 
 	...webAnalyticsFixtures,
 	...webAnalyticsAiFixtures,
+	...securityTelemetryFixtures,
 
 	// Traces sidebar (query-engine runtime); the pipe fixtures cover the raw-only route.
 	{
@@ -1725,6 +1759,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	// Dependency scanner: which commit each service runs, ranked by traffic.
+	{
+		module: "releases",
+		name: "runningCommitsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.runningCommitsQuery(), window),
+	},
 	{
 		module: "releases",
 		name: "releasesTimelineQuery",
@@ -1862,6 +1903,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "ciQueueTotalsQuery",
 		label: "allWorkflows",
 		compile: () => CH.compileUnsafe(CH.ciQueueTotalsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciActorStatsQuery",
+		label: "allWorkflows",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciActorStatsQuery({
+					defaultBranches: [{ owner: "acme", repository: "web", branch: "main" }],
+				}),
+				window,
+			),
 	},
 	{
 		module: "pr-review",

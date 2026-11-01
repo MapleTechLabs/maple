@@ -121,7 +121,7 @@ const step = <M>(h: HtmlBuilder<M>, direction: "previous" | "next", target: Opti
 		[
 			h.Class(
 				cn(
-					"pointer-events-auto absolute start-0 z-10 inline-flex opacity-0 transition-opacity duration-150 focus-within:opacity-100 hover:opacity-100",
+					"pointer-events-auto absolute start-0 z-10 inline-flex opacity-0 transition-opacity duration-150 focus-within:opacity-100 hover:opacity-100 active:opacity-100",
 					previous ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]",
 				),
 			),
@@ -146,7 +146,7 @@ const step = <M>(h: HtmlBuilder<M>, direction: "previous" | "next", target: Opti
 }
 
 const markerWidth = (distance: number | null): string =>
-	distance === 0 ? "w-6 bg-muted-foreground/75" : distance === 1 ? "w-4" : distance === 2 ? "w-2.5" : "w-2"
+	distance === 0 ? "w-6 bg-foreground-subtle" : distance === 1 ? "w-4" : distance === 2 ? "w-2.5" : "w-2"
 
 /** The rail, or nothing below two turns. `mount` is `MountTurnMinimap` lifted to the host. */
 export const turnMinimap = <M>(
@@ -175,7 +175,7 @@ export const turnMinimap = <M>(
 					"pointer-events-none absolute inset-y-0 start-0 z-30 hidden w-full [@media(pointer:fine)]:block",
 					hasPersistentGutter(state.railWidth)
 						? "opacity-100"
-						: "opacity-0 transition-opacity duration-150 focus-within:opacity-100 hover:opacity-100",
+						: "opacity-0 transition-opacity duration-150 focus-within:opacity-100 hover:opacity-100 active:opacity-100",
 				),
 			),
 			h.DataAttribute("slot", "turn-minimap"),
@@ -212,7 +212,7 @@ export const turnMinimap = <M>(
 							h.DataAttribute("turn-current", String(currentIndex ?? 0)),
 						],
 						[
-							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border/20")], []),
+							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border-subtle")], []),
 							...items.map((item, index) =>
 								h.span(
 									[
@@ -222,7 +222,7 @@ export const turnMinimap = <M>(
 												"pointer-events-none absolute start-0 h-0.5 -translate-y-1/2 rounded-full transition-[background-color,width] duration-150",
 												visibleTurns.has(index)
 													? "bg-foreground/80"
-													: "bg-muted-foreground/35",
+													: "bg-foreground-faint",
 												markerWidth(
 													active === null ? null : Math.abs(index - active),
 												),
@@ -252,7 +252,7 @@ export const turnMinimap = <M>(
 												h.span(
 													[
 														h.Class(
-															"block rounded-lg border border-border bg-popover p-3 text-start text-popover-foreground shadow-md",
+															"block rounded-lg border border-border bg-popover p-3 text-start text-popover-foreground shadow-popup",
 														),
 													],
 													[

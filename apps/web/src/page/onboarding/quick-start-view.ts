@@ -17,6 +17,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { searchInput } from "../../ui/search-input"
+import { textLink } from "../../ui/text-link"
 import { type PixelGlyphName, pixelGlyph } from "./option-card"
 import * as CopyButton from "../../ui/copy-button"
 import * as GuidedSetup from "../kit/guided-setup"
@@ -100,7 +101,10 @@ const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 								: h.span(
 										[h.Class("flex items-center gap-1.5 text-muted-foreground")],
 										[
-											icon(h, "CheckIcon", { size: 12, className: "text-severity-info" }),
+											icon(h, "CheckIcon", {
+												size: 12,
+												className: "text-severity-info",
+											}),
 											item.answer,
 										],
 									),
@@ -259,8 +263,8 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 						cn(
 							"flex items-center gap-3 rounded-md border p-3 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
 							isChecked
-								? "border-primary bg-primary/5"
-								: "border-border group-hover:border-foreground/30",
+								? "border-primary bg-primary-a1"
+								: "border-border group-hover:border-border-strong",
 						),
 					),
 				],
@@ -432,7 +436,7 @@ const stackStep = (h: H, state: QuickStartState, query: string, hasPlan: boolean
 					...(picked === 0
 						? [
 								h.span(
-									[h.Class("text-sm text-muted-foreground")],
+									[h.Class("hidden text-sm text-muted-foreground sm:inline")],
 									["Not sure yet? You can skip this."],
 								),
 							]
@@ -476,16 +480,21 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 					eyebrow(h, { variant: "label" }, [`What ${orgName} gets`]),
 					h.span(
 						[h.Class("font-display text-xl font-semibold")],
-						[
-							surfaces.length === 0
-								? "Pick what you run to see it here"
-								: `${surfaces.length} places light up`,
-						],
+						[surfaces.length === 0 ? "Nothing picked yet" : `${surfaces.length} places light up`],
 					),
 				],
 			),
 			...(surfaces.length === 0
-				? []
+				? [
+						h.p(
+							[
+								h.Class(
+									"rounded-md border border-dashed border-border px-4 py-8 text-center text-xs leading-relaxed text-muted-foreground",
+								),
+							],
+							["Pick a language or platform to see the pages it fills."],
+						),
+					]
 				: [
 						h.ul(
 							[
@@ -636,7 +645,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					h.p(
 						[h.Class("text-title leading-relaxed text-muted-foreground")],
 						[
-							"Connect each provider without leaving setup. Your code sends its traces, logs and metrics with OpenTelemetry: one prompt to your coding agent, or a few lines by hand.",
+							"Your code sends traces, logs and metrics with OpenTelemetry. Hand one prompt to your coding agent, or add a few lines by hand.",
 						],
 					),
 				],
@@ -670,7 +679,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 							]),
 							// The languages picked, or every SDK there are snippets for when none was.
 							h.span(
-								[h.AriaHidden(true), h.Class("flex items-center gap-1.5")],
+								[h.AriaHidden(true), h.Class("flex items-center gap-1.5 max-sm:hidden")],
 								(state.stack.languages.length === 0
 									? ([
 											"FrameworkNodejsIcon",
@@ -733,7 +742,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 				h,
 				[
 					h.span(
-						[h.Class("text-sm text-muted-foreground")],
+						[h.Class("hidden text-sm text-muted-foreground sm:inline")],
 						["We keep listening while you move on."],
 					),
 					button(
@@ -953,7 +962,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 							),
 							h.h1(
 								[h.Class("font-display text-4xl font-semibold tracking-tight")],
-								[isLive ? `${orgName} is live.` : `${orgName} is ready for its first data.`],
+								[isLive ? `${orgName} is live` : `${orgName} is ready for its first data`],
 							),
 							h.ul(
 								[
@@ -997,33 +1006,53 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 										"grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3",
 									),
 								],
+								// The whole card is the link; its glyph and arrow answer the hover.
 								startCards(findings).map((card) =>
 									h.li(
-										[h.Class("flex flex-col gap-3.5 bg-background p-5")],
+										[h.Class("flex bg-background")],
 										[
-											pixelGlyph(h, card.glyph, true),
-											h.div(
-												[h.Class("flex flex-col gap-1")],
-												[
-													h.span([h.Class("text-title font-medium")], [card.title]),
-													h.span(
-														[
-															h.Class(
-																"text-ui leading-relaxed text-muted-foreground",
-															),
-														],
-														[card.finding],
-													),
-												],
-											),
 											h.a(
 												[
 													h.Href(card.href),
 													h.Class(
-														"mt-auto flex items-center gap-1.5 text-ui text-primary hover:underline",
+														"group flex flex-1 flex-col gap-3.5 p-5 outline-none hover:bg-surface-faint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-surface-faint",
 													),
 												],
-												[card.action, icon(h, "ArrowRightIcon", { size: 12 })],
+												[
+													pixelGlyph(h, card.glyph, false),
+													h.span(
+														[h.Class("flex flex-col gap-1")],
+														[
+															h.span(
+																[h.Class("text-title font-medium")],
+																[card.title],
+															),
+															h.span(
+																[
+																	h.Class(
+																		"text-ui leading-relaxed text-muted-foreground",
+																	),
+																],
+																[card.finding],
+															),
+														],
+													),
+													h.span(
+														[
+															h.Class(
+																"mt-auto flex items-center gap-1.5 text-ui text-muted-foreground group-hover:text-foreground",
+															),
+														],
+														[
+															card.action,
+															icon(h, "ArrowRightIcon", {
+																size: 12,
+																className:
+																	"transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none",
+															}),
+														],
+													),
+												],
 											),
 										],
 									),
@@ -1063,19 +1092,22 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 																	`Connect ${STACK_PLATFORMS[platform].label}`,
 																],
 															),
-															h.button(
-																[
-																	h.Type("button"),
-																	h.AriaLabel(
-																		`Set up ${STACK_PLATFORMS[platform].label}`,
-																	),
-																	h.OnClick(
-																		Message.ClickedSetUp({ platform }),
-																	),
-																	h.Class(
-																		"text-xs text-primary hover:underline",
-																	),
-																],
+															button(
+																h,
+																{
+																	variant: "outline",
+																	size: "xs",
+																	attributes: [
+																		h.AriaLabel(
+																			`Set up ${STACK_PLATFORMS[platform].label}`,
+																		),
+																		h.OnClick(
+																			Message.ClickedSetUp({
+																				platform,
+																			}),
+																		),
+																	],
+																},
 																["Set up"],
 															),
 														],
@@ -1102,10 +1134,13 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 																	h.span(
 																		[
 																			h.Class(
-																				"text-xs text-muted-foreground",
+																				"flex items-center gap-1.5 text-xs text-muted-foreground",
 																			),
 																		],
-																		["Listening"],
+																		[
+																			statusDot(h, { tone: "ok" }),
+																			"Listening",
+																		],
 																	),
 																],
 															),
@@ -1116,26 +1151,36 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 								),
 							]),
 					h.div(
-						[h.Class("flex flex-col items-center gap-3")],
+						[h.Class("flex flex-col items-center gap-4")],
 						[
-							button(
-								h,
-								{
-									size: "lg",
-									attributes: [h.OnClick(Message.ClickedContinue({ step: "live" }))],
-								},
-								[`Go to ${orgName}`, icon(h, "ArrowRightIcon", { size: 16 })],
-							),
-							h.a(
+							h.div(
+								[h.Class("flex max-w-full flex-wrap items-center justify-center gap-2")],
 								[
-									h.Href(hrefOf(AppRoute.Alerts({ search: {} }))),
-									h.Class(
-										"text-xs text-muted-foreground underline-offset-4 hover:underline",
+									backButton(h, "team"),
+									button(
+										h,
+										{
+											size: "lg",
+											attributes: [
+												h.OnClick(Message.ClickedContinue({ step: "live" })),
+											],
+										},
+										[
+											h.span([h.Class("max-w-64 truncate")], [`Go to ${orgName}`]),
+											icon(h, "ArrowRightIcon", { size: 16 }),
+										],
 									),
 								],
+							),
+							textLink(
+								h,
+								{
+									tone: "muted",
+									className: "text-xs",
+									href: hrefOf(AppRoute.Alerts({ search: {} })),
+								},
 								["Or set up your first alert"],
 							),
-							backButton(h, "team"),
 						],
 					),
 				],

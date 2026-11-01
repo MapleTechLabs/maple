@@ -363,7 +363,7 @@ const step = (model: Model, message: Message): Return =>
 					model: settled,
 					outMessage: toast(
 						"error",
-						decision === "deny" ? "Failed to deny this change" : `Failed to apply ${tool}`,
+						decision === "deny" ? "Couldn't deny this change" : `Couldn't apply ${tool}`,
 					),
 				}),
 			})

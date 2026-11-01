@@ -103,7 +103,7 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 			),
 			meter(h, {
 				value: clamped,
-				className: "h-[3px] flex-1 rounded-[1px]",
+				className: "h-[3px] flex-1 rounded-2xs",
 				fillClassName: BAR_FILL[level],
 			}),
 			h.span(
@@ -234,7 +234,7 @@ const KIND_ICON = new Map<DependencyKind, IconName>([
 
 const STRIP_LIMIT = 8
 const CHIP =
-	"inline-flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 
 const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 	target.kind === "service"
@@ -286,9 +286,8 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 								className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
 								attributes: [h.OnClick(onViewAll)],
 							},
-							[
-							`+${hiddenCount} more`,
-						]),
+							[`+${hiddenCount} more`],
+						),
 					]
 				: []),
 			viewAllButton(h, onViewAll),

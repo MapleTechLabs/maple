@@ -17,7 +17,7 @@ import type * as Chart from "../../../charts/chart"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
-import { panel } from "../../../ui/panel"
+import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { searchInput } from "../../../ui/search-input"
 import { skeleton } from "../../../ui/skeleton"
 import { statFigure } from "../../../ui/stat-figure"
@@ -53,7 +53,7 @@ import type { ApiBucket, ApiOverview, Endpoint, StatusRow } from "./model-tabs"
 import { COLUMN, COLUMN_COUNT, groupRows, groupsOf, type RowContext } from "./view-api"
 import { type ChartContext, SPARK_TOKENS, sparkline, STATUS_COLORS, statusChart } from "./view-api-charts"
 import { markersOverlay } from "./view-markers"
-import { headLabel, sortColumnHead } from "./view-table-cells"
+import { headLabel, rangeNote, sortColumnHead, tableSkeletonHead, tableTitle } from "./view-table-cells"
 
 // `ServiceApiTab`: the KPI strip, the responses chart beside the non-2xx breakdown, and the
 // endpoint table with its filters. The endpoint drawer is the page's (`endpoint-peek`).
@@ -221,8 +221,7 @@ const kpiSkeleton = (h: H): Html => statRailLoading(h, 5, 5, "w-full overflow-hi
 const legendItem = (h: H, swatch: Html, label: string): Html =>
 	h.div([h.Key(label), h.Class("flex items-center gap-1.5")], [swatch, h.span([], [label])])
 
-const swatch = (h: H, color: string) =>
-	h.span([h.Class("size-2 rounded-[2px]"), h.Style({ background: color })])
+const swatch = (h: H, color: string) => h.span([h.Class("size-2 rounded-xs"), h.Style({ background: color })])
 
 const responsesChart = (
 	h: H,
@@ -251,70 +250,67 @@ const responsesChart = (
 				})
 	const context: ChartContext | null =
 		theme === null ? null : { theme, timeZone: inputs.timeZone, nowMs: model.nowMs ?? 0 }
-	return panel(h, { padded: true, className: "flex-1 gap-3" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2")],
+	return panel(h, { className: "min-w-0 flex-1" }, [
+		panelHeader(h, {
+			title: "Responses by status",
+			scope: h.span([h.Class("text-2xs text-foreground-subtle")], ["req/s, all endpoints"]),
+			divided: false,
+			action: h.div(
+				[h.Class("flex items-center gap-4 text-2xs text-muted-foreground")],
+				[
+					legendItem(
+						h,
+						swatch(h, STATUS_COLORS["2xx"]),
+						`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
+					),
+					legendItem(
+						h,
+						swatch(h, STATUS_COLORS["4xx"]),
+						`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
+					),
+					legendItem(
+						h,
+						swatch(h, STATUS_COLORS["5xx"]),
+						`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
+					),
+					...(hasUnknownBuckets(overview.buckets)
+						? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
+						: []),
+					...(markers.length === 0
+						? []
+						: [
+								legendItem(
+									h,
+									h.span([
+										h.Class("h-2.5 w-0 border-l border-dashed border-muted-foreground"),
+									]),
+									"deploy",
+								),
+							]),
+				],
+			),
+		}),
+		panelBody(
+			h,
 			[
-				h.div(
-					[h.Class("flex items-baseline gap-2")],
-					[
-						h.span([h.Class("text-ui font-medium")], ["Responses by status"]),
-						h.span([h.Class("text-2xs text-muted-foreground")], ["req/s, all endpoints"]),
-					],
-				),
-				h.div(
-					[h.Class("flex items-center gap-4 text-2xs text-muted-foreground")],
-					[
-						legendItem(
-							h,
-							swatch(h, STATUS_COLORS["2xx"]),
-							`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
-						),
-						legendItem(
-							h,
-							swatch(h, STATUS_COLORS["4xx"]),
-							`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
-						),
-						legendItem(
-							h,
-							swatch(h, STATUS_COLORS["5xx"]),
-							`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
-						),
-						...(hasUnknownBuckets(overview.buckets)
-							? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
-							: []),
-						...(markers.length === 0
-							? []
-							: [
-									legendItem(
-										h,
-										h.span([
-											h.Class(
-												"h-2.5 w-0 border-l border-dashed border-muted-foreground",
-											),
-										]),
-										"deploy",
-									),
-								]),
-					],
-				),
+				context === null
+					? skeleton(h, "h-[200px] w-full")
+					: statusChart(h, {
+							chartId: "api-responses",
+							chart: chartModel,
+							buckets: overview.buckets,
+							bucketSeconds: inputs.bucketSeconds,
+							window: inputs.window,
+							context,
+							className: "h-[200px] w-full",
+							marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
+							overlay,
+							reportPlot: markers.length > 0,
+							toMessage: toChart("api-responses"),
+						}),
 			],
+			"px-4 pb-4 pt-2",
 		),
-		context === null
-			? skeleton(h, "h-[200px] w-full")
-			: statusChart(h, {
-					chartId: "api-responses",
-					chart: chartModel,
-					buckets: overview.buckets,
-					bucketSeconds: inputs.bucketSeconds,
-					window: inputs.window,
-					context,
-					className: "h-[200px] w-full",
-					marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
-					overlay,
-					reportPlot: markers.length > 0,
-					toMessage: toChart("api-responses"),
-				}),
 	])
 }
 
@@ -372,37 +368,41 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 
 const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null): Html => {
 	const total = summaries?.reduce((sum, summary) => sum + summary.count, 0) ?? 0
-	return panel(h, { padded: true, className: "w-full shrink-0 gap-3 lg:w-[400px]" }, [
-		h.div(
-			[h.Class("flex items-baseline justify-between gap-2")],
+	return panel(h, { className: "w-full shrink-0 lg:w-[400px]" }, [
+		panelHeader(h, {
+			title: "Non-2xx responses",
+			action:
+				summaries === null
+					? undefined
+					: h.span(
+							[
+								h.Class("text-2xs text-muted-foreground tabular-nums"),
+								h.Title(
+									"Counted over complete hours, so the total can reach past the window's edges",
+								),
+							],
+							[`${formatNumber(Math.round(total))} in complete hours`],
+						),
+		}),
+		panelBody(
+			h,
 			[
-				h.span([h.Class("text-ui font-medium")], ["Non-2xx responses"]),
-				...(summaries === null
-					? []
-					: [
-							h.span(
-								[
-									h.Class("text-2xs text-muted-foreground tabular-nums"),
-									h.Title(
-										"Counted over complete hours, so the total can reach past the window's edges",
-									),
-								],
-								[`${formatNumber(Math.round(total))} in complete hours`],
+				summaries === null
+					? h.div(
+							[h.Class("flex flex-col gap-3"), h.AriaBusy(true)],
+							[0, 1, 2, 3].map((index) =>
+								h.div([h.Key(String(index))], [skeleton(h, "h-9 w-full")]),
 							),
-						]),
+						)
+					: summaries.length === 0
+						? emptyMessage(h, {}, ["Every response in this window was below 400."])
+						: h.div(
+								[h.Class("flex flex-col gap-3")],
+								summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
+							),
 			],
+			"p-4",
 		),
-		summaries === null
-			? h.div(
-					[h.Class("flex flex-col gap-3"), h.AriaBusy(true)],
-					[0, 1, 2, 3].map((index) => h.div([h.Key(String(index))], [skeleton(h, "h-9 w-full")])),
-				)
-			: summaries.length === 0
-				? emptyMessage(h, {}, ["Every response in this window was below 400."])
-				: h.div(
-						[h.Class("flex flex-col gap-3")],
-						summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
-					),
 	])
 }
 
@@ -419,7 +419,7 @@ const filterChip = (h: H, filter: EndpointFilter, active: EndpointFilter): Html 
 					"rounded-sm px-2 py-1 transition-colors",
 					filter === active
 						? "bg-accent text-foreground"
-						: "text-muted-foreground hover:text-foreground",
+						: "text-muted-foreground hover:text-foreground active:text-foreground",
 				),
 			),
 			h.OnClick(Message.ClickedEndpointFilter({ filter })),
@@ -428,41 +428,40 @@ const filterChip = (h: H, filter: EndpointFilter, active: EndpointFilter): Html 
 	)
 
 const toolbar = (h: H, model: Model, count: number): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-3 border-b px-4 py-2")],
-		[
-			h.span([h.Class("text-ui font-medium")], ["Endpoints"]),
-			...(AsyncData.isFailure(model.endpointSeries.data)
-				? [
-						h.span(
-							[h.Class("text-2xs text-severity-error")],
-							["Trends failed to load; Reload to retry."],
-						),
-					]
-				: []),
-			h.span(
-				[h.Class("rounded-sm bg-muted px-1.5 text-2xs text-muted-foreground tabular-nums")],
-				[formatNumber(count)],
-			),
-			h.div(
-				[
-					h.Class("ml-3 flex items-center gap-1 text-2xs"),
-					h.Role("group"),
-					h.AriaLabel("Filter endpoints"),
-				],
-				ENDPOINT_FILTERS.map((filter) => filterChip(h, filter, model.endpointFilter)),
-			),
-			searchInput(h, {
-				id: "service-endpoint-search",
-				value: model.endpointQuery,
-				placeholder: "Filter routes…",
-				ariaLabel: "Filter routes",
-				onInput: (value) => Message.ChangedEndpointQuery({ value }),
-				onClear: Message.ChangedEndpointQuery({ value: "" }),
-				className: "ml-auto w-60",
-			}),
-		],
-	)
+	tableTitle(h, {
+		title: "Endpoints",
+		count,
+		action: h.div(
+			[h.Class("flex flex-wrap items-center gap-3")],
+			[
+				...(AsyncData.isFailure(model.endpointSeries.data)
+					? [
+							h.span(
+								[h.Class("text-2xs text-severity-error")],
+								["Trends failed to load; Reload to retry."],
+							),
+						]
+					: []),
+				h.div(
+					[
+						h.Class("flex items-center gap-1 text-2xs"),
+						h.Role("group"),
+						h.AriaLabel("Filter endpoints"),
+					],
+					ENDPOINT_FILTERS.map((filter) => filterChip(h, filter, model.endpointFilter)),
+				),
+				searchInput(h, {
+					id: "service-endpoint-search",
+					value: model.endpointQuery,
+					placeholder: "Filter routes…",
+					ariaLabel: "Filter routes",
+					onInput: (value) => Message.ChangedEndpointQuery({ value }),
+					onClear: Message.ChangedEndpointQuery({ value: "" }),
+					className: "w-60",
+				}),
+			],
+		),
+	})
 
 /** Request rate per bucket by span name on one axis; a bucket an endpoint was quiet in reads 0. */
 const sparksBySpanName = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
@@ -502,6 +501,7 @@ const endpointsTable = (
 		theme,
 		selected: model.search.endpoint,
 		slowest: slowestEndpoint(visible),
+		isOneMethod: new Set(visible.map((endpoint) => endpoint.method)).size === 1,
 	}
 	const column = (sortKey: string, label: string, className: string, align?: "left", title?: string) =>
 		sortColumnHead(h, {
@@ -547,7 +547,7 @@ const endpointsTable = (
 						headLabel(h, ["Body avg"], cn("pr-0 text-right", COLUMN.body)),
 						headLabel(h, [], COLUMN.chevron),
 					],
-					"border-b hover:bg-transparent",
+					"border-b hover:bg-transparent active:bg-transparent",
 				),
 			]),
 			tableBody(
@@ -565,7 +565,7 @@ const endpointsTable = (
 										["No endpoint matches this filter."],
 									),
 								],
-								"hover:bg-transparent",
+								"hover:bg-transparent active:bg-transparent",
 							),
 						]
 					: groups.flatMap((group) =>
@@ -580,24 +580,25 @@ const endpointsTable = (
 
 const loadingState = (h: H): Html =>
 	h.div(
-		[h.Class("flex flex-col gap-4")],
+		[h.Class("flex flex-col gap-3")],
 		[
 			kpiSkeleton(h),
 			h.div(
-				[h.Class("flex flex-col gap-4 lg:flex-row")],
+				[h.Class("flex flex-col gap-3 lg:flex-row")],
 				[
-					skeleton(h, "h-[262px] flex-1 rounded-md"),
-					skeleton(h, "h-[262px] w-full rounded-md lg:w-[400px]"),
+					skeleton(h, "h-[282px] flex-1 rounded-md"),
+					skeleton(h, "h-[282px] w-full rounded-md lg:w-[400px]"),
 				],
 			),
 			panel(h, {}, [
+				...tableSkeletonHead(h, "Endpoints"),
 				h.div(
 					[h.AriaBusy(true), h.Class("flex flex-col")],
 					Array.from({ length: 8 }, (_, index) =>
 						h.div(
 							[
 								h.Key(String(index)),
-								h.Class("flex h-12 items-center gap-3 border-b px-4 last:border-b-0"),
+								h.Class("flex h-11 items-center gap-3 border-b px-4 last:border-b-0"),
 							],
 							[
 								skeleton(h, "h-2.5 w-9"),
@@ -617,8 +618,11 @@ const loadingState = (h: H): Html =>
 /** `ApiEmptyState`: names the two conditions an endpoint needs. */
 const emptyState = (h: H, serviceName: string): Html => {
 	const mono = (text: string) => h.span([h.Class("text-foreground-soft")], [text])
-	return panel(h, { className: "items-center gap-3.5 px-[18px] py-11 text-center" }, [
-		h.span([h.Class("text-title font-medium text-foreground-soft")], ["No HTTP endpoints in this window"]),
+	return panel(h, { className: "items-center gap-3.5 px-4 py-11 text-center" }, [
+		h.span(
+			[h.Class("text-title font-medium text-foreground-soft")],
+			["No HTTP endpoints in this window"],
+		),
 		h.span(
 			[h.Class("max-w-[620px] text-ui leading-[21px] text-muted-foreground")],
 			[
@@ -636,17 +640,19 @@ const emptyState = (h: H, serviceName: string): Html => {
 	])
 }
 
-const notes = (h: H, count: number, seconds: number): ReadonlyArray<Html> =>
-	[
-		...(isTruncated(count)
-			? [
-					`Showing the ${ENDPOINTS_LIMIT} busiest endpoints. This service has more. Narrow the time range or environment to see the rest.`,
-				]
-			: []),
-		...(seconds > TRACE_DETAIL_LIMIT_SECONDS
-			? ["Endpoint summaries cover the selected range; trace drill-downs show the latest 30 days."]
-			: []),
-	].map((note) => h.p([h.Key(note), h.Class("px-0.5 text-xs text-muted-foreground")], [note]))
+const notes = (h: H, count: number, seconds: number): ReadonlyArray<Html> => [
+	...(isTruncated(count)
+		? [
+				h.p(
+					[h.Class("text-xs text-muted-foreground")],
+					[
+						`Showing the ${ENDPOINTS_LIMIT} busiest endpoints. This service has more. Narrow the time range or environment to see the rest.`,
+					],
+				),
+			]
+		: []),
+	...(seconds > TRACE_DETAIL_LIMIT_SECONDS ? [rangeNote(h, "Endpoint")] : []),
+]
 
 const loaded = (
 	h: H,
@@ -670,7 +676,7 @@ const loaded = (
 		: null
 	return h.div(
 		[
-			h.Class(cn("flex flex-col gap-4", refreshingClass(isWaiting))),
+			h.Class(cn("flex flex-col gap-3", refreshingClass(isWaiting))),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
 		[
@@ -682,7 +688,7 @@ const loaded = (
 						onSome: (data) => kpiStrip(h, data, summaries, seconds, inputs, theme),
 					}),
 			h.div(
-				[h.Class("flex flex-col gap-4 lg:flex-row")],
+				[h.Class("flex flex-col gap-3 lg:flex-row")],
 				[
 					overviewFailure !== null
 						? h.div(
@@ -695,7 +701,7 @@ const loaded = (
 								],
 							)
 						: Option.match(overview, {
-								onNone: () => skeleton(h, "h-[262px] flex-1 rounded-md"),
+								onNone: () => skeleton(h, "h-[282px] flex-1 rounded-md"),
 								onSome: (data) => responsesChart(h, model, data, inputs, theme),
 							}),
 					breakdownFailure !== null

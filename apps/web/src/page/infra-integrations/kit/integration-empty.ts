@@ -94,7 +94,7 @@ export const integrationEmptyFeatures = <M>(
 	)
 
 const BACKER =
-	"absolute bottom-0.5 flex size-11 items-center justify-center rounded-[10px] border border-border-subtle bg-muted text-foreground-subtle opacity-80"
+	"absolute bottom-0.5 flex size-11 items-center justify-center rounded-xl-inset border border-border-subtle bg-muted text-foreground-subtle opacity-80"
 
 /** `IntegrationEmptyMedia`: two dim backer plates fanned behind the brand plate. */
 export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBrand): Html => {
@@ -112,7 +112,7 @@ export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBr
 			),
 			integrationIconPlate(h, brand, {
 				size: 28,
-				plateClassName: "relative size-14 rounded-xl shadow-lg shadow-black/10",
+				plateClassName: "relative size-14 rounded-xl shadow-popup shadow-black/10",
 			}),
 		],
 	)

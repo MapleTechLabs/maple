@@ -271,7 +271,8 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 								{
 									variant: "ghost",
 									size: "icon-2xs",
-									className: "text-muted-foreground hover:text-foreground",
+									className:
+										"text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [
 										h.AriaLabel(`Remove ${chip.label}`),
 										h.OnClick(

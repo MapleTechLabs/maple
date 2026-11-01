@@ -72,6 +72,8 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 		output: CompareCommitsOutput,
 		// An unknown SHA is probed against the connected repositories on GitHub.
 		hints: { readOnly: true, openWorld: true },
+		// Maple's own agents only: the org's commit history is not for third-party MCP clients.
+		audience: "agent",
 		phrases: ["Comparing commits", "Listing what shipped"],
 		handler: Effect.fn("McpTool.compareCommits")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

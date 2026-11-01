@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto"
+import { bumpPagesForMonitors } from "@maple/backend/services/status-pages/outbox"
+import { countOne, upsertDailyCounts } from "./uptime-daily"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, UptimeMonitorStates, UptimeMonitors } from "@maple/db/tables"
@@ -153,35 +155,50 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				// Fenced on the state read above: a ping or check landing in between wins.
 				const error = describeMissedHeartbeat(row.lastPingAt, nowMs)
 				const marked = yield* dbExecute((db) =>
-					db.run(
-						PG.update(UptimeMonitorStates)
-							.set({
-								status: "down",
-								consecutiveFailures: row.consecutiveFailures + 1,
-								consecutiveSuccesses: 0,
-								statusChangedAt: nowMs,
-								lastCheckJson: {
-									at: nowMs,
-									ok: false,
-									durationMs: null,
-									statusCode: null,
-									error,
-									traceId: null,
+					db.transaction(
+						Effect.gen(function* () {
+							const rows = yield* db.run(
+								PG.update(UptimeMonitorStates)
+									.set({
+										status: "down",
+										consecutiveFailures: row.consecutiveFailures + 1,
+										consecutiveSuccesses: 0,
+										statusChangedAt: nowMs,
+										lastCheckJson: {
+											at: nowMs,
+											ok: false,
+											durationMs: null,
+											statusCode: null,
+											error,
+											traceId: null,
+										},
+										recentJson: appendRecentCheck(row.recentJson, {
+											at: nowMs,
+											ok: false,
+											durationMs: null,
+										}),
+										updatedAt: nowMs,
+									})
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.monitorId.eq(row.id),
+										$.status.eq(row.status),
+										$.updatedAt.eq(row.stateUpdatedAt),
+									])
+									.returning("monitorId"),
+							)
+							if (rows.length === 0) return rows
+							// The miss counts as a down check, so the day's bar shows it, and pages showing it republish.
+							yield* upsertDailyCounts(db, [
+								{
+									monitorId: row.id,
+									orgId,
+									count: countOne({ at: nowMs, ok: false, down: true }),
 								},
-								recentJson: appendRecentCheck(row.recentJson, {
-									at: nowMs,
-									ok: false,
-									durationMs: null,
-								}),
-								updatedAt: nowMs,
-							})
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.monitorId.eq(row.id),
-								$.status.eq(row.status),
-								$.updatedAt.eq(row.stateUpdatedAt),
 							])
-							.returning("monitorId"),
+							yield* bumpPagesForMonitors(db, orgId, [row.id])
+							return rows
+						}),
 					),
 				)
 				yield* Effect.annotateCurrentSpan({

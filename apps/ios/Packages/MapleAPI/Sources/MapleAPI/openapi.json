@@ -6796,7 +6796,6 @@
         "enum": [
           "pagerduty",
           "webhook",
-          "hazel-oauth",
           "discord",
           "telegram",
           "google-chat",
@@ -13949,7 +13948,7 @@
       "name": "Alert Deliveries"
     },
     {
-      "description": "Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
+      "description": "Notification channels for alert rules: PagerDuty, generic webhooks, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
       "name": "Alert Destinations"
     },
     {
@@ -14003,6 +14002,14 @@
     {
       "description": "Checks Maple runs from outside your infrastructure (HTTP, TCP, DNS) and heartbeats your jobs send. Each check is a span in your traces; a monitor goes down after enough failures in a row.",
       "name": "Uptime Monitors"
+    },
+    {
+      "description": "Public status pages for your customers, served from edge storage so they stay up when Maple does not. Components follow your uptime monitors.",
+      "name": "Status Pages"
+    },
+    {
+      "description": "Customer-facing incidents and scheduled maintenance on your status pages, separate from internal alert incidents.",
+      "name": "Status Page Incidents"
     },
     {
       "description": "Automatically detected instrumentation improvements — attribute renames toward canonical semantic conventions, double emissions, and naming violations. List them, and dismiss or reopen individual recommendations.",

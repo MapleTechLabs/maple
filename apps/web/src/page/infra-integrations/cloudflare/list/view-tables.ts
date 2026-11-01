@@ -44,7 +44,7 @@ type H = HtmlBuilder<Message>
 
 // The server caps the list at 500 rows, so the row area scrolls rather than growing the page.
 // Capped: a short zone name on a wide page otherwise opens a gulf before its numbers.
-const NAME = "w-0 flex-1 min-w-[200px] max-w-[360px]"
+const NAME = "w-0 flex-1 min-w-52 max-w-90"
 const NUMBER = "text-right font-mono text-xs tabular-nums"
 
 export type SparkContext = Readonly<{ theme: ThemeColors | null; isChartReady: boolean }>
@@ -268,11 +268,7 @@ const zoneRow = (
 			h.div(
 				[
 					h.Class(
-						cn(
-							"w-20",
-							NUMBER,
-							rated ? errorRateClass(zone.errorRate) : "text-muted-foreground",
-						),
+						cn("w-20", NUMBER, rated ? errorRateClass(zone.errorRate) : "text-muted-foreground"),
 					),
 				],
 				[rated ? formatErrorRate(zone.errorRate) : EMPTY_VALUE],
@@ -384,7 +380,7 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 		[
 			statusDot(h, { tone: WORKER_HEALTH_TONE[health], size: "lg" }),
 			h.div(
-				[h.Class("w-0 min-w-[220px] flex-1 space-y-0.5")],
+				[h.Class("w-0 min-w-56 flex-1 space-y-0.5")],
 				[
 					h.div(
 						[
@@ -468,7 +464,7 @@ export const workerTable = (
 		{ ariaLabel: "Cloudflare Workers" },
 		[
 			h.div([h.Class("w-2 shrink-0")]),
-			columnHead(h, { label: "Worker", width: "w-0 flex-1 min-w-[220px]" }),
+			columnHead(h, { label: "Worker", width: "w-0 flex-1 min-w-56" }),
 			...(options.accounts === undefined
 				? []
 				: [columnHead(h, { label: "Account", width: "w-28", hidden: "hidden lg:flex" })]),
@@ -485,7 +481,7 @@ export const workerTable = (
 // QUEUES
 
 const QUEUE_ROW =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken"
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
 
 const numCell = (h: H, value: string, hidden?: boolean): Html =>
 	h.div(
@@ -523,7 +519,7 @@ export const queueTable = (
 		h,
 		{ ariaLabel: "Cloudflare queues", isWaiting: options.isWaiting },
 		[
-			queueHead(h, "Queue", "queueName", sort, "w-0 flex-1 min-w-[220px]"),
+			queueHead(h, "Queue", "queueName", sort, "w-0 flex-1 min-w-56"),
 			queueHead(h, "Backlog avg", "backlogMessages", sort, "w-28", "right"),
 			queueHead(h, "Backlog peak", "backlogMessagesMax", sort, "w-28", "right"),
 			columnHead(h, {
@@ -543,7 +539,7 @@ export const queueTable = (
 							h.div(
 								[
 									h.Class(
-										"w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground",
+										"w-0 min-w-56 flex-1 truncate font-mono text-xs font-medium text-foreground",
 									),
 								],
 								[queue.queueName],

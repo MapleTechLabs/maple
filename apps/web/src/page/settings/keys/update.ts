@@ -175,7 +175,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isRevoking: false },
-					outMessage: toast("error", "Failed to revoke key", error.message),
+					outMessage: toast("error", "Couldn't revoke key", error.message),
 				}),
 			}),
 		GotRollMessage: ({ message: child }) => liftRoll(model, RollDialog.update(model.roll, child)),

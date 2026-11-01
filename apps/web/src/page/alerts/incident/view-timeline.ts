@@ -110,7 +110,9 @@ const entryRow = <M>(
 														}),
 													),
 												),
-												h.Class("text-primary text-xs hover:underline"),
+												h.Class(
+													"text-primary text-xs hover:underline active:underline",
+												),
 											],
 											["Open investigation"],
 										),

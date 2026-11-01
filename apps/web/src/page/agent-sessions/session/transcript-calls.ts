@@ -48,7 +48,7 @@ const assistantError = (
 											rendering: !isRaw && error.isJson ? "json" : "text",
 											isMono: true,
 											clampLines: 14,
-											toneClass: "text-ui text-severity-error/90",
+											toneClass: "text-ui text-severity-error",
 										}),
 									],
 								),
@@ -140,7 +140,7 @@ export const assistantBlock = (
 						h,
 						assistant.failed ? "CircleWarningIcon" : "PixelSparkleIcon",
 						assistant.failed
-							? "bg-severity-error/15 text-severity-error"
+							? "bg-severity-error-a2 text-severity-error"
 							: "bg-chart-2/15 text-chart-2",
 					)
 				: undefined,
@@ -270,7 +270,7 @@ export const structureRow = (
 						h.AriaPressed(String(isSelected)),
 						h.Class(
 							cn(
-								"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-sunken",
+								"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 								rowSelectedClass(isSelected),
 							),
 						),

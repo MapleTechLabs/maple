@@ -134,7 +134,7 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 										size: "xs",
 										mono: true,
 										className:
-											"h-auto px-1.5 py-0.5 transition-colors hover:text-foreground",
+											"h-auto px-1.5 py-0.5 hover:text-foreground active:text-foreground",
 									}),
 								),
 							),

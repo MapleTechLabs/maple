@@ -119,6 +119,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		: dashboardPage(
 				h,
 				{
+					filtersLabel: "Account settings",
 					filters: navShell(h, accountNavSections, activeTabOf(model), (tab) =>
 						Message.ClickedTab({ tab }),
 					),

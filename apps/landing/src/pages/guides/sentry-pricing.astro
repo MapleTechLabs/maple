@@ -1,0 +1,782 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
+import { getOffer, money, rateLabel } from "../../lib/pricing-offer";
+
+const pageTitle = "Sentry pricing 2026: free plan, plans and costs | Maple";
+const pageDescription =
+    "Sentry pricing for 2026: the free Developer plan, Team and Business prices, per-unit rates for errors, spans and replays, and two worked monthly bills.";
+const published = "2026-10-19";
+const updated = "2026-10-20";
+const updatedLabel = "October 20, 2026";
+const verified = "2026-10-20";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const offer = await getOffer();
+const gb = offer.allotments.find((a) => a.unit === "gb");
+const sessions = offer.allotments.find((a) => a.unit === "sessions");
+
+const toc = [
+    { depth: 2, slug: "plans", text: "Plans and prices" },
+    { depth: 3, slug: "business", text: "Team or Business" },
+    { depth: 3, slug: "seer", text: "Seer add-on" },
+    { depth: 2, slug: "free-plan", text: "The free plan" },
+    { depth: 3, slug: "free-limits", text: "Free plan limits" },
+    { depth: 3, slug: "self-hosted", text: "Self-hosted Sentry" },
+    { depth: 2, slug: "usage", text: "How usage is billed" },
+    { depth: 3, slug: "volume", text: "Errors and spans by volume" },
+    { depth: 3, slug: "session-replay", text: "Session replay pricing" },
+    { depth: 3, slug: "counts", text: "What counts" },
+    { depth: 2, slug: "overage", text: "Past your quota" },
+    { depth: 2, slug: "examples", text: "What a month costs" },
+    { depth: 3, slug: "small-team", text: "Small team" },
+    { depth: 3, slug: "mid-team", text: "Mid-sized team" },
+    { depth: 3, slug: "reduce", text: "Lowering the bill" },
+    { depth: 2, slug: "maple", text: "Maple pricing" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
+
+// One color per billed category, reused by the badges, both charts and the bill tables.
+const cats = {
+    base: { label: "Plan price", color: "var(--muted-foreground)" },
+    errors: { label: "Errors", color: "var(--chart-error)" },
+    spans: { label: "Spans", color: "var(--chart-2)" },
+    replays: { label: "Replays", color: "var(--chart-5)" },
+    logs: { label: "Logs and metrics", color: "var(--chart-3)" },
+    other: { label: "Attachments and monitors", color: "var(--chart-4)" },
+} as const;
+type Cat = keyof typeof cats;
+
+// Sentry's published rates per unit, verified on the date above. Each tier's rate
+// applies only to the units inside that tier. [reserved, pay-as-you-go]
+type Plan = "team" | "business";
+const errorTiers = [
+    { upTo: 100_000, label: "50k to 100k", team: [0.00029, 0.0003625], business: [0.00089, 0.0011125] },
+    { upTo: 500_000, label: "100k to 500k", team: [0.000175, 0.0002188], business: [0.0005, 0.000625] },
+    { upTo: 10_000_000, label: "500k to 10M", team: [0.00015, 0.0001875], business: [0.0003, 0.000375] },
+    { upTo: 20_000_000, label: "10M to 20M", team: [0.00013, 0.0001625], business: [0.00026, 0.000325] },
+    { upTo: Infinity, label: "Above 20M", team: [0.00012, 0.00015], business: [0.00024, 0.0003] },
+];
+const spanTiers = [
+    { upTo: 100_000_000, label: "5M to 100M", team: [0.0000016, 0.000002], business: [0.0000032, 0.000004] },
+    { upTo: Infinity, label: "Above 100M", team: [0.0000014, 0.0000018], business: [0.0000029, 0.0000036] },
+];
+const replayTiers = [
+    { upTo: 5_000, label: "50 to 5k", rates: [0.003, 0.00375] },
+    { upTo: 100_000, label: "5k to 100k", rates: [0.00285, 0.003563] },
+    { upTo: 900_000, label: "100k to 900k", rates: [0.002565, 0.003206] },
+    { upTo: 4_500_000, label: "900k to 4.5M", rates: [0.002309, 0.002886] },
+    { upTo: Infinity, label: "Above 4.5M", rates: [0.001962, 0.002453] },
+];
+const included = { errors: 50_000, spans: 5_000_000, replays: 50, logsGb: 5, attachmentsGb: 1, cron: 1, uptime: 1 };
+const flat = { logsGb: 0.5, attachmentsGb: 0.3125, cron: 0.78, uptime: 1 };
+const planPrice = { team: 29, business: 89 };
+
+const tiered = (volume: number, from: number, tiers: { upTo: number; rate: number }[]) => {
+    let cost = 0;
+    let start = from;
+    for (const { upTo, rate } of tiers) {
+        if (volume <= start) break;
+        cost += (Math.min(volume, upTo) - start) * rate;
+        start = upTo;
+    }
+    return cost;
+};
+const payg = (tiers: typeof errorTiers, plan: Plan) => tiers.map((t) => ({ upTo: t.upTo, rate: t[plan][1] }));
+const errorCost = (volume: number, plan: Plan) => tiered(volume, included.errors, payg(errorTiers, plan));
+const spanCost = (volume: number, plan: Plan) => tiered(volume, included.spans, payg(spanTiers, plan));
+const replayCost = (volume: number) => tiered(volume, included.replays, replayTiers.map((t) => ({ upTo: t.upTo, rate: t.rates[1] })));
+const over = (volume: number, key: keyof typeof flat) => Math.max(0, volume - included[key]) * flat[key];
+
+// Invoices round each line to the cent, then add the lines.
+const cents = (n: number) => Math.round(n * 100 + 1e-6) / 100;
+const usd = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const per1k = (rate: number) => `$${(rate * 1000).toFixed(4).replace(/0{1,2}$/, "")}`;
+const per1m = (rate: number) => `$${(rate * 1_000_000).toFixed(2)}`;
+
+interface Usage { errors: number; spans: number; replays: number; logsGb: number; attachmentsGb: number; cron: number; uptime: number }
+const bill = (plan: Plan, u: Usage) => {
+    const lines: { cat: Cat; label: string; calc: string; cost: number }[] = [
+        { cat: "base", label: plan === "team" ? "Team plan" : "Business plan", calc: "Monthly price", cost: planPrice[plan] },
+        { cat: "errors", label: "Errors", calc: `${(u.errors - included.errors).toLocaleString("en-US")} above the included 50k, tiered`, cost: cents(errorCost(u.errors, plan)) },
+        { cat: "spans", label: "Spans", calc: `${(u.spans - included.spans) / 1_000_000}M above the included 5M, tiered`, cost: cents(spanCost(u.spans, plan)) },
+        { cat: "replays", label: "Replays", calc: `${(u.replays - included.replays).toLocaleString("en-US")} above the included 50, tiered`, cost: cents(replayCost(u.replays)) },
+        { cat: "logs", label: "Logs", calc: `${u.logsGb - included.logsGb} GB at $0.50`, cost: cents(over(u.logsGb, "logsGb")) },
+        { cat: "other", label: "Attachments", calc: `${u.attachmentsGb - included.attachmentsGb} GB at $0.3125`, cost: cents(over(u.attachmentsGb, "attachmentsGb")) },
+        { cat: "other", label: "Cron monitors", calc: `${u.cron - included.cron} at $0.78`, cost: cents(over(u.cron, "cron")) },
+        { cat: "other", label: "Uptime monitors", calc: `${u.uptime - included.uptime} at $1.00`, cost: cents(over(u.uptime, "uptime")) },
+    ].filter((l) => l.cost > 0);
+    const total = cents(lines.reduce((sum, l) => sum + l.cost, 0));
+    const byCat = (Object.keys(cats) as Cat[])
+        .map((cat) => ({ cat, cost: lines.filter((l) => l.cat === cat).reduce((sum, l) => sum + l.cost, 0) }))
+        .filter((c) => c.cost > 0);
+    return { lines, total, byCat };
+};
+
+const small = bill("team", { errors: 150_000, spans: 20_000_000, replays: 2_000, logsGb: 15, attachmentsGb: 1, cron: 5, uptime: 3 });
+const midUsage = { errors: 1_000_000, spans: 200_000_000, replays: 50_000, logsGb: 100, attachmentsGb: 5, cron: 20, uptime: 10 };
+const mid = bill("business", midUsage);
+const midOnTeam = bill("team", midUsage);
+const billBars = [
+    { label: "Small team, Team plan", bill: small },
+    { label: "Mid-sized team, Business plan", bill: mid },
+];
+
+const volumePanels = [
+    {
+        cat: "errors" as Cat,
+        title: "Errors per month",
+        rows: [100_000, 250_000, 500_000, 1_000_000].map((v) => ({ label: v >= 1_000_000 ? `${v / 1_000_000}M` : `${v / 1000}k`, team: errorCost(v, "team"), business: errorCost(v, "business") })),
+    },
+    {
+        cat: "spans" as Cat,
+        title: "Spans per month",
+        rows: [20_000_000, 50_000_000, 100_000_000, 200_000_000].map((v) => ({ label: `${v / 1_000_000}M`, team: spanCost(v, "team"), business: spanCost(v, "business") })),
+    },
+].map((p) => ({ ...p, max: Math.max(...p.rows.map((r) => r.business)) }));
+
+const replayExample = cents(replayCost(10_000));
+
+const sentryInit = `import * as Sentry from "@sentry/browser"
+
+Sentry.init({
+  dsn: "https://examplePublicKey@o0.ingest.sentry.io/0",
+  integrations: [Sentry.browserTracingIntegration(), Sentry.replayIntegration()],
+
+  // Errors: keep every one, drop known noise before it is sent
+  sampleRate: 1.0,
+  ignoreErrors: ["ResizeObserver loop completed with undelivered notifications"],
+
+  // Spans: send 10% of traces
+  tracesSampleRate: 0.1,
+
+  // Replays: record 1% of sessions, plus every session that hits an error
+  replaysSessionSampleRate: 0.01,
+  replaysOnErrorSampleRate: 1.0,
+
+  // Nothing from local development reaches the quota
+  beforeSend(event) {
+    return event.environment === "development" ? null : event
+  },
+})`;
+
+const faqs = [
+    {
+        question: "Is Sentry free?",
+        answer:
+            "Yes, for one user. The Developer plan costs $0 with no time limit and includes 5,000 errors, 5 million spans, 50 session replays, 5 GB of logs, 5 GB of application metrics, 1 GB of attachments, one cron monitor and one uptime monitor a month, with a 30-day lookback. It has no pay-as-you-go budget, so data past those quotas is dropped until the next billing cycle. Self-hosted Sentry is also free to run; you pay for the servers.",
+    },
+    {
+        question: "How much does Sentry cost per month?",
+        answer:
+            `Team is $29 a month billed monthly or $26 a month billed annually. Business is $89 or $80. Enterprise is priced by sales. Usage above the included 50,000 errors, 5 million spans, 50 replays and 5 GB of logs is billed per unit on top. A five-person team with moderate traffic pays about ${usd(small.total)} a month on Team, and a team sending a million errors and 200 million spans pays about ${usd(mid.total)} on Business (prices verified ${verified}).`,
+    },
+    {
+        question: "What counts as an error in Sentry?",
+        answer:
+            "Every captured exception the SDK sends is one error and counts against the error quota, including repeats of an issue you resolved or ignored. The issue that groups them does not count. Events dropped by inbound filters, rate limits, spike protection, SDK sampling or beforeSend do not count, and neither do repeats of an issue set to Delete & Discard.",
+    },
+    {
+        question: "What happens when you exceed your Sentry quota?",
+        answer:
+            "Sentry spends reserved volume first, then your pay-as-you-go budget if you set one. When both are used up, new data in that category is dropped for the rest of the billing cycle. You are not charged for dropped data, and you have no monitoring for that category until the cycle resets.",
+    },
+    {
+        question: "Is self-hosted Sentry free?",
+        answer:
+            "The software is free under the Functional Source License. The cost is the infrastructure and the time to run it: Sentry's self-hosted docs ask for at least 4 CPU cores, 16 GB of RAM plus 16 GB of swap (32 GB of RAM recommended) and 20 GB of free disk.",
+    },
+    {
+        question: "How is Sentry session replay billed?",
+        answer:
+            "Per recorded session. Every plan includes 50 replays a month. Above that, Team and Business pay the same tiered rates, starting at $3.75 per 1,000 replays on pay-as-you-go and $3.00 per 1,000 reserved. Only sessions the SDK records are counted, so replaysSessionSampleRate sets the bill.",
+    },
+    {
+        question: "What is the difference between Sentry Team and Business?",
+        answer:
+            "Both include the same base volume and unlimited users. Business adds anomaly detection, advanced inbound filtering, Code Owners, Relay, SAML and SCIM single sign-on, unlimited dashboards and 1,000 metric monitors instead of 20. It also charges about twice the Team rate per error and per span above the included volume. Replay, log, attachment and monitor rates are the same on both.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Sentry pricing in 2026",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: updated,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/sentry-pricing`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Sentry pricing" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Pricing</span>
+                    <span>9 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Sentry pricing in 2026
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    What each plan costs, what the free plan includes, and how errors, spans and replays add up to a monthly bill.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime={updated}>Updated {updatedLabel}</time>
+                    <span>Prices verified {verified}</span>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={toc} class="sticky top-28" />
+            </aside>
+
+            <article class="pricing-guide min-w-0">
+                <section id="plans" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · Plans</p>
+                    <h2>Sentry plans and prices</h2>
+
+                    <div class="guide-answer">
+                        <p>Sentry charges a flat monthly price for the plan, then a separate price for each kind of data you send beyond what the plan includes. Errors, spans, session replays and logs each have their own allowance and their own rate.</p>
+                    </div>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Per month</th><th>Developer</th><th>Team</th><th>Business</th><th>Enterprise</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr class="row-price"><td>Billed monthly</td><td>$0</td><td>$29</td><td>$89</td><td>Custom</td></tr>
+                                <tr class="row-price"><td>Billed annually</td><td>$0</td><td>$26</td><td>$80</td><td>Custom</td></tr>
+                                <tr><td>Users</td><td>1</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.errors.color}`}>Errors</span></td><td>5,000</td><td>50,000</td><td>50,000</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.spans.color}`}>Spans</span></td><td>5M</td><td>5M</td><td>5M</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.replays.color}`}>Replays</span></td><td>50</td><td>50</td><td>50</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs</span></td><td>5 GB</td><td>5 GB</td><td>5 GB</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>App metrics</span></td><td>5 GB</td><td>5 GB</td><td>5 GB</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.other.color}`}>Attachments</span></td><td>1 GB</td><td>1 GB</td><td>1 GB</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.other.color}`}>Cron, uptime</span></td><td>1 each</td><td>1 each</td><td>1 each</td><td>Custom</td></tr>
+                                <tr><td>Lookback</td><td>30 days</td><td>Up to 90 days</td><td>Up to 90 days + sampled</td><td>Custom</td></tr>
+                                <tr><td>Pay-as-you-go budget</td><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+                                <tr><td>API and integrations</td><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p class="table-note">
+                        These are the quotas each plan includes. Usage past them is billed per category at the rates in <a href="#usage">How Sentry bills usage</a>.
+                    </p>
+                    <p>
+                        The annual price is paid up front for the year. Prices are in US dollars before tax: EU and UK customers pay VAT unless they give a valid VAT ID, and sales tax applies in some US states. Organizations that signed up before June 11, 2024 may still be on the older plans billed by transactions; <strong>Settings &gt; Subscription</strong> in Sentry shows which one applies.
+                    </p>
+
+                    <h3 id="business" class="scroll-mt-24">Team or Business</h3>
+                    <p>
+                        Both include the same volume and unlimited users. Business adds anomaly detection, advanced inbound filtering, Code Owners, Relay, SAML and SCIM single sign-on, unlimited dashboards and 1,000 metric monitors instead of 20. The cost difference is mostly in the metered part: Business charges about <strong>twice the Team rate</strong> for every error and span above the included volume, while replays, logs, attachments and monitors cost the same on both.
+                    </p>
+
+                    <h3 id="seer" class="scroll-mt-24">Seer, the AI add-on</h3>
+                    <p>
+                        Seer, Sentry's AI debugging agent, is a separate subscription on Team and Business at <strong>$40 per active contributor per month</strong>. An active contributor is anyone who opens two or more pull requests in a month against a repository connected to Sentry with a Seer feature turned on. Seer is billed on its own line and does not draw from the pay-as-you-go budget.
+                    </p>
+                    <p class="guide-verified">
+                        Verified {verified} against <a href="https://sentry.io/pricing/" target="_blank" rel="noopener noreferrer">sentry.io/pricing</a> and <a href="https://docs.sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry's pricing docs</a>, which round the per-unit prices.
+                    </p>
+                </section>
+
+                <section id="free-plan" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Free plan</p>
+                    <h2>Is Sentry free? The Developer plan</h2>
+                    <p>
+                        Yes, for one person. The Developer plan costs $0 with no time limit. It includes error monitoring and tracing, email alerts, release health, 10 custom dashboards and MCP access, with <strong>5,000 errors</strong>, 5 million spans and 50 replays a month and a 30-day lookback. New accounts start on a <strong>14-day Business trial</strong> without a credit card and drop to Developer when it ends unless they upgrade. Each product, such as replays, can also be trialled once for 14 days with unlimited volume.
+                    </p>
+
+                    <h3 id="free-limits" class="scroll-mt-24">Free plan limits</h3>
+                    <ul class="guide-list">
+                        <li><strong>One user.</strong> A second developer needs Team.</li>
+                        <li>No pay-as-you-go budget. Sentry offers the budget on paid plans only, so error number 5,001 in a month is dropped until the cycle resets.</li>
+                        <li>No API or third-party integrations, so alerts go by email instead of Slack.</li>
+                        <li>No profiling, which needs a pay-as-you-go budget.</li>
+                    </ul>
+
+                    <h3 id="self-hosted" class="scroll-mt-24">Self-hosted Sentry</h3>
+                    <p>
+                        Sentry's source is published under the Functional Source License, so you can run it yourself for free. The documented minimum is <strong>4 CPU cores, 16 GB of RAM plus 16 GB of swap</strong> (32 GB of RAM recommended) and 20 GB of free disk, for a single machine. You pay for that server, its upgrades and its backups instead of a subscription.
+                    </p>
+                </section>
+
+                <section id="usage" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Usage</p>
+                    <h2>How Sentry bills usage</h2>
+                    <p>
+                        Every category has its own meter. Rates for errors, spans and replays fall as volume grows; this table lists the first pay-as-you-go tier.
+                    </p>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Category</th><th>Included</th><th>Team</th><th>Business</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.errors.color}`}>Errors</span></td><td>50k</td><td>{per1k(errorTiers[0].team[1])} per 1,000</td><td>{per1k(errorTiers[0].business[1])} per 1,000</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.spans.color}`}>Spans</span></td><td>5M</td><td>{per1m(spanTiers[0].team[1])} per 1M</td><td>{per1m(spanTiers[0].business[1])} per 1M</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.replays.color}`}>Replays</span></td><td>50</td><td colspan="2">{per1k(replayTiers[0].rates[1])} per 1,000 on both</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs</span></td><td>5 GB</td><td colspan="2">$0.50 per GB</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>App metrics</span></td><td>5 GB</td><td colspan="2">$0.50 per GB</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.other.color}`}>Attachments</span></td><td>1 GB</td><td colspan="2">$0.3125 per GB</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.other.color}`}>Cron monitors</span></td><td>1</td><td colspan="2">$0.78 per monitor</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.other.color}`}>Uptime monitors</span></td><td>1</td><td colspan="2">$1.00 per monitor</td></tr>
+                                <tr><td>Continuous profiling</td><td>None</td><td colspan="2">$0.0315 per profile hour</td></tr>
+                                <tr><td>UI profiling</td><td>None</td><td colspan="2">$0.25 per profile hour</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Errors, spans, replays and attachments can also be prepaid as reserved volume at <strong>20% below</strong> the pay-as-you-go rate. Logs, metrics, monitors and profiling are pay-as-you-go only.
+                    </p>
+
+                    <h3 id="volume" class="scroll-mt-24">Errors and spans by volume</h3>
+                    <p>
+                        Each tier's rate applies only to the units inside that tier, the way Sentry's calculator adds it up. The chart shows the pay-as-you-go charge on top of the plan price, for the same volume on each plan:
+                    </p>
+
+                    <figure class="vol" aria-label={`Monthly pay-as-you-go cost above the plan price. Errors: 1 million cost ${usd(errorCost(1_000_000, "team"))} on Team and ${usd(errorCost(1_000_000, "business"))} on Business. Spans: 200 million cost ${usd(spanCost(200_000_000, "team"))} on Team and ${usd(spanCost(200_000_000, "business"))} on Business.`}>
+                        <div class="vol__legend" aria-hidden="true">
+                            <span><i class="vol__swatch vol__swatch--team"></i>Team</span>
+                            <span><i class="vol__swatch vol__swatch--business"></i>Business</span>
+                        </div>
+                        <div class="vol__panels" aria-hidden="true">
+                            {volumePanels.map((p) => (
+                                <div class="vol__panel" style={`--cat: ${cats[p.cat].color}`}>
+                                    <p class="vol__title"><span class="cat-badge">{cats[p.cat].label}</span><span>{p.title}</span></p>
+                                    {p.rows.map((r) => (
+                                        <div class="vol__row">
+                                            <span class="vol__label">{r.label}</span>
+                                            <div class="vol__lines">
+                                                <div class="vol__line"><span class="vol__track"><span class="vol__bar vol__bar--team" style={`width: ${(r.team / p.max) * 100}%`}></span></span><span class="vol__value">{usd(cents(r.team))}</span></div>
+                                                <div class="vol__line"><span class="vol__track"><span class="vol__bar" style={`width: ${(r.business / p.max) * 100}%`}></span></span><span class="vol__value">{usd(cents(r.business))}</span></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                        <figcaption>Pay-as-you-go cost per month above the plan price, at {verified} rates. Reserved volume takes 20% off each bar.</figcaption>
+                    </figure>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Errors per month</th><th>Team reserved</th><th>Team PAYG</th><th>Business reserved</th><th>Business PAYG</th></tr>
+                            </thead>
+                            <tbody>
+                                {errorTiers.map((t) => (
+                                    <tr><td>{t.label}</td><td>{per1k(t.team[0])}</td><td>{per1k(t.team[1])}</td><td>{per1k(t.business[0])}</td><td>{per1k(t.business[1])}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="guide-note">Prices per 1,000 errors. Spans cost {per1m(spanTiers[0].team[1])} per million on Team and {per1m(spanTiers[0].business[1])} on Business up to 100M, then {per1m(spanTiers[1].team[1])} and {per1m(spanTiers[1].business[1])}; reserved spans start at {per1m(spanTiers[0].team[0])} and {per1m(spanTiers[0].business[0])}.</p>
+
+                    <h3 id="session-replay" class="scroll-mt-24">Session replay pricing</h3>
+                    <p>
+                        A replay is one recorded user session. In the JavaScript SDK a session ends after 5 minutes without interaction or at 60 minutes, whichever comes first. Team and Business pay the same rates:
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Replays per month</th><th>Reserved, per 1,000</th><th>Pay-as-you-go, per 1,000</th></tr>
+                            </thead>
+                            <tbody>
+                                {replayTiers.map((t) => (
+                                    <tr><td>{t.label}</td><td>{per1k(t.rates[0])}</td><td>{per1k(t.rates[1])}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Two SDK options decide how many replays you send. <code>replaysSessionSampleRate</code> is the share of sessions recorded from start to finish. <code>replaysOnErrorSampleRate</code> is the share of the other sessions that keep the last minute in memory and upload it only when an error happens. A site with 100,000 sessions a month and a 10% session rate sends about 10,000 replays plus its error sessions, which costs <strong>{usd(replayExample)}</strong> a month on pay-as-you-go. Spike protection does not cover replays, so the sample rate is the control.
+                    </p>
+
+                    <h3 id="counts" class="scroll-mt-24">What counts toward the quota</h3>
+                    <p>
+                        Every exception the SDK sends is one error, including repeats of an issue you resolved or set to ignored. The issue that groups the errors is free. These never reach the quota:
+                    </p>
+                    <ul class="guide-list">
+                        <li>events dropped by an inbound filter, a per-key rate limit or spike protection;</li>
+                        <li>events the SDK never sends, because of a sample rate or <code>beforeSend</code>;</li>
+                        <li>repeats of an issue set to <strong>Delete &amp; Discard</strong>;</li>
+                        <li>events over Sentry's size limits.</li>
+                    </ul>
+                </section>
+
+                <section id="overage" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Overage</p>
+                    <h2>Past your quota: reserved volume and pay-as-you-go</h2>
+                    <p>
+                        Within a billing month, Sentry pays for each category's events from these sources in order:
+                    </p>
+
+                    <ol class="flow" aria-label="The order Sentry pays for a category's events: included volume, then reserved volume, then the pay-as-you-go budget. After that, events are dropped.">
+                        <li class="flow__step flow__step--included"><strong>Included</strong><span>Part of the plan price</span></li>
+                        <li class="flow__step flow__step--reserved"><strong>Reserved</strong><span>Prepaid, 20% below pay-as-you-go</span></li>
+                        <li class="flow__step flow__step--payg"><strong>Pay-as-you-go</strong><span>Billed for what you use, up to your budget</span></li>
+                        <li class="flow__step flow__step--dropped"><strong>Dropped</strong><span>Not stored and not billed</span></li>
+                    </ol>
+
+                    <div class="guide-grid">
+                        <div>
+                            <p class="guide-kicker">Reserved volume</p>
+                            <h4>A monthly commitment per category</h4>
+                            <p>You choose a volume of errors, spans, replays or attachments and pay for it at the start of the cycle. Unused reserved volume expires at the end of each billing month.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">Pay-as-you-go budget</p>
+                            <h4>A cap, charged only for use</h4>
+                            <p>One budget is shared by every category, first come, first served. A raised budget takes effect within minutes, 24 hours at most. Team and Business can add spend notifications.</p>
+                        </div>
+                    </div>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">After the budget, data is dropped</p>
+                        <p>
+                            When included volume, reserved volume and the budget are all used up, Sentry stops accepting that category until the billing cycle resets. You are not charged for the dropped events, and you have no errors, spans or replays for the rest of the month. Lowering the budget below what you already spent rejects new data straight away.
+                        </p>
+                    </div>
+
+                    <p>
+                        On monthly billing, each invoice covers the plan and reserved volume for the new cycle plus the previous cycle's pay-as-you-go usage. On annual billing, the plan and reserved volume are paid once for the year and pay-as-you-go usage is invoiced monthly.
+                    </p>
+                </section>
+
+                <section id="examples" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Examples</p>
+                    <h2>What a month of Sentry costs</h2>
+                    <p>
+                        Two bills with monthly billing, pay-as-you-go rates and the tiered calculation, at prices from {verified}. Each bar splits one bill by category:
+                    </p>
+
+                    <figure class="bills" aria-label={`Where each bill goes. ${billBars.map(({ label, bill: b }) => `${label}, ${usd(b.total)}: ${b.byCat.map((c) => `${cats[c.cat].label} ${usd(c.cost)}`).join(", ")}.`).join(" ")}`}>
+                        <div aria-hidden="true">
+                            {billBars.map(({ label, bill: b }) => (
+                                <div class="bills__row">
+                                    <p class="bills__head"><span>{label}</span><strong>{usd(b.total)}</strong></p>
+                                    <div class="bills__bar">
+                                        {b.byCat.map((c) => {
+                                            const share = (c.cost / b.total) * 100;
+                                            return <span style={`--cat: ${cats[c.cat].color}; width: ${share}%`}>{share >= 9 ? `${Math.round(share)}%` : ""}</span>;
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                            <div class="bills__legend">
+                                {(Object.keys(cats) as Cat[]).map((cat) => (
+                                    <span><i style={`--cat: ${cats[cat].color}`}></i>{cats[cat].label}</span>
+                                ))}
+                            </div>
+                        </div>
+                    </figure>
+
+                    <h3 id="small-team" class="scroll-mt-24">Small team on Team: about {usd(small.total)} a month</h3>
+                    <p>
+                        Five developers with one web app and one API: 150,000 errors, 20 million spans, 2,000 replays, 15 GB of logs, five cron jobs and three uptime checks a month.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Line</th><th>Calculation</th><th>Per month</th></tr>
+                            </thead>
+                            <tbody>
+                                {small.lines.map((l) => (
+                                    <tr><td><span class="cat-badge" style={`--cat: ${cats[l.cat].color}`}>{l.label}</span></td><td>{l.calc}</td><td class="num">{usd(l.cost)}</td></tr>
+                                ))}
+                                <tr class="row-total"><td>Total</td><td></td><td class="num">{usd(small.total)}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 id="mid-team" class="scroll-mt-24">Mid-sized team on Business: about {usd(mid.total)} a month</h3>
+                    <p>
+                        Twenty-five engineers across several services, on Business for SAML single sign-on: 1 million errors, 200 million spans, 50,000 replays, 100 GB of logs, 5 GB of attachments, 20 cron monitors and 10 uptime monitors.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Line</th><th>Calculation</th><th>Business, per month</th><th>Same volume on Team</th></tr>
+                            </thead>
+                            <tbody>
+                                {mid.lines.map((l, i) => (
+                                    <tr><td><span class="cat-badge" style={`--cat: ${cats[l.cat].color}`}>{l.label}</span></td><td>{l.calc}</td><td class="num">{usd(l.cost)}</td><td class="num">{usd(midOnTeam.lines[i].cost)}</td></tr>
+                                ))}
+                                <tr class="row-total"><td>Total</td><td></td><td class="num">{usd(mid.total)}</td><td class="num">{usd(midOnTeam.total)}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Errors and spans are most of the bill, and they are the two categories where Business costs twice as much as Team. Reserving that volume instead of paying as you go takes 20% off those lines. Seer for 15 active contributors would add $600 a month on either plan.
+                    </p>
+
+                    <h3 id="reduce" class="scroll-mt-24">Lowering the bill</h3>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4>Turn on spike protection</h4><p>In <strong>Settings &gt; Spike Protection</strong>, per project. Sentry sets an hourly threshold from the last 7 days of traffic and drops errors, spans and attachments above it.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4>Filter before events count</h4><p>Inbound filters for browser extensions, legacy browsers and localhost drop events before they reach the quota. Set issues you will never fix to <strong>Delete &amp; Discard</strong>, because ignored issues keep counting.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h4>Sample spans and replays in the SDK</h4><p>Span and replay volume grows with traffic, error volume with bugs. Sample the first two and keep every error, as in the configuration below.</p></div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div><h4>Reserve the steady baseline</h4><p>Prepay the volume you send every month at the reserved rate and keep the pay-as-you-go budget for peaks. <strong>Stats &gt; Usage</strong> shows which projects send the most.</p></div>
+                        </li>
+                    </ol>
+
+                    <p>
+                        Steps 02 and 03 happen in the SDK. This is a browser setup for a frontend app, where replays are recorded: it keeps every error, drops one known noisy error, sends 10% of traces, records 1% of sessions plus every session with an error, and sends nothing from local development.
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">sentry.ts (browser)</p>
+                        <pre><code set:html={highlight(sentryInit, "typescript")} /></pre>
+                    </div>
+                    <p>
+                        With <code>tracesSampleRate: 0.1</code>, about 10% of traces are sent, so span volume falls by about 90%. Server SDKs take the same <code>sampleRate</code>, <code>tracesSampleRate</code> and <code>beforeSend</code> options.
+                    </p>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · Maple</p>
+                    <h2>Maple pricing for the same data</h2>
+                    <p>
+                        Maple is an OpenTelemetry observability platform with error tracking and session replay. It has one plan at <strong>{money(offer.price)}{offer.interval}</strong> and bills by gigabyte per signal instead of per event, with no per-seat fees. Data is kept for 30 days.
+                    </p>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Sentry meter</th><th>In Maple</th><th>Included, then</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.errors.color}`}>Errors</span></td><td>Spans with an <code>Error</code> status, grouped into issues</td><td>Billed as trace data</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.spans.color}`}>Spans</span></td><td>Traces</td><td>{gb?.included} GB, then {rateLabel(gb?.rate ?? 0)} per GB</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.replays.color}`}>Replays</span></td><td>Browser sessions with replay</td><td>{(sessions?.included ?? 0).toLocaleString("en-US")}, then {rateLabel(sessions?.rate ?? 0)} per session</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs</span></td><td>Logs</td><td>{gb?.included} GB, then {rateLabel(gb?.rate ?? 0)} per GB</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>App metrics</span></td><td>Metrics</td><td>{gb?.included} GB, then {rateLabel(gb?.rate ?? 0)} per GB</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4>Errors come from your traces</h4><p>Maple fingerprints every error span by service, exception type, top stack frames and message, and groups the occurrences into an issue with a triage workflow. A fixed issue that fires again from a newer build is marked <strong>Regressed</strong>.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/sentry-pricing-01-errors.webp" data-zoomable alt="The Maple Errors page listing open issues with their exception type and message, 24-hour trend, event count, service and Triage status." width="1810" height="930" loading="lazy" /></figure></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4>Errors and replays link to traces</h4><p>Each issue's <strong>Occurrences</strong> tab lists its latest error events with the trace each one came from. In the browser, the <code>@maple-dev/browser</code> SDK tags every span and replay event with the same <code>session.id</code>, so a replay's <strong>Traces</strong> tab lists the backend traces from that session, and a trace links back with <strong>View Session Replay</strong>. <code>replay.sampleRate</code> sets the share of sessions recorded.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/sentry-pricing-02-occurrences.webp" data-zoomable alt="The Occurrences tab of a PaymentDeclinedError issue from the checkout service: its latest error events, each with its time, service, message and trace ID." width="1760" height="1772" loading="lazy" /></figure></div>
+                        </li>
+                    </ol>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Maple</p>
+                        <h3>Errors, traces and replays on one bill</h3>
+                        <p>How errors are grouped, and how to set up the browser SDK with replay.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/pricing" class="guide-button guide-button--primary">See Maple pricing</a>
+                            <a href="/docs/errors/overview" class="guide-button">Errors and issues</a>
+                            <a href="/docs/session-replay/browser-sdk" class="guide-button">Browser SDK and replay</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry: Pricing (verified {verified})</a></li>
+                        <li><a href="https://docs.sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry docs: Pricing and billing</a></li>
+                        <li><a href="https://docs.sentry.io/pricing/quotas/" target="_blank" rel="noopener noreferrer">Sentry docs: Quota management</a></li>
+                        <li><a href="https://docs.sentry.io/pricing/quotas/spike-protection/" target="_blank" rel="noopener noreferrer">Sentry docs: Spike protection</a></li>
+                        <li><a href="https://docs.sentry.io/platforms/javascript/session-replay/" target="_blank" rel="noopener noreferrer">Sentry docs: Session replay for JavaScript</a></li>
+                        <li><a href="https://develop.sentry.dev/self-hosted/" target="_blank" rel="noopener noreferrer">Sentry developer docs: Self-hosted Sentry</a></li>
+                        <li><a href="/docs/errors/overview">Maple docs: Errors and issues</a></li>
+                        <li><a href="/docs/session-replay/replays">Maple docs: Replays</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .pricing-guide { max-width: 46rem; font-family: var(--font-display); }
+    .pricing-guide section + section { margin-top: 5.5rem; }
+    .pricing-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .pricing-guide .guide-eyebrow span { color: var(--primary); }
+    .pricing-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .pricing-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .pricing-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .pricing-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-note, .guide-verified), .pricing-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .pricing-guide .guide-note, .pricing-guide .guide-verified { margin: -0.75rem 0 1.5rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .pricing-guide .guide-verified { margin-top: 0; }
+    .pricing-guide strong { font-weight: 600; color: var(--foreground); }
+    .pricing-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .pricing-guide pre { margin: 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0 0.5rem 0.5rem 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .pricing-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .pricing-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .pricing-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pricing-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .pricing-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .pricing-guide .guide-list { margin: 0 0 1.5rem; padding-left: 1.2rem; list-style: disc; font-size: 16px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .pricing-guide .guide-list li + li { margin-top: 0.35rem; }
+
+    /* One color per billed category: set --cat on the element. */
+    .pricing-guide .cat-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--cat) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--cat) 14%, transparent); padding: 0.1rem 0.55rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.03em; color: color-mix(in oklab, var(--cat) 70%, var(--foreground)); white-space: nowrap; }
+
+    .pricing-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .pricing-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .pricing-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .pricing-guide td { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; vertical-align: middle; }
+    .pricing-guide td + td { border-left: 1px solid var(--border); }
+    .pricing-guide tbody tr:last-child td { border-bottom: 0; }
+    .pricing-guide td.num { font-family: var(--font-mono); font-size: 12px; color: var(--foreground); text-align: right; white-space: nowrap; }
+    .pricing-guide .row-price td { font-weight: 600; color: var(--foreground); }
+    .pricing-guide .row-total td { background: var(--bg-deep); font-weight: 600; color: var(--foreground); }
+
+    .vol { margin: 1.75rem 0 1.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .vol__legend { display: flex; gap: 1.25rem; margin-bottom: 1rem; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+    .vol__legend span { display: inline-flex; align-items: center; gap: 0.45rem; }
+    .vol__swatch { display: inline-block; width: 1.4rem; height: 0.55rem; border-radius: 0.2rem; background: var(--muted-foreground); }
+    .vol__swatch--team { background: color-mix(in oklab, var(--muted-foreground) 35%, transparent); }
+    .vol__panels { display: grid; gap: 1.5rem; }
+    .vol__title { display: flex; align-items: center; gap: 0.6rem; margin: 0 0 0.75rem; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+    .vol__row { display: grid; grid-template-columns: 2.75rem 1fr; align-items: center; gap: 0.5rem; padding: 0.35rem 0; }
+    .vol__row + .vol__row { border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
+    .vol__label { font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .vol__lines { display: grid; gap: 0.2rem; }
+    .vol__line { display: grid; grid-template-columns: 1fr 4.75rem; align-items: center; gap: 0.5rem; }
+    .vol__track { height: 0.6rem; border-radius: 0.2rem; background: color-mix(in oklab, var(--cat) 6%, transparent); }
+    .vol__bar { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--cat) 85%, transparent); }
+    .vol__bar--team { background: color-mix(in oklab, var(--cat) 35%, transparent); }
+    .vol__value { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); text-align: right; }
+    .vol figcaption, .bills figcaption { margin-top: 1rem; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+
+    .flow { display: grid; gap: 0.5rem; margin: 1.5rem 0 2rem; padding: 0; list-style: none; }
+    .flow__step { position: relative; display: grid; gap: 0.25rem; border: 1px solid var(--border); border-top: 3px solid var(--step); border-radius: 0.5rem; background: color-mix(in oklab, var(--step) 7%, var(--bg-deep)); padding: 0.8rem 0.9rem; }
+    .flow__step strong { font-size: 14px; color: var(--foreground); }
+    .flow__step span { font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+    .flow__step--included { --step: color-mix(in oklab, var(--muted-foreground) 50%, transparent); }
+    .flow__step--reserved { --step: var(--muted-foreground); }
+    .flow__step--payg { --step: var(--warning); }
+    .flow__step--dropped { --step: var(--destructive); background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--destructive) 8%, var(--bg-deep)) 0 6px, var(--bg-deep) 6px 12px); }
+
+    .bills { margin: 1.75rem 0 1.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .bills__row + .bills__row { margin-top: 1.1rem; }
+    .bills__head { display: flex; justify-content: space-between; gap: 1rem; margin: 0 0 0.45rem; font-size: 13px; color: var(--muted-foreground); }
+    .bills__head strong { font-family: var(--font-mono); font-size: 12px; }
+    .bills__bar { display: flex; height: 1.6rem; overflow: hidden; border-radius: 0.35rem; gap: 2px; }
+    .bills__bar span { display: grid; place-items: center; min-width: 3px; background: color-mix(in oklab, var(--cat) 80%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--background); }
+    .bills__legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 1.1rem; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+    .bills__legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+    .bills__legend i { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 0.15rem; background: color-mix(in oklab, var(--cat) 80%, transparent); }
+
+    .pricing-guide .code-file { margin: 1.5rem 0 1.25rem; }
+    .pricing-guide > section > p.table-note { margin-top: -0.75rem; font-size: 14px; }
+    .pricing-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .pricing-guide .tok-comment { color: var(--muted-foreground); }
+    .pricing-guide .tok-labels { color: color-mix(in oklab, var(--chart-3) 75%, var(--foreground)); }
+    .pricing-guide .tok-value { color: color-mix(in oklab, var(--chart-1) 80%, var(--foreground)); }
+    .pricing-guide .tok-fn { color: color-mix(in oklab, var(--chart-5) 80%, var(--foreground)); }
+
+    .pricing-guide .guide-grid { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .pricing-guide .guide-grid > div { background: var(--background); padding: 1.25rem 1.35rem; }
+    .pricing-guide .guide-grid h4 { margin: 0.45rem 0 0.5rem; }
+    .pricing-guide .guide-grid p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .pricing-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--destructive); border-radius: 0.5rem; background: color-mix(in oklab, var(--destructive) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pricing-guide .guide-callout .guide-kicker { color: var(--destructive); }
+    .pricing-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .pricing-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .pricing-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
+    .pricing-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .pricing-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .pricing-guide .guide-figure { margin: 1rem 0 0; }
+    .pricing-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .pricing-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .pricing-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .pricing-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .pricing-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .pricing-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .pricing-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .pricing-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .pricing-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .pricing-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .pricing-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .vol__panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .flow { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .flow__step:not(:last-child)::after { content: ""; position: absolute; top: 50%; right: -0.42rem; width: 0.45rem; height: 0.45rem; border-top: 1.5px solid var(--muted-foreground); border-right: 1.5px solid var(--muted-foreground); transform: translateY(-50%) rotate(45deg); }
+        .pricing-guide .guide-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .pricing-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .pricing-guide a, .pricing-guide .guide-button { transition: none; }
+    }
+</style>

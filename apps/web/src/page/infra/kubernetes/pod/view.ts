@@ -39,7 +39,7 @@ const METRIC_OPTIONS: ReadonlyArray<Readonly<{ value: PodMetric; label: string }
 ]
 
 const rail = (h: H, summary: Summary): Html =>
-	resourceAttributesCard(h, "FolderIcon", [
+	resourceAttributesCard(h, [
 		metaRow(h, { label: "k8s.pod.name", value: summary.podName }),
 		metaRow(h, { label: "k8s.namespace.name", value: summary.namespace }),
 		metaRow(h, { label: "k8s.node.name", value: summary.nodeName }),
@@ -55,7 +55,7 @@ const rightPanel = (h: H, model: Model): Html | undefined => {
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	if (summary !== null) return rail(h, summary)
 	return AsyncData.isLoading(model.summary.data) || AsyncData.isIdle(model.summary.data)
-		? resourceAttributesCardSkeleton(h, "FolderIcon")
+		? resourceAttributesCardSkeleton(h)
 		: undefined
 }
 

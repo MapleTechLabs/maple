@@ -215,6 +215,7 @@ export const ClerkOrganization = Schema.Struct({
 		aiAutoTriage: Schema.Boolean,
 		releases: Schema.Boolean,
 		securityAudit: Schema.Boolean,
+		statusPages: Schema.Boolean,
 	}),
 })
 export type ClerkOrganization = typeof ClerkOrganization.Type

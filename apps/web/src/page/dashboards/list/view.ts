@@ -156,7 +156,7 @@ const degradedBanner = (h: H): Html =>
 				{
 					size: "xs",
 					variant: "ghost",
-					className: "-my-1 shrink-0 hover:text-foreground",
+					className: "-my-1 shrink-0 hover:text-foreground active:text-foreground",
 					attributes: [h.OnClick(Message.ClickedRetrySync())],
 				},
 				["Retry sync"],

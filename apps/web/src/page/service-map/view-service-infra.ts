@@ -22,7 +22,8 @@ type KnownKind = "deployment" | "statefulset" | "daemonset"
 const knownKindOf = (kind: string): KnownKind | null =>
 	kind === "deployment" || kind === "statefulset" || kind === "daemonset" ? kind : null
 
-const LINK = "inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
+const LINK =
+	"inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 active:text-primary/80"
 
 const podsHref = (workload: ServiceWorkload, kind: KnownKind | null, time: TimeSearch): string => {
 	const namespaces = workload.namespace ? [workload.namespace] : undefined
@@ -87,9 +88,11 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 			keyValue(h, { label: "CPU", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" }, [
 				utilization(workload.avgCpuLimitUtilization),
 			]),
-			keyValue(h, { label: "Memory", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" }, [
-				utilization(workload.avgMemoryLimitUtilization),
-			]),
+			keyValue(
+				h,
+				{ label: "Memory", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" },
+				[utilization(workload.avgMemoryLimitUtilization)],
+			),
 		]),
 		h.div(
 			[h.Class("flex items-center gap-3 pt-0.5")],
@@ -122,33 +125,37 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 			),
 		],
 		[
-			panel(h, { padded: "sm", className: "space-y-1 transition-colors group-hover:bg-surface-sunken" }, [
-				eyebrow(h, { as: "div", className: "flex items-center gap-1.5" }, [
-					icon(h, link.icon, { size: 12 }),
-					h.span([], [link.label]),
-				]),
-				h.div(
-					[h.Class("flex items-center justify-between gap-2")],
-					[
-						h.p(
-							[h.Class("min-w-0 truncate font-mono text-xs font-medium text-foreground")],
-							[link.name],
-						),
-						icon(h, "ArrowRightIcon", {
-							size: 12,
-							className: "shrink-0 text-muted-foreground group-hover:text-primary",
-						}),
-					],
-				),
-				...(link.location.length === 0
-					? []
-					: [
+			panel(
+				h,
+				{ padded: "sm", className: "space-y-1 transition-colors group-hover:bg-surface-sunken" },
+				[
+					eyebrow(h, { as: "div", className: "flex items-center gap-1.5" }, [
+						icon(h, link.icon, { size: 12 }),
+						h.span([], [link.label]),
+					]),
+					h.div(
+						[h.Class("flex items-center justify-between gap-2")],
+						[
 							h.p(
-								[h.Class("truncate text-3xs text-muted-foreground")],
-								[link.location.join(" · ")],
+								[h.Class("min-w-0 truncate font-mono text-xs font-medium text-foreground")],
+								[link.name],
 							),
-						]),
-			]),
+							icon(h, "ArrowRightIcon", {
+								size: 12,
+								className: "shrink-0 text-muted-foreground group-hover:text-primary",
+							}),
+						],
+					),
+					...(link.location.length === 0
+						? []
+						: [
+								h.p(
+									[h.Class("truncate text-3xs text-muted-foreground")],
+									[link.location.join(" · ")],
+								),
+							]),
+				],
+			),
 		],
 	)
 
@@ -184,7 +191,11 @@ const infraEmptyState = (h: H): Html =>
 				],
 			),
 			h.pre(
-				[h.Class("text-3xs bg-muted px-2 py-1.5 rounded-sm font-mono text-foreground overflow-x-auto")],
+				[
+					h.Class(
+						"text-3xs bg-muted px-2 py-1.5 rounded-sm font-mono text-foreground overflow-x-auto",
+					),
+				],
 				["kubectl label namespace <ns> maple.io/instrument=true"],
 			),
 			docsLink(h, "kubernetes"),

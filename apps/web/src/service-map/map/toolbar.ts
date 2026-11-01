@@ -122,7 +122,8 @@ const focusControls = <M>(
 				{
 					size: "icon-xs",
 					label: "Clear focus",
-					className: "-mr-0.5 size-5 text-muted-foreground hover:text-foreground sm:size-5",
+					className:
+						"-mr-0.5 size-5 text-muted-foreground hover:text-foreground active:text-foreground sm:size-5",
 					attributes: [h.OnClick(inputs.onClearFocus)],
 				},
 				[icon(h, "XmarkIcon")],

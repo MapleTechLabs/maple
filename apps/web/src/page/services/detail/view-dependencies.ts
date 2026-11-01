@@ -8,9 +8,11 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
+import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { skeleton } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHeader, tableRow } from "../../../ui/table"
 import { errorRateValue, latencyValue, serviceDot } from "../../../ui/values"
 import {
@@ -25,18 +27,25 @@ import { sortRows } from "../../kit/table-sort"
 import { TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { barCell, headLabel, sortColumnHead } from "./view-table-cells"
+import type { DependencyBundle } from "./model-tabs"
+import {
+	barCell,
+	headLabel,
+	rangeNote,
+	sortColumnHead,
+	tableSkeletonHead,
+	tableTitle,
+} from "./view-table-cells"
 
 // `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge` (components/services/).
-// TODO(mobile-list): the `md:hidden` tap-to-trace list and its sort pills are not ported.
 // TODO(sampled-tooltip): an estimated rate's "Estimated ×N" tooltip is not ported (trigger only).
 
 type H = HtmlBuilder<Message>
 
 const BADGE = new Map<DependencyKind, Readonly<{ label: string; tone: string; icon: IconName }>>([
-	["service", { label: "Service", tone: "bg-severity-info/10 text-severity-info", icon: "ServerIcon" }],
+	["service", { label: "Service", tone: "bg-severity-info-a2 text-severity-info", icon: "ServerIcon" }],
 	["database", { label: "Database", tone: "bg-chart-3/10 text-chart-3", icon: "DatabaseIcon" }],
-	["http", { label: "HTTP", tone: "bg-foreground/5 text-muted-foreground", icon: "GlobeIcon" }],
+	["http", { label: "HTTP", tone: "bg-surface-sunken text-muted-foreground", icon: "GlobeIcon" }],
 	["messaging", { label: "Queue", tone: "bg-chart-4/10 text-chart-4", icon: "PaperPlaneIcon" }],
 	["rpc", { label: "RPC", tone: "bg-chart-5/10 text-chart-5", icon: "NetworkNodesIcon" }],
 ])
@@ -96,7 +105,7 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 						],
 					),
 				],
-				"max-w-0 py-2 pl-3 align-middle",
+				"max-w-0 py-0 pl-4 align-middle",
 			),
 			barCell(h, { value: row.callsPerSec, max: maxima.calls, tone: "calls" }, sampledRate(h, row)),
 			barCell(
@@ -107,15 +116,15 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 			tableCell(
 				h,
 				[latencyValue(h, { ms: row.avgDurationMs, scale: "avg", className: "text-xs" })],
-				"py-2 text-right align-middle",
+				"hidden py-0 text-right align-middle md:table-cell",
 			),
 			barCell(
 				h,
-				{ value: row.p95DurationMs, max: maxima.p95, tone: "latency" },
+				{ value: row.p95DurationMs, max: maxima.p95, tone: "latency", className: "pr-4" },
 				latencyValue(h, { ms: row.p95DurationMs, scale: "p95", className: "text-xs" }),
 			),
 		],
-		"cursor-pointer group/row border-b last:border-b-0 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+		"group/row h-11 cursor-pointer border-b last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 		[
 			h.Key(row.id),
 			h.Attribute("tabindex", "0"),
@@ -135,19 +144,20 @@ const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>)
 	const sorted = sortRows(rows, sort, (row, key) =>
 		key === "errorRate" ? row.errorRate : key === "p95DurationMs" ? row.p95DurationMs : row.callsPerSec,
 	)
-	const column = (sortKey: string, label: string) =>
-		sortColumnHead(h, { table: "dependencies", sortKey, label, sort })
-	return panel(h, { className: "hidden md:block" }, [
+	const column = (sortKey: string, label: string, className?: string) =>
+		sortColumnHead(h, { table: "dependencies", sortKey, label, sort, className })
+	return panel(h, {}, [
+		tableTitle(h, { title: "Dependencies", count: rows.length }),
 		table(h, {}, [
 			tableHeader(h, [
 				tableRow(
 					h,
 					[
-						headLabel(h, ["Target"], "pl-3"),
+						headLabel(h, ["Target"], "pl-4"),
 						column("callsPerSec", "Calls /s"),
 						column("errorRate", "Errors"),
-						headLabel(h, ["Avg"], "text-right"),
-						column("p95DurationMs", "p95"),
+						headLabel(h, ["Avg"], "hidden text-right md:table-cell"),
+						column("p95DurationMs", "p95", "pr-4"),
 					],
 					"border-b",
 				),
@@ -170,7 +180,7 @@ const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>)
 											),
 										]),
 									],
-									"p-0",
+									"whitespace-normal p-0",
 									[h.Attribute("colspan", "5")],
 								),
 							]),
@@ -209,7 +219,7 @@ const headlineFact = (
 		],
 	)
 
-const summaryStrip = (h: H, count: number, summary: DependencySummary): Html =>
+const summaryStrip = (h: H, summary: DependencySummary): Html =>
 	h.div(
 		[
 			h.Class(
@@ -217,20 +227,8 @@ const summaryStrip = (h: H, count: number, summary: DependencySummary): Html =>
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-baseline gap-x-3")],
-				[
-					h.span(
-						[h.Class("text-foreground")],
-						[
-							h.span([h.Class("tabular-nums font-mono font-medium")], [String(count)]),
-							" ",
-							h.span([h.Class("text-muted-foreground")], ["downstream"]),
-						],
-					),
-					h.span([h.Class("text-foreground-subtle")], [summary.breakdown]),
-				],
-			),
+			// The table title carries the count; the strip says what kind of targets they are.
+			h.span([h.Class("text-foreground-subtle")], [summary.breakdown]),
 			h.span([h.Class("hidden grow sm:block")]),
 			h.div(
 				[h.Class("flex flex-col gap-1 sm:contents")],
@@ -262,37 +260,56 @@ const summaryStrip = (h: H, count: number, summary: DependencySummary): Html =>
 		],
 	)
 
-/** The Dependencies tab: summary strip, the 30-day note, and the sortable table. */
-export const dependenciesTab = (h: H, model: Model): Html => {
+const loadingState = (h: H): Html =>
+	panel(h, {}, [
+		...tableSkeletonHead(h, "Dependencies"),
+		h.div(
+			[h.AriaBusy(true), h.Class("flex flex-col")],
+			Array.from({ length: 6 }, (_, index) =>
+				h.div(
+					[
+						h.Key(String(index)),
+						h.Class("flex h-11 items-center gap-3 border-b px-4 last:border-b-0"),
+					],
+					[
+						skeleton(h, "h-4 w-16"),
+						skeleton(h, "h-3 flex-1"),
+						skeleton(h, "h-3 w-12"),
+						skeleton(h, "h-3 w-10"),
+						skeleton(h, "h-3 w-12"),
+					],
+				),
+			),
+		),
+	])
+
+/** The Dependencies tab: skeleton, error (first read only), or the summary strip, note and table. */
+export const dependenciesTab = (h: H, model: Model): Html =>
+	AsyncData.match(model.dependencies.data, {
+		onIdle: () => loadingState(h),
+		onLoading: () => loadingState(h),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load dependencies" }),
+		// A failed reload keeps the last rows on screen, as before.
+		onStale: ({ data }) => dependenciesBody(h, model, data, false),
+		onRefreshing: (bundle) => dependenciesBody(h, model, bundle, true),
+		onSuccess: (bundle) => dependenciesBody(h, model, bundle, false),
+	})
+
+const dependenciesBody = (h: H, model: Model, bundle: DependencyBundle, isWaiting: boolean): Html => {
 	const window = model.window
 	const startMs = window === null ? 0 : parseWarehouseDateTime(window.startTime)
 	const endMs = window === null ? 0 : parseWarehouseDateTime(window.endTime)
 	const seconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
-	const rows = foldHostRows(
-		AsyncData.getOrElse(
-			AsyncData.map(model.dependencies.data, (bundle) => dependencyRows(bundle, seconds)),
-			() => [],
-		),
-	)
+	const rows = foldHostRows(dependencyRows(bundle, seconds))
 	const summary = dependencySummary(rows)
-	const isWaiting = AsyncData.isRefreshing(model.dependencies.data)
 	return h.div(
 		[
 			h.Class(cn("flex flex-col gap-3", refreshingClass(isWaiting))),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
 		[
-			...(summary === undefined ? [] : [summaryStrip(h, rows.length, summary)]),
-			...(seconds > TRACE_DETAIL_LIMIT_SECONDS
-				? [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Dependency summaries cover the selected range; individual trace drill-downs show the latest 30 days.",
-							],
-						),
-					]
-				: []),
+			...(summary === undefined ? [] : [summaryStrip(h, summary)]),
+			...(seconds > TRACE_DETAIL_LIMIT_SECONDS ? [rangeNote(h, "Dependency")] : []),
 			dependencyTable(h, model, rows),
 		],
 	)

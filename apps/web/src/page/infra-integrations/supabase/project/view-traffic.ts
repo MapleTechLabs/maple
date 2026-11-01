@@ -79,7 +79,7 @@ const legend = (h: H, traffic: SupabaseApiTrafficResponse, isOpen: boolean): Htm
 					h.Type("button"),
 					h.AriaExpanded(isOpen),
 					h.OnClick(Message.ClickedToggleTopPaths()),
-					h.Class("text-2xs text-muted-foreground transition-colors hover:text-foreground"),
+					h.Class("text-2xs text-muted-foreground hover:text-foreground active:text-foreground"),
 				],
 				[isOpen ? "Hide top paths" : "Top paths →"],
 			),

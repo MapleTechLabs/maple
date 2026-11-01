@@ -52,7 +52,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 	h.div(
 		[
 			h.Class(
-				cn("pr-3.5", line.highlight && "border-l-2 border-l-severity-error bg-severity-error/10"),
+				cn("pr-3.5", line.highlight && "border-l-2 border-l-severity-error bg-severity-error-a2"),
 			),
 			h.Style({ "padding-left": `${14 + line.depth * 16 - (line.highlight ? 2 : 0)}px` }),
 		],
@@ -61,7 +61,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 				? h.span(
 						[
 							h.Class(
-								"my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error",
+								"my-0.5 inline-flex items-center gap-2 rounded-xs border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error",
 							),
 						],
 						['"', line.missingKey, '"', h.span([h.Class("opacity-80")], ["missing, required"])],
@@ -85,7 +85,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 				? []
 				: [
 						h.span(
-							[h.Class("ml-2 rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground")],
+							[h.Class("ml-2 rounded-xs bg-muted px-1 text-2xs text-muted-foreground")],
 							[line.folded],
 						),
 					]),
@@ -101,7 +101,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 											h.span(
 												[
 													h.Class(
-														"rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground",
+														"rounded-xs bg-muted px-1 text-2xs text-muted-foreground",
 													),
 												],
 												["+", formatToolCount(line.note.hiddenBytes), " B not shown"],
@@ -158,7 +158,8 @@ const argumentsBlock = (
 					{
 						variant: "ghost",
 						size: "xs",
-						className: "font-mono text-2xs text-muted-foreground hover:text-foreground sm:text-2xs",
+						className:
+							"font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
 						attributes: [h.OnClick(Message.ClickedCopyArguments({ text: row.arguments }))],
 					},
 					[copyLabel],
@@ -182,11 +183,7 @@ const argumentsBlock = (
 						lines.map((line) => payloadLineView(h, line)),
 					),
 			h.div(
-				[
-					h.Class(
-						"flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle",
-					),
-				],
+				[h.Class("flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle")],
 				[
 					h.span([], note === undefined ? [] : [note]),
 					h.span([h.Class("grow")], []),
@@ -222,7 +219,7 @@ const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 				: h.pre(
 						[
 							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error/25 bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
+								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error-a3 bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
 							),
 						],
 						[parsed === undefined ? row.result : JSON.stringify(parsed, null, 2)],
@@ -253,7 +250,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 						h.div(
 							[
 								h.Class(
-									"flex items-baseline gap-3 rounded-md border border-severity-error/20 bg-severity-error/[0.07] px-3 py-[9px] font-mono",
+									"flex items-baseline gap-3 rounded-md border border-severity-error-a3 bg-severity-error/[0.07] px-3 py-2 font-mono",
 								),
 							],
 							[

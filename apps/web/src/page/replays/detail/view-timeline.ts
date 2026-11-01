@@ -132,7 +132,7 @@ const activityGutter = (h: H): Html =>
 				),
 			),
 		],
-		[icon(h, "CursorIcon", { className: "size-3.5 opacity-70" }), "Activity"],
+		[icon(h, "CursorIcon", { className: "size-3.5" }), "Activity"],
 	)
 
 const scrubSurface = (h: H, playhead: Playhead): Html =>
@@ -180,7 +180,7 @@ const tracesHeader = (h: H, count: number | null): Html =>
 								variant: "muted",
 								pill: true,
 								size: "xs",
-								className: "bg-primary/10 text-primary tabular-nums",
+								className: "bg-primary-a2 text-primary tabular-nums",
 							},
 							[String(count)],
 						),
@@ -221,7 +221,9 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 		[
 			h.div(
 				[
-					h.Class(cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6")),
+					h.Class(
+						cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6"),
+					),
 					h.Title(`${span.serviceName} · ${span.spanName}`),
 				],
 				[
@@ -245,7 +247,7 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 						[
 							h.Class(
 								cn(
-									"absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm transition-[filter] hover:brightness-110",
+									"absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm transition-[filter] hover:brightness-110 active:brightness-110",
 									span.statusCode === "Error" ? "bg-severity-error" : "bg-primary/70",
 									range.outOfRange && "opacity-50",
 								),
@@ -338,7 +340,7 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 									h.Target("_blank"),
 									h.Rel("noreferrer"),
 									h.Class(
-										"group/trace flex min-w-0 flex-1 items-center rounded-sm px-1 py-1.5 text-left transition-colors hover:bg-surface-sunken",
+										"group/trace flex min-w-0 flex-1 items-center rounded-sm px-1 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 									),
 								],
 								[
@@ -392,10 +394,10 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 								[
 									h.Class(
 										cn(
-											"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded-sm px-1.5 text-3xs font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110",
+											"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded-sm px-1.5 text-3xs font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110 active:brightness-110",
 											isError
-												? "bg-severity-error ring-severity-error/40"
-												: "bg-primary ring-primary/40",
+												? "bg-severity-error ring-severity-error-a4"
+												: "bg-primary ring-primary-a4",
 											range.outOfRange &&
 												"opacity-60 outline-1 outline-dashed outline-white/70 -outline-offset-1",
 										),
@@ -469,14 +471,18 @@ const tracesSlot = createLazy()
 
 const timelineHeader = (h: H): Html =>
 	h.div(
-		[h.Class("flex items-center justify-between gap-3 border-b border-border bg-surface-sunken px-3 py-2")],
+		[
+			h.Class(
+				"flex items-center justify-between gap-3 border-b border-border bg-surface-sunken px-3 py-2",
+			),
+		],
 		[eyebrow(h, { variant: "label" }, ["Timeline"]), markerLegend(h)],
 	)
 
 /** The timeline panel: legend, ruler, activity, traces, one playhead over them. A tick rebuilds the playhead only. */
 export const replayTimeline = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html => {
 	const playhead = playheadOf(model)
-	return panel(h, { className: "shadow-sm" }, [
+	return panel(h, { className: "shadow-raised" }, [
 		headerSlot(timelineHeader, [h]),
 		h.div(
 			[h.Class("relative")],
@@ -509,7 +515,7 @@ const playheadLine = (h: H, playhead: Playhead): Html =>
 					h.div(
 						[
 							h.Class(
-								"absolute -top-0.5 left-1/2 size-2 -translate-x-1/2 rounded-full bg-primary shadow-sm",
+								"absolute -top-0.5 left-1/2 size-2 -translate-x-1/2 rounded-full bg-primary shadow-raised",
 							),
 						],
 						[],

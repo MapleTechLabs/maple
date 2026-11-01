@@ -12,6 +12,7 @@ import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
 import { listRow } from "../../ui/list-row"
 import { skeleton } from "../../ui/skeleton"
+import { statusDot } from "../../ui/status-dot"
 import * as GuidedSetup from "../kit/guided-setup"
 import { Message, type Model } from "./setup-checklist"
 import { frameworkOf, isMounted, realServices } from "./setup-checklist-update"
@@ -31,7 +32,9 @@ const keysUnavailable = (h: H): Html =>
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
-					h.Class("font-medium text-foreground underline underline-offset-2 hover:no-underline"),
+					h.Class(
+						"font-medium text-foreground underline underline-offset-2 hover:no-underline active:no-underline",
+					),
 				],
 				["Settings → Ingestion"],
 			),
@@ -109,17 +112,13 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 		],
 	)
 
-/** "Watching for your first trace…" while the card waits for data. */
+/** "Listening for your first trace" while the card waits for data. */
 const watchingStrip = (h: H): Html =>
 	h.div(
+		[h.Class("flex items-center gap-2.5 rounded-md border border-dashed border-border px-4 py-3")],
 		[
-			h.Class(
-				"flex items-center gap-2.5 rounded-md border border-dashed border-primary/30 bg-primary/5 p-4",
-			),
-		],
-		[
-			icon(h, "PulseIcon", { size: 14, className: "text-primary" }),
-			h.span([h.Class("font-prose text-xs text-muted-foreground")], ["Watching for your first trace…"]),
+			statusDot(h, { tone: "ok" }),
+			h.span([h.Class("text-xs text-muted-foreground")], ["Listening for your first trace"]),
 		],
 	)
 
@@ -134,7 +133,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 					h.div(
 						[
 							h.Class(
-								"flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary",
+								"flex size-10 shrink-0 items-center justify-center rounded-lg bg-severity-info-a2 text-severity-info",
 							),
 						],
 						[icon(h, "CircleCheckIcon", { size: 20 })],
@@ -142,16 +141,13 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 					h.div(
 						[h.Class("min-w-0 flex-1 basis-40")],
 						[
+							h.p([h.Class("text-sm font-semibold tracking-tight")], ["First trace received"]),
 							h.p(
-								[h.Class("text-sm font-semibold tracking-tight")],
-								["First trace received. You're live"],
-							),
-							h.p(
-								[h.Class("mt-0.5 font-prose text-xs text-muted-foreground")],
+								[h.Class("mt-0.5 text-xs text-muted-foreground")],
 								[
 									serviceName === undefined
-										? "We're seeing your telemetry. Jump in to explore."
-										: `We're seeing telemetry from ${serviceName}. Open it to explore.`,
+										? "Your telemetry is arriving."
+										: `${serviceName} is sending telemetry.`,
 								],
 							),
 						],
@@ -163,7 +159,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 							className: "gap-2 shrink-0 max-sm:order-last max-sm:w-full",
 							attributes: [h.OnClick(Message.ClickedExploreTraces())],
 						},
-						["Explore your traces", icon(h, "RocketIcon", {})],
+						["Explore your traces", icon(h, "ArrowRightIcon", {})],
 					),
 					button(
 						h,
@@ -182,7 +178,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 				"flex flex-wrap items-center gap-4 p-5",
 			),
 		],
-		"mb-4 shrink-0 border-primary/40 bg-primary/[0.04] overflow-hidden",
+		"mb-4 shrink-0 overflow-hidden",
 	)
 
 /** `SetupChecklistCard` while waiting: the collapsible "Connect your app" card. */
@@ -201,17 +197,17 @@ const waitingCard = (
 				[
 					listRow(h, {
 						onClick: Message.ClickedToggleExpanded(),
-						className: "flex-1 px-5 py-4 hover:bg-surface-sunken",
+						className: "flex-1 px-5 py-4 hover:bg-surface-sunken active:bg-surface-sunken",
 						leading: h.span(
 							[
 								h.Class(
-									"flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary",
+									"flex size-9 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
 								),
 							],
 							[icon(h, "CodeIcon", { size: 16 })],
 						),
 						title: "Connect your app to see real data",
-						meta: h.span([h.Class("font-prose")], [getOnboardingSetupHint(intents)]),
+						meta: getOnboardingSetupHint(intents),
 					}),
 					h.div(
 						[h.Class("flex items-center gap-1 shrink-0")],
@@ -250,14 +246,14 @@ const waitingCard = (
 							cardPanel(
 								h,
 								[guidedSetup(h, model, framework), watchingStrip(h)],
-								"border-t border-primary/20 p-5 space-y-5",
+								"border-t p-5 space-y-5",
 							),
 						],
 					),
 				],
 			),
 		],
-		"mb-4 shrink-0 border-primary/30 bg-primary/[0.02] overflow-hidden",
+		"mb-4 shrink-0 overflow-hidden",
 	)
 
 /** The first read's failure while the card is mounted; the page's error strip shows it. */

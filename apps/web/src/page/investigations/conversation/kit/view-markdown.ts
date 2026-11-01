@@ -58,7 +58,7 @@ const inlineText = (inlines: ReadonlyArray<Markdown.Inline>): Option.Option<stri
 	)
 
 const REF_CLASS =
-	"underline decoration-muted-foreground/40 decoration-dotted underline-offset-2 hover:text-primary hover:decoration-primary/50"
+	"underline decoration-muted-foreground/40 decoration-dotted underline-offset-2 hover:text-primary active:text-primary hover:decoration-primary/50 active:decoration-primary/50"
 
 const entityRef = <M>(h: HtmlBuilder<M>, href: string, text: string, className: string): Html =>
 	h.a([h.Href(href), h.Target("_blank"), h.Rel("noreferrer"), h.Class(cn(className, REF_CLASS))], [text])

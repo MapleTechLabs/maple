@@ -28,10 +28,7 @@ export const uptimeStatusSquare = <M>(h: HtmlBuilder<M>, monitor: UptimeMonitor)
 		[
 			h.AriaHidden(true),
 			h.Class(
-				cn(
-					"inline-block size-2 shrink-0 rounded-[2px]",
-					TONE_FILL[STATUS_TONE[displayStatus(monitor)]],
-				),
+				cn("inline-block size-2 shrink-0 rounded-xs", TONE_FILL[STATUS_TONE[displayStatus(monitor)]]),
 			),
 		],
 		[],
@@ -74,7 +71,7 @@ export const recentChecksStrip = <M>(
 		],
 		[
 			...Array.from({ length: padding }, (_, index) =>
-				h.span([h.Key(`pad-${index}`), h.Class("w-1 min-w-0 flex-1 rounded-[1px] bg-muted")], []),
+				h.span([h.Key(`pad-${index}`), h.Class("w-1 min-w-0 flex-1 rounded-2xs bg-muted")], []),
 			),
 			...recent.map((check, index) =>
 				h.span(
@@ -82,7 +79,7 @@ export const recentChecksStrip = <M>(
 						h.Key(`${check.at}-${index}`),
 						h.Class(
 							cn(
-								"w-1 min-w-0 flex-1 rounded-[1px]",
+								"w-1 min-w-0 flex-1 rounded-2xs",
 								options.isMuted === true
 									? "bg-muted"
 									: CHECK_HEALTH_FILL[

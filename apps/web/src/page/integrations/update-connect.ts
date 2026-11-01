@@ -18,7 +18,6 @@ type Return = PageReturn<Model, Message>
 
 const STATUS_OF = {
 	cloudflare: "cloudflare",
-	hazel: "hazel",
 	linear: "linear",
 	github: "github",
 	planetscale: "planetscale",
@@ -127,7 +126,6 @@ export const endedGrace = (model: Model, attempt: number): Return =>
 
 const CONNECTED_TITLE = {
 	cloudflare: "Cloudflare account connected",
-	hazel: "Hazel connected",
 	linear: "Linear connected",
 	github: "GitHub connected",
 	planetscale: null,
@@ -173,4 +171,35 @@ export const receivedCallback = (
 	return provider === "cloudflare"
 		? chain(model, [() => failed, (next) => refreshProvider(next, context, provider)])
 		: failed
+}
+
+/**
+ * Another tab finished this return (its popup lost the opener, `RELAY_CHANNEL`): the status
+ * re-reads here and the attempt ends. That tab already tracked it and ran the Supabase sync.
+ */
+export const receivedRelay = (
+	model: Model,
+	context: PageContext,
+	provider: ConnectProvider,
+	status: string,
+	message: string,
+): Return => {
+	const ended =
+		model.connect.active?.provider === provider
+			? withConnect(model, { active: null, isClosed: false })
+			: model
+	if (status === "success") {
+		const title = CONNECTED_TITLE[provider]
+		return chain(provider === "planetscale" ? Planetscale.restartWatch(ended) : ended, [
+			(next) => (title === null ? { model: next } : toast(next, "success", title)),
+			(next) =>
+				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
+		])
+	}
+	if (status !== "error") return { model: ended }
+	return chain(ended, [
+		(next) =>
+			toast(next, "error", message === "" ? `${PROVIDERS[provider].label} connection failed` : message),
+		(next) => refreshProvider(next, context, provider),
+	])
 }

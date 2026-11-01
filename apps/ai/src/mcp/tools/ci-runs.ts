@@ -99,6 +99,8 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 		}),
 		output: CiRunsOutput,
 		hints: { readOnly: true },
+		// Maple's own agents only: the org's CI history is not for third-party MCP clients.
+		audience: "agent",
 		phrases: ["Checking CI runs", "Reading workflow runs"],
 		handler: Effect.fn("McpTool.ciRuns")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

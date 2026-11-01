@@ -6,9 +6,10 @@ import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 // `className` owns layout (direction, gap, padding).
 
 const BASE =
-	"group rounded-md border bg-card text-left transition-colors hover:border-ring/50 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-card"
+	"group rounded-md border bg-card text-left hover:border-ring/50 active:border-ring/50 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:active:border-border disabled:hover:bg-card disabled:active:bg-card"
 
-const SELECTED = "border-primary/60 bg-primary/5 hover:border-primary/60 hover:bg-primary/5"
+const SELECTED =
+	"border-primary/60 bg-primary-a1 hover:border-primary/60 active:border-primary/60 hover:bg-primary-a2 active:bg-primary-a2"
 
 export type CardButtonOptions<M> = Readonly<{
 	onClick: M

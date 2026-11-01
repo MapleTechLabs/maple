@@ -1,8 +1,10 @@
 import { CLOUDFLARE_ACCENT_CLASS, dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
+import { cloudflareDisplay } from "@maple/ui/lib/cloud-platforms/cloudflare-display"
+import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
 import type { IconName } from "../../../../ui/icon"
 
-// copied: packages/ui/src/lib/cloud-platforms/{types,cloudflare,database}.ts with `Icon` as an
-// icon name (the adapters import React icon components). The detail panel reads every field.
+// copied: packages/ui/src/lib/cloud-platforms/{types,database}.ts with `Icon` as an icon name
+// (the adapters import React icon components). Workers detection and rows are shared.
 
 export interface PlatformField {
 	readonly label: string
@@ -24,8 +26,8 @@ export interface PlatformInfo {
 
 export const outcomeBadgeStyle = (bad: boolean): string =>
 	bad
-		? "bg-severity-error/15 text-severity-error border-severity-error/30"
-		: "bg-severity-info/15 text-severity-info border-severity-info/30"
+		? "bg-severity-error-a2 text-severity-error border-severity-error-a3"
+		: "bg-severity-info-a2 text-severity-info border-severity-info-a3"
 
 type Attrs = Readonly<Record<string, string>>
 
@@ -34,46 +36,14 @@ const pickAttr = (attrs: Attrs, ...keys: ReadonlyArray<string>): string | null =
 		.map((key) => attrs[key])
 		.find((value): value is string => value !== undefined && value.trim() !== "") ?? null
 
-const joinEdge = (...parts: ReadonlyArray<string | null>): string | null =>
-	parts.filter((p): p is string => p !== null && p.trim() !== "").join(" · ") || null
-
 const cloudflare = (attrs: Attrs): PlatformInfo | null => {
-	const isWorker =
-		attrs["cloud.platform"] === "cloudflare.workers" ||
-		Object.entries(attrs).some(([k, v]) => k.startsWith("cloudflare.") && v.trim() !== "")
-	if (!isWorker) return null
-	const country = pickAttr(attrs, "geo.country.code")
-	const city = pickAttr(attrs, "geo.locality.name")
-	const outcome = pickAttr(attrs, "cloudflare.outcome")
-	const scriptName = pickAttr(attrs, "cloudflare.script_name", "faas.name")
-	const scriptVersion = pickAttr(attrs, "cloudflare.script_version.id", "faas.version")
-	const model = pickAttr(attrs, "cloudflare.execution_model")
-	const handler = pickAttr(attrs, "cloudflare.handler_type", "faas.trigger")
-	const cpu = pickAttr(attrs, "cpu_time_ms")
-	const wall = pickAttr(attrs, "wall_time_ms")
-	const ttfb = pickAttr(attrs, "cloudflare.response.time_to_first_byte_ms")
-	const rayId = pickAttr(attrs, "cloudflare.ray_id")
-	const fields: ReadonlyArray<PlatformField | null> = [
-		scriptName === null ? null : { label: "Script", value: scriptName },
-		scriptVersion === null
-			? null
-			: { label: "Version", value: scriptVersion, display: scriptVersion.slice(0, 8), copyable: true },
-		model === null ? null : { label: "Model", value: model },
-		handler === null ? null : { label: "Handler", value: handler },
-		cpu === null
-			? null
-			: { label: "CPU / Wall", value: wall === null ? `${cpu}ms` : `${cpu}ms / ${wall}ms` },
-		ttfb === null ? null : { label: "TTFB", value: `${ttfb}ms` },
-		rayId === null ? null : { label: "Ray ID", value: rayId, copyable: true, wide: true },
-	]
+	const worker = detectCloudflareWorker(attrs)
+	if (worker === undefined) return null
 	return {
 		label: "Cloudflare Worker",
 		icon: "CloudflareIcon",
 		accentClassName: CLOUDFLARE_ACCENT_CLASS,
-		edge: joinEdge(pickAttr(attrs, "cloudflare.colo"), pickAttr(attrs, "faas.invoked_region")),
-		location: [city, country].filter(Boolean).join(", ") || null,
-		outcome: outcome === null ? null : { value: outcome, bad: outcome.toLowerCase() !== "ok" },
-		fields: fields.filter((field): field is PlatformField => field !== null),
+		...cloudflareDisplay(worker),
 	}
 }
 

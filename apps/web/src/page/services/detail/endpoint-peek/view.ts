@@ -300,7 +300,7 @@ const distributionCard = (h: H, detail: EndpointDetail): Html => {
 							bins.map((bin, index) =>
 								h.div([
 									h.Key(String(index)),
-									h.Class(cn("flex-1 rounded-t-[2px]", BAND_CLASS[bin.band])),
+									h.Class(cn("flex-1 rounded-t-xs", BAND_CLASS[bin.band])),
 									h.Style({
 										height: `${peak > 0 ? Math.max((bin.share / peak) * 100, 2) : 2}%`,
 									}),
@@ -421,7 +421,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 					h.a(
 						[
 							h.Class(
-								"flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground",
+								"flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 							h.Href(inputs.tracesHref({ slowest: true })),
 						],
@@ -437,7 +437,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 								h.Key(`${request.traceId}-${request.timestamp}`),
 								h.Href(hrefOf(AppRoute.Trace({ traceId: request.traceId, search: {} }))),
 								h.Class(
-									"flex h-9 items-center gap-2 border-b px-3 text-2xs tabular-nums sm:gap-3 last:border-b-0 hover:bg-surface-sunken",
+									"flex h-9 items-center gap-2 border-b px-3 text-2xs tabular-nums sm:gap-3 last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken",
 								),
 							],
 							[

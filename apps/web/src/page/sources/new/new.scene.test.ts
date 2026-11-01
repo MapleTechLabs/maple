@@ -148,7 +148,7 @@ describe("connect a source", () => {
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to create source",
+				title: "Couldn't create source",
 				description: failure.message,
 			}),
 		)

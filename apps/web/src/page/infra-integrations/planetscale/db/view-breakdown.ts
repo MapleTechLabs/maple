@@ -146,7 +146,7 @@ const metaChip = (h: H, text: string): Html =>
 
 const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): ReadonlyArray<Html> => [
 	h.div(
-		[h.Class("flex w-0 min-w-[200px] flex-1 items-center gap-2 overflow-hidden")],
+		[h.Class("flex w-0 min-w-52 flex-1 items-center gap-2 overflow-hidden")],
 		[
 			h.span(
 				[
@@ -212,7 +212,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 			[
 				columnHead(h, {
 					label: "Branch",
-					width: "w-0 flex-1 min-w-[200px]",
+					width: "w-0 flex-1 min-w-52",
 					sort: {
 						onSort: Message.ClickedBreakdownSort({ key: "branch" }),
 						isActive: inputs.sort.key === "branch",
@@ -247,7 +247,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 								h.AriaPressed(String(isSelected)),
 								h.Class(
 									cn(
-										"flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors hover:bg-surface-sunken",
+										"flex w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 										isSelected && "bg-surface-strong",
 									),
 								),

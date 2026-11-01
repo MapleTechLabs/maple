@@ -15,7 +15,11 @@ import { scaleTime } from "d3-scale"
 import { Option } from "effect"
 import { ChartTooltip } from "../../charts/chart-spec"
 import type { BuiltChart } from "../../charts/definitions/built-chart"
-import { roundCapDasharray, verticalGradient } from "../../charts/definitions/fixed-metric-axes"
+import {
+	AREA_FILL_END,
+	roundCapDasharray,
+	verticalGradient,
+} from "../../charts/definitions/fixed-metric-axes"
 import {
 	cursorTooltip,
 	MUTED_COLOR_AMOUNT,
@@ -30,7 +34,7 @@ type Point = ChartPoint<TimeseriesSpikeRow, ChartValue, number>
 const STROKE_WIDTH = 2.5
 const INCOMPLETE_DASHARRAY = roundCapDasharray(4.5, 7, STROKE_WIDTH)
 const FADED_START_OPACITY = 0.15
-const FADED_END_OPACITY = 0
+const FADED_END_OPACITY = AREA_FILL_END
 
 interface Series {
 	readonly id: string

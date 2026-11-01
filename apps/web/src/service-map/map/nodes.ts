@@ -69,10 +69,7 @@ const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 							],
 						),
 					])
-				: h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-foreground-faint")],
-						[EMPTY_VALUE],
-					),
+				: h.span([h.Class("font-mono text-2xs tabular-nums text-foreground-faint")], [EMPTY_VALUE]),
 		],
 	)
 
@@ -103,7 +100,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 						"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
 						selected
 							? selectedBorderClass(errorRate)
-							: "border-border hover:border-foreground/30",
+							: "border-border hover:border-border-strong active:border-border-strong",
 					),
 				),
 			],
@@ -160,7 +157,9 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 								errCell(h, errorRate),
 								avgCell(h, avgLatencyMs),
 								// A service on a platform has no pods; the logo by its name already says where it runs.
-								...(data.infra === undefined && data.runsOn !== undefined ? [] : [podsCell(h, data)]),
+								...(data.infra === undefined && data.runsOn !== undefined
+									? []
+									: [podsCell(h, data)]),
 							],
 						),
 					],

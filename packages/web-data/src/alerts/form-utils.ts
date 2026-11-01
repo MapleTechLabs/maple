@@ -11,8 +11,6 @@ import {
 	AlertQueryTiming,
 	AlertRulePreviewResponse,
 	AlertRulePreviewSeries,
-	HazelChannelId,
-	HazelOrganizationId,
 	IsoDateTimeString,
 	UserId,
 	type AlertComparator,
@@ -50,8 +48,6 @@ import { getBrowserTimeZone } from "../lib/timezone"
 import { formatDateInTimezone, formatTimeInTimezone, formatTimestampInTimezone } from "../lib/timezone-format"
 import type { Tone } from "@maple/ui/lib/tone"
 
-const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
-const asHazelChannelId = Schema.decodeUnknownSync(HazelChannelId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 
 // v2 timestamps arrive as plain ISO strings; the v1 domain documents brand them.
@@ -617,11 +613,6 @@ export type DestinationFormState = {
 	/** Telegram bot token from @BotFather, and the chat it posts to. */
 	telegramBotToken: string
 	telegramChatId: string
-	hazelOrganizationId: string
-	hazelOrganizationName: string
-	hazelOrganizationLogoUrl: string | null
-	hazelChannelId: string
-	hazelChannelName: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
 	/**
@@ -652,11 +643,6 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 		signingSecret: "",
 		telegramBotToken: "",
 		telegramChatId: "",
-		hazelOrganizationId: "",
-		hazelOrganizationName: "",
-		hazelOrganizationLogoUrl: null,
-		hazelChannelId: "",
-		hazelChannelName: "",
 		memberUserIds: [],
 		chatWorkspaceId: null,
 		chatConnector: "",
@@ -695,8 +681,6 @@ export function suggestedDestinationName(form: DestinationFormState): string {
 	switch (form.type) {
 		case "chat":
 			return form.chatChannelName.length > 0 ? `#${form.chatChannelName}` : ""
-		case "hazel-oauth":
-			return form.hazelChannelName.length > 0 ? `Hazel #${form.hazelChannelName}` : "Hazel"
 		case "linear":
 			return form.linearTeamName.length > 0 ? `Linear ${form.linearTeamName}` : "Linear"
 		case "webhook":
@@ -727,11 +711,6 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		// comes back as `channelLabel` so an edit doesn't demand retyping it.
 		telegramBotToken: "",
 		telegramChatId: destination.type === "telegram" ? (destination.channelLabel ?? "") : "",
-		hazelOrganizationId: "",
-		hazelOrganizationName: "",
-		hazelOrganizationLogoUrl: null,
-		hazelChannelId: "",
-		hazelChannelName: "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
 		// The stored channel's id isn't returned, its `#name` is — kept so the current
 		// channel stays visible on edit (an empty id keeps the stored one).
@@ -763,21 +742,6 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				enabled: form.enabled,
 				url: form.url.trim(),
 				...(signingSecret ? { signing_secret: signingSecret } : undefined),
-			}
-		}
-		case "hazel-oauth": {
-			const logoUrl = form.hazelOrganizationLogoUrl
-			return {
-				type: "hazel-oauth",
-				name: form.name.trim(),
-				enabled: form.enabled,
-				hazel_organization_id: asHazelOrganizationId(form.hazelOrganizationId.trim()),
-				hazel_organization_name: form.hazelOrganizationName.trim(),
-				...(logoUrl !== null && logoUrl.trim().length > 0
-					? { hazel_organization_logo_url: logoUrl.trim() }
-					: undefined),
-				hazel_channel_id: asHazelChannelId(form.hazelChannelId.trim()),
-				hazel_channel_name: form.hazelChannelName.trim(),
 			}
 		}
 		case "discord":
@@ -856,28 +820,6 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 				...(name ? { name } : undefined),
 				...(url ? { url } : undefined),
 				...(signingSecret ? { signing_secret: signingSecret } : undefined),
-			}
-		}
-		case "hazel-oauth": {
-			const organizationId = form.hazelOrganizationId.trim()
-			const organizationName = form.hazelOrganizationName.trim()
-			const channelId = form.hazelChannelId.trim()
-			const channelName = form.hazelChannelName.trim()
-			return {
-				type: "hazel-oauth",
-				enabled: form.enabled,
-				...(name ? { name } : undefined),
-				...(organizationId
-					? { hazel_organization_id: asHazelOrganizationId(organizationId) }
-					: undefined),
-				...(organizationName ? { hazel_organization_name: organizationName } : undefined),
-				...(form.hazelOrganizationLogoUrl === null
-					? { hazel_organization_logo_url: null }
-					: form.hazelOrganizationLogoUrl.trim()
-						? { hazel_organization_logo_url: form.hazelOrganizationLogoUrl.trim() }
-						: {}),
-				...(channelId ? { hazel_channel_id: asHazelChannelId(channelId) } : undefined),
-				...(channelName ? { hazel_channel_name: channelName } : undefined),
 			}
 		}
 		case "discord": {

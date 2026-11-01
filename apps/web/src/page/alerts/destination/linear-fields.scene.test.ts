@@ -109,6 +109,24 @@ describe("linear destination fields", () => {
 		shows(withStatus({ ...CONNECTED, revoked: true }).model, "Reconnect Linear")
 	})
 
+	test("the popup coming back reads the status even after its close settled the form", () => {
+		const connecting = update(withStatus(NOT_CONNECTED).model, Message.ClickedConnect(), form).model
+		const closed = update(
+			connecting,
+			Message.CompletedConnect({ attempt: connecting.connectAttempt, outcome: "Closed" }),
+			form,
+		).model
+		const stale = update(
+			closed,
+			Message.CompletedFetchStatus({
+				key: closed.status.key ?? "",
+				result: Result.succeed(NOT_CONNECTED),
+			}),
+			form,
+		).model
+		expect(names(update(stale, Message.ReturnedConnect(), form))).toEqual(["FetchAlertLinearStatus"])
+	})
+
 	test("a reopen frees Connect, and the earlier popup's close no longer settles the form", () => {
 		const connecting = update(withStatus(NOT_CONNECTED).model, Message.ClickedConnect(), form).model
 		const earlier = connecting.connectAttempt

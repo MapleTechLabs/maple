@@ -15,7 +15,7 @@ export const copyToast = (label: string | undefined, isOk: boolean, successMessa
 				}
 			: {
 					type: "error",
-					title: label ? `Failed to copy ${label.toLowerCase()}` : "Failed to copy",
+					title: label ? `Couldn't copy ${label.toLowerCase()}` : "Couldn't copy",
 					description: "",
 				},
 	)

@@ -115,7 +115,7 @@ export const dimensionTabs = (
 					onClick: Message.PickedPanelTab({ panel: cardId, index }),
 					className: cn(
 						toggleVariants({ size: "sm", variant: "default" }),
-						"h-auto min-w-0 rounded-sm px-2 py-0.5 text-2xs font-normal text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-2xs",
+						"h-auto min-w-0 rounded-sm px-2 py-0.5 text-2xs font-normal text-muted-foreground hover:bg-transparent active:bg-transparent hover:text-foreground active:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-2xs",
 					),
 					slot: "toggle",
 					tabIndex: index === activeTab ? 0 : -1,
@@ -237,7 +237,7 @@ export const breakdownTable = (
 							h.Class(
 								cn(
 									"group flex w-full items-center gap-3 border-b border-border-subtle px-3 py-2 text-left transition-colors last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
-									"hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
+									"hover:bg-foreground/[0.06] active:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
 									rowSelectedClass(isSelected),
 								),
 							),
@@ -384,7 +384,7 @@ export const breakdownPanel = (
 							h.Type("button"),
 							h.OnClick(Message.ClickedExpandPanel({ panel: card.id })),
 							h.Class(
-								"flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
+								"flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
 							),
 						],
 						[

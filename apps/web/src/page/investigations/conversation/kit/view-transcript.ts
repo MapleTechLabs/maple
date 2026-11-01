@@ -344,7 +344,8 @@ const jumpButton = <M>(
 				{
 					size: "sm",
 					variant: "outline",
-					className: "absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-sm",
+					className:
+						"absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-raised",
 					attributes: [h.OnMount(mount)],
 				},
 				[icon(h, "PulseIcon"), h.span([h.Class("truncate")], ["Jump to diagnosis"])],

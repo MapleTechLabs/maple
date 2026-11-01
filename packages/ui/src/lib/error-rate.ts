@@ -26,7 +26,7 @@ export const ERROR_RATE_TEXT: Record<ErrorRateLevel, string> = {
 export const ERROR_RATE_FILL: Record<ErrorRateLevel, string> = {
 	crit: TONE_FILL.crit,
 	warn: TONE_FILL.warn,
-	neutral: "bg-muted-foreground/30",
+	neutral: "bg-foreground-faint",
 } satisfies Record<ErrorRateLevel, string>
 
 export const ERROR_RATE_COLOR: Record<ErrorRateLevel, string> = {

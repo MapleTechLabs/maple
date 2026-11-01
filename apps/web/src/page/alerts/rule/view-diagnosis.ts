@@ -96,16 +96,26 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 								[
 									h.p(
 										[h.Class("text-sm font-medium")],
-										[verdict.status === "pass" ? "Rule is healthy" : "Why is this alert failing?"],
+										[
+											verdict.status === "pass"
+												? "Rule is healthy"
+												: "Why is this alert failing?",
+										],
 									),
-									h.p([h.Class("truncate text-xs text-muted-foreground")], [verdict.summary]),
+									h.p(
+										[h.Class("truncate text-xs text-muted-foreground")],
+										[verdict.summary],
+									),
 								],
 							),
 						],
 					),
 					icon(h, "ChevronDownIcon", {
 						size: 16,
-						className: cn("shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180"),
+						className: cn(
+							"shrink-0 text-muted-foreground transition-transform",
+							isOpen && "rotate-180",
+						),
 					}),
 				],
 			),
@@ -119,15 +129,30 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 											h.div(
 												[h.Class("mb-3 flex items-center gap-2")],
 												[
-													h.span([h.Class("shrink-0 text-xs text-muted-foreground")], ["Group"]),
+													h.span(
+														[h.Class("shrink-0 text-xs text-muted-foreground")],
+														["Group"],
+													),
 													h.div(
-														[h.Class("-my-1 min-w-0 flex-1 overflow-x-auto py-1")],
+														[
+															h.Class(
+																"-my-1 min-w-0 flex-1 overflow-x-auto py-1",
+															),
+														],
 														[
 															segmentedSelect(h, {
 																className: "w-max",
 																value: activeGroup ?? groupKeys[0] ?? "",
-																onChange: (value) => Message.ClickedDiagnosisGroup({ groupKey: value }),
-																options: groupKeys.slice(0, 8).map((key) => ({ value: key, label: key })),
+																onChange: (value) =>
+																	Message.ClickedDiagnosisGroup({
+																		groupKey: value,
+																	}),
+																options: groupKeys
+																	.slice(0, 8)
+																	.map((key) => ({
+																		value: key,
+																		label: key,
+																	})),
 															}),
 														],
 													),
@@ -135,7 +160,10 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 											),
 										]
 									: []),
-								h.ol([h.Class("space-y-1")], visibleStages.map((stage) => stageRow(h, model, stage))),
+								h.ol(
+									[h.Class("space-y-1")],
+									visibleStages.map((stage) => stageRow(h, model, stage)),
+								),
 								...(hasHiddenSteps
 									? [
 											button(
@@ -143,12 +171,16 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 												{
 													variant: "link",
 													size: "xs",
-													className: "mt-1.5 text-muted-foreground hover:text-foreground",
+													className:
+														"mt-1.5 text-muted-foreground hover:text-foreground active:text-foreground",
 													attributes: [h.OnClick(Message.ClickedShowAllStages())],
 												},
 												[
 													icon(h, "ChevronDownIcon", {
-														className: cn("shrink-0 transition-transform", model.isShowingAllStages && "rotate-180"),
+														className: cn(
+															"shrink-0 transition-transform",
+															model.isShowingAllStages && "rotate-180",
+														),
 													}),
 													model.isShowingAllStages
 														? "Show only issues"
@@ -181,8 +213,8 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 			h.Class(
 				cn(
 					"rounded-md px-2 py-1",
-					stage.status === "fail" && "bg-severity-error/5",
-					stage.status === "warn" && "bg-severity-warn/5",
+					stage.status === "fail" && "bg-severity-error-a1",
+					stage.status === "warn" && "bg-severity-warn-a1",
 				),
 			),
 		],
@@ -202,7 +234,12 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 							h.span(
 								[
 									h.Class(
-										cn("truncate text-xs", stage.status === "fail" ? "text-severity-error" : "text-muted-foreground"),
+										cn(
+											"truncate text-xs",
+											stage.status === "fail"
+												? "text-severity-error"
+												: "text-muted-foreground",
+										),
 									),
 								],
 								[stage.summary],
@@ -218,7 +255,10 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 							[h.Class("mt-1 space-y-0.5 pl-[26px]")],
 							[
 								...evidence.map((line) =>
-									h.li([h.Key(line), h.Class("break-words text-xs text-muted-foreground")], [line]),
+									h.li(
+										[h.Key(line), h.Class("break-words text-xs text-muted-foreground")],
+										[line],
+									),
 								),
 								...(hiddenEvidence > 0
 									? [
@@ -230,8 +270,15 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 														{
 															variant: "link",
 															size: "xs",
-															className: "text-foreground-subtle hover:text-foreground",
-															attributes: [h.OnClick(Message.ClickedShowAllEvidence({ stageId: stage.id }))],
+															className:
+																"text-foreground-subtle hover:text-foreground active:text-foreground",
+															attributes: [
+																h.OnClick(
+																	Message.ClickedShowAllEvidence({
+																		stageId: stage.id,
+																	}),
+																),
+															],
 														},
 														["+", String(hiddenEvidence), " more"],
 													),
@@ -250,11 +297,17 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 const stageAction = (h: H, action: NonNullable<DiagnosisStage["action"]>): ReadonlyArray<Html> => {
 	if (action.kind === "enable")
 		return [
-			button(h, { variant: "outline", size: "xs", attributes: [h.OnClick(Message.ClickedToggleEnabled())] }, [
+			button(
+				h,
+				{ variant: "outline", size: "xs", attributes: [h.OnClick(Message.ClickedToggleEnabled())] },
+				[action.label],
+			),
+		]
+	if (action.kind === "destinations")
+		return [
+			linkButton(h, { variant: "outline", size: "xs", href: alertsHref({ tab: "routing" }) }, [
 				action.label,
 			]),
 		]
-	if (action.kind === "destinations")
-		return [linkButton(h, { variant: "outline", size: "xs", href: alertsHref({ tab: "routing" }) }, [action.label])]
 	return []
 }

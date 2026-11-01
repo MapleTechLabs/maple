@@ -142,9 +142,7 @@ export const CreateAwsConnection = Command.define("CreateAwsConnection", {
 			return Message.SucceededAwsCreate({ connection })
 		}).pipe(
 			Effect.catch((error) =>
-				Effect.succeed(
-					Message.FailedAwsCreate({ error: messageOf(error, "Failed to connect AWS.") }),
-				),
+				Effect.succeed(Message.FailedAwsCreate({ error: messageOf(error, "Couldn't connect AWS.") })),
 			),
 		),
 })
@@ -164,7 +162,7 @@ export const UpdateAwsMetricStream = Command.define("UpdateAwsMetricStream", {
 				onFailure: (error) =>
 					Message.CompletedAwsMetricStream({
 						connection: null,
-						error: messageOf(error, "Failed to turn on the metric stream."),
+						error: messageOf(error, "Couldn't turn on the metric stream."),
 					}),
 				onSuccess: (connection) => Message.CompletedAwsMetricStream({ connection, error: null }),
 			}),
@@ -230,7 +228,7 @@ export const DeleteAwsConnection = Command.define("DeleteAwsConnection", {
 					Message.CompletedAwsDisconnect({
 						id,
 						removed: null,
-						error: messageOf(error, "Failed to disconnect AWS."),
+						error: messageOf(error, "Couldn't disconnect AWS."),
 					}),
 				onSuccess: (response) =>
 					Message.CompletedAwsDisconnect({

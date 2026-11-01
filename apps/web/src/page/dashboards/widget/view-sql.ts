@@ -47,7 +47,7 @@ const header = (h: H, rawSql: RawSqlState): Html => {
 					size: "icon-xs",
 					label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
 					hasTooltip: false,
-					className: "text-muted-foreground hover:text-foreground",
+					className: "text-muted-foreground hover:text-foreground active:text-foreground",
 					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
 				},
 				[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
@@ -57,7 +57,8 @@ const header = (h: H, rawSql: RawSqlState): Html => {
 					h.Class(
 						badgeVariants({
 							variant: "outline",
-							className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
+							className:
+								"font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
 						}),
 					),
 					h.DataAttribute("slot", "badge"),
@@ -158,8 +159,8 @@ const chipRow = (
 				h,
 				token,
 				index < MACRO_HINTS.length
-					? "bg-surface-sunken text-muted-foreground hover:bg-muted hover:text-foreground"
-					: "bg-primary/10 text-primary hover:bg-primary/20",
+					? "bg-surface-sunken text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground"
+					: "bg-primary-a2 text-primary hover:bg-primary-a3 active:bg-primary-a3",
 				trigger(chipTriggerId(index)),
 			),
 		),

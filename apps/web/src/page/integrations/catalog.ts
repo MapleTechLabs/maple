@@ -18,13 +18,11 @@ export type IntegrationId =
 	| "railway"
 	| "supabase"
 	| "warpstream"
-	| "hazel"
 	| "linear"
 	| "github"
 	| ChatIntegrationId
 
 export const GITHUB_ACCENT = "#181717"
-export const HAZEL_ACCENT = "#F46F0F"
 export const LINEAR_ACCENT = "#5E6AD5"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
@@ -164,16 +162,6 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("WarpStreamIcon"),
 		accent: "#E52344",
 		docsUrl: docsUrl("warpstream"),
-	},
-	{
-		id: "hazel",
-		category: "notifications",
-		name: "Hazel",
-		description:
-			"Forward Maple alerts into a Hazel workspace via OAuth. Pick destinations per notification.",
-		icon: named("HazelIcon"),
-		accent: HAZEL_ACCENT,
-		docsUrl: "https://hazel.sh/docs/integrations/maple",
 	},
 	{
 		id: "linear",

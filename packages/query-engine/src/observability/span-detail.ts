@@ -1,8 +1,8 @@
-import { Array as Arr, Effect, Option, Schema, pipe } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Schema, pipe } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
-import { formatWarehouseDateTime } from "../datetime"
+import { formatWarehouseDateTime, formatWarehouseDateTimeMs } from "../datetime"
 const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
 
 const parseAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
@@ -39,8 +39,24 @@ export interface SpanDetailResult {
 	/** Full span attribute map (not the trimmed set the trace tree renders). */
 	readonly spanAttributes: Record<string, string>
 	readonly resourceAttributes: Record<string, string>
+	/** The rest of the span row, present when `found`. */
+	readonly span?: SpanDetailSpan
 	/** True when the hinted window missed and the lookup was retried unbounded. */
 	readonly widened?: boolean
+}
+
+export interface SpanDetailSpan {
+	/** Display name: an HTTP span's bare method gains its route, as in `inspectTrace`. */
+	readonly spanName: string
+	/** The stored SpanName, when the display name rewrote it. */
+	readonly rawSpanName?: string
+	readonly serviceName: string
+	readonly spanKind: string
+	readonly durationMs: number
+	/** UTC, `YYYY-MM-DD HH:MM:SS.mmm`. */
+	readonly startTime: string
+	readonly statusCode: string
+	readonly statusMessage: string
 }
 
 /**
@@ -102,6 +118,16 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 		spanId: row.spanId,
 		spanAttributes,
 		resourceAttributes,
+		span: {
+			spanName: row.spanName,
+			...(row.rawSpanName !== row.spanName ? { rawSpanName: row.rawSpanName } : undefined),
+			serviceName: row.serviceName,
+			spanKind: row.spanKind,
+			durationMs: row.durationMs,
+			startTime: formatWarehouseDateTimeMs(DateTime.toEpochMillis(row.startTime)),
+			statusCode: row.statusCode,
+			statusMessage: row.statusMessage,
+		},
 		widened,
 	} satisfies SpanDetailResult
 })

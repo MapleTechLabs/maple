@@ -418,7 +418,7 @@ export const completedUpdate = (
 			model: settled,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to save the change",
+				title: "Couldn't save the change",
 				description: failure.message,
 			}),
 		}

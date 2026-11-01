@@ -57,13 +57,13 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 	{
 		value: "warning",
 		label: "Warning",
-		selected: "border-severity-warn/60 bg-severity-warn/10 text-severity-warn",
+		selected: "border-severity-warn/60 bg-severity-warn-a2 text-severity-warn",
 		dot: "bg-severity-warn",
 	},
 	{
 		value: "critical",
 		label: "Critical",
-		selected: "border-severity-error/60 bg-severity-error/10 text-severity-error",
+		selected: "border-severity-error/60 bg-severity-error-a2 text-severity-error",
 		dot: "bg-severity-error",
 	},
 ]
@@ -102,13 +102,13 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 						"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 						isSelected
 							? option.selected
-							: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
+							: "text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 					),
 					{
 						children: [
 							statusDot(h, {
 								tone: "custom",
-								className: isSelected ? option.dot : "bg-muted-foreground/40",
+								className: isSelected ? option.dot : "bg-foreground-faint",
 							}),
 							option.label,
 						],
@@ -286,9 +286,9 @@ const intervalPicker = (
 						"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 						isSelected
 							? isBlocked
-								? "border-severity-warn/60 bg-severity-warn/10 text-severity-warn"
-								: "border-primary/50 bg-primary/10 text-foreground"
-							: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
+								? "border-severity-warn/60 bg-severity-warn-a2 text-severity-warn"
+								: "border-primary/50 bg-primary-a2 text-foreground"
+							: "text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 						!isSelected && isBlocked && "text-foreground-subtle",
 					),
 					{
@@ -335,7 +335,7 @@ const slowdownNotice = (h: H, model: ConditionView, form: RuleForm): ReadonlyArr
 				h.div(
 					[
 						h.Class(
-							"flex flex-wrap items-center justify-between gap-2 rounded-md border border-severity-warn/40 bg-severity-warn/10 px-3 py-2 text-xs",
+							"flex flex-wrap items-center justify-between gap-2 rounded-md border border-severity-warn-a4 bg-severity-warn-a2 px-3 py-2 text-xs",
 						),
 					],
 					[

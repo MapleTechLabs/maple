@@ -85,16 +85,18 @@ describe("service detail", () => {
 		expect(names(init(route(), context).commands)).toContain("ResolveServiceDetailClock")
 		const start = init(route(), context).model
 		const resolved = pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" }))
-		expect(names(resolved.commands)).toEqual(expect.arrayContaining([
-			FetchOverview.name,
-			FetchOperations.name,
-			FetchIssues.name,
-			FetchUsage.name,
-			FetchWorkloads.name,
-			FetchRuntimes.name,
-			FetchDependencies.name,
-			FetchUptimeMonitors.name,
-		]))
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				FetchOverview.name,
+				FetchOperations.name,
+				FetchIssues.name,
+				FetchUsage.name,
+				FetchWorkloads.name,
+				FetchRuntimes.name,
+				FetchDependencies.name,
+				FetchUptimeMonitors.name,
+			]),
+		)
 		expect(resolved.model.window).toEqual({
 			startTime: "2026-10-01 00:00:00",
 			endTime: "2026-10-01 12:00:00",
@@ -305,6 +307,88 @@ describe("service detail view", () => {
 		)
 	})
 
+	test("the Dependencies tab shows a skeleton, not an empty table, until its read answers", () => {
+		const model = entered({ tab: "dependencies" })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("No downstream dependencies in this window.")).toBeAbsent(),
+		)
+		const empty = pageUpdate(
+			model,
+			Message.CompletedFetchDependencies({
+				key: model.dependencies.key ?? "",
+				result: Result.succeed({ serviceEdges: [], dbEdges: [], externalEdges: [] }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			themeResolved(),
+			expectView(text("No downstream dependencies in this window.")).toExist(),
+		)
+	})
+
+	test("a failed dependencies read shows its error instead of an empty table", () => {
+		const model = entered({ tab: "dependencies" })
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchDependencies({
+				key: model.dependencies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(text("Couldn't load dependencies")).toExist(),
+			expectView(text("No downstream dependencies in this window.")).toBeAbsent(),
+		)
+	})
+
+	test("a failed dependencies reload keeps the last rows on screen", () => {
+		const model = entered({ tab: "dependencies" })
+		const edge = {
+			callCount: 10,
+			estimatedCallCount: 10,
+			errorCount: 0,
+			errorRate: 0,
+			avgDurationMs: 2,
+			maxDurationMs: 4,
+			hasSampling: false,
+			samplingWeight: 1,
+		}
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchDependencies({
+				key: model.dependencies.key ?? "",
+				result: Result.succeed({
+					serviceEdges: [{ sourceService: "payment-svc", targetService: "ledger-svc", ...edge }],
+					dbEdges: [],
+					externalEdges: [],
+				}),
+			}),
+		).model
+		const reloading = pageUpdate(loaded, Message.ClickedReload()).model
+		const stale = pageUpdate(
+			reloading,
+			Message.CompletedFetchDependencies({
+				key: reloading.dependencies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		expect(stale.dependencies.data._tag).toBe("Stale")
+		scene(
+			{ update: pageUpdate, view },
+			given(stale),
+			themeResolved(),
+			expectView(text("ledger-svc")).toExist(),
+			expectView(text("Couldn't load dependencies")).toBeAbsent(),
+		)
+	})
+
 	test("more than eight deploys list eight until Show all", () => {
 		const model = entered()
 		const releases = Array.from({ length: 10 }, (_, index) =>
@@ -369,11 +453,17 @@ describe("where the service runs", () => {
 		const model = entered()
 		const answered = pageUpdate(
 			model,
-			Message.CompletedFetchRuntimes({ key: model.runtimes.key ?? "", result: Result.succeed(runtimes) }),
+			Message.CompletedFetchRuntimes({
+				key: model.runtimes.key ?? "",
+				result: Result.succeed(runtimes),
+			}),
 		).model
 		return pageUpdate(
 			answered,
-			Message.CompletedFetchWorkloads({ key: answered.workloads.key ?? "", result: Result.succeed([]) }),
+			Message.CompletedFetchWorkloads({
+				key: answered.workloads.key ?? "",
+				result: Result.succeed([]),
+			}),
 		).model
 	}
 	const RUN_HREF = "/infra/gcp/cloudRun/payment-svc?project=acme-prod&region=europe-west1"
@@ -398,7 +488,10 @@ describe("where the service runs", () => {
 			{ update: pageUpdate, view },
 			given(withRuntimes([CLOUD_RUN])),
 			...settled,
-			expectView(role("link", { name: "Runs on Cloud Run service payment-svc" })).toHaveAttr("href", RUN_HREF),
+			expectView(role("link", { name: "Runs on Cloud Run service payment-svc" })).toHaveAttr(
+				"href",
+				RUN_HREF,
+			),
 		)
 	})
 

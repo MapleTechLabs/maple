@@ -118,7 +118,7 @@ const liftMappingDialog = (model: Model, step: ReturnType<typeof MappingDialog.u
 			...lifted,
 			outMessage: toast(
 				"error",
-				out.isCreate ? "Failed to create attribute mapping" : "Failed to update attribute mapping",
+				out.isCreate ? "Couldn't create attribute mapping" : "Couldn't update attribute mapping",
 				out.description,
 			),
 		}
@@ -384,10 +384,10 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 					outMessage: toast(
 						"error",
 						action === "apply"
-							? "Failed to create mapping"
+							? "Couldn't create mapping"
 							: action === "dismiss"
-								? "Failed to dismiss recommendation"
-								: "Failed to reopen recommendation",
+								? "Couldn't dismiss recommendation"
+								: "Couldn't reopen recommendation",
 						error.message,
 					),
 				}),
@@ -416,7 +416,7 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 				}),
 				onFailure: (error) => ({
 					model: settled,
-					outMessage: toast("error", "Failed to update attribute mapping", error.message),
+					outMessage: toast("error", "Couldn't update attribute mapping", error.message),
 				}),
 			})
 		},
@@ -460,7 +460,7 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 				},
 				onFailure: (error) => ({
 					model: { ...model, isDeleting: false },
-					outMessage: toast("error", "Failed to delete attribute mapping", error.message),
+					outMessage: toast("error", "Couldn't delete attribute mapping", error.message),
 				}),
 			}),
 		ClickedRetryMappings: () => ({

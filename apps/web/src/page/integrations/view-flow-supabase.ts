@@ -131,7 +131,9 @@ const selfHostedLine = (h: H): Html =>
 			h.a(
 				[
 					h.Href(PROMETHEUS_HREF),
-					h.Class("inline-flex items-center gap-1 text-foreground hover:underline"),
+					h.Class(
+						"inline-flex items-center gap-1 text-foreground hover:underline active:underline",
+					),
 				],
 				["Use Prometheus", icon(h, "ArrowRightIcon", { size: 12 })],
 			),
@@ -140,7 +142,7 @@ const selfHostedLine = (h: H): Html =>
 
 const revokedNotice = (h: H, status: SupabaseIntegrationStatus): Html =>
 	h.div(
-		[h.Class("flex gap-3 rounded-md border border-severity-warn/40 bg-card p-4"), h.Role("alert")],
+		[h.Class("flex gap-3 rounded-md border border-severity-warn-a4 bg-card p-4"), h.Role("alert")],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0 text-severity-warn" }),
 			h.div(
@@ -364,7 +366,7 @@ const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow 
 	if (watched.length === 0) return null
 	const data = model.supabaseCard.metrics.data
 	if (AsyncData.isFailure(data))
-		return { state: "failed", title: "First metrics", detail: "Failed to read the last hour's metrics." }
+		return { state: "failed", title: "First metrics", detail: "Couldn't read the last hour's metrics." }
 	const seen = watched.flatMap((project) => {
 		const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
 		return row === null || row.lastSeen === "" ? [] : [toEpochMs(row.lastSeen)]

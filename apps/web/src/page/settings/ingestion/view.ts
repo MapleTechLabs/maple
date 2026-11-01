@@ -82,7 +82,8 @@ const statusBanner = (h: H, model: Model): Html => {
 						{
 							variant: "ghost",
 							size: "sm",
-							className: "text-muted-foreground hover:text-foreground gap-1.5",
+							className:
+								"text-muted-foreground hover:text-foreground active:text-foreground gap-1.5",
 							href: "/traces",
 						},
 						["Explore traces", icon(h, "ArrowRightIcon")],
@@ -146,7 +147,7 @@ const manageSourcesRow = (h: H): Html =>
 				[
 					h.Href("/sources"),
 					h.Class(
-						"text-foreground inline-flex items-center gap-1 hover:underline underline-offset-2",
+						"text-foreground inline-flex items-center gap-1 hover:underline active:underline underline-offset-2",
 					),
 				],
 				["Manage sources", icon(h, "ChevronRightIcon", { size: 12 })],

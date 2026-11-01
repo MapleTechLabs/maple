@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import { formatValueWithUnit } from "../../../components/infra/chart-units"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -14,16 +15,15 @@ import { chartError, chartLoading } from "../../../ui/chart-state"
 import type { SeriesSlot } from "./series"
 import { seriesLegend } from "../../kit/series-legend"
 
-// `K8sMetricChartView` and the detail-chart wrappers around it: one metric at a time, 280 tall, chip legend,
+// `K8sMetricChartView` and the detail-chart wrappers around it: one metric at a time, 280 tall, series legend,
 // in a `ChartCard`.
 
 export const K8S_CHART_HEIGHT = 280
 
-/** `K8sSeriesSummary`: the bordered chips above the plot. */
+/** `K8sSeriesSummary`: the series legend above the plot. */
 const k8sSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo, className = "mb-3"): Html =>
 	seriesLegend(h, {
-		variant: "chip",
-		className,
+		className: cn("justify-start", className),
 		items: info.series.map((name) => {
 			const value = info.lastValues[name]
 			return {

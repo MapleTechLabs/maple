@@ -95,10 +95,7 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	if (row.requests === 0)
 		return GCP_SERVICE_RULES.inScope(row, "idle")
 			? h.div(
-					[
-						h.Class(cn("hidden w-44 md:block", SUB)),
-						h.Title("No requests, instance time billed"),
-					],
+					[h.Class(cn("hidden w-44 md:block", SUB)), h.Title("No requests, instance time billed")],
 					["idle, still billed"],
 				)
 			: h.div([h.Class(cn("hidden w-44 md:block", SUB))], ["no traffic"])
@@ -541,7 +538,7 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 					off.map((row) =>
 						h.a(
 							[
-								h.Class("text-primary hover:text-primary/80"),
+								h.Class("text-primary hover:text-primary/80 active:text-primary/80"),
 								h.Href(gcpQueryInsightsConsoleUrl(row.project ?? "", row.name)),
 								h.Rel("noreferrer"),
 								h.Target("_blank"),
@@ -605,7 +602,7 @@ export const databasesTable = (
 
 // The other services (GKE, Compute Engine, Load Balancing) ---------------------------------------
 
-const GENERIC_NAME = "w-0 flex-1 min-w-[240px]"
+const GENERIC_NAME = "w-0 flex-1 min-w-60"
 const VALUE_WIDTH = "w-28"
 
 const genericHead = (h: H, service: GcpInfraServiceId): ReadonlyArray<Html> => [

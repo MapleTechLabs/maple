@@ -1,6 +1,7 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../../ui/empty"
+import { eyebrow } from "../../../../ui/eyebrow"
 import { depthControls } from "../depth-controls"
 import { Message, type Model } from "./model"
 import { spanRow } from "./row"
@@ -53,9 +54,9 @@ const header = (h: HtmlBuilder<Message>, shown: number, total: number): Html =>
 			h.div(
 				[h.Class("flex items-center gap-2 shrink-0 ml-2")],
 				[
-					h.span([h.Class("hidden w-48 text-center @min-[560px]/row:block")], ["Duration"]),
-					h.span([h.Class("w-16 text-right")], ["Time"]),
-					h.span([h.Class("w-14 text-center")], ["Status"]),
+					eyebrow(h, { className: "hidden w-48 @min-[560px]/row:block" }, ["Timeline"]),
+					eyebrow(h, { className: "w-16 text-right" }, ["Duration"]),
+					eyebrow(h, { className: "w-14 text-center" }, ["Status"]),
 				],
 			),
 		],

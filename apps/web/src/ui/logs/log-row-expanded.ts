@@ -81,7 +81,7 @@ export const logRowExpanded = <Message>(
 										[
 											h.Type("button"),
 											h.Class(
-												"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground transition-colors hover:text-foreground",
+												"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
 											),
 											h.OnClick(events.clickedDetails, stop),
 										],

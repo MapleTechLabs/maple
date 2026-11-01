@@ -15,7 +15,7 @@ const organization: ClerkOrganization = {
 	homeRegion: "eu",
 	isServedHere: false,
 	isRegionOpen: false,
-	flags: { aiAutoTriage: false, releases: false, securityAudit: false },
+	flags: { aiAutoTriage: false, releases: false, securityAudit: false, statusPages: false },
 }
 
 const usOrganization: ClerkOrganization = {

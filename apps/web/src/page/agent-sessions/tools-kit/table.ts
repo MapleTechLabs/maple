@@ -94,7 +94,9 @@ export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 								cn(
 									"inline-flex items-center gap-1",
 									text,
-									isActive ? "text-foreground" : "hover:text-foreground",
+									isActive
+										? "text-foreground"
+										: "hover:text-foreground active:text-foreground",
 								),
 							),
 							h.Type("button"),
@@ -134,11 +136,15 @@ const ROW =
 	"flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border-subtle px-2.5 text-left transition-colors last:border-0 focus-visible:outline-none"
 
 export const toolRowClass = (isSelected: boolean): string =>
-	cn(ROW, rowSelectedClass(isSelected), !isSelected && "hover:bg-surface-sunken focus-visible:bg-surface-sunken")
+	cn(
+		ROW,
+		rowSelectedClass(isSelected),
+		!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken",
+	)
 
 export const toolTableFooter = <M>(h: HtmlBuilder<M>, subject: string, detail: string): Html =>
 	h.div(
-		[h.Class("flex h-9 items-center gap-[9px] px-2.5 font-mono text-xs")],
+		[h.Class("flex h-9 items-center gap-2 px-2.5 font-mono text-xs")],
 		[
 			h.span([h.Class("text-muted-foreground")], [subject]),
 			h.span([h.Class("text-foreground-subtle")], [detail]),

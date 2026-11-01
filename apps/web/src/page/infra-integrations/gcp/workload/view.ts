@@ -159,7 +159,7 @@ const traceGapCallout = (
 	const time = (ms: number) =>
 		new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit" }).format(ms)
 	return h.div(
-		[h.Class("@container rounded-md border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error-a4")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],

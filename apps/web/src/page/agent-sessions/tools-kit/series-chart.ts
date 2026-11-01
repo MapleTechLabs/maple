@@ -154,7 +154,7 @@ export const seriesChart = <M>(
 			h.Class(
 				cn(
 					"flex min-w-0 flex-col",
-					"gap-4 border-b border-border px-6 pt-[22px] pb-5",
+					"gap-4 border-b border-border px-6 py-5",
 					refreshingClass(inputs.isWaiting),
 				),
 			),
@@ -194,7 +194,6 @@ export const seriesChart = <M>(
 											label: entry.label,
 											color: `var(${entry.token})`,
 										})),
-										swatch: "square",
 									}),
 								]
 							: []),

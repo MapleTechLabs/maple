@@ -147,7 +147,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 		? splitPageRails(inputs.page())
 		: { body: inputs.page(), maybeFilters: Option.none(), maybeRight: Option.none() }
 	const railTriggers = [
-		...(Option.isSome(page.maybeFilters) ? [filterSheetTrigger(h, model)] : []),
+		...Option.toArray(Option.map(page.maybeFilters, (rail) => filterSheetTrigger(h, model, rail))),
 		...(Option.isSome(page.maybeRight) ? [rightSheetTrigger(h, model)] : []),
 	]
 	const railSheets = [

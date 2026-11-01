@@ -2,7 +2,6 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import {
 	AwsAccountId,
-	ExternalUserId,
 	GcpProjectId,
 	GcpResourceNumber,
 	GcpScopeType,
@@ -65,67 +64,6 @@ export const validateIntegrationReturnPath = (raw: string | null | undefined): s
 	typeof raw === "string" && raw.length <= RETURN_PATH_MAX_LENGTH && RETURN_PATH_PATTERN.test(raw)
 		? raw
 		: null
-
-export class HazelIntegrationStatus extends Schema.Class<HazelIntegrationStatus>("HazelIntegrationStatus")({
-	connected: Schema.Boolean,
-	externalUserId: Schema.NullOr(ExternalUserId),
-	externalUserEmail: Schema.NullOr(Schema.String),
-	connectedByUserId: Schema.NullOr(UserId),
-	scope: Schema.NullOr(Schema.String),
-}) {}
-
-export class HazelOrganizationSummary extends Schema.Class<HazelOrganizationSummary>(
-	"HazelOrganizationSummary",
-)({
-	id: Schema.String,
-	name: Schema.String,
-	slug: Schema.NullOr(Schema.String),
-	logoUrl: Schema.NullOr(Schema.String),
-}) {}
-
-export class HazelOrganizationsListResponse extends Schema.Class<HazelOrganizationsListResponse>(
-	"HazelOrganizationsListResponse",
-)({
-	organizations: Schema.Array(HazelOrganizationSummary),
-}) {}
-
-export const HazelChannelType = Schema.Literals(["public", "private"]).annotate({
-	identifier: "@maple/HazelChannelType",
-	title: "Hazel Channel Type",
-})
-export type HazelChannelType = Schema.Schema.Type<typeof HazelChannelType>
-
-export class HazelChannelSummary extends Schema.Class<HazelChannelSummary>("HazelChannelSummary")({
-	id: Schema.String,
-	name: Schema.String,
-	type: HazelChannelType,
-	organizationId: Schema.String,
-}) {}
-
-export class HazelChannelsListResponse extends Schema.Class<HazelChannelsListResponse>(
-	"HazelChannelsListResponse",
-)({
-	channels: Schema.Array(HazelChannelSummary),
-}) {}
-
-export class HazelStartConnectRequest extends Schema.Class<HazelStartConnectRequest>(
-	"HazelStartConnectRequest",
-)({
-	returnTo: Schema.optionalKey(IntegrationReturnPath),
-}) {}
-
-export class HazelStartConnectResponse extends Schema.Class<HazelStartConnectResponse>(
-	"HazelStartConnectResponse",
-)({
-	redirectUrl: Schema.String,
-	state: Schema.String,
-}) {}
-
-export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectResponse>("HazelDisconnectResponse")(
-	{
-		disconnected: Schema.Boolean,
-	},
-) {}
 
 export class LinearIntegrationStatus extends Schema.Class<LinearIntegrationStatus>("LinearIntegrationStatus")(
 	{
@@ -1481,7 +1419,7 @@ export type IntegrationHttpError =
 	| IntegrationsPersistenceError
 
 /**
- * Dashboard control surface for the Hazel, Linear, Cloudflare, Railway and GitHub
+ * Dashboard control surface for the Linear, Cloudflare, Railway and GitHub
  * integrations, plus VCS lookups. Internal transport: session-only, absent from
  * the public docs. PlanetScale and chat connectors are public v2 resources.
  *
@@ -1489,57 +1427,6 @@ export type IntegrationHttpError =
  * not part of this group: providers store those URLs on their side.
  */
 export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
-	.add(
-		HttpApiEndpoint.get("hazelStatus", "/hazel/status", {
-			success: HazelIntegrationStatus,
-			error: IntegrationsPersistenceError,
-		}),
-	)
-	.add(
-		HttpApiEndpoint.post("hazelStart", "/hazel/start", {
-			payload: HazelStartConnectRequest,
-			success: HazelStartConnectResponse,
-			error: [
-				IntegrationsForbiddenError,
-				IntegrationsValidationError,
-				IntegrationsUpstreamError,
-				IntegrationsPersistenceError,
-			],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.get("hazelOrganizations", "/hazel/organizations", {
-			success: HazelOrganizationsListResponse,
-			error: [
-				IntegrationsValidationError,
-				IntegrationsNotConnectedError,
-				IntegrationsRevokedError,
-				IntegrationsUpstreamError,
-				IntegrationsPersistenceError,
-			],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.get("hazelChannels", "/hazel/organizations/:organizationId/channels", {
-			params: {
-				organizationId: Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()),
-			},
-			success: HazelChannelsListResponse,
-			error: [
-				IntegrationsValidationError,
-				IntegrationsNotConnectedError,
-				IntegrationsRevokedError,
-				IntegrationsUpstreamError,
-				IntegrationsPersistenceError,
-			],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.delete("hazelDisconnect", "/hazel", {
-			success: HazelDisconnectResponse,
-			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
-		}),
-	)
 	.add(
 		HttpApiEndpoint.get("linearStatus", "/linear/status", {
 			success: LinearIntegrationStatus,

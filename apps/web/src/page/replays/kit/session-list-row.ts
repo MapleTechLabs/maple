@@ -40,7 +40,7 @@ const orgButton = <M>(
 	return h.button(
 		[
 			h.Type("button"),
-			h.Class(cn(className, "rounded-sm hover:underline")),
+			h.Class(cn(className, "rounded-sm hover:underline active:underline")),
 			h.OnClick(onFilter(name), { propagation: "Stop" }),
 		],
 		[name],
@@ -59,7 +59,9 @@ const sessionTags = <M>(
 			: h.button(
 					[
 						h.Type("button"),
-						h.Class(cn(className, "hover:ring-1 hover:ring-border")),
+						h.Class(
+							cn(className, "hover:ring-1 active:ring-1 hover:ring-border active:ring-border"),
+						),
 						h.OnClick(onFilter(tag), { propagation: "Stop" }),
 					],
 					[SESSION_TAG_LABELS[tag]],
@@ -176,7 +178,7 @@ export const sessionListRow = <M>(
 			h.OnClick(open),
 			h.Class(
 				cn(
-					"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 transition-colors hover:bg-accent/50 @2xl:gap-4",
+					"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 hover:bg-surface-sunken active:bg-surface-sunken @2xl:gap-4",
 					lowSignal ? "py-1.5" : "py-2.5",
 				),
 			),
@@ -281,7 +283,7 @@ const deviceColumn = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 			),
 			h.span(
 				[h.Class("shrink-0 text-muted-foreground"), h.Title(session.deviceType || "desktop")],
-				[icon(h, deviceIconFor(session.deviceType), { className: "size-4 opacity-70" })],
+				[icon(h, deviceIconFor(session.deviceType), { className: "size-4" })],
 			),
 			...(session.country
 				? [h.span([h.Class("truncate text-xs text-muted-foreground")], [session.country])]

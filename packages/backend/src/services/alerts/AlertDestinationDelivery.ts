@@ -18,12 +18,7 @@ import { buildAlertRuleUrl, type DispatchContext as DeliveryDispatchContext } fr
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchDestination, DispatchResult } from "./delivery/context"
 import type { LinearDeliveryPort } from "./delivery/Transport"
-import {
-	hydrateDestinationRow,
-	type DestinationSecretConfig,
-	type EnrichedDestinationSecretConfig,
-	type StoredDestinationConfig,
-} from "./AlertDestinationHydration"
+import { hydrateDestinationRow, type StoredDestinationConfig } from "./AlertDestinationHydration"
 
 /** The destination columns delivery reads; any stored row shape satisfies it. */
 type DeliverableDestination = DispatchDestination & StoredDestinationConfig
@@ -97,14 +92,6 @@ export const makeAlertDestinationDelivery = (options: {
 		})
 		return { row, publicConfig, secretConfig } as const
 	})
-
-	const enrichSecretForDispatch = (
-		_row: DeliverableDestination,
-		secretConfig: DestinationSecretConfig,
-	): Effect.Effect<EnrichedDestinationSecretConfig, AlertDeliveryError> =>
-		// Hazel-OAuth webhooks embed their delivery token in the URL path, so
-		// there's nothing to enrich at dispatch time.
-		Effect.succeed(secretConfig)
 
 	/** The incident's own page when there is one, else the service (or the alerts list). */
 	const composeLinkUrl = (serviceLinkName: string | null, incidentId: string | null = null) =>
@@ -234,11 +221,10 @@ export const makeAlertDestinationDelivery = (options: {
 		context: Omit<AlertDispatchContext, "destination" | "publicConfig" | "secretConfig">,
 	) {
 		const hydrated = yield* hydrateDestination(destinationRow)
-		const enrichedSecret = yield* enrichSecretForDispatch(hydrated.row, hydrated.secretConfig)
 		const fullContext: AlertDispatchContext = {
 			destination: hydrated.row,
 			publicConfig: hydrated.publicConfig,
-			secretConfig: enrichedSecret,
+			secretConfig: hydrated.secretConfig,
 			...context,
 		}
 		const payload = yield* buildPayload(fullContext, destinationRow.orgId)
@@ -247,7 +233,6 @@ export const makeAlertDestinationDelivery = (options: {
 
 	return {
 		hydrateDestination,
-		enrichSecretForDispatch,
 		composeLinkUrl,
 		dispatchDelivery,
 		buildPayload,

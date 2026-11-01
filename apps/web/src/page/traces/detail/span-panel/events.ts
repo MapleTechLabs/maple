@@ -57,7 +57,7 @@ const stackTrace = (h: H, model: Model, eventId: string, stacktrace: string): Ht
 							h.AriaDisabled(false),
 							h.AriaExpanded(isOpen),
 							h.Class(
-								"group flex items-center gap-1 text-3xs text-muted-foreground transition-colors hover:text-foreground",
+								"group flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 							...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 							h.DataAttribute("slot", "collapsible-trigger"),

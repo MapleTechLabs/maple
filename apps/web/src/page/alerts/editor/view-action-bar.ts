@@ -50,7 +50,7 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 								variant: "link",
 								size: "xs",
 								className:
-									"text-muted-foreground underline decoration-dotted hover:text-foreground",
+									"text-muted-foreground underline decoration-dotted hover:text-foreground active:text-foreground",
 								attributes: trigger(),
 							},
 							["details"],

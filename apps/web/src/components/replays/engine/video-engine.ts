@@ -54,6 +54,20 @@ export function videoSegmentPayload(event: unknown): Record<string, unknown> | u
 }
 
 /**
+ * A segment's identity, stable across separate extractions.
+ *
+ * The iOS SDK sends its chunk sequence number. A position in the list being
+ * extracted is not an identity: `addEvent` extracts one event at a time, so
+ * every late segment came out as "0", matched the first seed segment, and was
+ * dropped, cutting playback off at the end of the first loaded range.
+ */
+function segmentIdOf(raw: unknown, timestamp: number): string {
+	if (typeof raw === "string" && raw.length > 0) return raw
+	if (typeof raw === "number" && Number.isFinite(raw)) return String(raw)
+	return `t${timestamp}`
+}
+
+/**
  * Pull the ordered segment list out of a raw event stream.
  *
  * `startTime` is the stream's first event timestamp — the playhead's time-zero,
@@ -71,7 +85,7 @@ export function extractVideoSegments(events: ReadonlyArray<unknown>, startTime: 
 		const timestamp = numberOr(asRecord(raw)?.timestamp, Number.NaN)
 		if (!Number.isFinite(timestamp)) continue
 		segments.push({
-			segmentId: typeof payload.segmentId === "string" ? payload.segmentId : String(segments.length),
+			segmentId: segmentIdOf(payload.segmentId, timestamp),
 			startMs: Math.max(0, timestamp - startTime),
 			durationMs: Math.max(0, numberOr(payload.duration, 0)),
 			base64,

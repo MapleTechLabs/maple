@@ -22,11 +22,7 @@ export const heatmapGhost = <M>(h: HtmlBuilder<M>): Html =>
 				"grid-template-rows": `repeat(${HEATMAP_ROWS},1fr)`,
 			}),
 		],
-		Array.from({ length: HEATMAP_COLS * HEATMAP_ROWS }, (_, i) =>
-			stub(h, "rounded-sm bg-foreground/10 animate-pulse", {
-				"animation-delay": `${-(Math.floor(i / HEATMAP_COLS) + (i % HEATMAP_COLS)) * 0.13}s`,
-			}),
-		),
+		Array.from({ length: HEATMAP_COLS * HEATMAP_ROWS }, () => stub(h, "rounded-sm bg-foreground/10")),
 	)
 
 export const hbarGhost = <M>(h: HtmlBuilder<M>): Html =>
@@ -39,13 +35,14 @@ export const hbarGhost = <M>(h: HtmlBuilder<M>): Html =>
 					h.Style({ "grid-template-columns": "minmax(0, 38%) 1fr 44px" }),
 				],
 				[
-					stub(h, "h-2.5 rounded-xs bg-foreground/10", { width: `${[72, 88, 60, 48, 66][i] ?? 0}%` }),
+					stub(h, "h-2.5 rounded-xs bg-foreground/10", {
+						width: `${[72, 88, 60, 48, 66][i] ?? 0}%`,
+					}),
 					h.div(
-						[h.Class("h-3 overflow-hidden rounded-[3px] bg-foreground/5")],
+						[h.Class("h-3 overflow-hidden rounded-xs bg-foreground/5")],
 						[
-							stub(h, "h-full rounded-[3px] bg-foreground/10 animate-pulse", {
+							stub(h, "h-full rounded-xs bg-foreground/10", {
 								width: `${w}%`,
-								"animation-delay": `${-i * 0.13}s`,
 							}),
 						],
 					),
@@ -65,16 +62,17 @@ export const funnelGhost = <M>(h: HtmlBuilder<M>): Html =>
 					h.div(
 						[h.Class("flex items-center justify-between")],
 						[
-							stub(h, "h-2.5 rounded-xs bg-foreground/10", { width: `${[26, 34, 22, 30][i] ?? 0}%` }),
+							stub(h, "h-2.5 rounded-xs bg-foreground/10", {
+								width: `${[26, 34, 22, 30][i] ?? 0}%`,
+							}),
 							stub(h, "h-2.5 w-12 rounded-xs bg-foreground/10"),
 						],
 					),
 					h.div(
-						[h.Class("h-2.5 overflow-hidden rounded-[3px] bg-foreground/5")],
+						[h.Class("h-2.5 overflow-hidden rounded-xs bg-foreground/5")],
 						[
-							stub(h, "h-full rounded-[3px] bg-foreground/10 animate-pulse", {
+							stub(h, "h-full rounded-xs bg-foreground/10", {
 								width: `${w}%`,
-								"animation-delay": `${-i * 0.13}s`,
 							}),
 						],
 					),
@@ -134,7 +132,10 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 				PATH_COLUMNS.map(() => stub(h, "h-2 w-10 rounded-xs bg-foreground/10")),
 			),
 			h.svg(
-				[...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "none" }), h.Class("min-h-0 w-full flex-1")],
+				[
+					...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "none" }),
+					h.Class("min-h-0 w-full flex-1"),
+				],
 				[
 					...PATH_LINKS.map(([from, [sy0, sy1], [ty0, ty1]]) => {
 						const x0 = nodeX(from) + PATH_NODE_W
@@ -146,18 +147,25 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 								fill: STROKE,
 								"fill-opacity": 0.08,
 							}),
-							h.Class("animate-pulse"),
-							h.Style({ "animation-delay": `${-from * 0.2}s` }),
 						])
 					}),
 					...PATH_COLUMNS.flatMap((column, i) => {
 						const last = i === columns - 1
 						const x = nodeX(i)
-						return column.map(([y0, y1], j) =>
+						return column.map(([y0, y1]) =>
 							h.g(
-								[h.Class("animate-pulse"), h.Style({ "animation-delay": `${-(i + j) * 0.13}s` })],
+								[],
 								[
-									h.rect(attrs(h, { x, y: y0, width: PATH_NODE_W, height: y1 - y0, fill: STROKE, "fill-opacity": 0.3 })),
+									h.rect(
+										attrs(h, {
+											x,
+											y: y0,
+											width: PATH_NODE_W,
+											height: y1 - y0,
+											fill: STROKE,
+											"fill-opacity": 0.3,
+										}),
+									),
 									h.rect(
 										attrs(h, {
 											x: last ? x - 1.2 - PATH_LABEL_W : x + PATH_NODE_W + 1.2,
@@ -180,29 +188,35 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 
 export const pieGhost = <M>(h: HtmlBuilder<M>): Html =>
 	h.svg(
-		[...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "xMidYMid meet" }), h.Class("h-full max-h-[88%] w-full")],
+		[
+			...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "xMidYMid meet" }),
+			h.Class("h-full max-h-[88%] w-full"),
+		],
 		[
 			h.circle(
-				attrs(h, { cx: 50, cy: 50, r: 30, fill: "none", stroke: STROKE, "stroke-opacity": 0.12, "stroke-width": 16 }),
+				attrs(h, {
+					cx: 50,
+					cy: 50,
+					r: 30,
+					fill: "none",
+					stroke: STROKE,
+					"stroke-opacity": 0.12,
+					"stroke-width": 16,
+				}),
 			),
-			h.g(
-				[h.Class("skeleton-spin")],
-				[
-					h.circle(
-						attrs(h, {
-							cx: 50,
-							cy: 50,
-							r: 30,
-							fill: "none",
-							stroke: STROKE,
-							"stroke-opacity": 0.45,
-							"stroke-width": 16,
-							"stroke-linecap": "round",
-							pathLength: 100,
-							"stroke-dasharray": "26 74",
-						}),
-					),
-				],
+			h.circle(
+				attrs(h, {
+					cx: 50,
+					cy: 50,
+					r: 30,
+					fill: "none",
+					stroke: STROKE,
+					"stroke-opacity": 0.3,
+					"stroke-width": 16,
+					pathLength: 100,
+					"stroke-dasharray": "34 66",
+					transform: "rotate(-90 50 50)",
+				}),
 			),
 		],
 	)
@@ -211,7 +225,10 @@ const GAUGE_ARC = "M 26 79 A 34 34 0 1 1 74 79"
 
 export const gaugeGhost = <M>(h: HtmlBuilder<M>): Html =>
 	h.svg(
-		[...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "xMidYMid meet" }), h.Class("h-full w-full")],
+		[
+			...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "xMidYMid meet" }),
+			h.Class("h-full w-full"),
+		],
 		[
 			h.path(
 				attrs(h, {
@@ -228,16 +245,23 @@ export const gaugeGhost = <M>(h: HtmlBuilder<M>): Html =>
 					d: GAUGE_ARC,
 					fill: "none",
 					stroke: STROKE,
-					"stroke-opacity": 0.55,
+					"stroke-opacity": 0.4,
 					"stroke-width": 9,
 					"stroke-linecap": "round",
 					pathLength: 100,
+					"stroke-dasharray": "62 100",
 				}),
-				h.Class("skeleton-draw"),
 			]),
 			h.rect([
-				...attrs(h, { x: 36, y: 47, width: 28, height: 13, rx: 3, fill: STROKE, "fill-opacity": 0.12 }),
-				h.Class("animate-pulse"),
+				...attrs(h, {
+					x: 36,
+					y: 47,
+					width: 28,
+					height: 13,
+					rx: 3,
+					fill: STROKE,
+					"fill-opacity": 0.12,
+				}),
 			]),
 		],
 	)
@@ -245,10 +269,7 @@ export const gaugeGhost = <M>(h: HtmlBuilder<M>): Html =>
 export const statGhost = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("flex h-full w-full flex-col items-center justify-center gap-2.5")],
-		[
-			stub(h, "h-8 w-24 rounded-md bg-foreground/10 animate-pulse"),
-			stub(h, "h-3 w-14 rounded-sm bg-foreground/10 animate-pulse", { "animation-delay": "0.2s" }),
-		],
+		[stub(h, "h-8 w-24 rounded-md bg-foreground/10"), stub(h, "h-3 w-14 rounded-sm bg-foreground/10")],
 	)
 
 const DROPOFF_HEIGHTS = [100, 44, 20, 8]
@@ -271,7 +292,7 @@ export const dropoffGhost = <M>(h: HtmlBuilder<M>): Html =>
 									stub(h, "h-2.5 rounded-xs bg-foreground/10", {
 										width: `${[60, 72, 56, 64][i] ?? 0}%`,
 									}),
-									stub(h, "h-4 w-12 rounded-[3px] bg-foreground/15"),
+									stub(h, "h-4 w-12 rounded-xs bg-foreground/15"),
 									stub(h, "h-2.5 w-8 rounded-xs bg-foreground/10"),
 								],
 							),
@@ -280,15 +301,18 @@ export const dropoffGhost = <M>(h: HtmlBuilder<M>): Html =>
 								[
 									...(i > 0
 										? [
-												stub(h, "absolute inset-x-0 rounded-sm bg-foreground/[0.04]", {
-													bottom: `${height}%`,
-													height: `${prev - height}%`,
-												}),
+												stub(
+													h,
+													"absolute inset-x-0 rounded-sm bg-foreground/[0.04]",
+													{
+														bottom: `${height}%`,
+														height: `${prev - height}%`,
+													},
+												),
 											]
 										: []),
-									stub(h, "absolute inset-x-0 bottom-0 rounded-sm bg-foreground/10 animate-pulse", {
+									stub(h, "absolute inset-x-0 bottom-0 rounded-sm bg-foreground/10", {
 										height: `${height}%`,
-										"animation-delay": `${-i * 0.13}s`,
 									}),
 								],
 							),

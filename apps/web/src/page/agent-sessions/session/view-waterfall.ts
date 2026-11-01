@@ -68,7 +68,7 @@ const axisGrid = (h: H, ticks: ReadonlyArray<AxisTick>): ReadonlyArray<Html> =>
 			[
 				h.Key(String(tick.fraction)),
 				h.AriaHidden(true),
-				h.Class("absolute inset-y-0 w-px bg-border/40"),
+				h.Class("absolute inset-y-0 w-px bg-border-subtle"),
 				h.Style({ left: `${tick.fraction * 100}%` }),
 			],
 			[],
@@ -112,7 +112,7 @@ const traceLink = (h: H, traceId: string, timestamp: string): Html =>
 		[
 			h.Class(
 				cn(
-					"shrink-0 cursor-pointer rounded-xs font-mono hover:text-foreground",
+					"shrink-0 cursor-pointer rounded-xs font-mono hover:text-foreground active:text-foreground",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),
@@ -177,7 +177,7 @@ const turnHeader = (
 	return h.div(
 		[
 			h.Class(
-				"flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-accent/50",
+				"flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -326,12 +326,12 @@ const spanRow = (
 			h.AriaHasPopup("dialog"),
 			h.Class(
 				cn(
-					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-accent/50",
+					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-					isErrored && "bg-severity-error/6",
+					isErrored && "bg-severity-error-a1",
 					state.isFocused && "bg-accent/60",
 					rowSelectedClass(state.isSelected || state.isRevealed),
-					state.isRevealed && "bg-primary/12",
+					state.isRevealed && "bg-primary-a2",
 				),
 			),
 			...(state.isRevealed ? [h.DataAttribute("revealed", "true")] : []),

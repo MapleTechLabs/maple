@@ -107,16 +107,18 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 						[
 							truncatedText(h, {
 								text: bar.name,
-								className: bar.unnamed ? "italic text-muted-foreground" : "text-foreground-soft",
+								className: bar.unnamed
+									? "italic text-muted-foreground"
+									: "text-foreground-soft",
 							}),
 							h.div(
 								[
-									h.Class("relative w-full overflow-hidden rounded-[3px] bg-foreground/5"),
+									h.Class("relative w-full overflow-hidden rounded-xs bg-foreground/5"),
 									h.Style({ height: `${barH}px` }),
 								],
 								[
 									h.div([
-										h.Class("absolute inset-y-0 left-0 rounded-[3px]"),
+										h.Class("absolute inset-y-0 left-0 rounded-xs"),
 										h.Style({
 											width: `${bar.widthPct * 100}%`,
 											"background-color": bar.color,
@@ -129,7 +131,10 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 							h.span(
 								[h.Class("shrink-0 text-right tabular-nums text-muted-foreground")],
 								[
-									h.span([h.Class("text-foreground-soft")], [fmtValue(bar.value, inputs.unit)]),
+									h.span(
+										[h.Class("text-foreground-soft")],
+										[fmtValue(bar.value, inputs.unit)],
+									),
 									h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
 									h.span([], [formatPercent(bar.pctOfTotal, PCT_FLOOR)]),
 								],

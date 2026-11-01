@@ -27,6 +27,8 @@ export type DashboardPageOptions = Readonly<{
 	/** `DashboardLayout.Filters`'s children. */
 	filters?: Html
 	filtersWidth?: string
+	/** What the filter rail holds when it is not filters (a settings nav): names its sheet below `lg`. */
+	filtersLabel?: string
 	/** `DashboardLayout.Header`'s `titleContent`. */
 	titleContent?: Html | undefined
 	/** A plain page title, drawn as the page `<h1>` when there is no `titleContent`. */
@@ -63,10 +65,11 @@ export const pageBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): H
  * `PageLayout.FilterSidebar` as the inline rail (lg and up). A rail with no facets to offer
  * (`filterSidebarFrame`'s `isIdle`) is hidden, so the content takes its width.
  */
-export const filterRail = <M>(h: HtmlBuilder<M>, child: Html, width?: string): Html =>
+export const filterRail = <M>(h: HtmlBuilder<M>, child: Html, width?: string, label?: string): Html =>
 	h.aside(
 		[
 			h.DataAttribute("slot", "page-filter-sidebar"),
+			...(label === undefined ? [] : [h.DataAttribute("rail-label", label)]),
 			h.Class(
 				cn(
 					pageFilterSidebarStyles,
@@ -183,7 +186,9 @@ export const dashboardPage = <M>(
 		...(options.sticky === undefined || options.sticky === null ? [] : [options.sticky]),
 	]
 	return pageBody(h, [
-		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),
+		...(options.filters === undefined
+			? []
+			: [filterRail(h, options.filters, options.filtersWidth, options.filtersLabel)]),
 		pageContent(h, [
 			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
 			options.fill === true

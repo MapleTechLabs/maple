@@ -147,7 +147,7 @@ const errorRow = (
 									[
 										h.Class(
 											cn(
-												"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-[5px] text-2xs leading-3.5",
+												"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-1.5 text-2xs leading-3.5",
 												TONE_TEXT.crit,
 											),
 										),
@@ -159,11 +159,7 @@ const errorRow = (
 					...(row.variants > 1
 						? [
 								h.span(
-									[
-										h.Class(
-											"shrink-0 pl-1.5 text-2xs leading-3.5 text-foreground-subtle",
-										),
-									],
+									[h.Class("shrink-0 pl-1.5 text-2xs leading-3.5 text-foreground-subtle")],
 									[String(row.variants), " variants"],
 								),
 							]
@@ -225,7 +221,9 @@ const loadingRows = (h: H): ReadonlyArray<Html> =>
 		h.div(
 			[
 				h.Key(String(width)),
-				h.Class("flex h-[38px] items-center gap-3 border-b border-border-subtle px-2.5 last:border-0"),
+				h.Class(
+					"flex h-[38px] items-center gap-3 border-b border-border-subtle px-2.5 last:border-0",
+				),
 				h.Style({ opacity: String(1 - index * 0.2) }),
 			],
 			[
@@ -303,7 +301,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 		[
 			h.AriaExpanded(isExpanded),
 			h.Class(
-				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-sunken",
+				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			h.Type("button"),
 			h.OnClick(Message.ToggledErrorsExpanded()),
@@ -397,11 +395,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 							inputs.isLoading
 								? skeleton(h, "h-2.5 w-36 self-center")
 								: h.span(
-										[
-											h.Class(
-												"text-2xs leading-3.5 tabular-nums text-foreground-subtle",
-											),
-										],
+										[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 										[
 											formatToolCount(failures),
 											" failed ",
@@ -431,11 +425,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 			),
 			isEmpty
 				? h.div(
-						[
-							h.Class(
-								"flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono",
-							),
-						],
+						[h.Class("flex flex-col gap-2 border-t border-border px-2.5 py-5 font-mono")],
 						[
 							h.span(
 								[h.Class("flex items-center gap-2 text-xs text-foreground")],

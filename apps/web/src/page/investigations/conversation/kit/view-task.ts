@@ -97,7 +97,7 @@ const answer = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html =
 		)
 	if (part.errorText !== undefined)
 		return h.pre(
-			[h.Class("max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error/80")],
+			[h.Class("max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error")],
 			[part.errorText],
 		)
 	if (part.answer !== undefined) return h.div([h.Class("text-sm")], [host.richText(part.answer)])

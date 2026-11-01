@@ -33,9 +33,11 @@ import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
 import * as DashboardWidget from "./dashboards/widget"
 import * as CodeReview from "./code-review"
+import * as SecurityDependencies from "./security/dependencies"
 import * as SecurityFinding from "./security/finding"
 import * as SecurityRun from "./security/run"
 import * as SecurityTabs from "./security/tabs"
+import * as SecurityTelemetry from "./security/telemetry"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as InfraContainer from "./infra/containers/detail"
@@ -87,6 +89,9 @@ import * as Share from "./share"
 import * as SourcesList from "./sources/list"
 import * as SourcesNew from "./sources/new"
 import * as SourceDetail from "./sources/detail"
+import * as StatusPageBuilder from "./status-pages/builder"
+import * as StatusPageEditor from "./status-pages/editor"
+import * as StatusPagesList from "./status-pages/list"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
 
@@ -111,6 +116,9 @@ export const pages = [
 	AlertRule.page,
 	AlertsUptimeMonitor.page,
 	AlertsUptimeNew.page,
+	StatusPagesList.page,
+	StatusPageBuilder.page,
+	StatusPageEditor.page,
 	AlertEditor.page,
 	ServiceMap.page,
 	InfraHosts.page,
@@ -144,6 +152,8 @@ export const pages = [
 	DashboardWidget.page,
 	CodeReview.page,
 	SecurityTabs.page,
+	SecurityTelemetry.page,
+	SecurityDependencies.page,
 	SecurityRun.page,
 	SecurityFinding.page,
 	AgentSessionsList.page,

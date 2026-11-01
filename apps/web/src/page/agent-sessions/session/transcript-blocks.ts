@@ -89,10 +89,10 @@ export const toolBlock = (
 			h,
 			{
 				className: tool.failed
-					? "border-severity-error/40 bg-severity-error/5"
+					? "border-severity-error-a4 bg-severity-error-a1"
 					: isOpen
 						? "border-border bg-card"
-						: "border-transparent bg-surface-sunken hover:bg-surface-strong",
+						: "border-transparent bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
 			},
 			[
 				toolHeader(h, tool, isOpen, timeZone),

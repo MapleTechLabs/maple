@@ -4,7 +4,6 @@ import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
-import { separator } from "../../../ui/display"
 import { filterDescriptionMark, filterSection } from "../../../ui/filters/filter-section"
 import {
 	filterSidebarBody,
@@ -13,6 +12,7 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
+	filterSidebarDivider,
 } from "../../../ui/filters/filter-sidebar"
 import { percentilePresets, toLogBuckets } from "../../../ui/filters/range-distribution"
 import { type RangePreset, rangeFilterSection } from "../../../ui/filters/range-filter-section"
@@ -175,7 +175,7 @@ const singleCheckbox = (h: H, title: string, isChecked: boolean, onToggle: Messa
 				h,
 				{
 					className:
-						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal",
+						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal sm:text-xs",
 					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(title)],
 				},
 				[h.span([h.Class("truncate")], [title]), filterDescriptionMark(h, title)],
@@ -237,9 +237,9 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 				{ title: "Environment", facet: "environments", isSearchable: false, hasDescription: false },
 				facets.environments,
 			),
-			separator(h, "horizontal", "my-2"),
+			filterSidebarDivider(h),
 			...RANGES.map((spec) => rangeSection(h, model, distributions, spec)),
-			separator(h, "horizontal", "my-2"),
+			filterSidebarDivider(h),
 			singleCheckbox(
 				h,
 				"Hide single-trace sessions",
@@ -258,7 +258,12 @@ export const filtersRail = (h: H, model: Model): Html =>
 			AsyncData.matchData(model.facets.data, {
 				onEmpty: () => filterSidebarLoading(h, 4),
 				onFailure: (failure) =>
-					filterSidebarError(h, failure, undefined, Option.getOrUndefined(AsyncData.getError(model.firstPage.data))),
+					filterSidebarError(
+						h,
+						failure,
+						undefined,
+						Option.getOrUndefined(AsyncData.getError(model.firstPage.data)),
+					),
 				onData: (facets) => loadedRail(h, model, facets),
 			}),
 		],

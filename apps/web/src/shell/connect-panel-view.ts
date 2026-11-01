@@ -53,8 +53,8 @@ const statusPill = (h: H, model: Model): Html => {
 			className: cn(
 				"gap-1.5 text-2xs transition-colors sm:text-2xs",
 				isConnected
-					? "border-severity-info/30 bg-severity-info/10 text-severity-info"
-					: "border-primary/30 bg-primary/10 text-primary",
+					? "border-severity-info-a3 bg-severity-info-a2 text-severity-info"
+					: "border-primary-a3 bg-primary-a2 text-primary",
 			),
 		},
 		isConnected
@@ -85,7 +85,7 @@ const keysUnavailable = (h: H): Html =>
 					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
 					h.AriaLabel("Ingestion settings"),
 					h.Class(
-						"inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline",
+						"inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline active:no-underline",
 					),
 				],
 				[
@@ -206,7 +206,7 @@ const mcpCard = (h: H, model: Model): Html =>
 						[
 							h.Href(settingsHref("mcp")),
 							h.Class(
-								"inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground",
+								"inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 						],
 						["All clients", icon(h, "ArrowRightIcon", { size: 12 })],
@@ -287,7 +287,8 @@ const commandBlock = (h: H, model: Model): Html =>
 	)
 
 /** The footer's two links share one style. */
-const LINK_CLASS = "font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground"
+const LINK_CLASS =
+	"font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground active:text-foreground"
 
 /** `ConnectPanel`. */
 const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [

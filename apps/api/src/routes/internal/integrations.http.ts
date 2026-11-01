@@ -10,7 +10,6 @@ import {
 	CloudflareTopTrafficRow,
 	CloudflareUsageResponse,
 	CurrentTenant,
-	ExternalUserId,
 	GcpResourcesResponse,
 	GithubDeleteRepositoryResponse,
 	GithubDisconnectResponse,
@@ -22,11 +21,6 @@ import {
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	GithubSelectInstallationResponse,
-	HazelChannelsListResponse,
-	HazelDisconnectResponse,
-	HazelIntegrationStatus,
-	HazelOrganizationsListResponse,
-	HazelStartConnectResponse,
 	IntegrationsForbiddenError,
 	IntegrationsUpstreamError,
 	LinearDisconnectResponse,
@@ -39,7 +33,6 @@ import {
 	RoleName,
 	SupabaseConnectResponse,
 	SupabaseDisconnectResponse,
-	UserId,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
 	VCS_COMMIT_RANGES_MAX,
 	VcsCommitDetailResponse,
@@ -50,7 +43,7 @@ import {
 	VcsPullRequestsResponse,
 } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { graphqlQuery } from "@maple/backend/services/integrations/CloudflareApi"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
@@ -75,20 +68,15 @@ import {
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { requireAdmin as requireAdminRole } from "@maple/backend/services/auth/auth"
 import {
 	CLOUDFLARE_CALLBACK_PATH,
 	GITHUB_CALLBACK_PATH,
-	HAZEL_CALLBACK_PATH,
 	LINEAR_CALLBACK_PATH,
 } from "@/routes/integrations-callback.http"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
 import { makeOAuthCompleter } from "@/routes/oauth-complete"
-
-const asExternalUserId = Schema.decodeUnknownSync(ExternalUserId)
-const asUserId = Schema.decodeUnknownSync(UserId)
 
 /**
  * How long `cloudflarePrime` spends on the post-connect poll. Long enough for zone discovery plus
@@ -106,7 +94,6 @@ const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
 
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
-		const hazel = yield* HazelOAuthService
 		const linear = yield* LinearOAuthService
 		const github = yield* GithubConnectService
 		const vcsCommits = yield* VcsCommitService
@@ -143,76 +130,6 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						return yield* completeOAuth(payload, { orgId: tenant.orgId, userId: tenant.userId })
-					}),
-				)
-				.handle("hazelStatus", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const status = yield* hazel.getStatus(tenant.orgId)
-						if (!status.connected) {
-							return new HazelIntegrationStatus({
-								connected: false,
-								externalUserId: null,
-								externalUserEmail: null,
-								connectedByUserId: null,
-								scope: null,
-							})
-						}
-						return new HazelIntegrationStatus({
-							connected: true,
-							externalUserId: asExternalUserId(status.externalUserId),
-							externalUserEmail: status.externalUserEmail,
-							connectedByUserId: asUserId(status.connectedByUserId),
-							scope: status.scope,
-						})
-					}),
-				)
-				.handle("hazelStart", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
-						const callbackUrl = yield* trustedCallbackUrl(HAZEL_CALLBACK_PATH)
-						const result = yield* hazel.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl,
-							returnTo: payload.returnTo,
-						})
-						return new HazelStartConnectResponse(result)
-					}),
-				)
-				.handle("hazelOrganizations", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const organizations = yield* hazel.listOrganizations(tenant.orgId)
-						return new HazelOrganizationsListResponse({
-							organizations: organizations.map((o) => ({
-								id: o.id,
-								name: o.name,
-								slug: o.slug,
-								logoUrl: o.logoUrl,
-							})),
-						})
-					}),
-				)
-				.handle("hazelChannels", ({ params }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const channels = yield* hazel.listChannels(tenant.orgId, params.organizationId)
-						return new HazelChannelsListResponse({
-							channels: channels.map((c) => ({
-								id: c.id,
-								name: c.name,
-								type: c.type,
-								organizationId: c.organizationId,
-							})),
-						})
-					}),
-				)
-				.handle("hazelDisconnect", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
-						const result = yield* hazel.disconnect(tenant.orgId)
-						return new HazelDisconnectResponse(result)
 					}),
 				)
 				.handle("linearStatus", () =>

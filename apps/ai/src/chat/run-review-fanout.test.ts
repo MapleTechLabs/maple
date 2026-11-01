@@ -113,7 +113,10 @@ describe("runChatTurn review_files children", () => {
 				model,
 				submitDiagnosis: () => Effect.die("no investigation in a review session"),
 				submitReview: () => Effect.void,
-				review: { coverage: { observe: () => {}, unread: () => [] }, ledger: makeReviewLedger() },
+				review: {
+					coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+					ledger: makeReviewLedger(),
+				},
 				text: "Review pull request #7 of acme/shop.",
 				history: [],
 				usage: makeRunUsage(),
@@ -146,7 +149,7 @@ describe("runChatTurn review_files children", () => {
 				Effect.succeed({ content: [{ type: "text" as const, text: "src/a.ts (source, +3 -1)" }] }),
 		}
 		const review = {
-			coverage: { observe: () => {}, unread: () => [] },
+			coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
 			ledger: makeReviewLedger(),
 			childFindings: makeChildFindings(),
 		}
@@ -237,7 +240,10 @@ describe("runChatTurn review_files children", () => {
 				model,
 				submitDiagnosis: () => Effect.die("no investigation in a review session"),
 				submitReview: () => Effect.void,
-				review: { coverage: { observe: () => {}, unread: () => [] }, ledger: makeReviewLedger() },
+				review: {
+					coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+					ledger: makeReviewLedger(),
+				},
 				text: "Review pull request #7 of acme/shop.",
 				history: [],
 				usage: makeRunUsage(),

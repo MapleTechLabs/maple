@@ -34,7 +34,7 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 				h.Role("listbox"),
 				h.AriaLabel("Where clause suggestions"),
 				h.Class(
-					"fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md",
+					"fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-popup",
 				),
 				h.OnMount(MountSuggestions()),
 			],
@@ -49,7 +49,9 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 						h.Class(
 							cn(
 								"flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-xs",
-								isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+								isActive
+									? "bg-accent text-accent-foreground"
+									: "hover:bg-accent/60 active:bg-accent/60",
 							),
 						),
 						h.OnMouseDown(Message.CompletedPlaceAdvancedCursor()),

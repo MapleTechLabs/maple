@@ -26,7 +26,7 @@ import {
 	UptimeMonitorId,
 	UptimeMonitorKind,
 	UptimeMonitorStatus,
-	type OrgId,
+	OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
 import {
@@ -59,6 +59,8 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import { ensureWithinLimit, UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
+import { countCheck, countOne, upsertDailyCounts, type UptimeDailyCount } from "./uptime-daily"
+import { bumpPagesForMonitors } from "@maple/backend/services/status-pages/outbox"
 import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
 import { deleteRuleRows } from "@maple/backend/services/alerts/AlertRulesService"
 
@@ -430,6 +432,7 @@ interface FoldedChecks {
 	readonly snapshot: UptimeMonitorStateSnapshot
 	readonly statusChangedAt: number | null
 	readonly recent: ReadonlyArray<UptimeRecentCheck>
+	readonly daily: ReadonlyArray<UptimeDailyCount>
 }
 
 /** Applies one monitor's reports in time order, as one write per report would have. */
@@ -446,6 +449,11 @@ const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckRepor
 					ok: report.ok,
 					durationMs: report.durationMs,
 				}),
+				daily: countCheck(acc.daily, {
+					at: report.checkedAt,
+					ok: report.ok,
+					down: snapshot.status === "down",
+				}),
 			}
 		},
 		{
@@ -456,6 +464,7 @@ const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckRepor
 			},
 			statusChangedAt: row.statusChangedAt,
 			recent: row.recentJson,
+			daily: [],
 		},
 	)
 
@@ -895,6 +904,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									})
 									.where(($) => [$.orgId.eq(orgId), $.monitorId.eq(monitorId)]),
 							)
+							// A paused monitor no longer marks its components down.
+							yield* bumpPagesForMonitors(db, orgId, [monitorId])
 						}),
 					),
 				)
@@ -916,6 +927,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							yield* db.execute(
 								Orm.sql`select pg_advisory_xact_lock_shared(hashtext('org_billing_links'))`,
 							)
+							// Before the delete: its components lose the monitor (FK set null) and their bars.
+							yield* bumpPagesForMonitors(db, orgId, [monitorId])
 							const removed = yield* db.run(
 								PG.deleteFrom(UptimeMonitors)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
@@ -1042,11 +1055,14 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								recentJson: folded.recent,
 								readUpdatedAt: row.stateUpdatedAt,
 								updatedAt: now,
+								daily: folded.daily,
+								statusChanged: folded.snapshot.status !== row.status,
 							},
 						]
 					},
 				)
 				if (states.length === 0) return 0
+				const stateById = new Map(states.map((state) => [state.monitorId, state]))
 				const values = Orm.sql.join(
 					states.map(
 						(state) =>
@@ -1056,9 +1072,14 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				)
 				// One UPDATE for the batch: a monitor deleted, paused or resumed since the read no longer
 				// matches its read `updated_at`, so stale results never overwrite the newer state.
+				const changed = new Set(
+					states.filter((state) => state.statusChanged).map((state) => state.monitorId),
+				)
 				const updated = yield* dbExecute((db) =>
-					db.query(
-						Orm.sql`
+					db.transaction(
+						Effect.gen(function* () {
+							const rows = yield* db.query(
+								Orm.sql`
 							UPDATE uptime_monitor_states AS s SET
 								status = v.status,
 								consecutive_failures = v.consecutive_failures,
@@ -1072,7 +1093,39 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								AND date_trunc('milliseconds', s.updated_at) = v.read_updated_at
 								AND s.status <> 'paused'
 							RETURNING s.monitor_id`,
-						UpdatedStateRow,
+								UpdatedStateRow,
+							)
+							// Only applied reports count, so a retried batch never double counts a day.
+							const applied = rows.map((row) => UptimeMonitorId.make(row.monitor_id))
+							yield* upsertDailyCounts(
+								db,
+								applied.flatMap((monitorId) => {
+									const state = stateById.get(monitorId)
+									return state === undefined
+										? []
+										: state.daily.map((count) => ({
+												monitorId,
+												orgId: state.orgId,
+												count,
+											}))
+								}),
+							)
+							const flipped = applied.flatMap((monitorId) => {
+								const state = stateById.get(monitorId)
+								return state === undefined || !changed.has(monitorId) ? [] : [state]
+							})
+							yield* Effect.forEach(
+								Object.entries(Arr.groupBy(flipped, (state) => state.orgId)),
+								([orgId, group]) =>
+									bumpPagesForMonitors(
+										db,
+										OrgId.make(orgId),
+										group.map((state) => state.monitorId),
+									),
+								{ discard: true },
+							)
+							return rows
+						}),
 					),
 				)
 				return updated.length
@@ -1094,40 +1147,54 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const now = yield* Clock.currentTimeMillis
 				const status: UptimeMonitorStatus = ok ? "up" : "down"
 				const written = yield* dbExecute((db) =>
-					db.run(
-						PG.update(UptimeMonitorStates)
-							.set({
-								status,
-								consecutiveFailures: ok ? 0 : row.consecutiveFailures + 1,
-								consecutiveSuccesses: ok ? row.consecutiveSuccesses + 1 : 0,
-								statusChangedAt: status === row.status ? row.statusChangedAt : now,
-								lastCheckJson: {
-									at: now,
-									ok,
-									durationMs: null,
-									statusCode: null,
-									error: ok ? null : "The job reported a failure",
-									traceId: null,
+					db.transaction(
+						Effect.gen(function* () {
+							const updated = yield* db.run(
+								PG.update(UptimeMonitorStates)
+									.set({
+										status,
+										consecutiveFailures: ok ? 0 : row.consecutiveFailures + 1,
+										consecutiveSuccesses: ok ? row.consecutiveSuccesses + 1 : 0,
+										statusChangedAt: status === row.status ? row.statusChangedAt : now,
+										lastCheckJson: {
+											at: now,
+											ok,
+											durationMs: null,
+											statusCode: null,
+											error: ok ? null : "The job reported a failure",
+											traceId: null,
+										},
+										recentJson: appendRecentCheck(row.recentJson, {
+											at: now,
+											ok,
+											durationMs: null,
+										}),
+										lastPingAt: now,
+										updatedAt: now,
+									})
+									// Fenced on the state read: a ping or pause in between changes the counters or
+									// `updated_at`, and this ping is read and applied again instead of overwriting it.
+									.where(($) => [
+										$.orgId.eq(row.orgId),
+										$.monitorId.eq(row.id),
+										$.updatedAt.eq(row.stateUpdatedAt),
+										$.consecutiveFailures.eq(row.consecutiveFailures),
+										$.consecutiveSuccesses.eq(row.consecutiveSuccesses),
+										$.status.neq("paused"),
+									])
+									.returning("monitorId"),
+							)
+							if (updated.length === 0) return updated
+							yield* upsertDailyCounts(db, [
+								{
+									monitorId: row.id,
+									orgId: row.orgId,
+									count: countOne({ at: now, ok, down: status === "down" }),
 								},
-								recentJson: appendRecentCheck(row.recentJson, {
-									at: now,
-									ok,
-									durationMs: null,
-								}),
-								lastPingAt: now,
-								updatedAt: now,
-							})
-							// Fenced on the state read: a ping or pause in between changes the counters or
-							// `updated_at`, and this ping is read and applied again instead of overwriting it.
-							.where(($) => [
-								$.orgId.eq(row.orgId),
-								$.monitorId.eq(row.id),
-								$.updatedAt.eq(row.stateUpdatedAt),
-								$.consecutiveFailures.eq(row.consecutiveFailures),
-								$.consecutiveSuccesses.eq(row.consecutiveSuccesses),
-								$.status.neq("paused"),
 							])
-							.returning("monitorId"),
+							if (status !== row.status) yield* bumpPagesForMonitors(db, row.orgId, [row.id])
+							return updated
+						}),
 					),
 				)
 				if (written.length === 0) {

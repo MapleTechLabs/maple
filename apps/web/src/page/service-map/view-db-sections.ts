@@ -65,7 +65,7 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 	if (config.matched !== undefined)
 		return h.a(
 			[
-				h.Class("flex min-w-0 items-center gap-1.5 text-foreground hover:underline"),
+				h.Class("flex min-w-0 items-center gap-1.5 text-foreground hover:underline active:underline"),
 				h.Href(
 					hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: config.matched.name, search: {} })),
 				),

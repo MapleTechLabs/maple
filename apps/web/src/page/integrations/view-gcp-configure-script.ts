@@ -16,7 +16,8 @@ import type { ScriptFailure } from "./view-gcp-parts"
 type H = HtmlBuilder<Message>
 
 const COPY_ID = "configure-file"
-const LINK = "h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground"
+const LINK =
+	"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground"
 
 /** Why a file couldn't be loaded, and the way to load it again. */
 export const loadFailure = (h: H, failure: ScriptFailure): Html =>
@@ -103,7 +104,7 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 								size: "sm",
 								className: cn(
 									children === undefined &&
-										"text-primary-foreground hover:text-primary-foreground",
+										"text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
 								),
 								attributes: copyable === null ? [h.Disabled(true)] : [],
 							}),

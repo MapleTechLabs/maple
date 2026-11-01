@@ -17,7 +17,7 @@ import { Duration, Effect, Fiber, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { chatConnectorId } from "./connector"
 import { driveChatTurn } from "./driver"
-import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
+import type { ChatMessageRef, ChatOutbound, ChatTarget, ChatWritePhase } from "./outbound"
 import type { ChatBlock, ChatRenderContext } from "./render"
 
 const sessionId = makeChatSessionId("org_1", "bot-42")
@@ -38,11 +38,16 @@ const TESTCHAT = chatConnectorId("testchat")
 interface Recorder {
 	readonly outbound: ChatOutbound
 	/** Every post and edit, in order, as `<verb> <messageId>` plus the blocks it carried. */
-	readonly calls: Array<{ verb: "post" | "edit"; ref: ChatMessageRef; blocks: ReadonlyArray<ChatBlock> }>
+	readonly calls: Array<{
+		verb: "post" | "edit"
+		ref: ChatMessageRef
+		blocks: ReadonlyArray<ChatBlock>
+		phase: ChatWritePhase | undefined
+	}>
 	readonly typing: Array<string>
 }
 
-const recorder = (maxMessageChars = 500): Recorder => {
+const recorder = (maxMessageChars = 500, liveMessages = false): Recorder => {
 	const calls: Recorder["calls"] = []
 	const typing: Array<string> = []
 	let posted = 0
@@ -52,15 +57,17 @@ const recorder = (maxMessageChars = 500): Recorder => {
 		outbound: {
 			connectorId: TESTCHAT,
 			limits: { maxMessageChars, minEditInterval: EDIT_INTERVAL },
+			liveMessages,
 			requiredConfig: [],
 			transport: Effect.sync(() => ({
-				post: (postTarget, blocks) =>
+				post: (postTarget, blocks, phase) =>
 					Effect.sync(() => {
 						const ref = { target: postTarget, messageId: `m${++posted}` }
-						calls.push({ verb: "post", ref, blocks })
+						calls.push({ verb: "post", ref, blocks, phase })
 						return ref
 					}),
-				edit: (ref, blocks) => Effect.sync(() => void calls.push({ verb: "edit", ref, blocks })),
+				edit: (ref, blocks, phase) =>
+					Effect.sync(() => void calls.push({ verb: "edit", ref, blocks, phase })),
 				whisper: () => Effect.die("the driver answered a click"),
 				typing: (typingTarget) => Effect.sync(() => void typing.push(typingTarget.channelId)),
 				// A platform where a thread is just replies to a message opens one without any I/O.
@@ -507,6 +514,48 @@ describe("driveChatTurn", () => {
 			// several messages would otherwise rewrite each of them on every tick.
 			expect(chat.calls.map((call) => call.verb)).toEqual(["post", "edit"])
 		}),
+	)
+
+	it.effect(
+		"closes every message a live platform streamed, even one that already says the right thing",
+		() =>
+			Effect.gen(function* () {
+				const chat = recorder(80, true)
+				const fiber = yield* Effect.forkChild(
+					driveChatTurn({
+						events: timeline([
+							[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+							[
+								NOW,
+								event(2, { type: "text-delta", messageId: "a1", text: "line\n".repeat(30) }),
+							],
+							[
+								Duration.seconds(2),
+								event(3, { type: "turn-end", messageId: "a1", reason: "stop" }),
+							],
+						]),
+						messageId: "a1",
+						outbound: chat.outbound,
+						target,
+						context,
+					}),
+				)
+
+				yield* TestClock.adjust("3 seconds")
+				yield* Fiber.join(fiber)
+
+				const calls = chat.calls.map((call) => `${call.verb} ${call.ref.messageId} ${call.phase}`)
+				const messages = [...new Set(chat.calls.map((call) => call.ref.messageId))]
+				expect(messages.length).toBeGreaterThan(1)
+				// Every write before the end streams; each message then gets exactly one final write.
+				expect(calls[0]).toBe("post m1 streaming")
+				expect(calls.filter((call) => call.endsWith("final"))).toEqual(
+					messages.map((messageId) => `edit ${messageId} final`),
+				)
+				expect(calls.slice(0, -messages.length).every((call) => call.endsWith("streaming"))).toBe(
+					true,
+				)
+			}),
 	)
 
 	it.effect("reports each message it posts, and a resume edits them rather than posting again", () =>

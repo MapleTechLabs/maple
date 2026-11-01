@@ -95,7 +95,7 @@ describe("destination dialog", () => {
 			expectOutMessage(
 				OutMessage.RequestedToast({
 					type: "error",
-					title: "Failed to save destination",
+					title: "Couldn't save destination",
 					description: "nope",
 				}),
 			),
@@ -297,7 +297,7 @@ describe("destination dialog", () => {
 			expectOutMessage(
 				OutMessage.RequestedToast({
 					type: "error",
-					title: "Failed to save destination",
+					title: "Couldn't save destination",
 					description: "no team",
 				}),
 			),
@@ -363,7 +363,7 @@ describe("destination dialog", () => {
 		expect(failed.outMessage).toEqual(
 			OutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to save destination",
+				title: "Couldn't save destination",
 				description: "nope",
 			}),
 		)

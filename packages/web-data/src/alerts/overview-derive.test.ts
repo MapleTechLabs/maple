@@ -7,6 +7,7 @@ import {
 	blindSpots,
 	fireLanes,
 	incidentScope,
+	incidentSubline,
 	incidentTitle,
 	incidentValues,
 	ruleBucket,
@@ -139,6 +140,19 @@ describe("incident lines", () => {
 		expect(incidentTitle(incident)).toBe("Error rate 8.0% on checkout")
 		expect(incidentScope(incident)).toBe("checkout")
 		expect(incidentValues(incident)).toEqual({ now: "8.0%", threshold: "5.0%" })
+		expect(incidentSubline(incident)).toBe("High error rate · checkout")
+	})
+
+	it("names a raw SQL incident by its rule, with the group under it", () => {
+		const incident = makeIncident({
+			signalType: "raw_query",
+			ruleName: "Org telemetry newly refused",
+			groupKey: "org_a",
+			threshold: 0.9,
+			lastObservedValue: 1,
+		})
+		expect(incidentTitle(incident)).toBe("Org telemetry newly refused")
+		expect(incidentSubline(incident)).toBe("Raw SQL · org_a")
 	})
 })
 

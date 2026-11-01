@@ -60,36 +60,40 @@ type H = HtmlBuilder<Message>
 
 /** The column labels; the select lane carries the page-wide checkbox once rows exist. */
 export const signalHeader = (h: H, selection: HeaderSelection | null): Html =>
-	eyebrow(h, { as: "div", className: cn(ROW_SHELL, "h-7 border-b border-border-subtle bg-surface-sunken") }, [
-		h.span(
-			[h.Class(cn(LANE.select, "flex items-center justify-center"))],
-			selection === null
-				? []
-				: Checkbox.view(h, {
-						model: { isChecked: selection === "all" },
-						toParentMessage: () => Message.ToggledAllRows(),
-						id: "errors-select-all",
-						inputId: "errors-select-all-input",
-						isIndeterminate: selection === "some",
-						ariaLabel: selection === "all" ? "Deselect all errors" : "Select all errors",
-					}),
-		),
-		h.span([h.Class(LANE.severity)], []),
-		h.span([h.Class(LANE.identity)], ["Issue"]),
-		h.span(
-			[h.Class(LANE.volume)],
-			[h.span([h.Class(LANE.spark)], ["Trend · 24h"]), h.span([h.Class(LANE.count)], ["Events"])],
-		),
-		h.span([h.Class(LANE.service)], ["Service"]),
-		h.span([h.Class(LANE.state)], ["Status"]),
-		// The avatar lane is narrower than its label: the label runs left into Status's spare width,
-		// so it only shows where that lane does.
-		h.span(
-			[h.Class(cn(LANE.actor, "flex justify-end whitespace-nowrap"))],
-			[h.span([h.Class("hidden @3xl/page:inline")], ["Assignee"])],
-		),
-		h.span([h.Class(cn(LANE.lastSeen, "text-right"))], ["Last seen"]),
-	])
+	eyebrow(
+		h,
+		{ as: "div", className: cn(ROW_SHELL, "h-7 border-b border-border-subtle bg-surface-sunken") },
+		[
+			h.span(
+				[h.Class(cn(LANE.select, "flex items-center justify-center"))],
+				selection === null
+					? []
+					: Checkbox.view(h, {
+							model: { isChecked: selection === "all" },
+							toParentMessage: () => Message.ToggledAllRows(),
+							id: "errors-select-all",
+							inputId: "errors-select-all-input",
+							isIndeterminate: selection === "some",
+							ariaLabel: selection === "all" ? "Deselect all errors" : "Select all errors",
+						}),
+			),
+			h.span([h.Class(LANE.severity)], []),
+			h.span([h.Class(LANE.identity)], ["Issue"]),
+			h.span(
+				[h.Class(LANE.volume)],
+				[h.span([h.Class(LANE.spark)], ["Trend · 24h"]), h.span([h.Class(LANE.count)], ["Events"])],
+			),
+			h.span([h.Class(LANE.service)], ["Service"]),
+			h.span([h.Class(LANE.state)], ["Status"]),
+			// The avatar lane is narrower than its label: the label runs left into Status's spare width,
+			// so it only shows where that lane does.
+			h.span(
+				[h.Class(cn(LANE.actor, "flex justify-end whitespace-nowrap"))],
+				[h.span([h.Class("hidden @3xl/page:inline")], ["Assignee"])],
+			),
+			h.span([h.Class(cn(LANE.lastSeen, "text-right"))], ["Last seen"]),
+		],
+	)
 
 const SKELETON_WIDTHS = ["72%", "48%", "61%", "39%", "55%", "44%"]
 
@@ -157,8 +161,8 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 					cn(
 						ROW_SHELL,
 						"group/row h-11 text-sm",
-						"hover:bg-surface-sunken data-focused:bg-surface-sunken",
-						"data-selected:bg-primary/10 data-selected:hover:bg-primary/15",
+						"hover:bg-surface-sunken active:bg-surface-sunken data-focused:bg-surface-sunken",
+						"data-selected:bg-primary-a2 data-selected:hover:bg-primary-a3 data-selected:active:bg-primary-a3",
 						"focus-visible:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 						"transition-colors",
 					),

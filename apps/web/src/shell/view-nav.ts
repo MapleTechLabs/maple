@@ -23,6 +23,7 @@ import {
 	isNavItemActive,
 	matchSubItem,
 	type NavGroup,
+	type NavFlags,
 	type NavItem,
 	type NavSubItem,
 	type NavSurface,
@@ -37,10 +38,14 @@ import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } 
  * metadata, and fails closed (no flagged rows) until Clerk has an org.
  */
 export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> => {
-	const flag = (name: "releases" | "securityAudit") =>
+	const flag = (name: keyof NavFlags) =>
 		!isClerkAuthEnabled ||
 		(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags[name]))
-	return navGroups({ releases: flag("releases"), securityAudit: flag("securityAudit") })
+	return navGroups({
+		releases: flag("releases"),
+		securityAudit: flag("securityAudit"),
+		statusPages: flag("statusPages"),
+	})
 }
 
 /** The last-hour probe's answer; `null` while it is first in flight or after it failed. */
@@ -180,7 +185,12 @@ const navRow = (
 												],
 									),
 									...(preview.overflow > 0
-										? [h.span([h.Class("ms-0.5 text-2xs tabular-nums")], [`+${preview.overflow}`])]
+										? [
+												h.span(
+													[h.Class("ms-0.5 text-2xs tabular-nums")],
+													[`+${preview.overflow}`],
+												),
+											]
 										: []),
 								],
 							),

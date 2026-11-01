@@ -330,6 +330,74 @@ export const UptimeIntervalSeconds = Schema.Number.check(
 )
 export type UptimeIntervalSeconds = Schema.Schema.Type<typeof UptimeIntervalSeconds>
 
+export const StatusPageId = MapleUuidId("@maple/StatusPageId", "Status Page ID")
+export type StatusPageId = Schema.Schema.Type<typeof StatusPageId>
+
+export const StatusPageComponentId = MapleUuidId("@maple/StatusPageComponentId", "Status Page Component ID")
+export type StatusPageComponentId = Schema.Schema.Type<typeof StatusPageComponentId>
+
+export const StatusPageIncidentId = MapleUuidId("@maple/StatusPageIncidentId", "Status Page Incident ID")
+export type StatusPageIncidentId = Schema.Schema.Type<typeof StatusPageIncidentId>
+
+export const StatusPageIncidentUpdateId = MapleUuidId(
+	"@maple/StatusPageIncidentUpdateId",
+	"Status Page Incident Update ID",
+)
+export type StatusPageIncidentUpdateId = Schema.Schema.Type<typeof StatusPageIncidentUpdateId>
+
+/** What a visitor sees per component, worst last. */
+export const StatusPageComponentStatus = Schema.Literals([
+	"operational",
+	"maintenance",
+	"degraded",
+	"partial_outage",
+	"major_outage",
+]).annotate({ identifier: "@maple/StatusPageComponentStatus", title: "Status Page Component Status" })
+export type StatusPageComponentStatus = Schema.Schema.Type<typeof StatusPageComponentStatus>
+
+export const StatusPageIncidentKind = Schema.Literals(["incident", "maintenance"]).annotate({
+	identifier: "@maple/StatusPageIncidentKind",
+	title: "Status Page Incident Kind",
+})
+export type StatusPageIncidentKind = Schema.Schema.Type<typeof StatusPageIncidentKind>
+
+/** Incidents move investigating → identified → monitoring → resolved; maintenance scheduled → in_progress → completed. */
+export const StatusPageIncidentStatus = Schema.Literals([
+	"investigating",
+	"identified",
+	"monitoring",
+	"resolved",
+	"scheduled",
+	"in_progress",
+	"completed",
+]).annotate({ identifier: "@maple/StatusPageIncidentStatus", title: "Status Page Incident Status" })
+export type StatusPageIncidentStatus = Schema.Schema.Type<typeof StatusPageIncidentStatus>
+
+export const StatusPageIncidentImpact = Schema.Literals(["none", "minor", "major", "critical"]).annotate({
+	identifier: "@maple/StatusPageIncidentImpact",
+	title: "Status Page Incident Impact",
+})
+export type StatusPageIncidentImpact = Schema.Schema.Type<typeof StatusPageIncidentImpact>
+
+/** Whether a linked monitor going down opens a page incident: never, as an unpublished draft, or live. */
+export const StatusPageAutoIncidents = Schema.Literals(["off", "draft", "publish"]).annotate({
+	identifier: "@maple/StatusPageAutoIncidents",
+	title: "Status Page Auto Incidents",
+})
+export type StatusPageAutoIncidents = Schema.Schema.Type<typeof StatusPageAutoIncidents>
+
+export const StatusPageUpdateSource = Schema.Literals([
+	"dashboard",
+	"api",
+	"mcp",
+	"auto",
+	"break_glass",
+]).annotate({
+	identifier: "@maple/StatusPageUpdateSource",
+	title: "Status Page Update Source",
+})
+export type StatusPageUpdateSource = Schema.Schema.Type<typeof StatusPageUpdateSource>
+
 export const IngestAttributeMappingId = MapleUuidId(
 	"@maple/IngestAttributeMappingId",
 	"Ingest Attribute Mapping ID",
@@ -510,12 +578,6 @@ export type HttpMethod = Schema.Schema.Type<typeof HttpMethod>
 
 export const ExternalUserId = MapleId("@maple/ExternalUserId", "External User ID")
 export type ExternalUserId = Schema.Schema.Type<typeof ExternalUserId>
-
-export const HazelOrganizationId = MapleId("@maple/HazelOrganizationId", "Hazel Organization ID")
-export type HazelOrganizationId = Schema.Schema.Type<typeof HazelOrganizationId>
-
-export const HazelChannelId = MapleId("@maple/HazelChannelId", "Hazel Channel ID")
-export type HazelChannelId = Schema.Schema.Type<typeof HazelChannelId>
 
 export const WidgetId = MapleId("@maple/WidgetId", "Widget ID")
 export type WidgetId = Schema.Schema.Type<typeof WidgetId>

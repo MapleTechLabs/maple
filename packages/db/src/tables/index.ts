@@ -76,9 +76,18 @@ import {
 	SecurityAuditTargets,
 	SecurityAuditUnits,
 } from "./security-audit"
+import { DependencyFindings, DependencyScanMatches, DependencyScans } from "./dependency-scan"
 import { SupabaseConnections, SupabaseProjectInsights, SupabaseProjects } from "./supabase"
 import { OrgSupportChannels } from "./support-channels"
-import { UptimeMonitorStates, UptimeMonitors } from "./uptime"
+import {
+	StatusPageComponents,
+	StatusPageIncidentComponents,
+	StatusPageCleanups,
+	StatusPageIncidentUpdates,
+	StatusPageIncidents,
+	StatusPages,
+} from "./status-pages"
+import { UptimeMonitorDaily, UptimeMonitorStates, UptimeMonitors } from "./uptime"
 import {
 	VcsInstallations,
 	VcsRepositories,
@@ -100,6 +109,7 @@ export * from "./anomalies"
 export * from "./api-keys"
 export * from "./billing-links"
 export * from "./cancellation-reviews"
+export * from "./dependency-scan"
 export * from "./chat-identities"
 export * from "./chat-workspaces"
 export * from "./cli-device-authorizations"
@@ -136,6 +146,7 @@ export * from "./railway"
 export * from "./scrape-targets"
 export * from "./security-audit"
 export * from "./sources"
+export * from "./status-pages"
 export * from "./supabase"
 export * from "./support-channels"
 export * from "./uptime"
@@ -224,12 +235,22 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	SecurityAuditEvents,
 	SecurityAuditOrgReservations,
 	SecurityAuditOrgSettings,
+	DependencyScans,
+	DependencyScanMatches,
+	DependencyFindings,
 	SupabaseConnections,
 	SupabaseProjects,
 	SupabaseProjectInsights,
 	OrgSupportChannels,
 	UptimeMonitors,
 	UptimeMonitorStates,
+	UptimeMonitorDaily,
+	StatusPages,
+	StatusPageComponents,
+	StatusPageIncidents,
+	StatusPageIncidentUpdates,
+	StatusPageIncidentComponents,
+	StatusPageCleanups,
 	VcsInstallations,
 	VcsRepositories,
 	VcsCommits,

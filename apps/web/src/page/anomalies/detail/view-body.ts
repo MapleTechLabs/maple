@@ -174,7 +174,8 @@ export const signalChart = (
 				h,
 				{
 					dashed: true,
-					className: "flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
+					className:
+						"flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
 				},
 				["No signal data in window"],
 			)
@@ -237,7 +238,7 @@ export const signalChart = (
 	}
 }
 
-const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 const WORKFLOW_TONE = {
 	triage: TONE_SOFT.warn,
 	regressed: TONE_SOFT.crit,

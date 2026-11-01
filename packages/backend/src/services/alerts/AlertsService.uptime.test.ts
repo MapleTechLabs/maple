@@ -205,6 +205,92 @@ describe("AlertsService uptime rules", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: fetchImpl })))
 	})
 
+	it.effect("an uptime incident opens and resolves status page incidents on opted-in pages", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_uptime_status_page")
+			const { monitorId } = yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Checkout health",
+				serviceName: "checkout-api",
+				destinationIds: [],
+				config: httpMonitorConfig,
+				status: "down",
+			})
+			const pages = [
+				{ id: crypto.randomUUID(), slug: "published-page", autoIncidents: "publish" },
+				{ id: crypto.randomUUID(), slug: "draft-page", autoIncidents: "draft" },
+				{ id: crypto.randomUUID(), slug: "off-page", autoIncidents: "off" },
+			]
+			yield* Effect.forEach(pages, (page) =>
+				Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO status_pages (id, org_id, name, slug, auto_incidents, created_by, created_at, updated_at)
+						 VALUES ($1, $2, 'Acme', $3, $4, 'user_uptime', now(), now())`,
+						[page.id, orgId, page.slug, page.autoIncidents],
+					).then(() =>
+						executeSql(
+							testDb,
+							`INSERT INTO status_page_components (id, org_id, page_id, name, monitor_id, created_at, updated_at)
+							 VALUES ($1, $2, $3, 'Checkout', $4, now(), now())`,
+							[crypto.randomUUID(), orgId, page.id, monitorId],
+						),
+					),
+				),
+			)
+			const pageIncidents = () =>
+				Effect.promise(() =>
+					testDb.pglite.query<{
+						slug: string
+						title: string
+						status: string
+						published: boolean
+						alert_incident_id: string | null
+						updates: number
+					}>(
+						`SELECT p.slug, i.title, i.status, i.published, i.alert_incident_id,
+							(SELECT count(*)::int FROM status_page_incident_updates u WHERE u.incident_id = i.id) AS updates
+						 FROM status_page_incidents i JOIN status_pages p ON p.id = i.page_id ORDER BY p.slug`,
+					),
+				).pipe(Effect.map((result) => result.rows))
+
+			yield* alerts.runSchedulerTick()
+			const alertIncidentId = (yield* alerts.listIncidents(orgId)).incidents[0]?.id
+			assert.deepStrictEqual(yield* pageIncidents(), [
+				{
+					slug: "draft-page",
+					title: "Checkout is down",
+					status: "investigating",
+					published: false,
+					alert_incident_id: alertIncidentId ?? null,
+					updates: 1,
+				},
+				{
+					slug: "published-page",
+					title: "Checkout is down",
+					status: "investigating",
+					published: true,
+					alert_incident_id: alertIncidentId ?? null,
+					updates: 1,
+				},
+			])
+
+			yield* setMonitorStatus(testDb, monitorId, "up")
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			assert.deepStrictEqual(
+				(yield* pageIncidents()).map((row) => [row.slug, row.status, row.updates]),
+				[
+					["draft-page", "resolved", 2],
+					["published-page", "resolved", 2],
+				],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+	})
+
 	it.effect("a monitor created before backing rules gets one, once, and then fires", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -381,6 +467,53 @@ describe("AlertsService uptime rules", () => {
 			)
 			assert.strictEqual(state?.status, "down")
 			assert.strictEqual(state?.last_check_json.error, "No ping since 2023-11-14 22:13 UTC (7 min ago)")
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+	})
+
+	it.effect("a missed heartbeat counts as a down check and marks the pages showing it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_uptime_heartbeat_page")
+			const { monitorId } = yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Nightly backup",
+				serviceName: "backup-job",
+				destinationIds: [],
+				config: { _tag: "heartbeat", schedule: { _tag: "interval", seconds: 300 }, graceSeconds: 60 },
+				status: "up",
+				lastPingAt: DEFAULT_CLOCK_EPOCH_MS,
+			})
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO status_pages (id, org_id, name, slug, created_by, created_at, updated_at)
+					 VALUES ('11111111-1111-4111-8111-111111111111', $1, 'Acme', 'acme', 'user_1', now(), now())`,
+					[orgId],
+				).then(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO status_page_components (id, org_id, page_id, name, monitor_id, created_at, updated_at)
+						 VALUES ('22222222-2222-4222-8222-222222222222', $1, '11111111-1111-4111-8111-111111111111', 'Backups', $2, now(), now())`,
+						[orgId, monitorId],
+					),
+				),
+			)
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + 7 * 60_000)
+			yield* alerts.runSchedulerTick()
+			const page = yield* Effect.promise(() =>
+				queryFirstRow<{ revision: string }>(testDb, "select revision::text from status_pages"),
+			)
+			const daily = yield* Effect.promise(() =>
+				queryFirstRow<{ checks: number; down_checks: number }>(
+					testDb,
+					"select checks, down_checks from uptime_monitor_daily where monitor_id = $1",
+					[monitorId],
+				),
+			)
+			assert.strictEqual(page?.revision, "2")
+			assert.deepStrictEqual(daily, { checks: 1, down_checks: 1 })
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 	})
 

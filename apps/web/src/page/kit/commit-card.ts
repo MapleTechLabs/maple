@@ -111,7 +111,12 @@ const externalText = <M>(h: HtmlBuilder<M>, href: string | null, className: stri
 					h.Href(href),
 					h.Target("_blank"),
 					h.Rel("noreferrer noopener"),
-					h.Class(cn("transition-colors hover:text-foreground hover:underline", className)),
+					h.Class(
+						cn(
+							"hover:text-foreground active:text-foreground hover:underline active:underline",
+							className,
+						),
+					),
 				],
 				[text],
 			)
@@ -144,7 +149,7 @@ const avatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, href: st
 					h.Rel("noreferrer noopener"),
 					h.AriaLabel(`${name}'s profile`),
 					h.Class(
-						"shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-foreground/30",
+						"shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 active:opacity-80 focus-visible:ring-2 focus-visible:ring-foreground/30",
 					),
 				],
 				[inner],
@@ -176,7 +181,10 @@ const commitCard = <M>(
 			h.div(
 				[h.Class("flex flex-col gap-1.5 p-3.5")],
 				[
-					h.p([h.Class(cn("font-medium leading-snug text-foreground", "line-clamp-2 text-sm"))], [title]),
+					h.p(
+						[h.Class(cn("font-medium leading-snug text-foreground", "line-clamp-2 text-sm"))],
+						[title],
+					),
 					...(body === ""
 						? []
 						: [h.p([h.Class("line-clamp-4 whitespace-pre-line text-muted-foreground")], [body])]),
@@ -223,7 +231,7 @@ const commitCard = <M>(
 					h.Target("_blank"),
 					h.Rel("noreferrer noopener"),
 					h.Class(
-						"flex items-center justify-center gap-1 font-medium text-primary transition-colors hover:bg-surface-sunken px-3.5 py-2.5",
+						"flex items-center justify-center gap-1 font-medium text-primary hover:bg-surface-sunken active:bg-surface-sunken px-3.5 py-2.5",
 					),
 				],
 				["View on ", providerLabel, h.span([h.AriaHidden(true)], ["↗"])],
@@ -286,7 +294,8 @@ const describeError = (
 					}
 				: { title: "Couldn't load commit", detail: "Try again in a moment." }
 
-const ACTION_CLASS = "mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline"
+const ACTION_CLASS =
+	"mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline active:underline"
 
 /** `CommitMessage` (not compact). */
 const commitMessage = <M>(h: HtmlBuilder<M>, tag: string): Html => {

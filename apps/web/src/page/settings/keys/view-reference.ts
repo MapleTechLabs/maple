@@ -107,7 +107,7 @@ const scopes = (h: H, isOpen: boolean): Html =>
 					h.AriaDisabled(false),
 					h.AriaExpanded(isOpen),
 					h.Class(
-						"group/scopes hover:bg-surface-sunken flex w-full items-center gap-2 px-4 py-3 text-left",
+						"group/scopes hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 px-4 py-3 text-left",
 					),
 					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 					h.DataAttribute("slot", "collapsible-trigger"),
@@ -213,11 +213,7 @@ export const apiReference = (h: H, model: Model): Html =>
 
 export const oauthPointer = (h: H): Html =>
 	h.p(
-		[
-			h.Class(
-				"w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground",
-			),
-		],
+		[h.Class("w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground")],
 		[
 			"Clients signed in with OAuth don't use keys. See and revoke them in the ",
 			h.a(

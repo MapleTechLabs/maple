@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
+import { ADVISORY_SEVERITIES } from "../runtime-advisories"
 import { SERVICE_RUNTIME_KIND_IDS } from "../service-runtimes"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
@@ -2529,6 +2530,112 @@ export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiC
 	}),
 }) {}
 
+// Security Center telemetry: scanner probes from `scanner_requests`, runtime versions from
+// `service_runtimes_hourly` with the endoflife.date release cycles they are judged against.
+
+export class SecurityExposureRequest extends Schema.Class<SecurityExposureRequest>("SecurityExposureRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+		bucketSeconds: Schema.optional(BucketSeconds),
+	},
+) {}
+
+export class SecurityExposureResponse extends Schema.Class<SecurityExposureResponse>(
+	"SecurityExposureResponse",
+)({
+	data: Schema.Struct({
+		signatures: Schema.Array(
+			Schema.Struct({
+				/** A `PROBE_SIGNATURES` token from `@maple/domain/security-telemetry`, '' for a scanner on an ordinary path. */
+				signature: Schema.String,
+				service: Schema.String,
+				requests: Schema.Number,
+				answered: Schema.Number,
+				sources: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+		exposed: Schema.Array(
+			Schema.Struct({
+				service: Schema.String,
+				host: Schema.String,
+				path: Schema.String,
+				signature: Schema.String,
+				httpStatus: Schema.Number,
+				requests: Schema.Number,
+				lastSeen: Schema.String,
+				sampleTraceId: Schema.String,
+			}),
+		),
+		sources: Schema.Array(
+			Schema.Struct({
+				clientAddress: Schema.String,
+				requests: Schema.Number,
+				signatures: Schema.Number,
+				scanner: Schema.String,
+				userAgent: Schema.String,
+				lastSeen: Schema.String,
+			}),
+		),
+		timeline: Schema.Array(
+			Schema.Struct({ bucket: Schema.String, requests: Schema.Number, answered: Schema.Number }),
+		),
+	}),
+}) {}
+
+export class SecurityRuntimesRequest extends Schema.Class<SecurityRuntimesRequest>("SecurityRuntimesRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+	},
+) {}
+
+export const RuntimeReleaseRow = Schema.Struct({
+	cycle: Schema.String,
+	isEol: Schema.Boolean,
+	eolFrom: Schema.NullOr(Schema.String),
+	latest: Schema.NullOr(Schema.String),
+})
+
+/** A known vulnerability in a runtime version (`RuntimeAdvisory` in `@maple/domain/runtime-advisories`). */
+export const RuntimeAdvisoryRow = Schema.Struct({
+	id: Schema.String,
+	url: Schema.String,
+	summary: Schema.NullOr(Schema.String),
+	severity: Schema.Literals(ADVISORY_SEVERITIES),
+	fixedIn: Schema.NullOr(Schema.String),
+	published: Schema.NullOr(Schema.String),
+})
+
+export class SecurityRuntimesResponse extends Schema.Class<SecurityRuntimesResponse>(
+	"SecurityRuntimesResponse",
+)({
+	data: Schema.Struct({
+		runtimes: Schema.Array(
+			Schema.Struct({
+				service: Schema.String,
+				environment: Schema.String,
+				runtimeName: Schema.String,
+				runtimeVersion: Schema.String,
+				/** `process.executable.name`: tells Bun and Deno apart from Node.js under the stock OTel SDK. */
+				executableName: Schema.String,
+				sdkLanguage: Schema.String,
+				sdkName: Schema.String,
+				sdkVersion: Schema.String,
+				spans: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+		/** Release cycles per `RuntimeProduct` from `@maple/domain/runtime-posture`; a product whose read failed is absent. */
+		releases: Schema.Record(Schema.String, Schema.Array(RuntimeReleaseRow)),
+		/** Known vulnerabilities per `advisoryKey` (`nodejs@22.4.0`); a version whose read failed is absent. */
+		advisories: Schema.Record(Schema.String, Schema.Array(RuntimeAdvisoryRow)),
+		/** `advisoryKey`s not read this time because the request's read budget ran out. */
+		advisoriesSkipped: Schema.Array(Schema.String),
+	}),
+}) {}
+
 // Product events — funnels
 //
 // Step-based conversion funnels over `product_events` (browser page views and
@@ -3948,6 +4055,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("webAnalyticsAiCrawlers", "/web-analytics-ai-crawlers", {
 			payload: WebAnalyticsAiCrawlersRequest,
 			success: WebAnalyticsAiCrawlersResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("securityExposure", "/security-exposure", {
+			payload: SecurityExposureRequest,
+			success: SecurityExposureResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("securityRuntimes", "/security-runtimes", {
+			payload: SecurityRuntimesRequest,
+			success: SecurityRuntimesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

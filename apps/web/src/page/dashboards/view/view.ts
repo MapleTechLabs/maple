@@ -69,7 +69,7 @@ const title = (h: H, model: Model, name: string): Html => {
 		{
 			title: shown,
 			className: cn(
-				!isReadOnly && "cursor-pointer hover:text-foreground-soft",
+				!isReadOnly && "cursor-pointer hover:text-foreground-soft active:text-foreground-soft",
 				isBlank && "text-muted-foreground",
 			),
 			attributes: [
@@ -276,6 +276,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 											nowMs: model.nowMs ?? 0,
 											timeZone: inputs.context.timeZone,
 										}),
+										rightPanelWidth: "w-80",
 									}
 								: undefined),
 						},

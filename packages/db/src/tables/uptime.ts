@@ -79,4 +79,36 @@ export const UptimeMonitorStates = PG.table("uptime_monitor_states", {
 })
 
 export type UptimeMonitorStateRow = PG.SelectRowOf<typeof UptimeMonitorStates>
+
+/**
+ * Check counters per monitor and UTC day, folded in with each results batch: the status
+ * page's uptime bars, kept in Postgres so they never wait on the warehouse.
+ */
+export const UptimeMonitorDaily = PG.table("uptime_monitor_daily", {
+	columns: {
+		monitorId: PG.column(PG.brand(PG.text, UptimeMonitorId), { name: "monitor_id" }),
+		/** `YYYY-MM-DD`, UTC. */
+		day: PG.text,
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		checks: PG.column(PG.int4, { default: 0 }),
+		failures: PG.column(PG.int4, { default: 0 }),
+		/** Checks taken while the monitor was down. */
+		downChecks: PG.column(PG.int4, { name: "down_checks", default: 0 }),
+		/** Newest check folded in: how fresh the page's probes are. */
+		lastCheckAt: PG.column(PG.timestamptzMillis, { name: "last_check_at" }),
+	},
+	primaryKey: { columns: ["monitorId", "day"], name: "uptime_monitor_daily_pk" },
+	indexes: [PG.index("uptime_monitor_daily_org_idx", ["orgId"])],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["monitorId"],
+			references: UptimeMonitors,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
+	tenantColumn: "orgId",
+})
+
+export type UptimeMonitorDailyRow = PG.SelectRowOf<typeof UptimeMonitorDaily>
 export type UptimeMonitorStateInsert = PG.InsertRowOf<typeof UptimeMonitorStates>

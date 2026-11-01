@@ -96,6 +96,21 @@ const routers = {
 		slash(segment("ruleId")),
 		Route.mapTo(AppRoute.IngestRule),
 	),
+	// Retired: `routeRedirect` sends it to `/status-pages/$pageId`.
+	AlertsStatusPage: pipe(
+		path("alerts", "status-pages"),
+		slash(segment("pageId")),
+		search(Search.AlertsStatusPageSearch),
+		Route.mapTo(AppRoute.AlertsStatusPage),
+	),
+	StatusPages: pipe(path("status-pages"), Route.mapTo(AppRoute.StatusPages)),
+	StatusPageNew: pipe(path("status-pages", "new"), Route.mapTo(AppRoute.StatusPageNew)),
+	StatusPage: pipe(
+		path("status-pages"),
+		slash(segment("pageId")),
+		search(Search.StatusPageSearch),
+		Route.mapTo(AppRoute.StatusPage),
+	),
 	Anomaly: pipe(
 		path("anomalies"),
 		slash(schemaSegment("incidentId", AnomalyIncidentId)),
@@ -105,6 +120,11 @@ const routers = {
 		path("code-review", "ci"),
 		search(Search.CodeReviewCiSearch),
 		Route.mapTo(AppRoute.CodeReviewCi),
+	),
+	CodeReviewTeam: pipe(
+		path("code-review", "team"),
+		search(Search.CodeReviewTeamSearch),
+		Route.mapTo(AppRoute.CodeReviewTeam),
 	),
 	CodeReviewIssues: pipe(
 		path("code-review", "issues"),
@@ -128,6 +148,9 @@ const routers = {
 		search(Search.SecurityRunsSearch),
 		Route.mapTo(AppRoute.SecurityRuns),
 	),
+	SecurityExposure: pipe(path("security", "exposure"), Route.mapTo(AppRoute.SecurityExposure)),
+	SecurityRuntimes: pipe(path("security", "runtimes"), Route.mapTo(AppRoute.SecurityRuntimes)),
+	SecurityDependencies: pipe(path("security", "dependencies"), Route.mapTo(AppRoute.SecurityDependencies)),
 	SecurityRun: pipe(
 		path("security", "runs"),
 		slash(schemaSegment("runId", SecurityAuditRunId)),
@@ -410,6 +433,9 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.AlertsUptimeMonitor,
 		routers.IngestRuleNew,
 		routers.IngestRule,
+		routers.AlertsStatusPage,
+		routers.StatusPageNew,
+		routers.StatusPage,
 		routers.DashboardsTemplates,
 		routers.SourcesNew,
 		routers.InfraDiscover,

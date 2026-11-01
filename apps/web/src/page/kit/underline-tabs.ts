@@ -39,7 +39,7 @@ export const underlineTabClass = (isActive: boolean): string =>
 		"-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
 		isActive
 			? "border-primary font-medium text-foreground"
-			: "border-transparent text-muted-foreground hover:text-foreground",
+			: "border-transparent text-muted-foreground hover:text-foreground active:text-foreground",
 	)
 
 export type LinkTab<M = never> = Readonly<{
@@ -77,7 +77,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 					h.Class(
 						cn(
 							underlineTabClass(tab.isCurrent),
-							"h-9 gap-[7px] px-3 first:pl-0.5",
+							"h-9 gap-2 px-3 first:pl-0.5",
 							tab.isCurrent ? "[&_svg]:text-foreground" : "[&_svg]:text-muted-foreground",
 							tab.isRouteActive && "active",
 						),

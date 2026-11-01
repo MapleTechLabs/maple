@@ -100,11 +100,11 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
 							h.Class(
-								"hidden min-w-0 max-w-64 items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground sm:inline-flex",
+								"hidden min-w-0 max-w-64 items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground sm:inline-flex",
 							),
 						],
 						[
-							icon(h, "GlobeIcon", { className: "size-3 shrink-0 opacity-70" }),
+							icon(h, "GlobeIcon", { className: "size-3 shrink-0" }),
 							h.span([h.Class("truncate")], [hostFromUrl(session.urlInitial)]),
 						],
 					),
@@ -117,7 +117,7 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 										),
 									],
 									[
-										icon(h, "ClockIcon", { className: "size-3 shrink-0 opacity-70" }),
+										icon(h, "ClockIcon", { className: "size-3 shrink-0" }),
 										relativeTime(h, {
 											value: startedEpoch,
 											nowMs: model.nowMs,

@@ -20,7 +20,7 @@ export function ServiceDot({
 		<span
 			aria-hidden
 			className={cn(
-				"shrink-0 rounded-[35%] [corner-shape:squircle]",
+				"shrink-0 rounded-dot [corner-shape:squircle]",
 				size === "sm" ? "size-1.5" : "size-2",
 				className,
 			)}

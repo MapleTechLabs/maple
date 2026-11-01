@@ -29,7 +29,7 @@ export const favicon = (h: H, model: Model, host: string, className?: string): H
 				h.Decoding("async"),
 				h.Referrerpolicy("no-referrer"),
 				h.OnError(Message.FailedFavicon({ host })),
-				h.Class(cn(ICON_BOX, "rounded-[3px] object-contain", className)),
+				h.Class(cn(ICON_BOX, "rounded-xs object-contain", className)),
 			])
 
 const ICON_KEYS: ReadonlyArray<FilterKey> = ["referrerHost", "host", "utmSource", "browserName", "deviceType"]

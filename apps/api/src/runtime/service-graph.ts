@@ -1,3 +1,6 @@
+import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
+import { DependencyScanService } from "@maple/backend/services/dependency-scan/DependencyScanService"
+import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { Layer } from "effect"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -13,7 +16,6 @@ import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScal
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
@@ -56,6 +58,9 @@ import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuth
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
@@ -77,6 +82,7 @@ import { SourceRemovalService } from "@maple/backend/services/integrations/Sourc
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
@@ -92,6 +98,7 @@ import { TelemetryReadService } from "@maple/backend/services/warehouse/Telemetr
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
+import { CodeReviewTeamService } from "@maple/backend/services/pr-review/CodeReviewTeamService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 /** Services consumed by HTTP routes; each service owns its implementation dependencies. */
@@ -111,7 +118,6 @@ export const HttpServicesLive = Layer.mergeAll(
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
-	HazelOAuthService.layer,
 	LinearOAuthService.layer,
 	OnboardingService.layer,
 	OnboardingChecklistService.layer,
@@ -129,6 +135,13 @@ export const HttpServicesLive = Layer.mergeAll(
 	CancellationReviewService.layer,
 	ScrapeTargetsService.layer,
 	UptimeMonitorsService.layer,
+	StatusPagesService.layer,
+	// The `statusPages` rollout gate on the status page routes.
+	OrganizationFeatureFlagsService.layer,
+	// Read-only: previews of unsaved pages.
+	StatusPageSnapshotBuilder.layer,
+	// Needs the `StatusPageStore` port, which only the deployed Worker binds.
+	StatusPagePublisher.layer,
 	PlanetScaleConnectionService.layer,
 	PlanetScaleService.layer,
 	PlanetScaleWebhookService.layer,
@@ -153,6 +166,9 @@ export const HttpServicesLive = Layer.mergeAll(
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
+	RuntimeReleaseCatalog.layer,
+	RuntimeAdvisoryCatalog.layer,
+	DependencyScanService.layer,
 	TelemetryReadService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
@@ -182,6 +198,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SourceRemovalService.layer,
 	PrReviewAnalyticsService.layer,
 	CiAnalyticsService.layer,
+	CodeReviewTeamService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,

@@ -25,7 +25,7 @@ const tileHead = (h: H, iconName: IconName, title: string, subtitle: string): Ht
 					h.span(
 						[
 							h.Class(
-								"flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary",
+								"flex size-7 items-center justify-center rounded-md bg-primary-a2 text-primary",
 							),
 						],
 						[icon(h, iconName, { size: 18 })],

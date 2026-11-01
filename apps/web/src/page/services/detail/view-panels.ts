@@ -18,7 +18,8 @@ import type { Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-export const SPARKLINE_TOKEN = "var(--chart-1)"
+/** Calls and requests draw in the Throughput chart's colour on every tab. */
+export const SPARKLINE_TOKEN = "--chart-throughput"
 
 /** `SectionCard`: a `Panel` with a header title, an optional trailing action, and a body. */
 export const sectionCard = (
@@ -66,14 +67,14 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 									h.Type("button"),
 									h.OnClick(onViewAll),
 									h.Class(
-										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 									),
 								],
 								[
 									backdropBar(h, {
 										value: op.estimatedSpanCount,
 										max: maxCalls,
-										className: "bg-severity-info/10",
+										className: "bg-muted",
 									}),
 									truncatedText(h, {
 										text: op.spanName,

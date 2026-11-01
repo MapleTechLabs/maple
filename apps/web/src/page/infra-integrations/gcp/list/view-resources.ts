@@ -32,7 +32,7 @@ const ALL = "all"
 const CELL = "truncate font-mono text-xs text-foreground-soft"
 
 const columns = (h: H): ReadonlyArray<Html> => [
-	columnHead(h, { label: "Resource", width: "w-0 flex-1 min-w-[220px]" }),
+	columnHead(h, { label: "Resource", width: "w-0 flex-1 min-w-56" }),
 	columnHead(h, { label: "Type", width: "w-44" }),
 	columnHead(h, { label: "Project", width: "w-52" }),
 	columnHead(h, { label: "Location", width: "w-32" }),
@@ -46,7 +46,7 @@ const loading = (h: H): Html =>
 		{ ariaLabel: "Google Cloud resources" },
 		columns(h),
 		skeletonRows(h, 5, () => [
-			skeleton(h, "h-4 w-0 min-w-[220px] flex-1"),
+			skeleton(h, "h-4 w-0 min-w-56 flex-1"),
 			skeleton(h, "h-3 w-44"),
 			skeleton(h, "h-3 w-52"),
 			skeleton(h, "h-3 w-32"),
@@ -95,7 +95,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div(
 			[
 				h.Class(
-					"w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+					"w-0 min-w-56 flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
 				),
 				h.Title(resource.name),
 			],
@@ -104,10 +104,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div([h.Class("w-44 truncate text-xs text-foreground-soft"), h.Title(type)], [type]),
 		h.div([h.Class(`w-52 ${CELL}`), h.Title(resource.projectId)], [resource.projectId]),
 		h.div(
-			[
-				h.Class(`w-32 ${CELL}`),
-				...(resource.location === null ? [] : [h.Title(resource.location)]),
-			],
+			[h.Class(`w-32 ${CELL}`), ...(resource.location === null ? [] : [h.Title(resource.location)])],
 			[resource.location ?? EMPTY_VALUE],
 		),
 		h.div(
@@ -118,10 +115,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 			[state ?? EMPTY_VALUE],
 		),
 		h.div(
-			[
-				h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"),
-				h.Title(labels.join("\n")),
-			],
+			[h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"), h.Title(labels.join("\n"))],
 			[
 				...(labels.length === 0
 					? []
@@ -134,7 +128,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		? h.div(
 				[
 					h.Class(
-						"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken",
+						"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
 					),
 				],
 				cells,

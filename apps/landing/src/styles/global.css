@@ -4,8 +4,7 @@
    here (enforced by `bun run check:tokens`). Must come after tailwindcss.
    Landing is dark-only: Layout.astro pins class="dark" on <html>. */
 @import "@maple/ui/styles/tokens.css";
-@import "@fontsource-variable/geist-mono";
-@import "@fontsource-variable/geist";
+@import "./fonts.generated.css";
 
 @source "../../../../packages/ui/src";
 

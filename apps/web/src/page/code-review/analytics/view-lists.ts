@@ -19,10 +19,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 		[
 			h.span([h.Class("text-xs text-muted-foreground")], [title]),
 			rows.length === 0
-				? h.span(
-						[h.Class("py-1 text-sm text-foreground-subtle")],
-						["No repositories in this window"],
-					)
+				? h.span([h.Class("py-1 text-sm text-foreground-subtle")], ["No repositories in this window"])
 				: h.ul(
 						[h.Class("flex flex-col")],
 						rows.map((row) =>
@@ -103,7 +100,7 @@ export const outcomesCard = <M>(
 			tone: TONE_FILL.neutral,
 		},
 		{ key: "failed", label: "Failed", value: current.failedReviews, tone: TONE_FILL.crit },
-		{ key: "skipped", label: "Skipped", value: current.skippedReviews, tone: "bg-muted-foreground/30" },
+		{ key: "skipped", label: "Skipped", value: current.skippedReviews, tone: "bg-foreground-faint" },
 	]
 	return analyticsPanel(h, { title: "Review outcomes" }, [
 		barList(

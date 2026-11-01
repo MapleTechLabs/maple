@@ -12,7 +12,7 @@ export function rowSelectedClass(selected: boolean | undefined): string {
 }
 
 export const listRowVariants = cva(
-	"flex w-full min-w-0 items-center gap-3 text-left outline-none transition-colors hover:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+	"flex w-full min-w-0 items-center gap-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 	{
 		defaultVariants: { density: "default", divided: false },
 		variants: {

@@ -52,7 +52,7 @@ const EVENT_KIND_VISUALS = {
 	navigation: { icon: "PixelWindowIcon", tone: MARKER_TEXT.nav, selected: MARKER_SOFT.nav },
 	click: { icon: "PixelCrosshairsIcon", tone: MARKER_TEXT.click, selected: MARKER_SOFT.click },
 	network: { icon: "PixelNodesIcon", tone: "text-chart-5", selected: "bg-chart-5/15 text-chart-5" },
-	custom: { icon: "PixelSparkleIcon", tone: "text-primary", selected: "bg-primary/15 text-primary" },
+	custom: { icon: "PixelSparkleIcon", tone: "text-primary", selected: "bg-primary-a2 text-primary" },
 	console: {
 		icon: "PixelBracketsCurlyIcon",
 		tone: "text-muted-foreground",
@@ -61,7 +61,7 @@ const EVENT_KIND_VISUALS = {
 	error: {
 		icon: "PixelTriangleWarningIcon",
 		tone: "text-severity-error",
-		selected: "bg-severity-error/15 text-severity-error",
+		selected: "bg-severity-error-a2 text-severity-error",
 	},
 } as const satisfies Record<string, { icon: IconName; tone: string; selected: string }>
 
@@ -165,7 +165,9 @@ const filterButton = (
 			h.Class(
 				cn(
 					"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors",
-					config.isActive ? config.selected : cn(config.tone, "hover:bg-surface-sunken"),
+					config.isActive
+						? config.selected
+						: cn(config.tone, "hover:bg-surface-sunken active:bg-surface-sunken"),
 					config.count === 0 && !config.isActive && "text-muted-foreground opacity-45",
 				),
 			),
@@ -292,7 +294,7 @@ const eventDetail = (h: H, ev: EventRow): Html => {
 									),
 								),
 								h.Class(
-									"w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground",
+									"w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 							],
 							["Open trace"],
@@ -308,7 +310,7 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 	const isError = ev.type === "error" || isFailedRequest(ev)
 	const isOpen = model.openEventIndex === index
 	return h.li(
-		[h.Key(`${index}`), h.Class(cn("relative", isError && "bg-severity-error/5"))],
+		[h.Key(`${index}`), h.Class(cn("relative", isError && "bg-severity-error-a1"))],
 		[
 			...(isError
 				? [
@@ -326,7 +328,9 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 					h.Type("button"),
 					h.OnClick(Message.ClickedEvent({ index, timestamp: ev.timestamp })),
 					h.AriaExpanded(isOpen),
-					h.Class("flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-sunken"),
+					h.Class(
+						"flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+					),
 					h.Title("Seek replay to this moment"),
 				],
 				[
@@ -464,8 +468,8 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 			h.Key(summary.traceId),
 			h.Class(
 				cn(
-					"relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-surface-sunken",
-					isError && "bg-severity-error/5",
+					"relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
+					isError && "bg-severity-error-a1",
 				),
 			),
 		],
@@ -489,7 +493,7 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 							h.Type("button"),
 							h.OnClick(Message.RequestedSeekToTimestamp({ timestamp: summary.startTime })),
 							h.Class(
-								"w-10 shrink-0 text-left font-mono text-xs tabular-nums text-muted-foreground hover:text-foreground",
+								"w-10 shrink-0 text-left font-mono text-xs tabular-nums text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 						],
 						[clockAt(model, summary.startTime)],
@@ -518,7 +522,7 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 				],
 			),
 			h.div(
-				[h.Class("flex items-center gap-2 pl-[3.125rem]")],
+				[h.Class("flex items-center gap-2 pl-[50px]")],
 				[
 					h.span(
 						[h.Class("min-w-0 truncate text-2xs text-muted-foreground")],
@@ -542,7 +546,7 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
 							h.Class(
-								"inline-flex shrink-0 items-center gap-1 text-2xs text-severity-debug underline-offset-2 hover:underline",
+								"inline-flex shrink-0 items-center gap-1 text-2xs text-severity-debug underline-offset-2 hover:underline active:underline",
 							),
 						],
 						["open", icon(h, "ExternalLinkIcon", { className: "size-3" })],
@@ -589,7 +593,7 @@ const railTabItem = (h: H, model: RailView, tab: RailTab, label: string, count?:
 			onClick: Message.PickedRailTab({ tab }),
 			className: cn(
 				toggleVariants({ size: "sm", variant: "default" }),
-				"h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs",
+				"h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground active:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs",
 			),
 			slot: "toggle",
 			attributes: [

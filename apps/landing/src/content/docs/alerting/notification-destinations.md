@@ -114,7 +114,13 @@ The payload, headers, signature verification and retry behavior are in the [aler
 
 ## Hazel
 
-Connect [Hazel](https://hazel.sh/docs/integrations/maple) through OAuth and pick a workspace channel to route alerts into. See Hazel's [Maple integration guide](https://hazel.sh/docs/integrations/maple).
+Add the Maple bot to your Hazel workspace, then choose the channel alerts go to. The same bot answers `@Maple` questions in Hazel threads.
+
+1. Open **Settings → Integrations → Hazel**, click **Add to Hazel** and approve the install for your workspace. You need to be an owner or admin in Hazel.
+2. On the **Routing** tab, click **New destination** and pick the linked Hazel workspace.
+3. Pick a **Channel** and save. The list shows every public channel and the private channels the bot was added to.
+
+See Hazel's [Maple integration guide](https://hazel.sh/docs/integrations/maple).
 
 ## Linear
 

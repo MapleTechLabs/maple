@@ -17,7 +17,12 @@ describe("serveAsset", () => {
 			strictEqual(headers.get("x-frame-options"), "DENY")
 			strictEqual(headers.get("x-content-type-options"), "nosniff")
 			strictEqual(headers.get("content-security-policy")?.includes("frame-ancestors 'none'"), true)
-			strictEqual(headers.get("content-security-policy")?.includes("script-src 'self'"), true)
+			const scriptSrc = headers
+				.get("content-security-policy")
+				?.split("; ")
+				.find((directive) => directive.startsWith("script-src "))
+			// Same-origin scripts only, plus WebAssembly compilation for the code highlighter.
+			strictEqual(scriptSrc, "script-src 'self' 'wasm-unsafe-eval'")
 		}),
 	)
 

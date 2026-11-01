@@ -67,13 +67,18 @@ const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 											h.Class(
 												cn(
 													"min-w-0 flex-1 truncate",
-													entry.ended ? "text-muted-foreground" : "text-foreground-soft",
+													entry.ended
+														? "text-muted-foreground"
+														: "text-foreground-soft",
 												),
 											),
 										],
 										[entry.name],
 									),
-									h.span([h.Class("tabular-nums text-muted-foreground")], [formatPercent(entry.share)]),
+									h.span(
+										[h.Class("tabular-nums text-muted-foreground")],
+										[formatPercent(entry.share)],
+									),
 								],
 							),
 							h.div(
@@ -100,7 +105,7 @@ const tooltip = (h: H, hovered: Step, prev: Step, left: number, unit: string | u
 	h.div(
 		[
 			h.Class(
-				"pointer-events-none absolute top-5 z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-md",
+				"pointer-events-none absolute top-5 z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-popup",
 			),
 			h.Style({ left: `${left}px`, width: `${TIP_W}px` }),
 			h.DataAttribute("slot", "funnel-dropoff-tooltip"),
@@ -117,7 +122,10 @@ const tooltip = (h: H, hovered: Step, prev: Step, left: number, unit: string | u
 			h.div(
 				[h.Class("mb-1.5 flex h-1.5 gap-px overflow-hidden rounded-sm")],
 				[
-					h.div([h.Class("bg-severity-info"), h.Style({ width: `${(hovered.ofPrev ?? 0) * 100}%` })]),
+					h.div([
+						h.Class("bg-severity-info"),
+						h.Style({ width: `${(hovered.ofPrev ?? 0) * 100}%` }),
+					]),
 					h.div([h.Class("flex-1 bg-severity-error/70")]),
 				],
 			),
@@ -172,18 +180,21 @@ const groupBars = (h: H, ctx: ColumnContext, step: Step, index: number): Html =>
 			const height = group.value / max
 			const capH = Math.max(0, (group.prev - group.value) / max)
 			return h.div(
-				[h.Class("relative h-full flex-1"), h.Title(`${group.name} · ${fmtValue(group.value, ctx.unit)}`)],
+				[
+					h.Class("relative h-full flex-1"),
+					h.Title(`${group.name} · ${fmtValue(group.value, ctx.unit)}`),
+				],
 				[
 					...(index > 0 && capH > 0
 						? [
 								h.div([
-									h.Class(cn("absolute inset-x-0 rounded-[3px]", LOST_CLASS)),
+									h.Class(cn("absolute inset-x-0 rounded-xs", LOST_CLASS)),
 									h.Style({ bottom: `${height * 100}%`, height: `${capH * 100}%` }),
 								]),
 							]
 						: []),
 					h.div([
-						h.Class("absolute inset-x-0 bottom-0 rounded-[3px]"),
+						h.Class("absolute inset-x-0 bottom-0 rounded-xs"),
 						h.Style({ height: `${height * 100}%`, "background-color": group.color }),
 					]),
 				],
@@ -219,7 +230,7 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 	return h.span(
 		[
 			h.Class(
-				"absolute bottom-1.5 left-1.5 flex items-center gap-2 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-xs ring-1 ring-border-subtle",
+				"absolute bottom-1.5 left-1.5 flex items-center gap-2 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-raised ring-1 ring-border-subtle",
 			),
 			h.DataAttribute("slot", "funnel-dropoff-pill"),
 		],
@@ -238,7 +249,10 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 				? [
 						h.span(
 							[h.Class("flex items-center gap-1 text-foreground-soft")],
-							[icon(h, "ArrowDownIcon", { size: 12, className: TONE_TEXT.crit }), formatPercent(lostShare)],
+							[
+								icon(h, "ArrowDownIcon", { size: 12, className: TONE_TEXT.crit }),
+								formatPercent(lostShare),
+							],
 						),
 					]
 				: []),
@@ -312,7 +326,13 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 	)
 }
 
-const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: string; color: string }>, showPercent: boolean, unit: string | undefined): Html => {
+const header = (
+	h: H,
+	steps: ReadonlyArray<Step>,
+	legend: ReadonlyArray<{ name: string; color: string }>,
+	showPercent: boolean,
+	unit: string | undefined,
+): Html => {
 	const first = steps[0]
 	const last = steps[steps.length - 1]
 	return h.div(
@@ -320,7 +340,11 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 		[
 			legend.length > 0
 				? h.div(
-						[h.Class("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground")],
+						[
+							h.Class(
+								"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground",
+							),
+						],
 						legend.map((entry) =>
 							h.span(
 								[h.Class("flex min-w-0 items-center gap-1"), h.Title(entry.name)],
@@ -339,11 +363,16 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 				? [
 						h.span(
 							[
-								h.Class("flex shrink-0 items-baseline gap-1.5 tabular-nums whitespace-nowrap"),
+								h.Class(
+									"flex shrink-0 items-baseline gap-1.5 tabular-nums whitespace-nowrap",
+								),
 								h.DataAttribute("slot", "funnel-dropoff-summary"),
 							],
 							[
-								h.span([h.Class("text-muted-foreground")], [showPercent ? "Conversion rate" : "Converted"]),
+								h.span(
+									[h.Class("text-muted-foreground")],
+									[showPercent ? "Conversion rate" : "Converted"],
+								),
 								h.span(
 									[h.Class("text-2xs font-semibold text-foreground")],
 									[
@@ -397,7 +426,9 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 	}
 	return h.div(
 		[
-			h.Class(cn("relative flex h-full w-full flex-col overflow-hidden px-1 select-none", inputs.className)),
+			h.Class(
+				cn("relative flex h-full w-full flex-col overflow-hidden px-1 select-none", inputs.className),
+			),
 			h.OnMount(MeasureChartContainer()),
 			h.OnMouseLeave(Message.LeftChart()),
 			h.DataAttribute("slot", "funnel-dropoff"),
@@ -415,7 +446,12 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 				visible.map((step, index) => column(h, ctx, step, index)),
 			),
 			...(hidden > 0
-				? [h.div([h.Class("shrink-0 pt-1 text-3xs leading-none text-muted-foreground")], [`+${hidden} more`])]
+				? [
+						h.div(
+							[h.Class("shrink-0 pt-1 text-3xs leading-none text-muted-foreground")],
+							[`+${hidden} more`],
+						),
+					]
 				: []),
 			...(hovered !== undefined && hoveredPrev !== undefined && !isGrouped
 				? [tooltip(h, hovered, hoveredPrev, tipLeft, inputs.unit)]

@@ -32,7 +32,7 @@ export const RELEASE_HEALTH_DOT_CLASS = {
 export const PILL_CLASS = {
 	regressed: TONE_SOFT.crit,
 	watch: TONE_SOFT.warn,
-	rolling: "bg-primary/10 text-primary",
+	rolling: "bg-primary-a2 text-primary",
 	healthy: TONE_SOFT.ok,
 } as const satisfies Record<ReleaseHealth, string>
 
@@ -85,7 +85,12 @@ export const commitRangesKey = (ranges: Iterable<Readonly<{ base: string; head: 
 		.join(",")
 
 /** `CommitAvatar`. TODO(avatar-error): a broken avatar URL does not fall back to initials. */
-export const commitAvatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, isCompact = true): Html => {
+export const commitAvatar = <M>(
+	h: HtmlBuilder<M>,
+	url: string | null,
+	name: string,
+	isCompact = true,
+): Html => {
 	const size = isCompact ? "size-5" : "size-7"
 	return url === null
 		? h.div(

@@ -1,4 +1,7 @@
-import { getActiveInfraCorrelations, type InfraCorrelation } from "../../../components/infra/infra-correlations"
+import {
+	getActiveInfraCorrelations,
+	type InfraCorrelation,
+} from "../../../components/infra/infra-correlations"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { INFRA_CHART_TOKENS } from "../../../charts/infra-metric-series"
@@ -24,7 +27,7 @@ export type ViewInputs = Readonly<{
 }>
 
 const LINK_CLASS =
-	"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground transition-colors hover:text-foreground"
+	"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground hover:text-foreground active:text-foreground"
 
 /** `CorrelationLink`: the matching infra detail route, per kind. */
 const correlationHref = (correlation: InfraCorrelation): string => {
@@ -67,7 +70,11 @@ const section = (h: H, model: Model, correlation: InfraCorrelation, timeZone: st
 							),
 						],
 					),
-					truncatedText(h, { text: correlation.identifier, mono: true, className: "text-2xs text-muted-foreground" }),
+					truncatedText(h, {
+						text: correlation.identifier,
+						mono: true,
+						className: "text-2xs text-muted-foreground",
+					}),
 				],
 			),
 			correlationCharts(h, model, correlation, timeZone),
@@ -79,7 +86,9 @@ const noCorrelation = (h: H): Html =>
 		h.p([], ["No Kubernetes, container, or host metadata on this record."]),
 		h.p(
 			[h.Class("text-xs")],
-			["Set host.name, container.id or k8s.pod.name as resource attributes to link records to infrastructure."],
+			[
+				"Set host.name, container.id or k8s.pod.name as resource attributes to link records to infrastructure.",
+			],
 		),
 		docsLink(h, "otelConventions"),
 	])
@@ -88,7 +97,9 @@ const noCorrelation = (h: H): Html =>
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const correlations = getActiveInfraCorrelations({ ...inputs.resourceAttributes })
 	if (correlations.length === 0) return noCorrelation(h)
-	const identity = correlations.map((correlation) => `${correlation.kind}:${correlation.identifier}`).join("|")
+	const identity = correlations
+		.map((correlation) => `${correlation.kind}:${correlation.identifier}`)
+		.join("|")
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[

@@ -37,7 +37,7 @@ const member: ClerkOrganization = {
 	homeRegion: "us",
 	isServedHere: true,
 	isRegionOpen: false,
-	flags: { aiAutoTriage: false, releases: false, securityAudit: false },
+	flags: { aiAutoTriage: false, releases: false, securityAudit: false, statusPages: false },
 }
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html => createOrgView(h, model, "david@acme.dev", [])
@@ -62,7 +62,7 @@ describe("create your first organization", () => {
 			{ update, view },
 			given(init(user).model),
 			mounted,
-			expectView(role("heading", { name: "Let's give your team a home." })).toExist(),
+			expectView(role("heading", { name: "Give your team a home" })).toExist(),
 			expectView(nameField).toHaveValue("Acme"),
 			expectView(text("We guessed from acme.dev. Rename it whenever you like.")).toExist(),
 			type(nameField, "Acme Labs"),

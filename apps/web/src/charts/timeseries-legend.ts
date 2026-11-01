@@ -52,7 +52,7 @@ const compactLegend = (
 					h.Type("button"),
 					h.Class(
 						cn(
-							"hover:bg-surface-sunken flex min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1 py-0.5 select-none",
+							"hover:bg-surface-sunken active:bg-surface-sunken flex min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1 py-0.5 select-none",
 							hidden.includes(entry.key) && "opacity-40",
 						),
 					),
@@ -132,7 +132,7 @@ const statsTable = (
 									h.OnClick(Message.ToggledLegendSeries({ key: entry.key, keys })),
 									h.Class(
 										cn(
-											"hover:bg-surface-sunken cursor-pointer select-none",
+											"hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer select-none",
 											hidden.includes(entry.key) && "opacity-40",
 										),
 									),
@@ -201,7 +201,6 @@ const statsTable = (
 	)
 }
 
-
 export type TimeseriesLegendInputs = Readonly<{
 	series: ReadonlyArray<LegendSeries>
 	data: ReadonlyArray<Readonly<Record<string, unknown>>>
@@ -213,7 +212,11 @@ export type TimeseriesLegendInputs = Readonly<{
 }>
 
 /** The legend `PlotFrame` gets: nothing when hidden (the tile header hoists it instead). */
-export const timeseriesLegend = (h: HtmlBuilder<Message>, model: Model, inputs: TimeseriesLegendInputs): Html => {
+export const timeseriesLegend = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	inputs: TimeseriesLegendInputs,
+): Html => {
 	const { series } = inputs
 	if ((inputs.legend !== "visible" && inputs.legend !== "right") || series.length === 0) return h.empty
 	// Stats over the closed buckets only, so all-zero series sink to the bottom (`TimeseriesLegend`).

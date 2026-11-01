@@ -91,7 +91,7 @@ const affectedChip = (h: H, entity: V2SetupAuditCheck["affected"][number], index
 					{
 						className: cn(
 							chipClassName,
-							"text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground",
+							"text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
 						),
 					},
 					[entity.name],
@@ -160,11 +160,7 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 												...(check.affected_count > check.affected.length
 													? [
 															h.span(
-																[
-																	h.Class(
-																		"text-foreground-subtle text-2xs",
-																	),
-																],
+																[h.Class("text-foreground-subtle text-2xs")],
 																[
 																	"+",
 																	String(
@@ -326,7 +322,7 @@ const passingDisclosure = (
 							h.AriaDisabled(false),
 							h.AriaExpanded(isOpen),
 							h.Class(
-								"group hover:bg-surface-sunken flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
+								"group hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-3 px-4 py-3 text-left",
 							),
 							...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 							h.DataAttribute("slot", "collapsible-trigger"),

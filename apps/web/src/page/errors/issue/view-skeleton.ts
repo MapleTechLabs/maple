@@ -82,7 +82,7 @@ const railRow = (h: H, label: string, width: string): Html =>
 
 const railSkeleton = (h: H): Html =>
 	h.div(
-		[h.Class("flex flex-col bg-card/30")],
+		[h.Class("flex flex-col")],
 		[
 			detailRailGroup(h, "Details", [
 				railRow(h, "Status", "w-24"),

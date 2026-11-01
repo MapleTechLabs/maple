@@ -284,7 +284,7 @@ const runProgress = <M>(
 					const isLast = index === steps.length - 1
 					return h.keyed("li")(
 						`${step.at}-${step.tool}-${index}`,
-						[h.Class("flex items-baseline gap-2.5 py-[3px] text-xs")],
+						[h.Class("flex items-baseline gap-2.5 py-1 text-xs")],
 						[
 							statusDot(h, {
 								tone: "custom",
@@ -295,7 +295,7 @@ const runProgress = <M>(
 										? "bg-primary"
 										: isLast && isStalled
 											? TONE_FILL.warn
-											: "bg-muted-foreground/35",
+											: "bg-foreground-faint",
 								),
 							}),
 							h.span(
@@ -366,7 +366,7 @@ const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: num
 				? h.div(
 						[
 							h.Class(
-								"flex items-start gap-3 rounded-md border border-severity-error/25 bg-severity-error/6 p-3",
+								"flex items-start gap-3 rounded-md border border-severity-error-a3 bg-severity-error-a1 p-3",
 							),
 						],
 						[
@@ -375,7 +375,7 @@ const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: num
 								{
 									size: "xs",
 									mono: true,
-									className: "mt-0.5 bg-severity-error/12 text-severity-error",
+									className: "mt-0.5 bg-severity-error-a2 text-severity-error",
 								},
 								["reason"],
 							),

@@ -396,7 +396,7 @@ const availabilityStrip = (h: H, stats: CheckStats, window: UptimeWindow, timeZo
 						[
 							h.Key(point.bucket),
 							h.Title(label),
-							h.Class(cn("absolute inset-y-0 rounded-[1px]", CHECK_HEALTH_FILL[health])),
+							h.Class(cn("absolute inset-y-0 rounded-2xs", CHECK_HEALTH_FILL[health])),
 							h.Style({
 								left: `${left * 100}%`,
 								width: `max(1px, calc(${((right - left) * 100).toFixed(4)}% - 1px))`,
@@ -531,7 +531,9 @@ const checkBars = (
 				h.Href(traceHref(sample.traceId)),
 				h.Attribute("tabindex", "-1"),
 				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class("group absolute inset-y-0 -translate-x-1/2 hover:bg-foreground/5"),
+				h.Class(
+					"group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken active:bg-surface-sunken",
+				),
 				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
 			],
 			[
@@ -539,7 +541,7 @@ const checkBars = (
 					[
 						h.Class(
 							cn(
-								"absolute inset-x-0 bottom-0 flex flex-col-reverse overflow-hidden rounded-t-[1px] group-hover:brightness-125",
+								"absolute inset-x-0 bottom-0 flex flex-col-reverse overflow-hidden rounded-t-2xs group-hover:brightness-125",
 								!sample.ok && CHECK_HEALTH_FILL.mostlyFailed,
 							),
 						),
@@ -595,10 +597,7 @@ const cardRow = (h: H, key: string, color: string, label: string, value: string)
 			h.span(
 				[h.Class("flex items-center gap-1.5 text-muted-foreground")],
 				[
-					h.span(
-						[h.Class("inline-block size-2 rounded-[2px]"), h.Style({ background: color })],
-						[],
-					),
+					h.span([h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })], []),
 					label,
 				],
 			),
@@ -614,7 +613,7 @@ const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string):
 		[
 			h.Class(
 				cn(
-					"pointer-events-none absolute top-1 z-30 flex w-48 flex-col gap-1 rounded-md border bg-popover px-2.5 py-2 text-xs shadow-md",
+					"pointer-events-none absolute top-1 z-30 flex w-48 flex-col gap-1 rounded-md border bg-popover px-2.5 py-2 text-xs shadow-popup",
 					left > 60 ? "-translate-x-full -ml-2" : "ml-2",
 				),
 			),
@@ -652,7 +651,7 @@ const legendItem = (h: H, key: string, swatch: Html, label: string): Html =>
 	h.span([h.Key(key), h.Class("flex items-center gap-1.5")], [swatch, label])
 
 const swatch = (h: H, color: string): Html =>
-	h.span([h.Class("inline-block size-2 rounded-[2px]"), h.Style({ background: color })], [])
+	h.span([h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })], [])
 
 const barsLegend = (h: H, samples: ReadonlyArray<CheckSample>, yMax: number): Html => {
 	const timed = samples.some((sample) => sample.ok && sample.phases !== null)
@@ -1003,7 +1002,7 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 					h.Title(
 						`Each check is a span in the ${UPTIME_SERVICE} service, namespace ${MAPLE_SERVICES_NAMESPACE}.`,
 					),
-					h.Class("text-xs text-primary hover:underline"),
+					h.Class("text-xs text-primary hover:underline active:underline"),
 				],
 				["View all checks in Traces"],
 			),
@@ -1058,7 +1057,7 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 											[
 												h.Href(traceHref(row.traceId)),
 												h.Class(
-													"text-right font-mono text-xs text-primary hover:underline",
+													"text-right font-mono text-xs text-primary hover:underline active:underline",
 												),
 											],
 											[`${row.traceId.slice(0, 4)}…${row.traceId.slice(-4)}`],
@@ -1135,7 +1134,7 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 					h,
 					"Service",
 					h.a(
-						[h.Href(serviceHref), h.Class("text-primary hover:underline")],
+						[h.Href(serviceHref), h.Class("text-primary hover:underline active:underline")],
 						[monitor.service_name],
 					),
 				),

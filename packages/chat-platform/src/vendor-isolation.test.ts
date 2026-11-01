@@ -53,7 +53,7 @@ const GUARDED_FILES = [
 	"apps/web/src/page/integrations/view-chat-card.ts",
 ]
 
-const VENDORS = ["discord", "slack", "teams", "telegram", "whatsapp"]
+const VENDORS = ["discord", "hazel", "slack", "teams", "telegram", "whatsapp"]
 
 const SELF = fileURLToPath(import.meta.url)
 

@@ -28,11 +28,11 @@ export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, classNam
 			cn(
 				"inline-block size-2.5 shrink-0 rounded-full",
 				bucket === "informational"
-					? "border-2 border-muted-foreground/60"
+					? "border-2 border-foreground-subtle"
 					: bucket === "needs_validation"
 						? "border-2 border-dashed border-muted-foreground"
 						: bucket === "rejected"
-							? "bg-muted-foreground/30"
+							? "bg-foreground-faint"
 							: SECURITY_SEVERITY_FILL[bucket],
 				className,
 			),
@@ -83,7 +83,7 @@ export const unverifiedChip = <M>(h: HtmlBuilder<M>): Html =>
 		[
 			h.Title("Severity estimated from the source; not proven by running the code"),
 			h.Class(
-				"rounded-sm border border-dashed border-muted-foreground/50 px-1.5 py-px text-2xs text-muted-foreground",
+				"rounded-sm border border-dashed border-foreground-subtle px-1.5 py-px text-2xs text-muted-foreground",
 			),
 		],
 		["Unverified"],
@@ -123,7 +123,7 @@ const tabButton = <M>(
 					"flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
 					isActive
 						? "border-border bg-muted font-medium text-foreground"
-						: "border-transparent text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
+						: "border-transparent text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 				),
 			),
 		],
@@ -186,7 +186,7 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 	const note = noteOf(finding)
 	const attributes: ReadonlyArray<Attribute<M>> = [
 		h.Class(
-			"flex h-10 w-full min-w-0 items-center gap-3 pr-3 pl-8 text-left outline-none hover:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+			"flex h-10 w-full min-w-0 items-center gap-3 pr-3 pl-8 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 		),
 	]
 	const children = [
@@ -277,7 +277,7 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 							h.AriaExpanded(!isCollapsed),
 							h.OnClick(options.onToggle(bucket)),
 							h.Class(
-								"sticky top-0 z-[1] flex h-9 w-full items-center gap-2 border-b border-border-subtle bg-surface-strong px-3 text-left backdrop-blur hover:bg-muted",
+								"sticky top-0 z-[1] flex h-9 w-full items-center gap-2 border-b border-border-subtle bg-surface-strong px-3 text-left backdrop-blur hover:bg-muted active:bg-muted",
 							),
 						],
 						[

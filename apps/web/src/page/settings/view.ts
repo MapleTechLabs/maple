@@ -338,6 +338,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			width: "settings",
 			// Holds the header row while the session resolves, so the content does not jump down.
 			titleContent: isLoading ? skeleton(h, "h-8 w-40") : undefined,
+			filtersLabel: "Settings",
 			filters:
 				isLoading || empty
 					? undefined

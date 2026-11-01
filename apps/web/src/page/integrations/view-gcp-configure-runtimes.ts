@@ -87,7 +87,7 @@ export const runtimeFields = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground",
+								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 								GCP_LINK,
 							),
 							attributes: [h.OnClick(Message.ClickedGcpUseOpenTelemetry())],

@@ -73,7 +73,7 @@ const codeAction = <M>(
 			label,
 			size: "icon-xs",
 			hasTooltip: false,
-			className: "text-muted-foreground hover:text-foreground",
+			className: "text-muted-foreground hover:text-foreground active:text-foreground",
 			attributes: [
 				h.DataAttribute("streamdown", slot),
 				h.Title(label),
@@ -222,7 +222,9 @@ const viewsFor = <M>(
 	const views: Markdown.Views = {
 		...Markdown.defaultViews,
 		InlineCode: ({ value }) =>
-			h.code(streamdown("inline-code", "rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
+			h.code(streamdown("inline-code", "rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [
+				value,
+			]),
 		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
 		// Link text is re-rendered with images as plain labels, at any nesting depth
 		// (`[**![a](u)**](d)`), so a linked image never puts an anchor inside an anchor.
@@ -293,7 +295,7 @@ const viewsFor = <M>(
 			h.blockquote(
 				streamdown(
 					"blockquote",
-					"my-4 border-muted-foreground/30 border-l-4 pl-4 text-muted-foreground italic",
+					"my-4 border-foreground-faint border-l-4 pl-4 text-muted-foreground italic",
 				)(h),
 				blocks,
 			),

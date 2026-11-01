@@ -163,7 +163,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 			...(model.hasToggleFailed
 				? [
 						alert(h, { variant: "crit", size: "sm" }, [
-							alertDescription(h, ["Failed to update the rule. Try again."]),
+							alertDescription(h, ["Couldn't update the rule. Try again."]),
 						]),
 					]
 				: []),
@@ -305,7 +305,10 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 		},
 	]
 	return h.li(
-		[h.Key(rule.id), h.Class(cn(ROW_GRID, "relative px-4 py-3 hover:bg-surface-sunken"))],
+		[
+			h.Key(rule.id),
+			h.Class(cn(ROW_GRID, "relative px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken")),
+		],
 		[
 			statusDot(h, { tone: BUCKET_TONE.get(row.bucket) ?? "neutral", size: "lg" }),
 			h.div(
@@ -426,7 +429,7 @@ const RIBBON_CLASS = new Map<RibbonCell, string>([
 const stateRibbon = (h: H, cells: ReadonlyArray<RibbonCell>): Html =>
 	h.div(
 		[h.Class("flex h-3.5 items-stretch gap-px"), h.AriaLabel("Incidents over the last 7 days")],
-		cells.map((cell) => h.span([h.Class(cn("flex-1 rounded-[1px]", RIBBON_CLASS.get(cell)))])),
+		cells.map((cell) => h.span([h.Class(cn("flex-1 rounded-2xs", RIBBON_CLASS.get(cell)))])),
 	)
 
 const routesTo = (h: H, destinations: ReadonlyArray<AlertDestinationDocument>, isEnabled: boolean): Html => {

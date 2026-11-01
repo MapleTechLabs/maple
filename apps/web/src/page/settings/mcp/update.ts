@@ -39,7 +39,9 @@ const toggled = (values: ReadonlyArray<string>, value: string): ReadonlyArray<st
 
 const liftRevokeDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, revokeDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRevokeDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotRevokeDialogMessage({ message }),
+	),
 })
 
 /** `onCreated`: the new secret goes into every snippet. */
@@ -51,10 +53,16 @@ const liftCreateKey = (model: Model, step: ReturnType<typeof CreateKey.update>):
 			createKey: step.model,
 			createdSecret: out?._tag === "CreatedKey" ? out.secret : model.createdSecret,
 		},
-		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotCreateKeyMessage({ message: inner })),
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotCreateKeyMessage({ message: inner }),
+		),
 		outMessage:
 			out?._tag === "RequestedToast"
-				? PageOutMessage.RequestedToast({ type: out.type, title: out.title, description: out.description })
+				? PageOutMessage.RequestedToast({
+						type: out.type,
+						title: out.title,
+						description: out.description,
+					})
 				: undefined,
 	}
 }
@@ -74,21 +82,27 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedFetchConnections: ({ result }) => ({
 			model: { ...model, connections: AsyncData.settle(model.connections, result) },
 		}),
-		CompletedFetchTools: ({ result }) => ({ model: { ...model, tools: AsyncData.settle(model.tools, result) } }),
+		CompletedFetchTools: ({ result }) => ({
+			model: { ...model, tools: AsyncData.settle(model.tools, result) },
+		}),
 		GotClientTabsMessage: ({ message: child }) => {
 			const step = Tabs.update(model.client, child)
 			// Base UI unmounts the inactive panels, so their copy states start over.
 			const isSwitch = step.model.selected !== model.client.selected
 			return {
 				model: { ...model, client: step.model, snippetCopies: isSwitch ? {} : model.snippetCopies },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotClientTabsMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotClientTabsMessage({ message: inner }),
+				),
 			}
 		},
 		GotServerUrlCopyMessage: ({ message: child }) => {
 			const step = CopyButton.update(model.serverUrlCopy, child)
 			return {
 				model: { ...model, serverUrlCopy: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotServerUrlCopyMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotServerUrlCopyMessage({ message: inner }),
+				),
 			}
 		},
 		GotSnippetCopyMessage: ({ snippet, message: child }) => {
@@ -101,7 +115,8 @@ export const update = (model: Model, message: Message): Return =>
 			}
 		},
 		ClickedCreateMcpKey: () => liftCreateKey(model, CreateKey.open(model.createKey, "mcp")),
-		GotCreateKeyMessage: ({ message: child }) => liftCreateKey(model, CreateKey.update(model.createKey, child)),
+		GotCreateKeyMessage: ({ message: child }) =>
+			liftCreateKey(model, CreateKey.update(model.createKey, child)),
 		ClickedRevoke: ({ connectionId }) =>
 			Option.match(
 				Option.flatMap(AsyncData.getData(model.connections), (rows) =>
@@ -125,7 +140,10 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedRevoke: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => {
-					const closed = liftRevokeDialog({ ...model, isRevoking: false }, Dialog.close(model.revokeDialog))
+					const closed = liftRevokeDialog(
+						{ ...model, isRevoking: false },
+						Dialog.close(model.revokeDialog),
+					)
 					return {
 						...closed,
 						commands: [...(closed.commands ?? []), FetchConnections()],
@@ -140,7 +158,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isRevoking: false },
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to revoke the client",
+						title: "Couldn't revoke the client",
 						description: error.message,
 					}),
 				}),
