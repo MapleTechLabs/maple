@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "ee2cd63e4d0a9c118185cdbfe3ae48dba428dca715a462bc7bae8f81dcea0635",
+	"id": "26ae470d0ccd149ef78d9c982d48d5f6fec32536c70ecae71a436dc8856e468f",
 	"prevIds": [
-		"104b24c17ee028f345e076a74d9055e1cc4a35a480f988cf35781bf4bf7af736"
+		"0479f73a257c3d6d2909531b2aeb42835ea643512b8c402843ca678a7e7d7c3e"
 	],
 	"entities": [
 		{
@@ -269,6 +269,41 @@
 				"name": "dashboards_org_id_id_pk",
 				"columns": [
 					"org_id",
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "dependency_findings",
+			"primaryKey": {
+				"name": "dependency_findings_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "dependency_scan_matches",
+			"primaryKey": {
+				"name": "dependency_scan_matches_pkey",
+				"columns": [
+					"scan_id",
+					"lockfile_path",
+					"ecosystem",
+					"package_name",
+					"version",
+					"advisory_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "dependency_scans",
+			"primaryKey": {
+				"name": "dependency_scans_pkey",
+				"columns": [
 					"id"
 				]
 			}
@@ -915,6 +950,67 @@
 		},
 		{
 			"kind": "table",
+			"name": "status_page_cleanups",
+			"primaryKey": {
+				"name": "status_page_cleanups_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "status_page_components",
+			"primaryKey": {
+				"name": "status_page_components_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "status_page_incident_components",
+			"primaryKey": {
+				"name": "status_page_incident_components_pk",
+				"columns": [
+					"incident_id",
+					"component_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "status_page_incident_updates",
+			"primaryKey": {
+				"name": "status_page_incident_updates_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "status_page_incidents",
+			"primaryKey": {
+				"name": "status_page_incidents_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "status_pages",
+			"primaryKey": {
+				"name": "status_pages_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
 			"name": "supabase_connections",
 			"primaryKey": {
 				"name": "supabase_connections_pkey",
@@ -940,6 +1036,17 @@
 				"name": "supabase_projects_pkey",
 				"columns": [
 					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "uptime_monitor_daily",
+			"primaryKey": {
+				"name": "uptime_monitor_daily_pk",
+				"columns": [
+					"monitor_id",
+					"day"
 				]
 			}
 		},
@@ -4911,6 +5018,516 @@
 			"type": "integer",
 			"notNull": true,
 			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "repository_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "lockfile_path",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "ecosystem",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "package_name",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "advisory_id",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "aliases",
+			"position": 7,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "severity",
+			"position": 8,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "summary",
+			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "versions",
+			"position": 10,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "fixed_in",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "relation",
+			"position": 12,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "status",
+			"position": 13,
+			"type": "text",
+			"notNull": true,
+			"default": "'open'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "first_seen_scan_id",
+			"position": 14,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "last_seen_scan_id",
+			"position": 15,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "first_seen_sha",
+			"position": 16,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "last_seen_sha",
+			"position": 17,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "fixed_scan_id",
+			"position": 18,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "fixed_sha",
+			"position": 19,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "status_reason",
+			"position": 20,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "status_changed_by",
+			"position": 21,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "status_changed_at",
+			"position": 22,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "created_at",
+			"position": 23,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "updated_at",
+			"position": 24,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "scan_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "lockfile_path",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "ecosystem",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "package_name",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "version",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "relation",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "advisory_id",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "aliases",
+			"position": 8,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "severity",
+			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "summary",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "fixed_in",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "repository_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "commit_sha",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "ref",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "trigger",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "default_branch_head",
+			"position": 6,
+			"type": "boolean",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "status",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": "'running'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "lockfiles",
+			"position": 8,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "package_count",
+			"position": 9,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "vulnerable_count",
+			"position": 10,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "error",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "started_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "finished_at",
+			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
 			"identity": null
 		},
 		{
@@ -13225,6 +13842,706 @@
 		},
 		{
 			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "page_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "slug",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "delete_snapshot",
+			"position": 4,
+			"type": "boolean",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "created_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "page_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "name",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "description",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "group_name",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "position",
+			"position": 6,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "monitor_id",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "manual_status",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "show_uptime",
+			"position": 9,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "created_at",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_components",
+			"name": "updated_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_components",
+			"name": "incident_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_components",
+			"name": "component_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_components",
+			"name": "org_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "incident_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "status",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "body",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "source",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "created_by",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "overlay_entry_id",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incident_updates",
+			"name": "created_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "page_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "kind",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "title",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "impact",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "status",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "published",
+			"position": 7,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "alert_incident_id",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "scheduled_start",
+			"position": 9,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "scheduled_end",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "started_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "resolved_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "created_by",
+			"position": 13,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "created_at",
+			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_incidents",
+			"name": "updated_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "name",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "slug",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "description",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "website_url",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "logo_url",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "privacy_url",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "terms_url",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "theme",
+			"position": 9,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'{\"preset\":\"default\",\"appearance\":\"auto\",\"accent\":null,\"background\":null,\"text\":null,\"card\":null,\"border\":null,\"radius\":\"md\",\"font\":\"sans\"}'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "show_powered_by",
+			"position": 10,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "auto_incidents",
+			"position": 11,
+			"type": "text",
+			"notNull": true,
+			"default": "'off'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "break_glass_token_sha256",
+			"position": 12,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "break_glass_token_suffix",
+			"position": 13,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "draft",
+			"position": 14,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "revision",
+			"position": 15,
+			"type": "bigint",
+			"notNull": true,
+			"default": "1",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_revision",
+			"position": 16,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_at",
+			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "last_publish_error",
+			"position": 18,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_hash",
+			"position": 19,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "publish_attempted_at",
+			"position": 20,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "created_by",
+			"position": 21,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "created_at",
+			"position": 22,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "updated_at",
+			"position": 23,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "supabase_connections",
 			"name": "id",
 			"position": 0,
@@ -13698,6 +15015,76 @@
 			"table": "supabase_projects",
 			"name": "updated_at",
 			"position": 24,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitor_daily",
+			"name": "monitor_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitor_daily",
+			"name": "day",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitor_daily",
+			"name": "org_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitor_daily",
+			"name": "checks",
+			"position": 3,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitor_daily",
+			"name": "failures",
+			"position": 4,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitor_daily",
+			"name": "down_checks",
+			"position": 5,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitor_daily",
+			"name": "last_check_at",
+			"position": 6,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -15288,6 +16675,93 @@
 		},
 		{
 			"kind": "index",
+			"table": "dependency_findings",
+			"name": "dependency_findings_key_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"repository_id\"",
+				"\"lockfile_path\"",
+				"\"ecosystem\"",
+				"\"package_name\"",
+				"\"advisory_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_findings",
+			"name": "dependency_findings_org_status_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"status\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_findings",
+			"name": "dependency_findings_org_updated_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"updated_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_scan_matches",
+			"name": "dependency_scan_matches_org_scan_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"scan_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_scans",
+			"name": "dependency_scans_org_started_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"started_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_scans",
+			"name": "dependency_scans_repo_commit_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"repository_id\"",
+				"\"commit_sha\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_scans",
+			"name": "dependency_scans_repo_started_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"repository_id\"",
+				"\"started_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "device_credentials",
 			"name": "device_credentials_jkt_unique",
 			"unique": true,
@@ -16530,6 +18004,131 @@
 		},
 		{
 			"kind": "index",
+			"table": "status_page_cleanups",
+			"name": "status_page_cleanups_created_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"created_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_components",
+			"name": "status_page_components_monitor_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"monitor_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_components",
+			"name": "status_page_components_page_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"page_id\"",
+				"\"position\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_incident_components",
+			"name": "status_page_incident_components_component_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"component_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_incident_updates",
+			"name": "status_page_incident_updates_incident_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"incident_id\"",
+				"\"created_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_incident_updates",
+			"name": "status_page_incident_updates_overlay_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"overlay_entry_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_incidents",
+			"name": "status_page_incidents_alert_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"alert_incident_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_incidents",
+			"name": "status_page_incidents_page_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"page_id\"",
+				"\"started_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_pages",
+			"name": "status_pages_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_pages",
+			"name": "status_pages_slug_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"slug\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_pages",
+			"name": "status_pages_unpublished_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"revision\"",
+				"\"published_revision\""
+			],
+			"where": "revision > published_revision"
+		},
+		{
+			"kind": "index",
 			"table": "supabase_connections",
 			"name": "supabase_connections_org_idx",
 			"unique": true,
@@ -16588,6 +18187,17 @@
 			"kind": "index",
 			"table": "supabase_projects",
 			"name": "supabase_projects_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "uptime_monitor_daily",
+			"name": "uptime_monitor_daily_org_idx",
 			"unique": false,
 			"method": "btree",
 			"columns": [
@@ -16914,6 +18524,90 @@
 		},
 		{
 			"kind": "foreign_key",
+			"table": "status_page_components",
+			"name": "status_page_components_monitor_id_uptime_monitors_id_fk",
+			"columns": [
+				"monitor_id"
+			],
+			"foreignTable": "uptime_monitors",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "SET NULL",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "status_page_components",
+			"name": "status_page_components_page_id_status_pages_id_fk",
+			"columns": [
+				"page_id"
+			],
+			"foreignTable": "status_pages",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "status_page_incident_components",
+			"name": "status_page_incident_components_Bnqlt6wwKJty_fk",
+			"columns": [
+				"component_id"
+			],
+			"foreignTable": "status_page_components",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "status_page_incident_components",
+			"name": "status_page_incident_components_tBn6mEz4FenY_fk",
+			"columns": [
+				"incident_id"
+			],
+			"foreignTable": "status_page_incidents",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "status_page_incident_updates",
+			"name": "status_page_incident_updates_3LDDUAhznHPM_fk",
+			"columns": [
+				"incident_id"
+			],
+			"foreignTable": "status_page_incidents",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "status_page_incidents",
+			"name": "status_page_incidents_page_id_status_pages_id_fk",
+			"columns": [
+				"page_id"
+			],
+			"foreignTable": "status_pages",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
 			"table": "supabase_connections",
 			"name": "supabase_connections_source_id_sources_id_fk",
 			"columns": [
@@ -16966,6 +18660,20 @@
 				"id"
 			],
 			"onDelete": "SET NULL",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "uptime_monitor_daily",
+			"name": "uptime_monitor_daily_monitor_id_uptime_monitors_id_fk",
+			"columns": [
+				"monitor_id"
+			],
+			"foreignTable": "uptime_monitors",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
 			"onUpdate": "NO ACTION"
 		},
 		{
