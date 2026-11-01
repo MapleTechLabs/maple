@@ -250,8 +250,8 @@ const content = (h: H, model: Model): Html =>
 				h,
 				{
 					reviewer: [reviewerSkeleton(h)],
-					defaults: [rulesFormSkeleton(h, "organization")],
-					repositories: [repositoryListSkeleton(h)],
+					defaults: [rulesFormSkeleton(h, "organization", true)],
+					repositories: [repositoryListSkeleton(h, true)],
 				},
 				[h.AriaBusy(true), h.AriaLabel("Loading review settings")],
 			),

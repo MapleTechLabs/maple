@@ -1,8 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
-import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { field, fieldDescription, fieldLabel } from "../../../ui/field"
+import { inlineCode } from "../../../ui/inline-code"
 import { settingRow } from "../../../ui/setting-row"
+import { bar } from "../kit/skeletons"
 import { RULES_COPY } from "./copy"
 import { ALL_CATEGORIES } from "./state"
 import { valueState } from "./view-fields"
@@ -10,9 +11,6 @@ import { valueState } from "./view-fields"
 // `RulesFormView` before its config loads: the real field labels and hints, bars for the values.
 
 type Mode = "organization" | "repository"
-
-const bar = <M>(h: HtmlBuilder<M>, className: string): Html =>
-	h.span([h.Class(cn(skeletonStyles, "block", className)), h.DataAttribute("slot", "skeleton")])
 
 const idsOf = (mode: Mode, slug: string) => ({
 	control: `rules-skeleton-${mode}-${slug}`,
@@ -23,7 +21,13 @@ const idsOf = (mode: Mode, slug: string) => ({
 
 const fieldSkeleton = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ mode: Mode; slug: string; label: string; control: string; description?: string }>,
+	options: Readonly<{
+		mode: Mode
+		slug: string
+		label: string
+		control: string
+		description?: string | ReadonlyArray<Html | string>
+	}>,
 ): Html => {
 	const ids = idsOf(options.mode, options.slug)
 	const state = valueState(false)
@@ -51,10 +55,14 @@ const toggleSkeleton = <M>(
 			})
 		: fieldSkeleton(h, { mode, ...options, control: "h-8 sm:w-1/2" })
 
-export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
+/** `isNested` drops its own busy region where a page-wide one already announces the load. */
+export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode, isNested = false): Html => {
 	const isRepository = mode === "repository"
 	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-6"), h.AriaBusy(true), h.AriaLabel("Loading review rules")],
+		[
+			h.Class("flex min-w-0 flex-col gap-6"),
+			...(isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading review rules")]),
+		],
 		[
 			fieldSkeleton(h, {
 				mode,
@@ -73,7 +81,10 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 			h.div(
 				[h.Class("flex flex-col gap-2")],
 				[
-					h.span([h.Class("mb-2 text-sm font-medium")], ["Lenses"]),
+					h.span(
+						[h.Class("mb-2 flex items-center justify-between gap-3 text-sm font-medium")],
+						["Lenses", ...(isRepository ? [bar(h, "h-4 w-40")] : [])],
+					),
 					h.div(
 						[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
 						ALL_CATEGORIES.map(() =>
@@ -112,8 +123,13 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 						slug: "per-pr",
 						label: RULES_COPY.perPr.label,
 						control: "h-8",
-						description:
-							"After this many, pushes stop starting reviews. Mention the reviewer with review to run one anyway.",
+						description: [
+							RULES_COPY.perPr.description[0],
+							" ",
+							inlineCode(h, {}, ["review"]),
+							" ",
+							RULES_COPY.perPr.description[1],
+						],
 					}),
 				],
 			),
@@ -140,6 +156,10 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 				slug: "post-merge",
 				...RULES_COPY.postMerge,
 			}),
+			h.div(
+				[h.Class("flex items-center justify-end gap-3 border-t pt-4")],
+				[bar(h, "h-8 w-16 rounded-md"), bar(h, "h-8 w-16 rounded-md")],
+			),
 		],
 	)
 }

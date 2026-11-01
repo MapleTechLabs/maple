@@ -14,7 +14,14 @@ export const RULES_COPY = {
 		label: "Daily limit per repository",
 		description: "Reviews a repository may start per UTC day.",
 	},
-	perPr: { label: "Reviews per pull request" },
+	perPr: {
+		label: "Reviews per pull request",
+		/** Wraps the `review` command: before it, then after it. */
+		description: [
+			"After this many, pushes stop starting reviews. Mention the reviewer with",
+			"to run one anyway.",
+		],
+	},
 	drafts: { label: "Review drafts", description: "Draft pull requests are skipped unless this is on." },
 	external: {
 		label: "Review outside contributors",

@@ -42,7 +42,7 @@ const inlineBar = <M>(h: HtmlBuilder<M>, className: string): Html =>
 const slowNote = <M>(h: HtmlBuilder<M>): Html => skeletonSlowNote(h, "absolute inset-x-0 top-full mt-1")
 
 /** Busy region with the slow-load note in the gap under it, so it takes no space until it shows. */
-export const busy = <M>(h: HtmlBuilder<M>, label: string, body: Html): Html =>
+const busy = <M>(h: HtmlBuilder<M>, label: string, body: Html): Html =>
 	h.div([h.Class("relative"), h.AriaBusy(true), h.AriaLabel(label)], [body, slowNote(h)])
 
 /** A busy page: the slow-load note sits under its first block, where a reader is looking. */
@@ -475,7 +475,7 @@ export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 			[
 				h.div(
 					[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")],
-					[sectionHeading(h, { title: "Runs" }), bar(h, "h-8 w-36 rounded-md")],
+					[sectionHeading(h, { title: "Runs" }), bar(h, "h-8 w-36 rounded-lg sm:h-7")],
 				),
 				panel(h, {}, [tableSkeleton(h, RUN_COLUMNS, { count: 4 })]),
 			],
@@ -483,35 +483,31 @@ export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	])
 
 /** `repositoryList`: the access line, then one row per repository with Configure and its switch. */
-export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>): Html =>
-	busy(
-		h,
-		"Loading repositories",
-		panel(h, {}, [
-			panelHeader(h, {
-				className: "px-5 py-3 text-xs text-muted-foreground",
-				action: manageAccessLink(h),
-				children: [line(h, "h-4", "h-2.5 w-40")],
-			}),
-			h.ul(
-				[h.Class("divide-y")],
-				rows(5, (index) =>
-					h.li(
-						[h.Class("flex items-center gap-3 px-5 py-2.5")],
-						[
-							bar(h, "size-4 shrink-0 rounded-full"),
-							h.span(
-								[h.Class("min-w-0 flex-1")],
-								[bar(h, cn("h-3", pick(META_WIDTHS, index)))],
-							),
-							bar(h, "h-7 w-20 shrink-0 rounded-md"),
-							bar(h, "h-5 w-9 shrink-0 rounded-full"),
-						],
-					),
+/** `isNested` drops the busy region where a page-wide one already announces the load. */
+export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html => {
+	const list = panel(h, {}, [
+		panelHeader(h, {
+			className: "px-5 py-3 text-xs text-muted-foreground",
+			action: manageAccessLink(h),
+			children: [line(h, "h-4", "h-2.5 w-40")],
+		}),
+		h.ul(
+			[h.Class("divide-y")],
+			rows(5, (index) =>
+				h.li(
+					[h.Class("flex items-center gap-3 px-5 py-2.5")],
+					[
+						bar(h, "size-4 shrink-0 rounded-full"),
+						h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(META_WIDTHS, index)))]),
+						bar(h, "h-7 w-20 shrink-0 rounded-md"),
+						bar(h, "h-5 w-9 shrink-0 rounded-full"),
+					],
 				),
 			),
-		]),
-	)
+		),
+	])
+	return isNested ? list : busy(h, "Loading repositories", list)
+}
 
 /** The Reviewer row: the model picker in its card. */
 export const reviewerSkeleton = <M>(h: HtmlBuilder<M>): Html =>
@@ -527,9 +523,12 @@ export const reviewerSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 const SHEET_STATS = ["Outcome", "Confidence", "Quality", "Issues", "Duration", "Model", "Tokens", "Reviewed"]
 
 /** `PullRequestCiRuns`' rows: result badge, workflow, commit and duration. */
-export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
+export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html =>
 	h.ul(
-		[h.Class("-mx-2 flex flex-col"), h.AriaBusy(true), h.AriaLabel("Loading CI runs")],
+		[
+			h.Class("-mx-2 flex flex-col"),
+			...(isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading CI runs")]),
+		],
 		rows(3, (index) =>
 			h.li(
 				[h.Class("flex h-8 items-center gap-3 px-2 py-1")],
@@ -614,7 +613,7 @@ export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyA
 							rows(2, (index) => findingCardSkeleton(h, index)),
 						),
 					]),
-					section(h, "CI runs", [ciRunsSkeleton(h)]),
+					section(h, "CI runs", [ciRunsSkeleton(h, true)]),
 				],
 			),
 		],

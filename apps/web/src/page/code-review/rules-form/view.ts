@@ -256,10 +256,11 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						max: AUTOMATIC_LIMIT_MAX,
 						placeholder: limitPlaceholder(model, parent.automaticReviewLimit),
 						description: [
-							"After this many, pushes stop starting reviews. Mention the reviewer with",
+							RULES_COPY.perPr.description[0],
 							" ",
 							inlineCode(h, {}, ["review"]),
-							" to run one anyway.",
+							" ",
+							RULES_COPY.perPr.description[1],
 						],
 					}),
 				],

@@ -417,11 +417,11 @@ const teamSkeleton = (h: H, model: Model): Html => {
 	const columns: ReadonlyArray<SkeletonColumn> = [
 		...(ranked ? [{ label: "#", head: "w-10 px-3", cell: "px-3", bar: "h-3 w-4" }] : []),
 		{ label: "Person", head: "px-4", cell: "px-4 py-2.5", bar: "h-3 w-28" },
-		...COLUMNS.map((column) => ({
+		...COLUMNS.map((column): SkeletonColumn => ({
 			label: column.label,
 			head: cn("px-3", column.className),
 			cell: cn("px-3", column.className),
-			align: "right" as const,
+			align: "right",
 		})),
 	]
 	const median = tableRow(
