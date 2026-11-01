@@ -101,15 +101,53 @@ const splitSeries = (
 		}))
 	})
 
-const clientItems = (
+type ClientReach = Readonly<{
+	client: string
+	kind: string
+	connects: number
+	sources: number
+	lastSeen: DateTime.Utc
+}>
+
+const kindOf = (value: string) => MCP_CLIENT_KINDS.find((kind) => kind === value) ?? "unknown"
+
+/**
+ * Tool-call clients with their reach. `quiet` also lists the clients that connected but called
+ * no tool, after the callers; only a selection that tool calls alone can match leaves them out.
+ */
+export const clientItems = (
 	rows: ReadonlyArray<Readonly<{ client: string; kind: string; calls: number; errors: number }>>,
-): ReadonlyArray<McpClientItem> =>
-	rows.map((row) => ({
-		name: row.client,
-		kind: MCP_CLIENT_KINDS.find((kind) => kind === row.kind) ?? "unknown",
-		calls: row.calls,
-		errors: row.errors,
-	}))
+	reach: ReadonlyArray<ClientReach> = [],
+	quiet: ReadonlyArray<ClientReach> = [],
+): ReadonlyArray<McpClientItem> => {
+	const reachOf = new Map(reach.map((row) => [row.client, row]))
+	const callers = new Set(rows.map((row) => row.client))
+	return [
+		...rows.map((row) => {
+			const seen = reachOf.get(row.client)
+			return {
+				name: row.client,
+				kind: kindOf(row.kind),
+				calls: row.calls,
+				errors: row.errors,
+				connects: seen?.connects ?? 0,
+				sources: seen?.sources ?? 0,
+				lastSeenMs: seen === undefined ? 0 : toMs(seen.lastSeen),
+			}
+		}),
+		...quiet
+			.filter((row) => !callers.has(row.client))
+			.map((row) => ({
+				name: row.client,
+				kind: kindOf(row.kind),
+				calls: 0,
+				errors: 0,
+				connects: row.connects,
+				sources: row.sources,
+				lastSeenMs: toMs(row.lastSeen),
+			})),
+	]
+}
 
 export const readMcpServers = Effect.fn("McpReads.servers")(function* (
 	tenant: TenantContext,
@@ -204,6 +242,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 		toolErrors,
 		allTotals,
 		firstSeen,
+		reach,
 	] = yield* Effect.all(
 		[
 			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSpanSummaryQuery(), params), {
@@ -262,9 +301,22 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				profile: "list",
 				context: "mcpFirstSeen",
 			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientReachQuery(), params), {
+				...aggregate,
+				context: "mcpClientReach",
+			}),
 		],
 		{ concurrency: MCP_READ_CONCURRENCY },
 	)
+	// A tool search or failing-only selection matches tool calls alone, so it hides quiet clients.
+	const quiet =
+		payload.search === undefined && payload.failingOnly !== true
+			? reach.filter(
+					(row) =>
+						(payload.client === undefined || row.client === payload.client) &&
+						(payload.kind === undefined || row.kind === payload.kind),
+				)
+			: []
 	const buckets = bucketsOf(window)
 	const sparks = Arr.groupBy(toolSeries, (row) => row.key)
 	const calls = summary.filter((row) => row.method === TOOLS_CALL)
@@ -316,8 +368,8 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				spark: buckets.map((bucket) => spark.get(bucket) ?? 0),
 			}
 		}),
-		clients: clientItems(clients),
-		allClients: clientItems(allClients),
+		clients: clientItems(clients, reach, quiet),
+		allClients: clientItems(allClients, reach),
 		initializers,
 		failures: Object.entries(failures)
 			.map(([errorType, rows]) => ({ errorType, count: sumBy(rows, (row) => row.count) }))

@@ -31,7 +31,16 @@ export type McpToolRow = Readonly<{
 	spark: ReadonlyArray<number>
 }>
 
-export type McpClientRow = Readonly<{ name: string; kind: McpClientKind; calls: number; errors: number }>
+/** `connects` counts initialize requests, `sources` distinct client addresses; a quiet client has 0 calls. */
+export type McpClientRow = Readonly<{
+	name: string
+	kind: McpClientKind
+	calls: number
+	errors: number
+	connects: number
+	sources: number
+	lastSeenMs: number
+}>
 
 export type McpMethodRow = Readonly<{ method: string; calls: number; p50: number; p95: number }>
 

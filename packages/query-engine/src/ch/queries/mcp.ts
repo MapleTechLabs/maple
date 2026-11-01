@@ -186,6 +186,30 @@ export function mcpClientsQuery(filter: McpCallFilter = {}) {
 		.format("JSON")
 }
 
+/**
+ * Per client family across every MCP request, not just tool calls: its connects (`initialize`),
+ * distinct `client.address` values and last request. Finds the clients that connect and never call.
+ */
+export function mcpClientReachQuery(filter: Pick<McpCallFilter, "client" | "kind"> = {}) {
+	return from(Traces)
+		.select(($) => ({
+			client: mcpClientName($),
+			kind: CH.any_(mcpClientKind($)),
+			connects: CH.countIf(method($).eq("initialize")),
+			sources: CH.uniqExact(CH.nullIf($.SpanAttributes.get("client.address"), "")),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => [
+			...serverSpans($),
+			CH.when(filter.client, (client) => mcpClientName($).eq(client)),
+			CH.when(filter.kind, (kind) => mcpClientKind($).eq(kind)),
+		])
+		.groupBy("client")
+		.orderBy(["connects", "desc"])
+		.limit(500)
+		.format("JSON")
+}
+
 /** One service's server spans per (method, error type): failures and the coverage checklist's counts. */
 export function mcpSpanSummaryQuery() {
 	return from(Traces)

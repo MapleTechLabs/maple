@@ -93,9 +93,11 @@ const subline = <M>(h: HtmlBuilder<M>, lead: string, rest: string): Html =>
 const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
 	const { totals } = data
 	const calls = data.series.map((point) => point.calls).slice(-SPARK_BUCKETS)
-	const topClient = data.clients[0]
+	// Clients that only connected have no calls to rank or share.
+	const callers = data.clients.filter((client) => client.calls > 0)
+	const topClient = callers[0]
 	// The share is of the listed clients' calls: a tool search can empty the totals.
-	const clientCalls = data.clients.reduce((sum, client) => sum + client.calls, 0)
+	const clientCalls = callers.reduce((sum, client) => sum + client.calls, 0)
 	const clientsPerBucket = data.series.map(
 		(point) =>
 			new Set(
@@ -122,7 +124,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 						: subline(
 								h,
 								`${data.tools.length} ${pluralize(data.tools.length, "tool")}`,
-								`· ${data.clients.length} ${pluralize(data.clients.length, "client")}`,
+								`· ${callers.length} ${pluralize(callers.length, "client")}`,
 							),
 				isSelected: options.metric === "calls",
 				onSelect: options.onSelectMetric("calls"),
@@ -165,7 +167,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			),
 			selectableTile(h, {
 				eyebrow: "Clients",
-				value: String(data.clients.length),
+				value: String(callers.length),
 				spark: clientsPerBucket.slice(-SPARK_BUCKETS),
 				subline:
 					topClient === undefined
@@ -369,23 +371,75 @@ const half = <M>(
 const note = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
 	h.p([h.Class("mt-3 font-prose text-xs leading-relaxed text-muted-foreground")], children)
 
+/** Callers the panel lists before "N more": the rest are a long tail of one-off agents. */
+const CLIENT_ROWS = 8
+
+const clientsHead = <M>(h: HtmlBuilder<M>): Html => {
+	const label = (text: string, width: string, title?: string) =>
+		h.span(
+			[
+				h.Class(cn(width, eyebrowVariants({ variant: "mono" }))),
+				...(title === undefined ? [] : [h.Title(title)]),
+			],
+			[text],
+		)
+	return h.div(
+		[h.Class("flex h-8 items-center gap-3 border-y border-border")],
+		[
+			label("Client", "w-0 flex-1"),
+			label("Calls", "w-14 text-right"),
+			label("Connects", "w-16 text-right", "initialize requests"),
+			label("Sources", "w-14 text-right", "distinct client.address values"),
+			label("Failed", "w-14 text-right"),
+		],
+	)
+}
+
 const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number): Html => {
 	const rate = errorRate(row)
+	const isQuiet = row.calls === 0
 	return h.div(
 		[h.Class("flex h-9 items-center gap-3 border-b border-border-subtle last:border-0")],
 		[
-			h.span(
-				[h.Class("flex w-48 shrink-0 items-center gap-2 font-mono text-xs")],
-				[clientIcon(h, row.name), h.span([h.Class("truncate")], [row.name]), ...kindTag(h, row.kind)],
+			h.div(
+				[h.Class("flex w-0 min-w-0 flex-1 flex-col justify-center gap-1")],
+				[
+					h.span(
+						[h.Class("flex min-w-0 items-center gap-2 font-mono text-xs")],
+						[
+							clientIcon(h, row.name),
+							h.span([h.Class(cn("truncate", isQuiet && "text-muted-foreground"))], [row.name]),
+							...kindTag(h, row.kind),
+						],
+					),
+					...(isQuiet
+						? []
+						: [
+								meter(h, {
+									value: row.calls,
+									max,
+									minVisible: 2,
+									fillClassName: "bg-primary/70",
+									className: "h-1 w-full rounded-xs bg-muted",
+								}),
+							]),
+				],
 			),
-			meter(h, {
-				value: row.calls,
-				max,
-				minVisible: 2,
-				fillClassName: "bg-primary/70",
-				className: "h-1.5 min-w-0 flex-1 rounded-xs bg-muted",
-			}),
-			numberCell(h, formatToolCount(row.calls), "w-14 text-foreground"),
+			numberCell(
+				h,
+				isQuiet ? EMPTY_VALUE : formatToolCount(row.calls),
+				cn("w-14", isQuiet ? "text-foreground-subtle" : "text-foreground"),
+			),
+			numberCell(
+				h,
+				row.connects === 0 ? EMPTY_VALUE : formatToolCount(row.connects),
+				"w-16 text-muted-foreground",
+			),
+			numberCell(
+				h,
+				row.sources === 0 ? EMPTY_VALUE : formatToolCount(row.sources),
+				"w-14 text-muted-foreground",
+			),
 			numberCell(
 				h,
 				row.errors === 0 ? EMPTY_VALUE : formatErrorRate(rate),
@@ -394,6 +448,13 @@ const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number): Html =
 		],
 	)
 }
+
+/** A label row between the callers and the clients that only connected. */
+const clientGroupLabel = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	h.div(
+		[h.Class("flex h-8 items-end border-b border-border-subtle pb-1.5")],
+		[h.span([h.Class(eyebrowVariants({ variant: "mono" }))], [text])],
+	)
 
 /** One `clientInfo.name` and how many initialize requests sent it. */
 const initializerRow = <M>(
@@ -544,18 +605,40 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			]),
 		])
 	}
-	const max = Math.max(...data.clients.map((client) => client.calls), 1)
+	const callers = data.clients.filter((client) => client.calls > 0)
+	const quiet = data.clients.filter((client) => client.calls === 0)
+	const max = Math.max(...callers.map((client) => client.calls), 1)
+	const shown = callers.slice(0, CLIENT_ROWS)
+	const hidden = callers.slice(CLIENT_ROWS)
 	const initializers = data.initializers
 		.slice(0, 3)
 		.map((entry) => `${entry.name} ${entry.count}`)
 		.join(" · ")
 	const rest = data.initializers.length - 3
 	return half(h, "Clients", options.clientToggle, [
-		...data.clients.map((client) => clientRow(h, client, max)),
+		clientsHead(h),
+		...shown.map((client) => clientRow(h, client, max)),
+		...(hidden.length === 0
+			? []
+			: [
+					note(h, [
+						`${hidden.length} more ${pluralize(hidden.length, "client")} · ${formatToolCount(
+							hidden.reduce((sum, client) => sum + client.calls, 0),
+						)} calls`,
+					]),
+				]),
+		...(quiet.length === 0
+			? []
+			: [
+					clientGroupLabel(h, `Connected, no tool calls · ${quiet.length}`),
+					...quiet.map((client) => clientRow(h, client, max)),
+				]),
 		note(h, [
 			"Calls carry ",
 			attr(h, "user_agent.original"),
-			". ",
+			"; a connect is one ",
+			attr(h, "initialize"),
+			", and agents reconnect often. ",
 			attr(h, "clientInfo"),
 			initializers === ""
 				? " arrives on initialize only; none seen in this window."
@@ -599,8 +682,9 @@ export const serverBody = <M>(
 	h: HtmlBuilder<M>,
 	data: McpServerOverview,
 	options: ServerBodyOptions<M>,
-): Html =>
-	h.div(
+): Html => {
+	const callerCount = data.clients.filter((client) => client.calls > 0).length
+	return h.div(
 		[h.Class("flex flex-col")],
 		[
 			options.toolbar,
@@ -608,7 +692,7 @@ export const serverBody = <M>(
 				h,
 				options.scope,
 				formatToolCount(data.totals.calls),
-				`tool calls · ${data.clients.length} ${pluralize(data.clients.length, "client")}`,
+				`tool calls · ${callerCount} ${pluralize(callerCount, "client")}`,
 			),
 			metricStrip(h, data, options),
 			mainChart(h, data, options),
@@ -616,3 +700,4 @@ export const serverBody = <M>(
 			h.div([h.Class("border-t border-border")], [detailGrid(h, data, options)]),
 		],
 	)
+}

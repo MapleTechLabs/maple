@@ -51,6 +51,12 @@ export const McpClientItem = Schema.Struct({
 	kind: McpClientKind,
 	calls: Schema.Number,
 	errors: Schema.Number,
+	/** `initialize` requests: connections, which a client can open many of without calling a tool. */
+	connects: Schema.Number,
+	/** Distinct `client.address` values across its MCP requests. */
+	sources: Schema.Number,
+	/** Its latest MCP request of any method; `0` when unknown. */
+	lastSeenMs: Schema.Number,
 })
 export type McpClientItem = typeof McpClientItem.Type
 
