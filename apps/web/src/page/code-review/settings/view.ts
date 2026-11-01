@@ -13,7 +13,7 @@ import { view as selectView } from "../../../ui/select-view"
 import { settingRow } from "../../../ui/setting-row"
 import type { PageViewInputs } from "../../contract"
 import { codeReviewLayout } from "../kit/layout"
-import { repositoryListSkeleton, reviewerSkeleton } from "../kit/skeletons"
+import { bar, repositoryListSkeleton, withSlowNote } from "../kit/skeletons"
 import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
@@ -40,7 +40,8 @@ const MODEL_ENTRIES = [
 	})),
 ]
 
-const modelSetting = (h: H, model: Model): Html =>
+/** The Review model row around its control: the select, or a bar while settings load. */
+const modelRow = (h: H, control: Html): Html =>
 	settingRow(h, {
 		ids: {
 			control: "code-review-model-control",
@@ -52,32 +53,34 @@ const modelSetting = (h: H, model: Model): Html =>
 		className: "bg-card px-5 py-4",
 		label: "Review model",
 		description: "Runs pull request reviews and replies.",
-		control: [
-			h.submodel({
-				slotId: model.modelSelect.id,
-				model: model.modelSelect,
-				view: selectView,
-				toParentMessage: (message: Select.Message) => Message.GotModelSelectMessage({ message }),
-				viewInputs: {
-					entries: MODEL_ENTRIES,
-					size: "sm",
-					ariaLabel: "Review model",
-					className: "w-56",
-					isDisabled: !model.isAdmin || model.isSavingModel,
-					toView: (parts) =>
-						h.div(
-							[
-								h.Class("contents"),
-								...(model.isAdmin
-									? []
-									: [h.Title("Only admins can change the review model")]),
-							],
-							parts,
-						),
-				},
-			}),
-		],
+		control: [control],
 	})
+
+const modelSetting = (h: H, model: Model): Html =>
+	modelRow(
+		h,
+		h.submodel({
+			slotId: model.modelSelect.id,
+			model: model.modelSelect,
+			view: selectView,
+			toParentMessage: (message: Select.Message) => Message.GotModelSelectMessage({ message }),
+			viewInputs: {
+				entries: MODEL_ENTRIES,
+				size: "sm",
+				ariaLabel: "Review model",
+				className: "w-56",
+				isDisabled: !model.isAdmin || model.isSavingModel,
+				toView: (parts) =>
+					h.div(
+						[
+							h.Class("contents"),
+							...(model.isAdmin ? [] : [h.Title("Only admins can change the review model")]),
+						],
+						parts,
+					),
+			},
+		}),
+	)
 
 const formView = (h: H, form: RulesForm.Model, isAdmin: boolean, wrap: (m: RulesForm.Message) => Message) =>
 	h.submodel({
@@ -247,7 +250,13 @@ const content = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.settings.data, {
 		onEmpty: () =>
 			sections(h, {
-				reviewer: [reviewerSkeleton(h)],
+				reviewer: [
+					withSlowNote(
+						h,
+						"Loading the review model",
+						modelRow(h, bar(h, "h-8 w-56 rounded-lg sm:h-7")),
+					),
+				],
 				defaults: [rulesFormSkeleton(h, "organization")],
 				repositories: [repositoryListSkeleton(h, true)],
 			}),

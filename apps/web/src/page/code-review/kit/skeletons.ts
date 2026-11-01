@@ -509,20 +509,9 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): 
 	return isNested ? list : h.div([h.Class("relative")], [list, slowNote(h)])
 }
 
-/** The Reviewer row: the model picker in its card. */
-export const reviewerSkeleton = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[
-			h.Class("relative flex items-center justify-between gap-6 rounded-md border bg-card px-5 py-4"),
-			h.AriaBusy(true),
-			h.AriaLabel("Loading the reviewer model"),
-		],
-		[
-			h.div([h.Class("flex flex-col gap-1.5")], [bar(h, "h-3 w-24"), bar(h, "h-2.5 w-56")]),
-			bar(h, "h-8 w-56 rounded-md"),
-			slowNote(h),
-		],
-	)
+/** A loading block with the slow-load note in the gap under it. */
+export const withSlowNote = <M>(h: HtmlBuilder<M>, label: string, block: Html): Html =>
+	h.div([h.Class("relative"), h.AriaBusy(true), h.AriaLabel(label)], [block, slowNote(h)])
 
 const SHEET_STATS = ["Outcome", "Confidence", "Quality", "Issues", "Duration", "Model", "Tokens", "Reviewed"]
 
@@ -592,18 +581,24 @@ export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyA
 			h.div(
 				[h.Class("flex flex-col gap-6"), h.AriaBusy(true), h.AriaLabel("Loading review")],
 				[
-					statRail(
-						h,
-						{},
-						SHEET_STATS.map((label) =>
-							statRailItem(h, {
-								compact: true,
-								eyebrow: label,
-								value: inlineBar(h, "h-3.5 w-14"),
-								className: "min-w-0 px-3 py-2.5",
-								valueClassName: "text-sm",
-							}),
-						),
+					h.div(
+						[h.Class("relative")],
+						[
+							statRail(
+								h,
+								{},
+								SHEET_STATS.map((label) =>
+									statRailItem(h, {
+										compact: true,
+										eyebrow: label,
+										value: inlineBar(h, "h-3.5 w-14"),
+										className: "min-w-0 px-3 py-2.5",
+										valueClassName: "text-sm",
+									}),
+								),
+							),
+							slowNote(h),
+						],
 					),
 					section(h, "Summary", [
 						h.div(

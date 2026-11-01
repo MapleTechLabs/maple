@@ -64,14 +64,14 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 				mode,
 				slug: "instructions",
 				label: isRepository ? "Additional instructions" : "Instructions",
-				control: "h-24",
+				control: "h-[98px]",
 				description: RULES_COPY.instructionsHint,
 			}),
 			fieldSkeleton(h, {
 				mode,
 				slug: "ignore",
 				label: isRepository ? "Additional ignored paths" : "Ignored paths",
-				control: "h-16",
+				control: "h-[68px]",
 				description: RULES_COPY.ignoreHint,
 			}),
 			h.div(
