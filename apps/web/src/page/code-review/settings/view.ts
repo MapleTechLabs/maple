@@ -1,7 +1,7 @@
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
 import * as DialogView from "../../../ui/dialog-view"
@@ -13,7 +13,8 @@ import { view as selectView } from "../../../ui/select-view"
 import { settingRow } from "../../../ui/setting-row"
 import type { PageViewInputs } from "../../contract"
 import { codeReviewLayout } from "../kit/layout"
-import { repositoryListSkeleton, rulesFormSkeleton, settingsSkeleton } from "../kit/skeletons"
+import { repositoryListSkeleton, reviewerSkeleton } from "../kit/skeletons"
+import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
 import { Message, type Model } from "./model"
@@ -150,7 +151,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 /** `RepositoryConfig` in its dialog: skeleton, the error line, or the repository's rules form. */
 const repoConfigBody = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.repoConfig.data, {
-		onEmpty: () => rulesFormSkeleton(h),
+		onEmpty: () => rulesFormSkeleton(h, "repository"),
 		onFailure: (failure) =>
 			h.p(
 				[h.Class("text-xs text-severity-error"), h.Role("alert")],
@@ -192,9 +193,68 @@ const repoDialog = (h: H, model: Model): Html => {
 	})
 }
 
+type SectionBodies = Readonly<{
+	reviewer: ReadonlyArray<Html>
+	defaults: ReadonlyArray<Html>
+	repositories: ReadonlyArray<Html>
+}>
+
+/** The page's three sections at the settings column width, filled with content or its skeleton. */
+const sections = (h: H, bodies: SectionBodies, attributes: ReadonlyArray<Attribute<Message>> = []): Html =>
+	h.div(
+		[h.Class("max-w-4xl"), ...attributes],
+		[
+			settingsSections(h, [
+				settingsSection(
+					h,
+					{
+						id: "code-review-settings-reviewer",
+						title: "Reviewer",
+						description: ["The model every review and reply in this organization runs on."],
+						framed: false,
+					},
+					bodies.reviewer,
+				),
+				settingsSection(
+					h,
+					{
+						id: "code-review-settings-defaults",
+						title: "Default review rules",
+						description: [
+							"Every repository starts from these. A repository can override any of them.",
+						],
+						framed: true,
+					},
+					bodies.defaults,
+				),
+				settingsSection(
+					h,
+					{
+						id: "code-review-settings-repositories",
+						title: "Repositories",
+						description: [
+							"Pick which repositories get reviews, and tune any of them on its own.",
+						],
+						framed: false,
+					},
+					bodies.repositories,
+				),
+			]),
+		],
+	)
+
 const content = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.settings.data, {
-		onEmpty: () => settingsSkeleton(h),
+		onEmpty: () =>
+			sections(
+				h,
+				{
+					reviewer: [reviewerSkeleton(h)],
+					defaults: [rulesFormSkeleton(h, "organization")],
+					repositories: [repositoryListSkeleton(h)],
+				},
+				[h.AriaBusy(true), h.AriaLabel("Loading review settings")],
+			),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -202,57 +262,18 @@ const content = (h: H, model: Model): Html =>
 				onRetry: Message.ClickedRetrySettings(),
 			}),
 		onData: () =>
-			// The settings column width, like every settings page.
-			h.div(
-				[h.Class("max-w-4xl")],
-				[
-					settingsSections(h, [
-						settingsSection(
-							h,
-							{
-								id: "code-review-settings-reviewer",
-								title: "Reviewer",
-								description: [
-									"The model every review and reply in this organization runs on.",
-								],
-								framed: false,
-							},
-							[modelSetting(h, model)],
+			sections(h, {
+				reviewer: [modelSetting(h, model)],
+				defaults: Option.match(Option.fromNullishOr(model.defaultsForm), {
+					onNone: () => [],
+					onSome: (form) => [
+						formView(h, form, model.isAdmin, (message) =>
+							Message.GotDefaultsFormMessage({ message }),
 						),
-						settingsSection(
-							h,
-							{
-								id: "code-review-settings-defaults",
-								title: "Default review rules",
-								description: [
-									"Every repository starts from these. A repository can override any of them.",
-								],
-								framed: true,
-							},
-							Option.match(Option.fromNullishOr(model.defaultsForm), {
-								onNone: () => [],
-								onSome: (form) => [
-									formView(h, form, model.isAdmin, (message) =>
-										Message.GotDefaultsFormMessage({ message }),
-									),
-								],
-							}),
-						),
-						settingsSection(
-							h,
-							{
-								id: "code-review-settings-repositories",
-								title: "Repositories",
-								description: [
-									"Pick which repositories get reviews, and tune any of them on its own.",
-								],
-								framed: false,
-							},
-							[repositoriesSection(h, model)],
-						),
-					]),
-				],
-			),
+					],
+				}),
+				repositories: [repositoriesSection(h, model)],
+			}),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>

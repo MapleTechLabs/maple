@@ -7,6 +7,7 @@ import * as Switch from "../../../ui/switch"
 import { textarea } from "../../../ui/textarea"
 import { Message, type Model, parentCategories, type TextField } from "./form"
 import { ALL_CATEGORIES } from "./state"
+import { RULES_COPY } from "./copy"
 
 // The form's text fields and lenses (`ReviewRulesForm`).
 
@@ -184,7 +185,7 @@ export const lenses = (h: H, model: Model): Html => {
 					)
 				}),
 			),
-			h.p([h.Class("text-xs text-muted-foreground")], ["Issues are only filed under checked lenses."]),
+			h.p([h.Class("text-xs text-muted-foreground")], [RULES_COPY.lensesHint]),
 		],
 	)
 }

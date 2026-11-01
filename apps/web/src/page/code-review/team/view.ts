@@ -19,7 +19,14 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "../kit/author"
 import { filtersView } from "../kit/filters-view"
 import { codeReviewLayout } from "../kit/layout"
-import { busyPage, headlineSkeleton, panelControl, tableSkeleton } from "../kit/skeletons"
+import {
+	busyPage,
+	headlineSkeleton,
+	line,
+	panelControl,
+	type SkeletonColumn,
+	tableSkeleton,
+} from "../kit/skeletons"
 import {
 	ASCENDING,
 	highlightsOf,
@@ -345,13 +352,27 @@ const memberRow = (h: H, member: CodeReviewTeamMember, rank: number | null, rank
 		[h.Key(member.login)],
 	)
 
+const scorecardTitle = (model: Model) =>
+	model.search.ranked === true
+		? `Ranked by ${RANKED_BY[rankedMetric(model.search.sort ?? "person")]}`
+		: "Scorecard"
+
+const scorecardFooter = (h: H, ranked: boolean): Html =>
+	h.footer(
+		[h.Class("border-t px-4 py-3 text-xs text-muted-foreground")],
+		[
+			ranked
+				? `Ranked on rates and medians only, people with at least ${RANK_MIN_PULL_REQUESTS} reviewed pull requests. Bots and CI runs that only waited for approval are left out.`
+				: "Each person's numbers next to the team median. Bots, and CI runs that only waited for approval, are left out. Hover a value for the counts behind it.",
+		],
+	)
+
 const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMember>): Html => {
 	const ranked = model.search.ranked === true
 	const rows = scorecardRows(members, model.search.sort ?? "person", ranked)
-	const rankedBy = RANKED_BY[rankedMetric(model.search.sort ?? "person")]
 	return panel(h, {}, [
 		panelHeader(h, {
-			title: ranked ? `Ranked by ${rankedBy}` : "Scorecard",
+			title: scorecardTitle(model),
 			action: segmentedSelect(h, {
 				size: "sm",
 				ariaLabel: "Scorecard view",
@@ -386,20 +407,35 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 						...rows.map((row) => memberRow(h, row.member, row.rank, ranked)),
 					]),
 				]),
-		h.footer(
-			[h.Class("border-t px-4 py-3 text-xs text-muted-foreground")],
-			[
-				ranked
-					? `Ranked on rates and medians only, people with at least ${RANK_MIN_PULL_REQUESTS} reviewed pull requests. Bots and CI runs that only waited for approval are left out.`
-					: "Each person's numbers next to the team median. Bots, and CI runs that only waited for approval, are left out. Hover a value for the counts behind it.",
-			],
-		),
+		scorecardFooter(h, ranked),
 	])
 }
 
-/** The headline and scorecard with their real labels and columns, values still loading. */
-const teamSkeleton = (h: H): Html =>
-	busyPage(h, "Loading the team", [
+/** The headline and scorecard with their real labels, columns and footer, values still loading. */
+const teamSkeleton = (h: H, model: Model): Html => {
+	const ranked = model.search.ranked === true
+	const columns: ReadonlyArray<SkeletonColumn> = [
+		...(ranked ? [{ label: "#", head: "w-10 px-3", cell: "px-3", bar: "h-3 w-4" }] : []),
+		{ label: "Person", head: "px-4", cell: "px-4 py-2.5", bar: "h-3 w-28" },
+		...COLUMNS.map((column) => ({
+			label: column.label,
+			head: cn("px-3", column.className),
+			cell: cn("px-3", column.className),
+			align: "right" as const,
+		})),
+	]
+	const median = tableRow(
+		h,
+		[
+			...(ranked ? [tableCell(h, [], "w-10 px-3")] : []),
+			tableCell(h, ["Team median"], "px-4 py-2 text-xs font-medium text-muted-foreground"),
+			...COLUMNS.map((column) =>
+				tableCell(h, [line(h, "h-4 justify-end", "h-2.5 w-8")], cn("px-3", column.className)),
+			),
+		],
+		"bg-surface-sunken",
+	)
+	return busyPage(h, "Loading the team", [
 		headlineSkeleton(
 			h,
 			[
@@ -413,18 +449,12 @@ const teamSkeleton = (h: H): Html =>
 			{ columns: 3, className: "xl:grid-cols-6" },
 		),
 		panel(h, {}, [
-			panelHeader(h, { title: "Scorecard", action: panelControl(h) }),
-			tableSkeleton(h, [
-				{ label: "Person", head: "px-4", cell: "px-4 py-2.5", bar: "h-3 w-28" },
-				...COLUMNS.map((column) => ({
-					label: column.label,
-					head: cn("px-3 text-right", column.className),
-					cell: cn("px-3 text-right", column.className),
-					bar: "h-3 w-10",
-				})),
-			]),
+			panelHeader(h, { title: scorecardTitle(model), action: panelControl(h) }),
+			tableSkeleton(h, columns, { first: median }),
+			scorecardFooter(h, ranked),
 		]),
 	])
+}
 
 /** The on-ramp for an org with neither reviews nor CI runs. */
 const noTeamData = (h: H): Html =>
@@ -464,7 +494,7 @@ const teamView = (h: H, model: Model, team: CodeReviewTeam): Html => {
 
 const content = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.team.data, {
-		onEmpty: () => teamSkeleton(h),
+		onEmpty: () => teamSkeleton(h, model),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load the team", onRetry: Message.ClickedRetry() }),
 		onData: (team) => {

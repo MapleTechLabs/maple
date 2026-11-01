@@ -1,15 +1,16 @@
 import { cn } from "@maple/ui/lib/utils"
 import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { chartSkeleton } from "../../../ui/chart-skeleton"
 import * as DialogView from "../../../ui/dialog-view"
+import { icon } from "../../../ui/icon"
 import { listRow } from "../../../ui/list-row"
 import { panel, panelHeader } from "../../../ui/panel"
 import { skeletonSlowNote } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, type StatRailColumns } from "../../kit/stat-rail"
-import { settingsSection, settingsSections } from "../../settings/kit/section"
+import { manageAccessLink } from "../settings/repositories"
 import { analyticsPanel } from "./analytics-panel"
 import { section } from "./parts"
 
@@ -27,11 +28,11 @@ const pick = (widths: ReadonlyArray<string>, index: number) => widths[index % wi
 const rows = <T>(count: number, row: (index: number) => T): ReadonlyArray<T> =>
 	Array.from({ length: count }, (_, index) => row(index))
 
-const bar = <M>(h: HtmlBuilder<M>, className: string): Html =>
+export const bar = <M>(h: HtmlBuilder<M>, className: string): Html =>
 	h.span([h.Class(cn(skeletonStyles, "block", className)), h.DataAttribute("slot", "skeleton")])
 
 /** A bar centred in a line box as tall as the text it stands in for (`leading-normal` rows are 21px and 18px). */
-const line = <M>(h: HtmlBuilder<M>, lineClass: string, barClass: string, className?: string): Html =>
+export const line = <M>(h: HtmlBuilder<M>, lineClass: string, barClass: string, className?: string): Html =>
 	h.span([h.Class(cn("flex items-center", lineClass, className))], [bar(h, barClass)])
 
 /** A bar that sits inline in a text slot (a stat value, a subline). */
@@ -41,7 +42,7 @@ const inlineBar = <M>(h: HtmlBuilder<M>, className: string): Html =>
 const slowNote = <M>(h: HtmlBuilder<M>): Html => skeletonSlowNote(h, "absolute inset-x-0 top-full mt-1")
 
 /** Busy region with the slow-load note in the gap under it, so it takes no space until it shows. */
-const busy = <M>(h: HtmlBuilder<M>, label: string, body: Html): Html =>
+export const busy = <M>(h: HtmlBuilder<M>, label: string, body: Html): Html =>
 	h.div([h.Class("relative"), h.AriaBusy(true), h.AriaLabel(label)], [body, slowNote(h)])
 
 /** A busy page: the slow-load note sits under its first block, where a reader is looking. */
@@ -51,18 +52,32 @@ export const busyPage = <M>(h: HtmlBuilder<M>, label: string, [first, ...rest]: 
 		[h.div([h.Class("relative")], [first, slowNote(h)]), ...rest],
 	)
 
-/** One table column: its header, and the bar its cells show (`"title"` for the two-line lead cell). */
-export type SkeletonColumn = Readonly<{ label: string; head: string; cell: string; bar: string | "title" }>
+/** One table column: its header, and what its cells show (two text lines for `lead`, else one bar). */
+export type SkeletonColumn = Readonly<{
+	label: string
+	/** The header reads to screen readers only, like an actions column's. */
+	isLabelHidden?: boolean
+	head: string
+	cell: string
+	lead?: boolean
+	bar?: string
+	align?: "right"
+}>
 
 const twoLines = <M>(h: HtmlBuilder<M>, index: number): ReadonlyArray<Html> => [
 	line(h, "h-[21px]", cn("h-3", pick(TITLE_WIDTHS, index))),
 	line(h, "h-[18px]", cn("h-2.5", pick(META_WIDTHS, index)), "mt-0.5"),
 ]
 
+const cellBar = <M>(h: HtmlBuilder<M>, column: SkeletonColumn, index: number): ReadonlyArray<Html> =>
+	column.lead === true
+		? twoLines(h, index)
+		: [line(h, cn("h-5", column.align === "right" && "justify-end"), column.bar ?? "h-3 w-10")]
+
 export const tableSkeleton = <M>(
 	h: HtmlBuilder<M>,
 	columns: ReadonlyArray<SkeletonColumn>,
-	count = ROWS,
+	options: Readonly<{ count?: number; first?: Html }> = {},
 ): Html =>
 	table(h, { size: "sm", className: "table-fixed" }, [
 		tableHeader(
@@ -70,38 +85,40 @@ export const tableSkeleton = <M>(
 			[
 				tableRow(
 					h,
-					columns.map((column) => tableHead(h, [column.label], cn(column.head, "font-normal"))),
+					columns.map((column) =>
+						tableHead(
+							h,
+							[
+								column.isLabelHidden === true
+									? h.span([h.Class("sr-only")], [column.label])
+									: column.label,
+							],
+							cn(column.head, column.align === "right" && "text-right", "font-normal"),
+						),
+					),
 				),
 			],
 			{ className: "bg-surface-sunken" },
 		),
-		tableBody(
-			h,
-			rows(count, (index) =>
+		tableBody(h, [
+			...(options.first === undefined ? [] : [options.first]),
+			...rows(options.count ?? ROWS, (index) =>
 				tableRow(
 					h,
 					columns.map((column) =>
 						tableCell(
 							h,
-							column.bar === "title"
-								? twoLines(h, index)
-								: [
-										line(
-											h,
-											cn("h-5", column.cell.includes("text-right") && "justify-end"),
-											column.bar,
-										),
-									],
-							column.cell,
+							cellBar(h, column, index),
+							cn(column.cell, column.align === "right" && "text-right"),
 						),
 					),
 				),
 			),
-		),
+		]),
 	])
 
 const REVIEW_COLUMNS: ReadonlyArray<SkeletonColumn> = [
-	{ label: "Pull request", head: "px-4", cell: "px-4 py-2.5", bar: "title" },
+	{ label: "Pull request", head: "px-4", cell: "px-4 py-2.5", lead: true },
 	{
 		label: "Outcome",
 		head: "hidden w-40 px-3 md:table-cell",
@@ -110,22 +127,25 @@ const REVIEW_COLUMNS: ReadonlyArray<SkeletonColumn> = [
 	},
 	{
 		label: "Confidence",
-		head: "hidden w-28 px-3 text-right lg:table-cell",
-		cell: "hidden px-3 text-right lg:table-cell",
+		head: "hidden w-28 px-3 lg:table-cell",
+		cell: "hidden px-3 lg:table-cell",
 		bar: "h-3 w-9",
+		align: "right",
 	},
 	{
 		label: "Quality",
-		head: "hidden w-24 px-3 text-right lg:table-cell",
-		cell: "hidden px-3 text-right lg:table-cell",
+		head: "hidden w-24 px-3 lg:table-cell",
+		cell: "hidden px-3 lg:table-cell",
 		bar: "h-3 w-11",
+		align: "right",
 	},
-	{ label: "Issues", head: "w-24 px-3 text-right", cell: "px-3 text-right", bar: "h-3 w-6" },
+	{ label: "Issues", head: "w-24 px-3", cell: "px-3", bar: "h-3 w-6", align: "right" },
 	{
 		label: "Reviewed",
-		head: "hidden w-28 px-4 text-right sm:table-cell",
-		cell: "hidden px-4 text-right sm:table-cell",
+		head: "hidden w-28 px-4 sm:table-cell",
+		cell: "hidden px-4 sm:table-cell",
 		bar: "h-3 w-14",
+		align: "right",
 	},
 ]
 
@@ -136,52 +156,52 @@ const RUN_COLUMNS: ReadonlyArray<SkeletonColumn> = [
 		cell: "px-3 py-2.5 align-top sm:px-4",
 		bar: "h-5 w-16 rounded-md",
 	},
-	{ label: "Run", head: "px-3", cell: "px-3 py-2.5", bar: "title" },
+	{ label: "Run", head: "px-3", cell: "px-3 py-2.5", lead: true },
 	{
 		label: "Duration",
-		head: "hidden px-3 text-right sm:table-cell sm:w-24",
-		cell: "hidden px-3 py-2.5 text-right align-top sm:table-cell",
+		head: "hidden px-3 sm:table-cell sm:w-24",
+		cell: "hidden px-3 py-2.5 align-top sm:table-cell",
 		bar: "h-3 w-12",
+		align: "right",
 	},
 	{
 		label: "Started",
-		head: "hidden px-3 text-right md:table-cell md:w-24",
-		cell: "hidden px-3 py-2.5 text-right align-top md:table-cell",
+		head: "hidden px-3 md:table-cell md:w-24",
+		cell: "hidden px-3 py-2.5 align-top md:table-cell",
 		bar: "h-3 w-10",
+		align: "right",
 	},
 	{
-		label: "",
+		label: "Links",
+		isLabelHidden: true,
 		head: "hidden px-4 sm:table-cell sm:w-48",
-		cell: "hidden px-4 py-2.5 text-right align-top sm:table-cell",
+		cell: "hidden px-4 py-2.5 align-top sm:table-cell",
 		bar: "h-4 w-20 rounded-md",
+		align: "right",
 	},
 ]
 
-/** Workflow and job names are one line, unlike the two-line pull request and run cells. */
-const NAME = "h-3 w-[55%]"
-const NUMBER = "h-3 w-10"
-
 const WORKFLOW_COLUMNS: ReadonlyArray<SkeletonColumn> = [
-	{ label: "Workflow", head: "px-4", cell: "px-4 py-2.5", bar: NAME },
-	{ label: "Runs", head: "w-20 px-3 text-right", cell: "px-3 text-right", bar: "h-3 w-8" },
-	{ label: "Fail rate", head: "w-24 px-3 text-right", cell: "px-3 text-right", bar: NUMBER },
+	{ label: "Workflow", head: "px-4", cell: "px-4 py-2.5", lead: true },
+	{ label: "Runs", head: "w-20 px-3", cell: "px-3", bar: "h-3 w-8", align: "right" },
+	{ label: "Fail rate", head: "w-24 px-3", cell: "px-3", align: "right" },
 	{
 		label: "p50",
-		head: "hidden px-3 text-right lg:table-cell lg:w-24",
-		cell: "hidden px-3 text-right lg:table-cell",
-		bar: NUMBER,
+		head: "hidden px-3 lg:table-cell lg:w-24",
+		cell: "hidden px-3 lg:table-cell",
+		align: "right",
 	},
 	{
 		label: "p95",
-		head: "hidden px-3 text-right lg:table-cell lg:w-24",
-		cell: "hidden px-3 text-right lg:table-cell",
-		bar: NUMBER,
+		head: "hidden px-3 lg:table-cell lg:w-24",
+		cell: "hidden px-3 lg:table-cell",
+		align: "right",
 	},
 	{
 		label: "CI time",
-		head: "hidden px-3 text-right md:table-cell md:w-24",
-		cell: "hidden px-3 text-right md:table-cell",
-		bar: NUMBER,
+		head: "hidden px-3 md:table-cell md:w-24",
+		cell: "hidden px-3 md:table-cell",
+		align: "right",
 	},
 	{
 		label: "Last run",
@@ -192,38 +212,39 @@ const WORKFLOW_COLUMNS: ReadonlyArray<SkeletonColumn> = [
 ]
 
 const JOB_COLUMNS: ReadonlyArray<SkeletonColumn> = [
-	{ label: "Job", head: "px-4", cell: "px-4 py-2.5", bar: NAME },
-	{ label: "Runs", head: "w-20 px-3 text-right", cell: "px-3 text-right", bar: "h-3 w-8" },
-	{ label: "Fail rate", head: "w-24 px-3 text-right", cell: "px-3 text-right", bar: NUMBER },
+	{ label: "Job", head: "px-4", cell: "px-4 py-2.5", lead: true },
+	{ label: "Runs", head: "w-20 px-3", cell: "px-3", bar: "h-3 w-8", align: "right" },
+	{ label: "Fail rate", head: "w-24 px-3", cell: "px-3", align: "right" },
 	{
 		label: "Retried",
-		head: "hidden px-3 text-right md:table-cell md:w-20",
-		cell: "hidden px-3 text-right md:table-cell",
+		head: "hidden px-3 md:table-cell md:w-20",
+		cell: "hidden px-3 md:table-cell",
 		bar: "h-3 w-6",
+		align: "right",
 	},
 	{
 		label: "p50",
-		head: "hidden px-3 text-right lg:table-cell lg:w-24",
-		cell: "hidden px-3 text-right lg:table-cell",
-		bar: NUMBER,
+		head: "hidden px-3 lg:table-cell lg:w-24",
+		cell: "hidden px-3 lg:table-cell",
+		align: "right",
 	},
 	{
 		label: "p95",
-		head: "hidden px-3 text-right lg:table-cell lg:w-24",
-		cell: "hidden px-3 text-right lg:table-cell",
-		bar: NUMBER,
+		head: "hidden px-3 lg:table-cell lg:w-24",
+		cell: "hidden px-3 lg:table-cell",
+		align: "right",
 	},
 	{
 		label: "Wait p50",
-		head: "hidden px-3 text-right xl:table-cell xl:w-24",
-		cell: "hidden px-3 text-right xl:table-cell",
-		bar: NUMBER,
+		head: "hidden px-3 xl:table-cell xl:w-24",
+		cell: "hidden px-3 xl:table-cell",
+		align: "right",
 	},
 	{
 		label: "Wait p95",
-		head: "hidden px-4 text-right xl:table-cell xl:w-24",
-		cell: "hidden px-4 text-right xl:table-cell",
-		bar: NUMBER,
+		head: "hidden px-4 xl:table-cell xl:w-24",
+		cell: "hidden px-4 xl:table-cell",
+		align: "right",
 	},
 ]
 
@@ -261,22 +282,34 @@ export const findingsListSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		]),
 	)
 
-/** A headline `StatRail` with its real labels and a bar for each value. */
+/** A `StatRail` with its real labels and a bar for each value. */
 export const headlineSkeleton = <M>(
 	h: HtmlBuilder<M>,
 	labels: ReadonlyArray<string>,
-	options: Readonly<{ columns?: StatRailColumns; className?: string }> = {},
+	options: Readonly<{
+		columns?: StatRailColumns
+		className?: string
+		size?: "headline" | "secondary"
+	}> = {},
 ): Html =>
 	statRail(
 		h,
-		options,
+		{ columns: options.columns, className: options.className },
 		labels.map((label) =>
-			statRailItem(h, {
-				compact: true,
-				eyebrow: label,
-				value: inlineBar(h, "h-6 w-16"),
-				subline: inlineBar(h, "h-2.5 w-24"),
-			}),
+			options.size === "secondary"
+				? statRailItem(h, {
+						compact: true,
+						eyebrow: label,
+						value: inlineBar(h, "h-4 w-12"),
+						className: "px-4 py-3",
+						valueClassName: "text-lg",
+					})
+				: statRailItem(h, {
+						compact: true,
+						eyebrow: label,
+						value: inlineBar(h, "h-6 w-16"),
+						subline: inlineBar(h, "h-2.5 w-24"),
+					}),
 		),
 	)
 
@@ -298,7 +331,7 @@ const chartCard = <M>(
 		[h.div([h.Class("h-56 w-full")], [chartSkeleton(h, variant)])],
 	)
 
-/** `repositoryList` under a chart: its real caption and three repository rows. */
+/** `repositoryList` under a chart: its real caption and the top five rows. */
 const repositoryRows = <M>(h: HtmlBuilder<M>, title: string): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-2")],
@@ -306,7 +339,7 @@ const repositoryRows = <M>(h: HtmlBuilder<M>, title: string): Html =>
 			h.span([h.Class("text-xs text-muted-foreground")], [title]),
 			h.ul(
 				[h.Class("flex flex-col")],
-				rows(3, (index) =>
+				rows(5, (index) =>
 					h.li(
 						[h.Class("flex h-8 items-center gap-2.5 py-1.5")],
 						[
@@ -384,7 +417,20 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 				}),
 				chartCard(h, "Issues caught", "bar", {
 					control: true,
-					footer: repositoryRows(h, "Repositories with the most issues"),
+					footer: h.div(
+						[h.Class("flex flex-col gap-3")],
+						[
+							repositoryRows(h, "Repositories with the most issues"),
+							h.span(
+								[
+									h.Class(
+										"inline-flex items-center gap-1 self-center text-sm text-muted-foreground",
+									),
+								],
+								["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
+							),
+						],
+					),
 				}),
 			],
 		),
@@ -392,10 +438,23 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 			[h.Class("grid gap-6 lg:grid-cols-3")],
 			[barListCard(h, "Issues by category"), barListCard(h, "Review outcomes"), authorsCardSkeleton(h)],
 		),
+		headlineSkeleton(
+			h,
+			[
+				"Avg confidence",
+				"Avg quality",
+				"Avg review time",
+				"Fixed rate",
+				"Dismissed",
+				"Critical issues",
+				"Tokens",
+			],
+			{ columns: 4, className: "xl:grid-cols-7", size: "secondary" },
+		),
 	])
 
 const tablePanel = <M>(h: HtmlBuilder<M>, title: string, columns: ReadonlyArray<SkeletonColumn>): Html =>
-	panel(h, {}, [panelHeader(h, { title }), tableSkeleton(h, columns, 4)])
+	panel(h, {}, [panelHeader(h, { title }), tableSkeleton(h, columns, { count: 4 })])
 
 /** The CI tab before its first answer and while the charts load. */
 export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
@@ -413,46 +472,39 @@ export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		tablePanel(h, "Jobs by CI time", JOB_COLUMNS),
 		h.section(
 			[h.Class("flex flex-col gap-3")],
-			[sectionHeading(h, { title: "Runs" }), panel(h, {}, [tableSkeleton(h, RUN_COLUMNS, 4)])],
+			[
+				h.div(
+					[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")],
+					[sectionHeading(h, { title: "Runs" }), bar(h, "h-8 w-36 rounded-md")],
+				),
+				panel(h, {}, [tableSkeleton(h, RUN_COLUMNS, { count: 4 })]),
+			],
 		),
 	])
 
-/** Rules-form rows: a label and hint beside a control. */
-export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, count = 4): Html =>
-	h.div(
-		[h.Class("flex flex-col divide-y")],
-		rows(count, (index) =>
-			h.div(
-				[h.Class("flex items-center justify-between gap-6 py-3.5 first:pt-0 last:pb-0")],
-				[
-					h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col gap-1.5")],
-						[bar(h, "h-3 w-36"), bar(h, cn("h-2.5", pick(TITLE_WIDTHS, index)))],
-					),
-					bar(h, "h-7 w-36 shrink-0 rounded-md"),
-				],
-			),
-		),
-	)
-
-/** `repositoryList`: the access line, then one row per repository with its switch. */
+/** `repositoryList`: the access line, then one row per repository with Configure and its switch. */
 export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	busy(
 		h,
 		"Loading repositories",
 		panel(h, {}, [
-			panelHeader(h, { className: "px-5 py-3", title: bar(h, "h-3 w-48") }),
+			panelHeader(h, {
+				className: "px-5 py-3 text-xs text-muted-foreground",
+				action: manageAccessLink(h),
+				children: [line(h, "h-4", "h-2.5 w-40")],
+			}),
 			h.ul(
 				[h.Class("divide-y")],
 				rows(5, (index) =>
 					h.li(
-						[h.Class("flex items-center gap-3 px-5 py-3")],
+						[h.Class("flex items-center gap-3 px-5 py-2.5")],
 						[
 							bar(h, "size-4 shrink-0 rounded-full"),
 							h.span(
 								[h.Class("min-w-0 flex-1")],
 								[bar(h, cn("h-3", pick(META_WIDTHS, index)))],
 							),
+							bar(h, "h-7 w-20 shrink-0 rounded-md"),
 							bar(h, "h-5 w-9 shrink-0 rounded-full"),
 						],
 					),
@@ -461,119 +513,18 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		]),
 	)
 
-/** The settings tab before its first answer: the real sections, with bodies still loading. */
-export const settingsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
+/** The Reviewer row: the model picker in its card. */
+export const reviewerSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
-		[h.Class("max-w-4xl"), h.AriaBusy(true), h.AriaLabel("Loading review settings")],
+		[h.Class("relative flex items-center justify-between gap-6 rounded-md border bg-card px-5 py-4")],
 		[
-			settingsSections(h, [
-				settingsSection(
-					h,
-					{
-						id: "code-review-settings-reviewer",
-						title: "Reviewer",
-						description: ["The model every review and reply in this organization runs on."],
-						framed: false,
-					},
-					[
-						h.div(
-							[
-								h.Class(
-									"relative flex items-center justify-between gap-6 rounded-md border bg-card px-5 py-4",
-								),
-							],
-							[
-								h.div(
-									[h.Class("flex flex-col gap-1.5")],
-									[bar(h, "h-3 w-24"), bar(h, "h-2.5 w-56")],
-								),
-								bar(h, "h-8 w-56 rounded-md"),
-								slowNote(h),
-							],
-						),
-					],
-				),
-				settingsSection(
-					h,
-					{
-						id: "code-review-settings-defaults",
-						title: "Default review rules",
-						description: [
-							"Every repository starts from these. A repository can override any of them.",
-						],
-						framed: true,
-					},
-					[rulesFormSkeleton(h, 5)],
-				),
-				settingsSection(
-					h,
-					{
-						id: "code-review-settings-repositories",
-						title: "Repositories",
-						description: [
-							"Pick which repositories get reviews, and tune any of them on its own.",
-						],
-						framed: false,
-					},
-					[repositoryListSkeleton(h)],
-				),
-			]),
+			h.div([h.Class("flex flex-col gap-1.5")], [bar(h, "h-3 w-24"), bar(h, "h-2.5 w-56")]),
+			bar(h, "h-8 w-56 rounded-md"),
+			slowNote(h),
 		],
 	)
 
 const SHEET_STATS = ["Outcome", "Confidence", "Quality", "Issues", "Duration", "Model", "Tokens", "Reviewed"]
-
-/** `ReviewDetailBody` before the first answer: the header, stat tiles and summary in their places. */
-export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyArray<Html> => [
-	DialogView.dialogHeader(
-		h,
-		"sheet",
-		[
-			bar(h, "h-3 w-24"),
-			DialogView.dialogTitle(
-				h,
-				"sheet",
-				id,
-				[bar(h, "h-6 w-72 max-w-full")],
-				"text-title leading-tight",
-			),
-			bar(h, "mt-1 h-3.5 w-80 max-w-full"),
-			h.div(
-				[h.Class("flex gap-2 pt-1")],
-				[bar(h, "h-6 w-28 rounded-md"), bar(h, "h-6 w-36 rounded-md")],
-			),
-		],
-		"gap-1.5 pr-14",
-	),
-	DialogView.dialogPanel(
-		h,
-		"sheet",
-		id,
-		[
-			statRail(
-				h,
-				{},
-				SHEET_STATS.map((label) =>
-					statRailItem(h, {
-						compact: true,
-						eyebrow: label,
-						value: inlineBar(h, "h-3.5 w-14"),
-						className: "min-w-0 px-3 py-2.5",
-						valueClassName: "text-sm",
-					}),
-				),
-			),
-			section(h, "Summary", [
-				h.div(
-					[h.Class("flex flex-col gap-2")],
-					rows(4, (index) => bar(h, cn("h-3", index === 3 ? "w-[45%]" : "w-full"))),
-				),
-			]),
-			section(h, "CI runs", [ciRunsSkeleton(h)]),
-		],
-		"flex flex-col gap-6",
-	),
-]
 
 /** `PullRequestCiRuns`' rows: result badge, workflow, commit and duration. */
 export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
@@ -591,3 +542,82 @@ export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 			),
 		),
 	)
+
+/** A finding card's frame: severity and path, then the title and a line of its body. */
+const findingCardSkeleton = <M>(h: HtmlBuilder<M>, index: number): Html =>
+	h.li(
+		[],
+		[
+			panel(h, { padded: "sm", className: "gap-2" }, [
+				h.span(
+					[h.Class("flex h-4 items-center gap-2")],
+					[bar(h, "h-4 w-14 rounded-md"), bar(h, "h-2.5 w-40")],
+				),
+				bar(h, cn("h-3.5", pick(TITLE_WIDTHS, index))),
+				bar(h, "h-3 w-full"),
+			]),
+		],
+	)
+
+/** `ReviewDetailBody` before the first answer: header, stat tiles and the report's sections in place. */
+export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyArray<Html> => [
+	DialogView.dialogHeader(
+		h,
+		"sheet",
+		[
+			bar(h, "h-3 w-24"),
+			DialogView.dialogTitle(
+				h,
+				"sheet",
+				id,
+				[h.span([h.Class("sr-only")], ["Loading review"]), bar(h, "h-6 w-72 max-w-full")],
+				"text-title leading-tight",
+			),
+			bar(h, "mt-1 h-3.5 w-80 max-w-full"),
+			h.div(
+				[h.Class("flex gap-2 pt-1")],
+				[bar(h, "h-6 w-28 rounded-md"), bar(h, "h-6 w-36 rounded-md")],
+			),
+		],
+		"gap-1.5 pr-14",
+	),
+	DialogView.dialogPanel(
+		h,
+		"sheet",
+		id,
+		[
+			h.div(
+				[h.Class("flex flex-col gap-6"), h.AriaBusy(true), h.AriaLabel("Loading review")],
+				[
+					statRail(
+						h,
+						{},
+						SHEET_STATS.map((label) =>
+							statRailItem(h, {
+								compact: true,
+								eyebrow: label,
+								value: inlineBar(h, "h-3.5 w-14"),
+								className: "min-w-0 px-3 py-2.5",
+								valueClassName: "text-sm",
+							}),
+						),
+					),
+					section(h, "Summary", [
+						h.div(
+							[h.Class("flex flex-col gap-2")],
+							rows(4, (index) => bar(h, cn("h-3", index === 3 ? "w-[45%]" : "w-full"))),
+						),
+					]),
+					section(h, "Issues", [
+						h.ul(
+							[h.Class("flex flex-col gap-3")],
+							rows(2, (index) => findingCardSkeleton(h, index)),
+						),
+					]),
+					section(h, "CI runs", [ciRunsSkeleton(h)]),
+				],
+			),
+		],
+		"flex flex-col gap-6",
+	),
+]
