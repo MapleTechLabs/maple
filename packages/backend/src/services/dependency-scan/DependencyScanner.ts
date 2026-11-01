@@ -19,6 +19,7 @@ import type {
 } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { DependencyScanSink } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
 	MAX_VULNERABILITIES,
 	PackageAdvisoryCatalog,
