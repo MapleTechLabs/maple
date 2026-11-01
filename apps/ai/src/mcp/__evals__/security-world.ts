@@ -30,6 +30,7 @@ export const SECURITY_WORLD = {
 	leadFingerprint: "uploads/avatar-path-traversal",
 	criticalCve: "CVE-2025-29927",
 	nodeCve: "CVE-2025-23166",
+	fixedCve: "CVE-2021-23337",
 	exposedService: "legacy-admin",
 	catchAllService: "marketing-site",
 } as const
@@ -400,6 +401,25 @@ export const seedSecurityWorld = async (rt: EvalRuntime) => {
 			],
 		)
 	}
+	// Fixed on the default branch and in no running commit: an advisory lookup must not call it exposure.
+	await sql(
+		`INSERT INTO dependency_findings (id, org_id, repository_id, lockfile_path, ecosystem, package_name, advisory_id,
+			aliases, severity, summary, versions, fixed_in, relation, status, first_seen_scan_id, last_seen_scan_id,
+			first_seen_sha, last_seen_sha, fixed_scan_id, fixed_sha, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'bun.lock', 'npm', 'lodash', 'GHSA-35jh-r3h4-6jhm', $4, 'high',
+			'Command injection in lodash template', $5, '4.17.21', 'transitive', 'fixed', $6, $6, $7, $7, $6, $7, $8, $9)`,
+		[
+			"a1000000000000000000000000000005",
+			org,
+			SHOP_REPO,
+			JSON.stringify([SECURITY_WORLD.fixedCve]),
+			JSON.stringify(["4.17.15"]),
+			scanId,
+			CI_WORLD.head,
+			at(24 * 30),
+			at(24 * 3),
+		],
+	)
 }
 
 // ---------------------------------------------------------------------------------------------

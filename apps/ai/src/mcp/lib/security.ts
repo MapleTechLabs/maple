@@ -28,7 +28,10 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { isAdmin } from "@maple/backend/services/auth/auth"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
-import { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
+import {
+	DependencyScanReader,
+	FINDINGS_LIMIT,
+} from "@maple/backend/services/dependency-scan/DependencyScanService"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 
@@ -117,10 +120,12 @@ export const readCode = (tenant: TenantContext) =>
 		return { _tag: "read", targets: read } satisfies CodeRead
 	}).pipe(
 		Effect.catch((error) =>
-			Effect.succeed<CodeRead>({
-				_tag: "unavailable",
-				message: `Could not read the code audit: ${error.message}`,
-			}),
+			Effect.logWarning("Security Center read failed", error).pipe(
+				Effect.as<CodeRead>({
+					_tag: "unavailable",
+					message: `Could not read the code audit: ${error.message}`,
+				}),
+			),
 		),
 	)
 
@@ -209,6 +214,8 @@ export type DependencyRead =
 			readonly findings: ReadonlyArray<DependencyFindingView>
 			/** False when production telemetry could not be read, so `services` are unknown. */
 			readonly productionKnown: boolean
+			/** True when the reader's cap cut the findings: only the most urgent were read. */
+			readonly capped: boolean
 	  }
 	| AreaGate
 
@@ -231,13 +238,16 @@ export const readDependencies = (tenant: TenantContext) =>
 			repositories: repositories.repositories,
 			findings: findings.findings,
 			productionKnown: findings.production.available,
+			capped: findings.findings.length >= FINDINGS_LIMIT,
 		} satisfies DependencyRead
 	}).pipe(
 		Effect.catch((error) =>
-			Effect.succeed<DependencyRead>({
-				_tag: "unavailable",
-				message: `Could not read dependency findings: ${error.message}`,
-			}),
+			Effect.logWarning("Security Center read failed", error).pipe(
+				Effect.as<DependencyRead>({
+					_tag: "unavailable",
+					message: `Could not read dependency findings: ${error.message}`,
+				}),
+			),
 		),
 	)
 
@@ -336,10 +346,12 @@ export const readExposure = (tenant: TenantContext, window: SecurityWindow) =>
 		return { _tag: "read", signatures, exposed, sources } satisfies ExposureRead
 	}).pipe(
 		Effect.catch((error) =>
-			Effect.succeed<AreaGate>({
-				_tag: "unavailable",
-				message: `Could not read scanner traffic: ${error.message}`,
-			}),
+			Effect.logWarning("Security Center read failed", error).pipe(
+				Effect.as<AreaGate>({
+					_tag: "unavailable",
+					message: `Could not read scanner traffic: ${error.message}`,
+				}),
+			),
 		),
 	)
 
@@ -512,10 +524,12 @@ export const readRuntimes = (tenant: TenantContext, window: SecurityWindow) =>
 		return { _tag: "read", entries, skipped: advisories.skipped } satisfies RuntimesRead
 	}).pipe(
 		Effect.catch((error) =>
-			Effect.succeed<AreaGate>({
-				_tag: "unavailable",
-				message: `Could not read runtimes: ${error.message}`,
-			}),
+			Effect.logWarning("Security Center read failed", error).pipe(
+				Effect.as<AreaGate>({
+					_tag: "unavailable",
+					message: `Could not read runtimes: ${error.message}`,
+				}),
+			),
 		),
 	)
 
@@ -610,8 +624,11 @@ export const matchesFilters = (row: SecurityFindingRow, filters: FindingFilters)
 		return false
 	if (hasTriage(row.area) && filters.status !== "all" && row.status !== filters.status) return false
 	if (filters.repository !== undefined) {
+		// `owner/name@branch path` for code, `owner/name lockfile` for dependencies: match the whole name.
 		const repo = filters.repository.toLowerCase()
-		if (!hasTriage(row.area) || !row.location.toLowerCase().startsWith(repo)) return false
+		const location = row.location.toLowerCase()
+		if (!hasTriage(row.area) || !(location.startsWith(`${repo}@`) || location.startsWith(`${repo} `)))
+			return false
 	}
 	if (filters.service !== undefined) {
 		const service = filters.service
@@ -699,6 +716,11 @@ export const dependencyArea = (read: DependencyRead): AreaResult => {
 	const unscanned = read.repositories
 		.filter((repo) => repo.latestScan === null)
 		.map((repo) => repo.fullName)
+	const capNote = read.capped
+		? [
+				`Only the ${FINDINGS_LIMIT} most urgent dependency findings were read; filter by repository for the rest.`,
+			]
+		: []
 	const notes = read.repositories.flatMap((repo) => {
 		const scan = repo.latestScan
 		if (scan === null) return []
@@ -726,7 +748,7 @@ export const dependencyArea = (read: DependencyRead): AreaResult => {
 				: "production telemetry could not be joined, so no finding says which services run it.",
 		].join(" "),
 		rows,
-		notes,
+		notes: [...capNote, ...notes],
 	}
 }
 

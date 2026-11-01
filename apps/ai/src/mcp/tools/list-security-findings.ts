@@ -44,6 +44,14 @@ const AREA_LABEL = {
 	runtimes: "Runtimes",
 } satisfies Record<SecurityArea, string>
 
+/** The call's filters as next-call arguments, so a follow-up keeps what the user asked for. */
+const filterArgs = (filters: Output["filters"]) => ({
+	status: filters.status === "open" ? undefined : filters.status,
+	severity: filters.severity,
+	service: filters.service,
+	repository: filters.repository,
+})
+
 const isFiltered = (filters: Output["filters"]): boolean =>
 	filters.status !== "open" ||
 	filters.severity !== undefined ||
@@ -101,6 +109,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			repository: P.optionalText("Only code and dependency findings of this repository (owner/name)"),
 			service: P.service("Only findings that reach this service (exact `service.name`)"),
 			limit: P.limit({ default: 30, max: 200, noun: "findings" }),
+			offset: P.offset({ max: 2000 }),
 			...WINDOW.fields,
 		}),
 		output: ListSecurityFindingsOutput,
@@ -171,7 +180,8 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 					counts: countBySeverity(matched[i] ?? []),
 					matched: matched[i]?.length ?? 0,
 				})),
-				findings: rankFindings(matched.flat()).slice(0, params.limit),
+				findings: rankFindings(matched.flat()).slice(params.offset, params.offset + params.limit),
+				offset: params.offset,
 				notes: [...filterNotes(results, filters), ...results.flatMap((result) => result.notes)],
 				...(params.area === "exposure" && exposure?._tag === "read"
 					? {
@@ -218,7 +228,13 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 				nextCalls.push(
 					...output.areas
 						.filter((area) => area.matched > 0)
-						.map((area) => doc.next(TOOL, { area: area.area }, `every ${area.area} finding`)),
+						.map((area) =>
+							doc.next(
+								TOOL,
+								{ ...filterArgs(output.filters), area: area.area },
+								`every ${area.area} finding`,
+							),
+						),
 				)
 			if (output.areaFilter === "exposure") {
 				const exposed = output.findings.find((row) => row.area === "exposure")
@@ -376,21 +392,21 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 							]),
 					...(output.notes.length === 0 ? [] : [doc.heading("Notes"), doc.list(output.notes)]),
 				],
-				...(output.findings.length < matched
+				...(output.offset + output.findings.length < matched
 					? {
 							truncation: {
 								shown: output.findings.length,
 								total: matched,
-								noun: "findings",
+								noun: `findings from #${output.offset + 1}`,
 								next: doc.next(
 									TOOL,
 									{
-										...(output.areaFilter === undefined
-											? undefined
-											: { area: output.areaFilter }),
-										limit: 200,
+										...filterArgs(output.filters),
+										area: output.areaFilter,
+										offset: output.offset + output.findings.length,
+										limit: output.findings.length,
 									},
-									"more findings",
+									"the next findings",
 								),
 							},
 						}

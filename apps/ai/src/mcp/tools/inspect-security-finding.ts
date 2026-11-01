@@ -17,6 +17,7 @@ import {
 	readCode,
 	readDependencies,
 	readExposure,
+	postureText,
 	readRuntimes,
 	repositoryServicesOf,
 	runtimeLabelOf,
@@ -222,33 +223,56 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			if (runtimes !== undefined && runtimes._tag !== "read")
 				notSearched.push(`runtimes: ${runtimes.message}`)
 			else if (runtimes !== undefined) {
-				// One row per advisory and runtime version, with every service on that version.
+				// One row per advisory and runtime version, with every service on that version. A version
+				// key with no advisory still answers with its posture: the list names it for that alone.
 				const byAdvisory = new Map<string, Match & { area: "runtimes" }>()
 				runtimes.entries.forEach((entry) => {
 					const keyMatches = entry.advisoryKey?.toLowerCase() === needle
-					;(entry.advisories ?? [])
-						.filter((advisory) => keyMatches || advisory.id.toLowerCase() === needle)
-						.forEach((advisory) => {
-							const key = `${advisory.id} ${entry.advisoryKey}`
-							const existing = byAdvisory.get(key)
-							const service = { service: entry.row.service, environment: entry.row.environment }
-							byAdvisory.set(
-								key,
-								existing === undefined
-									? {
-											area: "runtimes",
-											advisoryId: advisory.id,
-											url: advisory.url,
-											summary: advisory.summary,
-											severity: advisory.severity,
-											runtime: runtimeLabelOf(entry),
-											version: entry.row.runtimeVersion,
-											fixedIn: advisory.fixedIn,
-											services: [service],
-										}
-									: { ...existing, services: [...existing.services, service] },
-							)
-						})
+					const advisories = (entry.advisories ?? []).filter(
+						(advisory) => keyMatches || advisory.id.toLowerCase() === needle,
+					)
+					const service = { service: entry.row.service, environment: entry.row.environment }
+					const base = {
+						area: "runtimes" as const,
+						runtime: runtimeLabelOf(entry),
+						version: entry.row.runtimeVersion,
+						posture: entry.posture.status,
+						postureNote: postureText(entry.posture),
+					}
+					const rows =
+						keyMatches && advisories.length === 0
+							? [
+									{
+										key: `posture ${entry.advisoryKey}`,
+										...base,
+										advisoryId: null,
+										url: null,
+										summary: null,
+										severity:
+											entry.posture.status === "end_of_life"
+												? ("medium" as const)
+												: ("low" as const),
+										fixedIn: "latest" in entry.posture ? entry.posture.latest : null,
+									},
+								]
+							: advisories.map((advisory) => ({
+									key: `${advisory.id} ${entry.advisoryKey}`,
+									...base,
+									advisoryId: advisory.id,
+									url: advisory.url,
+									summary: advisory.summary,
+									severity: advisory.severity,
+									fixedIn: advisory.fixedIn,
+								}))
+					rows.forEach(({ key, ...row }) => {
+						const existing = byAdvisory.get(key)
+						byAdvisory.set(
+							key,
+							existing === undefined
+								? { ...row, services: [service] }
+								: { ...existing, services: [...existing.services, service] },
+						)
+					})
 				})
 				matches.push(...byAdvisory.values())
 			}
@@ -288,8 +312,10 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			// An advisory id is a question about everything Maple watches: say what was checked and came up clean.
 			const coverage: Array<string> = []
 			if (ADVISORY_ID.test(query)) {
-				const depHits = matches.filter((m) => m.area === "dependencies")
-				const runtimeHits = matches.filter((m) => m.area === "runtimes")
+				const depHits = matches.flatMap((m) => (m.area === "dependencies" ? [m] : []))
+				const runtimeHits = matches.flatMap((m) => (m.area === "runtimes" ? [m] : []))
+				// Exposure is what production runs: a service on an affected commit or runtime, whatever the
+				// finding's triage. An open finding no service runs is still in the code; a fixed one is not.
 				const affected = [
 					...new Set(
 						matches.flatMap((m) =>
@@ -303,17 +329,33 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 						),
 					),
 				]
+				const openDeps = depHits.filter((m) => m.status === "open")
+				const closedDeps = depHits.filter((m) => m.status !== "open")
 				const unscanned =
 					dependencies?._tag === "read"
 						? dependencies.repositories
 								.filter((repo) => repo.latestScan === null)
 								.map((repo) => repo.fullName)
 						: []
+				const unknown =
+					unscanned.length === 0 ? "" : `; unknown for ${unscanned.join(", ")} (never scanned)`
+				const closed =
+					closedDeps.length === 0
+						? ""
+						: `; ${closedDeps.map((m) => `${m.packageName} in ${m.repository} is ${m.status}`).join(", ")}`
 				coverage.push(
-					matches.length === 0
-						? `Verdict: not found in anything Maple checked${unscanned.length === 0 ? "" : `; unknown for ${unscanned.join(", ")} (never scanned)`}.`
-						: `Verdict: affected${affected.length === 0 ? " (in a lockfile no production service is known to run)" : `: ${affected.join(", ")}`}${unscanned.length === 0 ? "" : `; unknown for ${unscanned.join(", ")} (never scanned)`}.`,
+					affected.length > 0
+						? `Verdict: affected: ${affected.join(", ")}${closed}${unknown}.`
+						: openDeps.length > 0
+							? `Verdict: affected in code (${openDeps.map((m) => m.repository).join(", ")}), but no production service is known to run it${closed}${unknown}.`
+							: closedDeps.length > 0
+								? `Verdict: not affected now${closed}${unknown}.`
+								: `Verdict: not found in anything Maple checked${unknown}.`,
 				)
+				if (dependencies?._tag === "read" && dependencies.capped)
+					coverage.push(
+						"Only the most urgent dependency findings were searched (the read is capped); a lower-ranked match may be missing.",
+					)
 				// A package advisory says nothing about runtimes and the reverse: report only the side it can be on.
 				if (dependencies?._tag === "read" && (depHits.length > 0 || runtimeHits.length === 0)) {
 					const scanned = dependencies.repositories.filter((repo) => repo.latestScan !== null)
@@ -527,12 +569,23 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 						]
 					case "runtimes":
 						return [
-							doc.heading(`${m.advisoryId} in ${m.runtime}`),
+							doc.heading(
+								m.advisoryId === null
+									? `${m.runtime}: ${m.postureNote}`
+									: `${m.advisoryId} in ${m.runtime}`,
+							),
 							doc.fields([
 								["Severity", m.severity],
 								["Summary", m.summary ?? undefined],
-								["Fixed in", m.fixedIn ?? "no fix for this line"],
-								["Advisory", m.url],
+								["Posture", m.postureNote],
+								[
+									m.advisoryId === null ? "Upgrade to" : "Fixed in",
+									m.fixedIn ??
+										(m.advisoryId === null
+											? "a supported release"
+											: "no fix for this line"),
+								],
+								["Advisory", m.url ?? undefined],
 								[
 									"Services on this version",
 									m.services

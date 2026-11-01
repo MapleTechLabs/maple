@@ -85,8 +85,10 @@ export const ListSecurityFindingsOutput = Schema.Struct({
 		repository: Schema.optionalKey(Schema.String),
 	}),
 	areas: Schema.Array(SecurityAreaSummary),
-	/** Worst first across the areas read; capped, so `matched` on each area can be larger. */
+	/** Worst first across the areas read, from `offset`; capped, so `matched` on each area can be larger. */
 	findings: Schema.Array(SecurityFindingRow),
+	/** How many ranked findings were skipped before `findings`. */
+	offset: Schema.Number,
 	/** Area-specific facts worth one line each: a catch-all service, a scan that failed, a target never run. */
 	notes: Schema.Array(Schema.String),
 	/** With `area=exposure`: probe traffic per category and the busiest scanning sources. */
@@ -226,16 +228,20 @@ export const DependencyFindingDetail = Schema.Struct({
 	lastSeenAt: Schema.String,
 })
 
-/** A runtime version a known advisory affects, and every service on it. */
+/** A runtime version a known advisory affects, or a version past end of life or behind, with every service on it. */
 export const RuntimeAdvisoryDetail = Schema.Struct({
 	area: Schema.Literal("runtimes"),
-	advisoryId: Schema.String,
-	url: Schema.String,
+	/** Null for a version listed for its posture alone, with no known advisory. */
+	advisoryId: Schema.NullOr(Schema.String),
+	url: Schema.NullOr(Schema.String),
 	summary: Schema.NullOr(Schema.String),
 	severity: SecuritySeverityLiteral,
 	runtime: Schema.String,
 	version: Schema.String,
 	fixedIn: Schema.NullOr(Schema.String),
+	/** end_of_life, behind, supported and the rest of `RuntimePosture`, with what it means. */
+	posture: Schema.String,
+	postureNote: Schema.String,
 	services: Schema.Array(SecurityServiceRef),
 })
 

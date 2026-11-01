@@ -117,6 +117,19 @@ describe("list_security_findings", () => {
 		)
 	})
 
+	it("matches a repository by its whole name, not a prefix", async () => {
+		const { output } = await list(admin, { repository: "acme/sho" })
+		expect(output.findings).toEqual([])
+	})
+
+	it("pages past the first findings and keeps the filters in the next call", async () => {
+		const first = await list(admin, { status: "all", limit: 3 })
+		const second = await list(admin, { status: "all", limit: 3, offset: 3 })
+		expect(second.output.findings[0]?.id).not.toBe(first.output.findings[0]?.id)
+		expect(first.text).toContain("offset=3")
+		expect(first.text).toContain('status="all"')
+	})
+
 	it("says when a target's latest audit stopped early", async () => {
 		const { output } = await list(admin, { area: "code" })
 		expect(output.areas[0]?.summary).toContain(
@@ -157,6 +170,25 @@ describe("inspect_security_finding", () => {
 		const runtimes = output.coverage.find((line) => line.startsWith("Runtimes:"))
 		expect(runtimes).toContain("legacy-admin")
 		expect(runtimes).toContain("not checkable: cart")
+	})
+
+	it("does not call a fixed package that no service runs an exposure", async () => {
+		const { output } = await inspect(SECURITY_WORLD.fixedCve)
+		expect(output.coverage[0]).toBe(
+			"Verdict: not affected now; lodash in acme/shop is fixed; unknown for acme/api (never scanned).",
+		)
+	})
+
+	it("reads a runtime version the list names for its posture alone", async () => {
+		const { output } = await inspect("python@3.8.18")
+		expect(output.matches).toMatchObject([
+			{
+				area: "runtimes",
+				advisoryId: null,
+				posture: "end_of_life",
+				services: [{ service: "legacy-admin" }],
+			},
+		])
 	})
 
 	it("reads a code finding's trace, exploit and fix", async () => {
