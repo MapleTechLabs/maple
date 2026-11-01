@@ -233,7 +233,7 @@ const toolbar = (
 			toParentMessage: (message) => Message.GotRunsTargetSelectMessage({ message }),
 		}),
 		trailing: [
-			toolbarCount(h, [isCapped ? `showing the ${RUN_LIST_CAP} newest` : countLabel(count, "run")]),
+			toolbarCount(h, [isCapped ? `${RUN_LIST_CAP}+ runs` : countLabel(count, "run")]),
 		],
 	})
 

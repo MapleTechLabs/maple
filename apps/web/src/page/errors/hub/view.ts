@@ -32,17 +32,22 @@ const stableSparkWindow = stableSlice((window: Model["window"]) =>
 	window === null ? { startMs: 0, endMs: 0, bucketMs: 0 } : sparkWindowOf(window),
 )
 
+/** The stat strip and toolbar, pinned under the title like the other list pages' toolbars. */
+const pinnedToolbar = (h: H, model: Model): Html => {
+	const strip = statStrip(h, model)
+	// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+	const bar = toolbar(h, model, countReadout(model, signalsOf(model).length), "pb-0")
+	return strip === null ? bar : h.div([], [strip, bar])
+}
+
 const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	const signals = signalsOf(model)
 	const status = listStatusOf(model)
 	const sparkWindow = stableSparkWindow(model.window)
 	const isSelecting = model.selectedIds.length > 0
-	const strip = statStrip(h, model)
 	return h.div(
 		[],
 		[
-			...(strip === null ? [] : [strip]),
-			toolbar(h, model, countReadout(model, signals.length)),
 			...listBody(h, model, {
 				status,
 				signals,
@@ -74,8 +79,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Errors",
 			filters: filtersRail(h, model),
-			// The toolbar sits one header gap under the title, as tabs do on tabbed pages.
-			scrollClassName: "pt-0",
+			sticky: pinnedToolbar(h, model),
 			actions: refreshButton(h, {
 				onRefresh: Message.ClickedReload(),
 				isPending: model.isReloading,
