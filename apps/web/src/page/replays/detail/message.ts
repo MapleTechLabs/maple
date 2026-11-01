@@ -39,7 +39,7 @@ export const Message = defineMessageUnion({
 	/** The measured press, as a share of the surface's width. */
 	MeasuredScrub: { ratio: Schema.Number },
 	/** A timeline bar or a rail row asked for a display position. */
-	RequestedSeek: { displayMs: Schema.Number },
+	RequestedSeek: { offsetMs: Schema.Number },
 	/** Arrow keys: relative to the playhead, in display ms. */
 	RequestedSeekBy: { deltaMs: Schema.Number },
 	/** A rail row's warehouse timestamp. */
