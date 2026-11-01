@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { isRecord, isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
-import { parseYamlText } from "../internal/decode.ts"
+import { parseYamlDocuments } from "../internal/decode.ts"
 import { LockfileParseError } from "../errors.ts"
 import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
 import type { ParserOutput } from "./types.ts"
@@ -70,20 +70,21 @@ const entryNameVersion = (key: string, value: unknown): NameVersion | undefined 
 }
 
 export const parsePnpmLock = Effect.fn("lockfiles.parsePnpmLock")(function* (input: LockfileInput) {
-	const doc = yield* parseYamlText(input.path, input.content)
-	if (!isRecord(doc) || doc.lockfileVersion === undefined) {
+	// pnpm 11 can write an env document (the pinned package manager) before the project's.
+	const docs = (yield* parseYamlDocuments(input.path, input.content)).filter(isRecord)
+	if (!docs.some((doc) => doc.lockfileVersion !== undefined)) {
 		return yield* new LockfileParseError({
 			path: input.path,
 			message: "pnpm-lock.yaml has no lockfileVersion",
 		})
 	}
-	const importers = isRecord(doc.importers) ? Object.values(doc.importers) : [doc]
+	const importers = docs.flatMap((doc) => (isRecord(doc.importers) ? Object.values(doc.importers) : [doc]))
 	const direct = new Set(importers.flatMap((importer) => importerKeys(importer, PROD_FIELDS)))
 	const dev = new Set(importers.flatMap((importer) => importerKeys(importer, ["devDependencies"])))
-	const entries = [
+	const entries = docs.flatMap((doc) => [
 		...(isRecord(doc.packages) ? Object.entries(doc.packages) : []),
 		...(isRecord(doc.snapshots) ? Object.entries(doc.snapshots) : []),
-	]
+	])
 	const skipped = new Set<string>()
 	const packages = entries.flatMap(([key, value]): ReadonlyArray<LockedPackage> => {
 		const nv = entryNameVersion(key, value)
