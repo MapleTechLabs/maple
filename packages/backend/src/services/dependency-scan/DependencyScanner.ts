@@ -66,6 +66,22 @@ export class DependencyScanError extends Schema.TaggedError<DependencyScanError>
 	{ message: Schema.String, repositoryId: VcsRepositoryId, cause: Schema.optionalKey(Schema.Defect()) },
 ) {}
 
+/**
+ * What a failed scan records: a typed failure's message (exact, so a repeated failure is
+ * recognised) with its underlying cause when it has one, an interruption, or a defect's summary.
+ */
+const failureText = (cause: Cause.Cause<DependencyScanError>): string =>
+	Option.match(Cause.findErrorOption(cause), {
+		onNone: () =>
+			Cause.hasInterruptsOnly(cause)
+				? "The scan was interrupted before it finished"
+				: summarizeCause(cause),
+		onSome: (error) =>
+			error.cause instanceof Error && error.cause.message !== ""
+				? `${error.message}: ${error.cause.message}`
+				: error.message,
+	})
+
 export interface DependencyScanRequest {
 	readonly trigger: DependencyScanTrigger
 	/** Scan this commit instead of the tracked branch head; it then never reconciles findings. */
@@ -393,10 +409,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 									orgId,
 									scanId: started.id,
 									// A typed failure keeps its own message, which the next push compares against.
-									error: Option.match(Cause.findErrorOption(cause), {
-										onNone: () => summarizeCause(cause),
-										onSome: (error) => error.message,
-									}),
+									error: failureText(cause),
 								})
 								.pipe(Effect.ignore),
 						),
