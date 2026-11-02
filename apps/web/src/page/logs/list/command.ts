@@ -1,8 +1,8 @@
-import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { logAttributeQueryFilters } from "../../../lib/logs/log-attribute-filters"
+import { Density, readLogsViewPreferences, saveLogsViewPreferences } from "@maple/views/ui/logs/viewer"
+import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -10,7 +10,7 @@ import { LogsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { listInput, PAGE_SIZE, toVolumeBuckets, volumeInput } from "./derive"
 import { Message, RequestMode } from "./message"
-import { Density, type LogRowSchema, type LogsPage } from "./model"
+import type { LogRowSchema, LogsPage } from "./model"
 
 /** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
 export const ResolveWindow = Command.define("ResolveLogsWindow", {
@@ -124,35 +124,19 @@ export const FetchAttributeKeys = Command.define("FetchLogAttributeKeys", {
 
 // PREFERENCES
 
-const WRAP_KEY = "maple.logs.wrap"
-const DENSITY_KEY = "maple.logs.density"
-const decodeWrap = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Boolean))
-const decodeDensity = Schema.decodeUnknownOption(Schema.fromJsonString(Density))
-
-/** The `Atom.kvs` preferences (JSON in localStorage) and the number locale, read on entry. */
+/** The view preferences and the number locale, read on entry. */
 export const ReadPreferences = Command.define("ReadLogsPreferences", {
 	messages: [Message.CompletedReadPreferences],
-	execute: Effect.sync(() =>
-		Message.CompletedReadPreferences({
-			wrap: Option.getOrElse(Option.flatMap(readLocalStorage(WRAP_KEY), decodeWrap), () => false),
-			density: Option.getOrElse(
-				Option.flatMap(readLocalStorage(DENSITY_KEY), decodeDensity),
-				() => "compact" as const,
-			),
-			locale: navigator.language,
-		}),
+	execute: Effect.map(readLogsViewPreferences, (preferences) =>
+		Message.CompletedReadPreferences({ ...preferences, locale: navigator.language }),
 	),
 })
 
 export const SavePreferences = Command.define("SaveLogsPreferences", {
 	args: { wrap: Schema.Boolean, density: Density },
 	messages: [Message.CompletedSavePreference],
-	execute: ({ wrap, density }) =>
-		Effect.sync(() => {
-			writeLocalStorage(WRAP_KEY, JSON.stringify(wrap))
-			writeLocalStorage(DENSITY_KEY, JSON.stringify(density))
-			return Message.CompletedSavePreference()
-		}),
+	execute: (preferences) =>
+		Effect.as(saveLogsViewPreferences(preferences), Message.CompletedSavePreference()),
 })
 
 /** `PageRefreshProvider` keeps Reload busy this long. */

@@ -1,3 +1,4 @@
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
@@ -5,9 +6,12 @@ import { MOBILE_QUERY } from "./env"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { PageMessage } from "./page/registry"
+import { queryOf } from "./route"
+import * as LogsPage from "./page/logs"
+import { modeOf } from "./page/logs/filters"
 import * as ServiceMapPage from "./page/service-map"
 
-// The OS theme and the sidebar's ⌘B / Ctrl+B shortcut (`SidebarProvider`).
+// The OS theme, the sidebar's ⌘B / Ctrl+B shortcut (`SidebarProvider`) and the logs list's keys.
 
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
@@ -32,6 +36,13 @@ const mapReducedMotion: Stream.Stream<Message> = Stream.map(ServiceMap.reducedMo
 		message: PageMessage.GotServiceMapMessage({
 			message: ServiceMapPage.Message.GotMapMessage({ message }),
 		}),
+	}),
+)
+
+/** The logs stream's j/k/↑/↓, Enter, Escape and →/← keys. */
+const logsNavigationKeys: Stream.Stream<Message> = Stream.map(LogsStream.navigationKeys, (message) =>
+	Message.GotPageMessage({
+		message: PageMessage.GotLogsMessage({ message: LogsPage.Message.GotStreamMessage({ message }) }),
 	}),
 )
 
@@ -62,6 +73,19 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 				hasMap: model.page._tag === "ServiceMapPage" && Option.isSome(model.page.maybeMap),
 			}),
 			dependenciesToStream: ({ hasMap }) => (hasMap ? mapReducedMotion : Stream.empty),
+		},
+	),
+	/** While the logs list shows rows (`useListNavigation`). */
+	logsNavigationKeys: entry(
+		{ hasLogRows: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({
+				hasLogRows:
+					model.page._tag === "LogsPage" &&
+					model.page.stream.rows.length > 0 &&
+					modeOf(queryOf(model.location)) === "list",
+			}),
+			dependenciesToStream: ({ hasLogRows }) => (hasLogRows ? logsNavigationKeys : Stream.empty),
 		},
 	),
 	sidebarShortcut: entry(

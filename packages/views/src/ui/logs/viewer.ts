@@ -1,3 +1,4 @@
+import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema } from "effect"
 
 /** What a logs view reads from the browser before it renders: the display zone and number locale. */
@@ -48,3 +49,27 @@ export const listFooterText = (
 	if (options.hasMore) return `Showing ${count} ${noun}, more available`
 	return `${count} ${noun}`
 }
+
+export const Density = Schema.Literals(["compact", "comfortable"])
+export type Density = typeof Density.Type
+
+/** `useLogsViewPreferences`: line wrapping and row density, kept per browser. */
+export const LogsViewPreferences = Schema.Struct({ wrap: Schema.Boolean, density: Density })
+export type LogsViewPreferences = typeof LogsViewPreferences.Type
+
+const WRAP_KEY = "maple.logs.wrap"
+const DENSITY_KEY = "maple.logs.density"
+const decodeWrap = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Boolean))
+const decodeDensity = Schema.decodeUnknownOption(Schema.fromJsonString(Density))
+
+/** The `Atom.kvs` preferences (JSON in localStorage); unreadable ones fall back to the defaults. */
+export const readLogsViewPreferences: Effect.Effect<LogsViewPreferences> = Effect.sync(() => ({
+	wrap: Option.getOrElse(Option.flatMap(readLocalStorage(WRAP_KEY), decodeWrap), () => false),
+	density: Option.getOrElse(Option.flatMap(readLocalStorage(DENSITY_KEY), decodeDensity), (): Density => "compact"),
+}))
+
+export const saveLogsViewPreferences = (preferences: LogsViewPreferences): Effect.Effect<void> =>
+	Effect.sync(() => {
+		writeLocalStorage(WRAP_KEY, JSON.stringify(preferences.wrap))
+		writeLocalStorage(DENSITY_KEY, JSON.stringify(preferences.density))
+	})

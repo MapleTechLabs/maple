@@ -226,11 +226,11 @@ export const CopyText = Command.define("CopyText", {
 	execute: ({ text }) => writeClipboard(text),
 })
 
-/** `logPermalink`: the standalone `/logs/$logId` page on this origin. */
+/** `logPermalink`: the row's own log page on this origin. */
 export const CopyLogLink = Command.define("CopyLogLink", {
-	args: { logKey: Schema.String },
+	args: { href: Schema.String },
 	messages: [Message.CompletedCopy],
-	execute: ({ logKey }) => Effect.suspend(() => writeClipboard(`${window.location.origin}/logs/${logKey}`)),
+	execute: ({ href }) => Effect.suspend(() => writeClipboard(`${window.location.origin}${href}`)),
 })
 
 /** Back to the newest rows. */

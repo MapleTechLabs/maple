@@ -12,7 +12,8 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import * as LogDetail from "../detail"
 import { SignalPresences } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { AttributeKey, Density, LogsFacets, LogsPage, VolumeBucket } from "./model"
+import { Density } from "@maple/views/ui/logs/viewer"
+import { AttributeKey, LogsFacets, LogsPage, VolumeBucket } from "./model"
 
 /** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
 export const RequestMode = Schema.Literals(["Load", "Refresh"])

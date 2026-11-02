@@ -1,4 +1,4 @@
-import { LOGS_TABLE_BENCH_ROWS } from "../../fixtures/logs-table-bench-fixture"
+import { FIXTURE_LOG_LINKS, LOGS_TABLE_BENCH_ROWS } from "../../fixtures/logs-table-bench-fixture"
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { logTimeFormat, toLogRowView } from "./log-row-view"
@@ -6,7 +6,9 @@ import { init, update } from "./logs-stream"
 import { Message } from "./logs-stream-message"
 import { pinnedColumnParts } from "./logs-stream-view"
 
-const ROWS = LOGS_TABLE_BENCH_ROWS.slice(0, 30).map((log) => toLogRowView(log, [], logTimeFormat("UTC")))
+const ROWS = LOGS_TABLE_BENCH_ROWS.slice(0, 30).map((log) =>
+	toLogRowView(log, [], logTimeFormat("UTC"), FIXTURE_LOG_LINKS),
+)
 
 // Scene resolves every Command before the next event, so a delay that fires after the pointer has
 // already left is driven through update directly.

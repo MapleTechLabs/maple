@@ -12,6 +12,7 @@ import { CHIP_CLASS, CHIP_KEY_TONE_CLASSES, CHIP_TONE_CLASSES, rowClass } from "
 import type * as AttributesPanel from "../attributes/attributes-panel"
 import type { CopyStatus } from "../copy-button"
 import { logRowExpanded } from "./log-row-expanded"
+import type { Density } from "./viewer"
 
 /** The handlers a row raises, so the row view stays independent of the stream's Message union. */
 export interface RowEvents<Message> {
@@ -30,7 +31,6 @@ export interface RowEvents<Message> {
 	readonly gotPanelMessage: (index: number, message: AttributesPanel.Message) => Message
 }
 
-export type Density = "compact" | "comfortable"
 
 /** Per-row state; every field is a primitive or a stable reference so a keyed lazy can skip the row. */
 export interface RowState {
@@ -298,18 +298,22 @@ const rowActions = <Message>(
 				events.clickedCopyMessage(index),
 				icon(h, "CopyIcon", { size: 14 }),
 			),
-			iconButton(
-				h,
-				"Copy link to log",
-				events.clickedCopyLink(index),
-				icon(h, "LinkIcon", { size: 14 }),
-			),
-			...(row.traceId === ""
+			...(row.logHref === ""
+				? []
+				: [
+						iconButton(
+							h,
+							"Copy link to log",
+							events.clickedCopyLink(index),
+							icon(h, "LinkIcon", { size: 14 }),
+						),
+					]),
+			...(row.traceHref === ""
 				? []
 				: [
 						h.a(
 							[
-								h.Href(`/traces/${row.traceId}`),
+								h.Href(row.traceHref),
 								h.AriaLabel("Open trace"),
 								h.Title("Open trace"),
 								rowClass(h, ROW_ACTION_CLASS),

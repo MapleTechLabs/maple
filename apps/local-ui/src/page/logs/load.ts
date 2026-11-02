@@ -39,9 +39,9 @@ export const load = (
 			const logs = isPatterns ? Option.none() : request(model.logs, logsKey, force)
 			const patternsKey = keyOf("log-patterns", { filters, window })
 			const patterns = isPatterns ? request(model.patterns, patternsKey, force) : Option.none()
-			const servicesKey = keyOf("log-services", { severity: filters.severity ?? null, search: filters.search ?? null, window })
+			const servicesKey = keyOf("log-services", { severity: filters.severity ?? null, search: filters.search ?? null, attrs: filters.attrs, window })
 			const services = request(model.services, servicesKey, force)
-			const severitiesKey = keyOf("log-severities", { service: filters.service ?? null, search: filters.search ?? null, window })
+			const severitiesKey = keyOf("log-severities", { service: filters.service ?? null, search: filters.search ?? null, attrs: filters.attrs, window })
 			const severities = request(model.severities, severitiesKey, force)
 			return {
 				model: {

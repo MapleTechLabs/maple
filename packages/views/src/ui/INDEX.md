@@ -91,11 +91,12 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/logs/log-row-expanded.ts` `buildLogJsonPayload`, `logRowExpanded`: An expanded log row: the full body on a severity-coloured edge, Details and JSON actions, then every attribute.
 - `packages/views/src/ui/logs/log-row-view.ts` `severityLabel`, `logTimeFormat`, `toLogRowView`: `LogRow` (`@maple/query-engine` route-rows): one log as the list renders it.
 - `packages/views/src/ui/logs/log-row.ts` `logRow`: The handlers a row raises, so the row view stays independent of the stream's Message union.
+- `packages/views/src/ui/logs/logs-stream-toolbar.ts` `logsStreamToolbar`: The logs stream's toolbar: the Columns picker, wrap and density, under one `TooltipProvider delay={250}`.
 - `packages/views/src/ui/logs/logs-stream-view.ts` `pinnedColumnParts`, `view`: A pinned key split around its naming segment: the last one that is not generic, so `deployment.environment.name` names "environment".
 - `packages/views/src/ui/logs/logs-stream.ts` `setRows`, `replaceRows`, `jumpToLatest`, `navigationKeys` (stateful: Model, init, update): The same logs, derived again (a pinned column or the search changed).
 - `packages/views/src/ui/logs/severity-badge.ts` `severityBadge`: `SeverityBadge` (packages/ui/src/components/logs/severity-badge.tsx).
 - `packages/views/src/ui/logs/styles.ts` `rowClass`: The class list as one `class` attribute.
-- `packages/views/src/ui/logs/viewer.ts` `viewerFlags`, `listFooterText`: What a logs view reads from the browser before it renders: the display zone and number locale.
+- `packages/views/src/ui/logs/viewer.ts` `viewerFlags`, `listFooterText`, `readLogsViewPreferences`, `saveLogsViewPreferences`: What a logs view reads from the browser before it renders: the display zone and number locale.
 - `packages/views/src/ui/manifest-glyph.ts` `manifestGlyph`: `chatConnectorIcon`: one `<svg>` from a manifest's path data; `monochrome` drops the brand fills.
 - `packages/views/src/ui/marker.ts` `marker`, `markerIcon`, `markerContent`: Port of packages/ui/src/components/ui/marker.tsx: an inline event marker in a timeline or thread.
 - `packages/views/src/ui/menu-view.ts` `itemRefs`, `view`: ENTRIES

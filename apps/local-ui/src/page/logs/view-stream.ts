@@ -1,46 +1,77 @@
-import type { TimeFormat } from "../kit/local-time"
-import { cn } from "@maple/ui/lib/utils"
-import { spinner } from "@maple/views/ui/spinner"
+import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
+import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
+import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
+import { listFooterText } from "@maple/views/ui/logs/viewer"
 import { Option } from "effect"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { TimeFormat } from "../kit/local-time"
+import { logKey } from "../kit/log-sheet/model"
+import { attributeFiltersOf, type LogFilters } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { logKey, rowsOf } from "./stream"
-import { logRow } from "./view-row"
-import { ObserveLogsViewport, ROW_HEIGHT, virtualWindow } from "./virtualize"
+import { rowsOf } from "./update-stream"
 
-/** `LogListMode`'s virtualized stream: only the rows in (or near) the scroller's view are built. */
-export const logStream = (h: HtmlBuilder<Message>, model: Model, search: string | undefined, timeFormat: TimeFormat): Html => {
-	const rows = rowsOf(model)
-	const selectedKey = Option.match(model.maybeDetail, { onNone: () => null, onSome: (detail) => logKey(detail.log) })
-	return h.div(
+// The list mode's stream (the shared logs stream) and the attribute filters it adds.
+
+/** The applied attribute filters, each removable; nothing when none is set. */
+export const attributeFilterChips = (h: HtmlBuilder<Message>, filters: LogFilters): ReadonlyArray<Html> => {
+	const chips = activeFilterChips(h, {
+		chips: attributeFiltersOf(filters).map((filter) => {
+			const entry = encodeLogAttributeFilter(filter)
+			return {
+				id: entry,
+				label: filter.key,
+				values: [filter.value],
+				isNegated: filter.negated,
+				onRemove: Message.RemovedAttributeFilter(filter),
+			}
+		}),
+		className: "mb-0 border-b px-4 py-2",
+	})
+	return chips === null ? [] : [chips]
+}
+
+/** The row the sheet shows (open or closed), so it stays marked. */
+const selectedIndexOf = (model: Model): number | undefined =>
+	Option.match(model.maybeDetail, {
+		onNone: () => undefined,
+		onSome: (detail) => {
+			const index = rowsOf(model).findIndex((log) => logKey(log) === logKey(detail.log))
+			return index === -1 ? undefined : index
+		},
+	})
+
+export const logStream = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	search: string | undefined,
+	timeFormat: TimeFormat,
+): Html =>
+	h.div(
+		[h.Class("flex h-full min-h-0 flex-col p-3")],
 		[
-			h.Role("list"),
-			h.AriaLabel("Logs"),
-			h.Class(cn("h-full overflow-auto", model.logs.isPlaceholder && "opacity-60 transition-opacity")),
-			h.OnMount(ObserveLogsViewport()),
-		],
-		[
-			h.div(
-				[h.Style({ height: `${rows.length * ROW_HEIGHT}px`, position: "relative" })],
-				virtualWindow(rows.length, model.viewport).flatMap((index) => {
-					const log = rows[index]
-					return log === undefined
-						? []
-						: [
-								logRow(h, {
-									log,
-									index,
-									search,
-									top: index * ROW_HEIGHT,
-									isSelected: selectedKey === logKey(log),
-									nowMs: model.nowMs,
-									timeFormat,
-								}),
-							]
-				}),
-			),
-			...(model.isFetchingNextPage ? [h.div([h.Class("flex justify-center p-3")], [spinner(h, "size-4")])] : []),
+			h.submodel({
+				slotId: "local-logs-stream",
+				model: model.stream,
+				view: LogsStreamView.view,
+				toParentMessage: (message) => Message.GotStreamMessage({ message }),
+				viewInputs: {
+					wrap: model.wrap,
+					density: model.density,
+					pinnedColumns: model.columns,
+					searchText: search,
+					timeZone: timeFormat.timeZone,
+					isWaiting: model.logs.isPlaceholder,
+					footerText: listFooterText(timeFormat.locale, {
+						shown: model.stream.rows.length,
+						noun: "logs",
+						capped: false,
+						hasMore: Option.exists(AsyncData.getData(model.logs.data), (data) => data.hasNextPage),
+					}),
+					canFilter: true,
+					selectedIndex: selectedIndexOf(model),
+				},
+			}),
 		],
 	)
-}

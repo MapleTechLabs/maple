@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, expect as expectView, expectOutMessage, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
@@ -12,10 +12,10 @@ import type { LocalLog, Model } from "./model"
 import { init, locationChanged } from "./update"
 import { update } from "./update-main"
 import { view as pageView } from "./view"
-import { ObserveLogsViewport } from "./virtualize"
-import { logKey } from "./stream"
-import { WaitChipDelay } from "./update-chips"
-import { PlaceLocalChipCard } from "./view-chip-card"
+import * as AttributesPanel from "@maple/views/ui/attributes/attributes-panel"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import { VirtualizeLogStream } from "@maple/views/ui/logs/virtualize"
+import { PageOutMessage } from "../contract"
 
 const context: PageContext = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
@@ -37,6 +37,14 @@ const inputs: PageViewInputs = {
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, inputs)()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+
+/** The virtualizer reports rows `from..to` (the stream's own Message, as its Mount sends it). */
+const streamWindow = (from: number, to: number) =>
+	LogsStream.Message.ChangedVirtualWindow({
+		rows: Array.from({ length: to - from + 1 }, (_, i) => ({ index: from + i, start: (from + i) * 30 })),
+		totalSize: (to + 1) * 30,
+	})
+const windowOf = (from: number, to: number) => Message.GotStreamMessage({ message: streamWindow(from, to) })
 
 const log = (index: number, body = `GET /item/${index} 200`): LocalLog => ({
 	timestamp: `2026-10-01 11:59:${String(59 - (index % 60)).padStart(2, "0")}.000000000`,
@@ -89,25 +97,43 @@ describe("local logs", () => {
 		scene({ update: pageUpdate, view }, given(empty.model), expectView(text("No logs found")).toExist())
 	})
 
-	test("scrolling the last row into view fetches the next page", () => {
+	test("the stream rendering the last loaded row fetches the next page", () => {
 		const model = loaded(Array.from({ length: PAGE_SIZE }, (_, index) => log(index)))
-		const short = pageUpdate(model, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } }))
+		const short = pageUpdate(model, windowOf(0, 20))
 		expect(names(short.commands)).toEqual([])
-		const tall = pageUpdate(model, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 1500 } }))
+		const tall = pageUpdate(model, windowOf(0, PAGE_SIZE - 1))
 		expect(names(tall.commands)).toEqual([FetchNextPage.name])
 		expect(tall.model.isFetchingNextPage).toBe(true)
 		// The pages so far travel with it, so the cache keeps them all with the new one.
 		expect((tall.commands ?? []).map(({ args }) => args)).toMatchObject([{ pages: [model.logs.data._tag === "Success" ? model.logs.data.data.pages[0] : []] }])
 	})
 
+	test("a next page keeps an expanded row open; new data closes it", () => {
+		const model = loaded(Array.from({ length: PAGE_SIZE }, (_, index) => log(index)))
+		const expanded = pageUpdate(model, Message.GotStreamMessage({ message: LogsStream.Message.ClickedExpand({ index: 3 }) })).model
+		const fetching = pageUpdate(expanded, windowOf(0, PAGE_SIZE - 1)).model
+		const more = pageUpdate(
+			fetching,
+			Message.SucceededFetchNextPage({ key: fetching.logs.key ?? "", generation: fetching.pageGeneration, page: [log(99)] }),
+		).model
+		expect([more.stream.rows.length, more.stream.expandedRows]).toEqual([PAGE_SIZE + 1, [3]])
+		const refetched = pageUpdate(
+			more,
+			Message.SucceededFetchLogs({ key: more.logs.key ?? "", data: { pages: [[log(1)]], hasNextPage: false }, fetchedAtMs: NOW + 1 }),
+		).model
+		expect([refetched.stream.rows.length, refetched.stream.expandedRows]).toEqual([1, []])
+	})
+
 	test("a row click opens the detail sheet on that log", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([log(1, "pool exhausted")])),
-			Mount.resolve(ObserveLogsViewport, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })),
-			expectView(role("listitem", { name: "INFO storefront: pool exhausted" })).toExist(),
+			Mount.resolve(VirtualizeLogStream, streamWindow(0, 0)),
+			expectView(role("listitem")).toExist(),
+			expectView(text("pool exhausted")).toExist(),
+			expectView(text("1 log")).toExist(),
 		)
-		const opened = pageUpdate(loaded([log(1, "pool exhausted")]), Message.ClickedLog({ log: log(1, "pool exhausted") }))
+		const opened = pageUpdate(loaded([log(1, "pool exhausted")]), Message.GotStreamMessage({ message: LogsStream.Message.ClickedRow({ index: 0 }) }))
 		expect(Option.map(opened.model.maybeDetail, (sheet) => [sheet.dialog.isOpen, sheet.log.body])).toEqual(
 			Option.some([true, "pool exhausted"]),
 		)
@@ -116,65 +142,55 @@ describe("local logs", () => {
 	})
 
 	test("switching to patterns drops the list's sheet and requests the clusters", () => {
-		const opened = pageUpdate(loaded([log(1)]), Message.ClickedLog({ log: log(1) })).model
+		const opened = pageUpdate(loaded([log(1)]), Message.GotStreamMessage({ message: LogsStream.Message.ClickedRow({ index: 0 }) })).model
 		const patterns = locationChanged(opened, { ...context, location: { path: "/logs", search: "mode=patterns" } })
 		expect(Option.isNone(patterns.model.maybeDetail)).toBe(true)
 		expect(names(patterns.commands)).toEqual(["FetchLocalLogPatterns"])
 		expect(AsyncData.isLoading(patterns.model.patterns.data)).toBe(true)
 	})
 
-	test("resting on a chip opens its card after the delay; leaving closes it after the grace period", () => {
+	test("filtering by an attribute adds it to the hash; its chip removes it", () => {
 		const row = { ...log(1, "payment failed"), logAttributes: { "http.status_code": "503" } }
-		const model = pageUpdate(loaded([row]), Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })).model
-		const chip = { index: 0, logKey: logKey(row), key: "http.status_code" }
-		const entered = pageUpdate(model, Message.EnteredChip({ chip }))
-		expect(names(entered.commands)).toEqual([WaitChipDelay.name])
-		const generation = entered.model.chipCard.generation
-		const shown = pageUpdate(entered.model, Message.ElapsedChipDelay({ generation })).model
-		expect(shown.chipCard.visible).toEqual(Option.some(chip))
+		const model = loaded([row])
+		const expanded = pageUpdate(model, Message.GotStreamMessage({ message: LogsStream.Message.ClickedExpand({ index: 0 }) })).model
+		const filter = AttributesPanel.Message.ClickedFilter({ source: "log", key: "http.status_code", value: "503", negated: false })
+		const chosen = pageUpdate(expanded, Message.GotStreamMessage({ message: LogsStream.Message.GotPanelMessage({ index: 0, message: filter }) }))
+		expect(chosen.outMessage).toEqual(PageOutMessage.RequestedNavigation({ hash: "#/logs?attrs=log%3Ahttp.status_code%3D503", isReplace: true }))
+		const filtered = { ...context, location: { path: "/logs", search: "attrs=log%3Ahttp.status_code%3D503" } }
+		const requested = locationChanged(model, filtered)
+		expect(names(requested.commands)).toEqual(expect.arrayContaining([FetchLogs.name]))
 		scene(
-			{ update: pageUpdate, view },
-			given(shown),
-			Mount.resolve(ObserveLogsViewport, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })),
-			Mount.resolve(PlaceLocalChipCard, Message.PlacedChipCard()),
-			expectView(text("Attribute")).toExist(),
-			expectView(role("button", { name: "Copy http.status_code" })).toExist(),
+			{ update: (m: Model, message: Message) => update(m, message, filtered), view: withViewInputs(pageView, { ...inputs, context: filtered })() },
+			given(requested.model),
+			Mount.resolve(VirtualizeLogStream, streamWindow(0, 0)),
+			expectView(text("http.status_code")).toExist(),
+			click(role("button", { name: /Remove/ })),
+			expectOutMessage(PageOutMessage.RequestedNavigation({ hash: "#/logs", isReplace: true })),
 		)
-		const left = pageUpdate(shown, Message.LeftChip({ chip }))
-		const closed = pageUpdate(left.model, Message.ElapsedChipDelay({ generation: left.model.chipCard.generation })).model
-		expect(closed.chipCard.visible).toEqual(Option.none())
 	})
 
-	test("a JSON value expands in the card, and the next card starts collapsed", () => {
-		const row = { ...log(1, "order placed"), logAttributes: { "order.payload": '{"orderId":"ord_1","total":18.5}' } }
-		const model = pageUpdate(loaded([row]), Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })).model
-		const chip = { index: 0, logKey: logKey(row), key: "order.payload" }
-		const entered = pageUpdate(model, Message.EnteredChip({ chip })).model
-		const shown = pageUpdate(entered, Message.ElapsedChipDelay({ generation: entered.chipCard.generation })).model
-		const resolveMounts = [
-			Mount.resolve(ObserveLogsViewport, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })),
-			Mount.resolve(PlaceLocalChipCard, Message.PlacedChipCard()),
-		]
-		scene({ update: pageUpdate, view }, given(shown), ...resolveMounts, expectView(role("button", { name: "Copy JSON" })).toBeAbsent())
-		const expanded = pageUpdate(shown, Message.ClickedChipJson()).model
-		scene({ update: pageUpdate, view }, given(expanded), ...resolveMounts, expectView(role("button", { name: "Copy JSON" })).toExist())
-		const closed = pageUpdate(expanded, Message.PressedChipEscape({ chip })).model
-		const again = pageUpdate(closed, Message.EnteredChip({ chip })).model
-		const reopened = pageUpdate(again, Message.ElapsedChipDelay({ generation: again.chipCard.generation })).model
-		expect(reopened.chipCard.isJsonExpanded).toBe(false)
+	test("removing a filter drops every spelling of it and keeps the others", () => {
+		const search = "attrs=log%3Ak%3Dv&attrs=log%3Ak%3Dv&attrs=%21res%3Aregion%3Deu"
+		const repeated = { ...context, location: { path: "/logs", search } }
+		const removed = update(entered(), Message.RemovedAttributeFilter({ source: "log", key: "k", value: "v", negated: false }), repeated)
+		expect(removed.outMessage).toEqual(PageOutMessage.RequestedNavigation({ hash: "#/logs?attrs=%21res%3Aregion%3Deu", isReplace: true }))
 	})
 
-	test("a pending open is dropped when the pointer moves on first", () => {
-		const row = { ...log(1, "payment failed"), logAttributes: { "http.status_code": "503" } }
-		const chip = { index: 0, logKey: logKey(row), key: "http.status_code" }
-		const entered = pageUpdate(loaded([row]), Message.EnteredChip({ chip })).model
-		const left = pageUpdate(entered, Message.LeftChip({ chip })).model
-		expect(pageUpdate(left, Message.ElapsedChipDelay({ generation: entered.chipCard.generation })).model.chipCard.visible).toEqual(Option.none())
+	test("pinning a column gives every row its cell; density and wrap are saved", () => {
+		const row = { ...log(1), resourceAttributes: { "deployment.environment": "staging" } }
+		const model = loaded([row])
+		expect(model.columnOptions).toEqual([{ name: "deployment.environment", count: 1 }])
+		const pin = pageUpdate(model, Message.ToggledColumn({ key: "deployment.environment" }))
+		expect(pin.outMessage).toEqual(PageOutMessage.RequestedNavigation({ hash: "#/logs?columns=deployment.environment", isReplace: true }))
+		const pinned = locationChanged(model, { ...context, location: { path: "/logs", search: "columns=deployment.environment" } }).model
+		expect(pinned.stream.rows.map((r) => r.pinned.map((cell) => cell.value))).toEqual([["staging"]])
+		const comfortable = pageUpdate(model, Message.ClickedDensity())
+		expect([comfortable.model.density, names(comfortable.commands)]).toEqual(["comfortable", ["SaveLocalLogsPreferences"]])
 	})
 
 	test("a next page in flight across a same-minute Reload is dropped when it lands", () => {
 		const model = loaded(Array.from({ length: PAGE_SIZE }, (_, index) => log(index)))
-		const scrolled = pageUpdate(model, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 1500 } })).model
+		const scrolled = pageUpdate(model, windowOf(0, PAGE_SIZE - 1)).model
 		const reloaded = pageUpdate(scrolled, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
 		const late = Message.SucceededFetchNextPage({ key: reloaded.logs.key ?? "", generation: scrolled.pageGeneration, page: [log(99)] })
 		expect(pageUpdate(reloaded, late).model.logs).toEqual(reloaded.logs)

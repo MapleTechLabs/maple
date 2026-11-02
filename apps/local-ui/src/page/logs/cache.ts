@@ -18,16 +18,16 @@ export const logsKey = (window: Window): QueryKey => ["local", "logs", filtersFr
 /** `["local", "log-patterns", filters, boundsKey]`. */
 export const patternsKey = (window: Window): QueryKey => ["local", "log-patterns", filtersFrom(window), windowOf(window)]
 
-/** `["local", "logs", "services", severity, search, boundsKey]`. */
+/** `["local", "logs", "services", severity, search, attrs, boundsKey]`. */
 export const servicesKey = (window: Window): QueryKey => {
 	const filters = filtersFrom(window)
-	return ["local", "logs", "services", filters.severity ?? null, filters.search ?? null, windowOf(window)]
+	return ["local", "logs", "services", filters.severity ?? null, filters.search ?? null, filters.attrs, windowOf(window)]
 }
 
-/** `["local", "log-severities", service, search, boundsKey]`. */
+/** `["local", "log-severities", service, search, attrs, boundsKey]`. */
 export const severitiesKey = (window: Window): QueryKey => {
 	const filters = filtersFrom(window)
-	return ["local", "log-severities", filters.service ?? null, filters.search ?? null, windowOf(window)]
+	return ["local", "log-severities", filters.service ?? null, filters.search ?? null, filters.attrs, windowOf(window)]
 }
 
 const CachedPages = Schema.Struct({ pages: Schema.Array(Schema.Array(LocalLog)) })
