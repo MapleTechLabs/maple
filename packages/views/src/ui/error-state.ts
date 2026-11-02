@@ -507,7 +507,10 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 						h.p([h.Class("font-prose text-xs font-medium text-foreground")], [heading]),
 					],
 				),
-				h.p([h.Class("font-prose text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
+				h.p(
+					[h.Class("font-prose text-xs whitespace-pre-wrap break-words text-muted-foreground")],
+					[message],
+				),
 				...retry("outline", "mt-1 w-fit"),
 			],
 		)
@@ -532,7 +535,10 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					[h.Class("min-w-0 flex-1 basis-56 space-y-0.5")],
 					[
 						h.p([h.Class("font-prose text-sm font-medium text-foreground")], [heading]),
-						h.p([h.Class("font-prose line-clamp-2 text-xs text-muted-foreground")], [message]),
+						h.p(
+							[h.Class("font-prose line-clamp-2 text-xs break-words text-muted-foreground")],
+							[message],
+						),
 					],
 				),
 				...retry("outline", "shrink-0"),
@@ -562,7 +568,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					h.p(
 						[
 							h.Class(
-								"font-prose text-ui text-balance whitespace-pre-wrap text-muted-foreground",
+								"font-prose text-ui text-balance whitespace-pre-wrap break-words text-muted-foreground",
 							),
 						],
 						[message],

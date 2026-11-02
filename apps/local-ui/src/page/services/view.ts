@@ -1,10 +1,12 @@
 import type * as CopyButton from "@maple/views/ui/copy-button"
+import { errorState } from "@maple/views/ui/error-state"
 import { filterSection } from "@maple/views/ui/filters/filter-section"
 import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { toKitFailure } from "../../data/local-query"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
@@ -12,7 +14,6 @@ import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
-import { errorState } from "../kit/view-states"
 import { activeFilterCount, facetsOf, filtersOf, type ServicesFilters, unfilteredSlot, visibleEntries } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -90,7 +91,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (isPending(model.catalog)) return servicesSkeleton(h)
 		const failure = failureWithoutData(model.catalog)
 		if (Option.isSome(failure))
-			return errorState(h, { label: "services", failure: failure.value, onRetry: Message.ClickedRefresh() })
+			return errorState(h, {
+				failure: toKitFailure(failure.value, "services"),
+				onRetry: Message.ClickedRefresh(),
+			})
 		if (entries.length === 0)
 			return signalEmptyState(h, {
 				signal: "traces",

@@ -10,8 +10,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { queryOf } from "../../route"
 import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
+import { emptyNotice } from "../kit/placeholders"
 import { toolbar, toolbarStat, toolbarStats } from "../kit/toolbar"
-import { emptyState } from "../kit/view-states"
 import { Message } from "./message"
 import { type Model, RunState } from "./model"
 import { queryError, resultTable } from "./view-result"
@@ -86,16 +86,17 @@ const editor = (h: HtmlBuilder<Message>, model: Model, sql: string): Html =>
 const result = (h: HtmlBuilder<Message>, model: Model): Html =>
 	RunState.match(model.run, {
 		Idle: () =>
-			emptyState(h, {
+			emptyNotice(h, {
 				icon: icon(h, "CodeIcon"),
 				title: "Run a query",
-				hint: ["Pick a table or an example from the sidebar, or write your own SELECT. Every table is scoped by OrgId = 'local'."],
+				hint:
+					"Pick a table or an example from the sidebar, or write your own SELECT. Every table is scoped by OrgId = 'local'.",
 			}),
 		Running: () => h.div([h.Class("flex h-24 items-center justify-center")], [spinner(h, "size-4")]),
 		Failed: ({ title, detail }) => queryError(h, title, detail),
 		Succeeded: ({ rows }) =>
 			rows.length === 0
-				? emptyState(h, { title: "No rows", hint: ["The query ran and returned an empty result."] })
+				? emptyNotice(h, { title: "No rows", hint: "The query ran and returned an empty result." })
 				: resultTable(h, rows),
 	})
 

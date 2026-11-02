@@ -6,6 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "@maple/views/charts/area-chart"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import type * as Chart from "@maple/views/charts/chart"
+import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import type * as Combobox from "@maple/views/ui/combobox"
 import { view as comboboxView } from "@maple/views/ui/combobox-view"
@@ -24,7 +25,6 @@ import {
 	breakdownAggregation,
 	breakdownGroupBy,
 	type CatalogSummary,
-	chartUnitFromOtel,
 	GROUP_BY_SERIES_LIMIT,
 	queryLabel,
 	SERVICE_KEY,
@@ -64,7 +64,7 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 								chartId: "metric-explorer",
 								data: rows,
 								theme: model.themeColors,
-								unit: chartUnitFromOtel(unit),
+								unit: chartUnitFromOtel(unit, draft.metricName),
 								timeZone,
 								nowMs: model.nowMs,
 								className: chartFrameClass("fill"),

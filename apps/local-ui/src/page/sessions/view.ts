@@ -1,3 +1,5 @@
+import { errorState } from "@maple/views/ui/error-state"
+import { toKitFailure } from "../../data/local-query"
 import { isLocalSessionLive } from "../../lib/session-liveness"
 import { cn } from "@maple/ui/lib/utils"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -10,9 +12,9 @@ import { hrefFor, queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
+import { listSkeleton } from "../kit/placeholders"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
-import { errorState, listSkeleton } from "../kit/view-states"
 import { filtersOf } from "./fetch"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -34,10 +36,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const sessions = Option.match(maybeData, { onNone: () => [], onSome: (data) => data.pages.flat() })
 	const hasNextPage = Option.exists(maybeData, (data) => data.hasNextPage)
 	const content = (): Html => {
-		if (isPending(model.sessions)) return listSkeleton(h, { variant: "card", rows: 6 })
+		if (isPending(model.sessions)) return listSkeleton(h, "card", 6)
 		const failure = failureWithoutData(model.sessions)
 		if (Option.isSome(failure))
-			return errorState(h, { label: "sessions", failure: failure.value, onRetry: Message.ClickedRefresh() })
+			return errorState(h, {
+				failure: toKitFailure(failure.value, "sessions"),
+				onRetry: Message.ClickedRefresh(),
+			})
 		if (sessions.length === 0)
 			return signalEmptyState(h, {
 				signal: "sessions",
