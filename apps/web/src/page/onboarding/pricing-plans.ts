@@ -2,7 +2,7 @@ import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 import { isPricingCardFeature } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import { formatCount, formatQuoteUnits, quoteUnits } from "../../lib/billing/usage"
-import type { IconName } from "../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 
 // The data side of `PricingCards`: which plans show, their prices, metered rows and buttons.
 

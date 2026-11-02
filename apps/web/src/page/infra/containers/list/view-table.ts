@@ -1,8 +1,8 @@
 import { formatWholePercent } from "../../../../components/infra/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { middleTruncate } from "../../../../ui/middle-truncate"
-import { skeleton, skeletonLine } from "../../../../ui/skeleton"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { skeleton, skeletonLine } from "@maple/views/ui/skeleton"
 import { avgPeak } from "../../kit/avg-peak"
 import {
 	columnHead,
@@ -19,9 +19,9 @@ import { listRelativeTime } from "../../../kit/relative-time"
 import { hostStatusBadge } from "../../kit/status"
 import { type ContainerSortKey, Message } from "./message"
 import type { ContainerRow } from "./model"
-import { typographyClass } from "../../../../ui/typography"
-import { hstack } from "../../../../ui/stack"
-import { column, columnClass } from "../../../../ui/column"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { column, columnClass } from "@maple/views/ui/column"
 
 // `ContainerTable` / `ContainerTableLoading`.
 

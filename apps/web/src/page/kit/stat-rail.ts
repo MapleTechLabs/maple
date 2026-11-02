@@ -3,9 +3,9 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { miniBars } from "../../ui/mini-bars"
-import { skeleton } from "../../ui/skeleton"
-import { statFigure } from "../../ui/stat-figure"
+import { miniBars } from "@maple/views/ui/mini-bars"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statFigure } from "@maple/views/ui/stat-figure"
 
 // `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`.
 

@@ -4,7 +4,7 @@ import { expect as expectView, given, Mount, role, scene, text, withViewInputs }
 import type { HtmlBuilder } from "foldkit/html"
 import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import {
 	FetchDetail,

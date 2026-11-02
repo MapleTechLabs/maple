@@ -2,11 +2,11 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
-import { skeleton, skeletonList } from "../ui/skeleton"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { dashboardPage, pageBody, pageContent } from "./kit/dashboard-page"
 import { resourceNotFound } from "./kit/resource-not-found"
 import { resolveLegacySettingsTab } from "./settings/nav"
-import { vstack } from "../ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 
 /**
  * Signed-in routes rendered without `DashboardLayout`: onboarding and auth handoffs with

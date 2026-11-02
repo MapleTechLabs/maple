@@ -1,5 +1,5 @@
-import * as Chart from "@maple/web/charts/chart"
-import { ThemeColors } from "@maple/web/charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"

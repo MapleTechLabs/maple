@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { DATA_INTEGRATIONS } from "../../route/data-integrations"
 import { Submodel } from "foldkit"
-import { icon } from "../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import type { PageContext, PageReturn } from "../contract"
 import { catalogEntry, type IntegrationId } from "./catalog"
 import { overviewOf } from "./derive"
@@ -14,8 +14,8 @@ import { cloudflareReconnectButton } from "./view-cloudflare"
 import { gcpDialogs } from "./view-gcp-dialogs"
 import type { FlowStage } from "./flow"
 import { flowView } from "./view-flow"
-import { typographyClass } from "../../ui/typography"
-import { hstackClass, vstack } from "../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
 

@@ -6,7 +6,7 @@ import {
 	getAwsInfraTimeseries,
 } from "@maple/web-data/warehouse/aws-infra"
 import { Effect, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 

@@ -2,12 +2,12 @@ import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { ErrorSignal } from "../../../lib/models/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Checkbox from "../../../ui/checkbox"
-import { eyebrow } from "../../../ui/eyebrow"
-import { skeleton } from "../../../ui/skeleton"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { AppRoute, hrefOf } from "../../../route"
-import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
 import { actorAvatar } from "../kit/actor"
 import {
 	PICKER_HOTKEY,
@@ -18,11 +18,11 @@ import {
 	statePickerTrigger,
 } from "../kit/pickers"
 import * as QuickPick from "../kit/quick-pick"
-import type * as ContextMenu from "../../../ui/context-menu"
-import * as ContextMenuView from "../../../ui/context-menu-view"
+import type * as ContextMenu from "@maple/views/ui/context-menu"
+import * as ContextMenuView from "@maple/views/ui/context-menu-view"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
-import { formatExactCount } from "../../kit/locale"
+import { formatExactCount } from "@maple/views/lib/locale"
 import { rowMenuEntries } from "./row-menu"
 import { Message } from "./message"
 import {
@@ -33,8 +33,8 @@ import {
 	type SparkWindow,
 	sparkOf,
 } from "./view-signal"
-import { typographyClass } from "../../../ui/typography"
-import { hstackClass } from "../../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The error signal header and row skeleton.
 

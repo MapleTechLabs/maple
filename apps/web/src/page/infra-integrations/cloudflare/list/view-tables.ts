@@ -19,13 +19,13 @@ import {
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import * as Sparkline from "../../../../charts/sparkline"
-import { resolveColor, type ThemeColors } from "../../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { segmentedBar } from "../../../../ui/meter"
-import { skeleton, skeletonLine } from "../../../../ui/skeleton"
-import { statusDot } from "../../../../ui/status-dot"
+import { segmentedBar } from "@maple/views/ui/meter"
+import { skeleton, skeletonLine } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import {
 	columnHead,
 	dataTable,
@@ -37,10 +37,10 @@ import { metaLine } from "../../../infra/kit/meta-line"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { QueueRow, ZoneRow } from "../data"
 import { Message, type QueueSortKey, type ZoneSortKey } from "./model"
-import { typography, typographyClass } from "../../../../ui/typography"
-import { hstackClass } from "../../../../ui/stack"
-import { stripClass } from "../../../../ui/rule"
-import { columnClass } from "../../../../ui/column"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // `CloudflareZoneTable`, `CloudflareWorkerTable`, `CloudflareQueueTable`.
 

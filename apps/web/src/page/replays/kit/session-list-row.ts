@@ -10,11 +10,11 @@ import {
 	SESSION_TAG_STYLES,
 } from "../../../components/replays/session-tags"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { pressable } from "../../../ui/pressable"
-import { textLink } from "../../../ui/text-link"
-import { truncatedText } from "../../../ui/truncated-text"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { textLink } from "@maple/views/ui/text-link"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { relativeTime } from "../../kit/relative-time"
 import type { SessionRow } from "./session-row"
 import {
@@ -25,8 +25,8 @@ import {
 	livePill,
 	type SessionsListOptions,
 } from "./sessions-parts"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // A session list row: its org button, tags and badges.
 

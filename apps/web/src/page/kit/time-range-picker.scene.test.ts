@@ -14,7 +14,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Popover from "../../ui/popover"
+import * as Popover from "@maple/views/ui/popover"
 import * as CustomRange from "./custom-range"
 import { presetSpanLabel } from "./time-controls"
 import {

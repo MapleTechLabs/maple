@@ -5,13 +5,13 @@ import { spanEventMarkers, type TimelineSpanEvent } from "@maple/ui/lib/span-eve
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { describeSpan } from "../../../../service-map/trace-flow/span-category"
-import { icon } from "../../../../ui/icon"
-import { iconButton } from "../../../../ui/icon-button"
+import { describeSpan } from "@maple/views/service-map/trace-flow/span-category"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
 import type { Bar } from "./layout"
 import { Message } from "./message"
-import { typographyClass } from "../../../../ui/typography"
-import { hstackClass } from "../../../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
 // TODO(tooltip): event-marker tooltips and the hover span tooltip are not ported (triggers only).

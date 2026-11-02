@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
+import { badge } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -11,14 +11,14 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
-import { panel, panelHeader } from "../../../ui/panel"
-import { statusDot } from "../../../ui/status-dot"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { textLink } from "../../../ui/text-link"
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { textLink } from "@maple/views/ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { NARROW_TWO_COLUMNS, WIDE_COLUMN } from "../kit/layout"
@@ -38,8 +38,8 @@ import {
 	timelineValues,
 } from "./derive"
 import { type Exposure, Message, type Model } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The Exposure tab: probe paths a service answered, the week's totals, categories and sources.
 

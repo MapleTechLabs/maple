@@ -6,14 +6,14 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { textLink } from "../../../ui/text-link"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { meter } from "../../../ui/meter"
-import { skeletonSlowNote } from "../../../ui/skeleton"
-import { panel, panelHeader } from "../../../ui/panel"
-import { statusDot } from "../../../ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { meter } from "@maple/views/ui/meter"
+import { skeletonSlowNote } from "@maple/views/ui/skeleton"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
 import {
 	ROW_LINK_LIFT,
 	rowLink,
@@ -23,7 +23,7 @@ import {
 	tableHead,
 	tableHeader,
 	tableRow,
-} from "../../../ui/table"
+} from "@maple/views/ui/table"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import {
 	formatElapsed,
@@ -72,10 +72,10 @@ import { bucketOf, countByBucket, isUnverified } from "../kit/findings"
 import { findingBadge } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
 import { leadsLine, stopSummaryOf } from "../kit/outcome"
-import { emptyMessage } from "../../../ui/empty"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, hstackClass, vstack } from "../../../ui/stack"
-import { grid } from "../../../ui/grid"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // The Overview tab: totals, the targets table, open leads and recent runs.
 

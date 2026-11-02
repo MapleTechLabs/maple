@@ -5,9 +5,9 @@ import {
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
-import { button } from "../../../../ui/button"
-import { textLink } from "../../../../ui/text-link"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { button } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
 import {
 	empty,
 	emptyContent,
@@ -15,11 +15,11 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { type SelectEntry, view as selectView } from "../../../../ui/select-view"
-import * as Tooltip from "../../../../ui/tooltip"
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../../infra/kit/hero-chip"
@@ -59,9 +59,9 @@ import { activitySection, eventTriggerId, insightTriggerId, topQueries } from ".
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
-import { removableChip } from "../../../../ui/removable-chip"
-import { typography } from "../../../../ui/typography"
-import { hstack } from "../../../../ui/stack"
+import { removableChip } from "@maple/views/ui/removable-chip"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled

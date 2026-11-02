@@ -7,7 +7,7 @@ import { classifyUnplayable } from "../kit/replay-meta"
 import { manifestDurationMs } from "../kit/replay-range"
 import { recordedMarker, type ReplayPartitionWindow, replayPartitionWindow } from "../kit/replay-window"
 import { chunksOf, neededFailure, seedEvents } from "./loader"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Model, ReplayDetail } from "./model"
 
 export type PlayerStatus = "loading" | "error" | "empty" | "unrecorded" | "ready"

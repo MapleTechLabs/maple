@@ -1,13 +1,13 @@
 import { RailwayConnectRequest } from "@maple/domain/http"
 import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import * as Field from "../../ui/field"
-import { input } from "../../ui/input"
+import { button } from "@maple/views/ui/button"
+import * as Field from "@maple/views/ui/field"
+import { input } from "@maple/views/ui/input"
 import { whereToFind } from "../kit/connect-flow"
 import { Message } from "./message"
 import type { RailwayCardModel } from "./railway"
-import { hstack } from "../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // `RailwayTokenForm`: the connect flow's Connect step, and Update credential on the connected card.
 

@@ -4,12 +4,12 @@ import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../../../../c
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../../ui/alert"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import type * as Select from "../../../../ui/select"
-import { type SelectEntry, view as selectView } from "../../../../ui/select-view"
-import { skeleton } from "../../../../ui/skeleton"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	columnHead,
 	dataTable,
@@ -24,10 +24,10 @@ import { gcpMessage } from "../gcp-message"
 import { Message, type Model } from "./model"
 import type { H, TimeSearch } from "./view-rows"
 import { workloadHref } from "./view-rows"
-import { typography } from "../../../../ui/typography"
-import { hstack } from "../../../../ui/stack"
-import { stripClass } from "../../../../ui/rule"
-import { columnClass } from "../../../../ui/column"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // `GcpResources`: the inventory filtered by type and project.
 // TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).

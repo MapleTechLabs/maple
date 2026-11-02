@@ -7,7 +7,7 @@ import { modifyFields } from "foldkit/struct"
 import { MapleApiClient } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 
 // `/unsubscribe`: the digest email's footer link. Public: the signed token is the credential, and

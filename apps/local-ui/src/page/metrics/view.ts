@@ -1,5 +1,5 @@
-import { isChartRuntimeReady } from "@maple/web/charts/chart-runtime"
-import { ResolveThemeColors } from "@maple/web/charts/theme-colors"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { METRIC_TYPE_COLORS } from "@maple/web/page/metrics/shared"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"

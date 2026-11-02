@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
-import { hstackClass } from "../../../ui/stack"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // `MetaLine` and `PlatformLabel`.
 

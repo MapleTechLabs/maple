@@ -1,16 +1,16 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import { iconButton } from "../../ui/icon-button"
-import { pageTitle } from "../../ui/page-layout"
-import { statusDot } from "../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { catalogEntry, type IntegrationId } from "./catalog"
 import { cardStatusOf, HEALTH_TONE, overviewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { entryPlate } from "./view-entry"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack, hstackClass, vstack } from "../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 // `IntegrationHeader`.
 

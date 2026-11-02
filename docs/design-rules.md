@@ -7,8 +7,8 @@ exception at the call site.
 
 ## Build from the kit
 
-Pages compose the kit (`apps/web/src/ui`, `apps/web/src/page/kit`; index in
-`apps/web/src/ui/INDEX.md`). A control, heading or pattern a page needs and the kit lacks is built
+Pages compose the kit (`packages/views/src/ui`, `apps/web/src/page/kit`; index in
+`packages/views/src/ui/INDEX.md`). A control, heading or pattern a page needs and the kit lacks is built
 in the kit, and the pages that already hand-roll it move onto it. Outside the kit, lint bans raw
 controls (`maple/no-raw-control`), raw headings (`maple/no-raw-heading`) and building a component
 from its kit styles (`maple/no-kit-styles-in-pages`). Colours and type sizes come from tokens

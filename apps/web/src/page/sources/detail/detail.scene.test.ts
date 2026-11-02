@@ -20,10 +20,10 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
-import { toLoadFailure } from "../../../data/load-failure"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute } from "../../../route"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
 import { Message as IntegrationMessage } from "../../integrations/message"

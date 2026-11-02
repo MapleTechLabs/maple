@@ -1,9 +1,9 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as SelectView from "../../ui/select-view"
+import * as SelectView from "@maple/views/ui/select-view"
 import { FILTER_MODES } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
-import { typography } from "../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // The `Select` of `GcpLogFilterField`: keep an existing sink's filter, or replace it.
 

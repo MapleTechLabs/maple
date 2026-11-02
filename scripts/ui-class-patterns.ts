@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
  * The repeated-class ratchet for the dashboard. A "pattern" is a class string (tokens sorted, so
- * order doesn't hide a copy) that appears in 3 or more page files outside the kit
- * (apps/web/src/ui, page/kit, lab): 3+ utilities, or 2+ that are all type (`text-xs
+ * order doesn't hide a copy) that appears in 3 or more apps/web page files outside the kit
+ * (page/kit, lab; the rest of the kit lives in packages/views): 3+ utilities, or 2+ that are all type (`text-xs
  * text-muted-foreground`). Patterns are what the kit should own: `typography`, `hstack`/`vstack`,
  * or a component of their own.
  *
@@ -20,7 +20,7 @@ const baselineFile = join(root, "scripts/ui-class-patterns.json")
 const MIN_FILES = 3
 
 const isKitOrExempt = (path: string) =>
-	/^(ui|page\/kit|lab)\//.test(path) || /\.(test|generated)\.ts$/.test(path)
+	/^(page\/kit|lab)\//.test(path) || /\.(test|generated)\.ts$/.test(path)
 
 function* walk(dir: string): Generator<string> {
 	for (const entry of readdirSync(dir)) {

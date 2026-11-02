@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { Command, type Update } from "foldkit"
 import { load } from "foldkit/navigation"
-import { LoadChartRuntime } from "../../charts/chart-runtime"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { CompleteReloadSpin } from "../../page/infra-integrations/gcp/list/command"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
 import { stepProjectMenu } from "../../page/infra-integrations/gcp/list/project-menu"
@@ -9,7 +9,7 @@ import { stepTimePicker } from "../../page/infra-integrations/kit/page-time"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
-import * as Menu from "../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import { type ListState, Message, type Model } from "./model"
 
 type Return = Update.Return<Model, Message, Resources>

@@ -1,14 +1,14 @@
 import { describeSpanEvent, formatEventOffset } from "../../../../lib/traces/span-events"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { collapsibleTrigger } from "../../../../ui/collapsible"
-import { heading } from "../../../../ui/heading"
-import { icon } from "../../../../ui/icon"
-import { keyValue, keyValueList } from "../../../../ui/key-value"
+import { collapsibleTrigger } from "@maple/views/ui/collapsible"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { copyButton, statusOf } from "./copy"
 import { Message } from "./message"
 import type { Model, SpanEventData } from "./model"
-import { hstack } from "../../../../ui/stack"
-import { dividedList } from "../../../../ui/rule"
+import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The span's events section.
 

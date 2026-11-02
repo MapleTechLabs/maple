@@ -3,11 +3,11 @@ import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isSameFailure, type LoadFailure } from "../../../data/load-failure"
-import { kbd } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
+import { isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
+import { kbd } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { type FilterOption, filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -15,15 +15,15 @@ import {
 	filterSidebarHeader,
 	filterSidebarLoading,
 	filterSidebarGroupLabel,
-} from "../../../ui/filters/filter-sidebar"
-import type * as Popover from "../../../ui/popover"
+} from "@maple/views/ui/filters/filter-sidebar"
+import type * as Popover from "@maple/views/ui/popover"
 import { MountFilterRail } from "./command"
 import { searchHelp } from "./view-search-help"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
 import type { Search } from "./derive"
 import { type Facet, Message } from "./message"
 import type { LogsFacets, Model } from "./model"
-import { searchInput } from "../../../ui/search-input"
+import { searchInput } from "@maple/views/ui/search-input"
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 

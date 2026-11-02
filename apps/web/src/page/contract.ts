@@ -10,7 +10,7 @@ import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import type { NavSurface } from "../shell/nav"
 import type { PageSourceRef } from "../shell/source-link"
-import { ToastType } from "../ui/toast"
+import { ToastType } from "@maple/views/ui/toast"
 
 /** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
 

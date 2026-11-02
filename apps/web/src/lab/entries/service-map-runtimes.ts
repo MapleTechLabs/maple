@@ -16,8 +16,8 @@ import {
 import * as MapUpdate from "../../page/service-map/update"
 import { view as pageView } from "../../page/service-map/view"
 import type { Resources } from "../../platform/resources"
-import * as ServiceMap from "../../service-map/map/service-map"
-import * as Tabs from "../../ui/tabs"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
+import * as Tabs from "@maple/views/ui/tabs"
 import {
 	MAP_RUNTIMES_BUNDLE,
 	MAP_RUNTIMES_ENVIRONMENTS,

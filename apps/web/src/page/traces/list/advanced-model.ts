@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 
 // The advanced filter dialog's state (`AdvancedFilterDialog` + `WhereClauseEditor` +

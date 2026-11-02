@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as CopyButton from "../../../ui/copy-button"
-import { copyableField } from "../../../ui/copyable-field"
-import { typography } from "../../../ui/typography"
+import type * as CopyButton from "@maple/views/ui/copy-button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { typography } from "@maple/views/ui/typography"
 
 // `ApiKeySecretReveal`.
 

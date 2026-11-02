@@ -1,15 +1,15 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as Combobox from "../../../ui/combobox"
+import type * as Combobox from "@maple/views/ui/combobox"
 import {
 	type CommandGroup,
 	commandFooter,
 	commandHiddenInput,
 	commandInput,
 	commandList,
-} from "../../../ui/command"
-import type * as Dialog from "../../../ui/dialog"
-import { view as dialogView } from "../../../ui/dialog-view"
-import { kbd } from "../../../ui/display"
+} from "@maple/views/ui/command"
+import type * as Dialog from "@maple/views/ui/dialog"
+import { view as dialogView } from "@maple/views/ui/dialog-view"
+import { kbd } from "@maple/views/ui/display"
 import { Message } from "./model"
 
 // `KitCommand`: the command palette, open on mount.

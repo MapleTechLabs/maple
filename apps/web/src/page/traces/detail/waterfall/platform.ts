@@ -1,6 +1,6 @@
 import { CLOUDFLARE_ACCENT_CLASS, dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
-import { getCloudPlatform, pickAttr } from "../../../../service-map/trace-flow/cloud-platforms"
-import type { IconName } from "../../../../ui/icon"
+import { getCloudPlatform, pickAttr } from "@maple/views/service-map/trace-flow/cloud-platforms"
+import type { IconName } from "@maple/views/ui/icon"
 
 // The `CloudPlatformInfo` fields a span row reads. The flow port's copy of the adapters gives
 // label, icon, edge, location and outcome; the accents come from the shared @maple/ui module.

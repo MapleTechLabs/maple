@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { type PresetValue, timeControls, type TimeSearch } from "../../kit/time-controls"
-import { INITIAL_LOCALE, readLocale } from "../../kit/locale"
+import { INITIAL_LOCALE, readLocale } from "@maple/views/lib/locale"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The time scope every infra page shares: `useEffectiveTimeRange`, `PageRefreshProvider` (Reload

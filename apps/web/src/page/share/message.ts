@@ -1,8 +1,8 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../charts/chart"
-import { ThemeColors } from "../../charts/theme-colors"
-import * as Menu from "../../ui/menu"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import * as Menu from "@maple/views/ui/menu"
 import { Resolve, WidgetState } from "./model"
 
 export const Message = defineMessageUnion({

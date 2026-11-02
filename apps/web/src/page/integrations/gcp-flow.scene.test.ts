@@ -3,7 +3,7 @@ import { encodePublicId, PublicIdPrefixes, V2GcpConnector, V2GcpIntegration } fr
 import { Result, Schema } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, test } from "vitest"
-import * as Field from "../../ui/field"
+import * as Field from "@maple/views/ui/field"
 import type { PageContext } from "../contract"
 import { ScrollToTop } from "../sources/new/command"
 import { Message as PageMessage } from "../sources/new/message"

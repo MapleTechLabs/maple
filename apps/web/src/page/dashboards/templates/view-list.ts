@@ -2,13 +2,13 @@ import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { pressable } from "../../../ui/pressable"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeletonList } from "../../../ui/skeleton"
-import { truncatedText } from "../../../ui/truncated-text"
+import { button } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { listSectionHeader, toolbarSearch } from "../kit/list-parts"
 import {
 	BLANK_TEMPLATE_ID,
@@ -22,7 +22,7 @@ import {
 import { Message } from "./message"
 import type { Model, ReadinessFilter } from "./model"
 import { filteredEmpty as filteredEmptyState } from "../../kit/signal-empty-state"
-import { typography, typographyClass } from "../../../ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `TemplateList`: the templates as rows.
 

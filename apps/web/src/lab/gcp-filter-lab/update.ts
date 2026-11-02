@@ -2,7 +2,7 @@ import { Command, type Update } from "foldkit"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import { runtimeToggled } from "../../page/integrations/update-gcp-configure"
 import type { Resources } from "../../platform/resources"
-import * as Select from "../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { Message, type Model, SCENARIOS, type ScenarioState } from "./model"
 
 export type Return = Update.Return<Model, Message, Resources>

@@ -6,7 +6,7 @@ import {
 import { Option } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { textarea } from "../../../ui/textarea"
+import { textarea } from "@maple/views/ui/textarea"
 import { isOpenOf } from "../where-autocomplete"
 import { suggestionListbox, whereKeyHandler } from "../where-autocomplete-view"
 import { type WhereFields, WhereFieldMessage } from "../where-field"

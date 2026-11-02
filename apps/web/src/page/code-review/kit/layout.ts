@@ -1,10 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { WindowSearch } from "./frame"
-import { hstackClass } from "../../../ui/stack"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
 

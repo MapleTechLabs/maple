@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { settingRow } from "../../../ui/setting-row"
-import { switchControl } from "../../../ui/switch"
+import { settingRow } from "@maple/views/ui/setting-row"
+import { switchControl } from "@maple/views/ui/switch"
 
 // `<SettingRow label description control={<Switch checked onCheckedChange />} />`: the row is the
 // switch's Base UI field, so a checked switch marks the row, label and description filled.

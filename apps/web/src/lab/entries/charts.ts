@@ -13,23 +13,23 @@ import { Command, Mount, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import * as Chart from "../../charts/chart"
+import * as Chart from "@maple/views/charts/chart"
 import {
 	ChartRuntime,
 	ChartRuntimeMessage,
 	isChartRuntimeReady,
 	LoadChartRuntime,
-} from "../../charts/chart-runtime"
-import * as AreaChart from "../../charts/area-chart"
-import * as BarChart from "../../charts/bar-chart"
-import * as HeatmapChart from "../../charts/heatmap-chart"
-import * as HistogramChart from "../../charts/histogram-chart"
-import * as PieChart from "../../charts/pie-chart"
-import { ResolveThemeColors, ThemeColors, ThemeMessage } from "../../charts/theme-colors"
-import { eyebrow } from "../../ui/eyebrow"
-import { chartEmpty } from "../../ui/chart-state"
+} from "@maple/views/charts/chart-runtime"
+import * as AreaChart from "@maple/views/charts/area-chart"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import * as HeatmapChart from "@maple/views/charts/heatmap-chart"
+import * as HistogramChart from "@maple/views/charts/histogram-chart"
+import * as PieChart from "@maple/views/charts/pie-chart"
+import { ResolveThemeColors, ThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { chartEmpty } from "@maple/views/ui/chart-state"
 import { widgetShell } from "../../page/dashboards/kit/tile-shell"
-import { inlineCode } from "../../ui/inline-code"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { ARM_TITLES, type ChartsLabArm, SECTIONS } from "../charts/arms"
 import {
 	histogramSpikeValues,
@@ -42,7 +42,7 @@ import { SPIKE_ARMS, SPIKE_TOKENS_ALL } from "../charts/spike-arms"
 import { spikeView } from "../charts/spike-view"
 import { defineLab } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
-import * as Toast from "../../ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 
 // `/lab/charts`: the gallery, canvas renderer.
 

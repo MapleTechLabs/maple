@@ -1,6 +1,6 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../ui/error-state"
+import { errorState } from "@maple/views/ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { securityLayout } from "../kit/layout"
 import { focusedRepositoryOf, pageStateOf, scannedCount } from "./derive"
@@ -10,7 +10,7 @@ import { findingsSection } from "./view-findings"
 import { repositoriesPanel } from "./view-repositories"
 import { findingSheet } from "./view-sheet"
 import { dependenciesLoading, firstScan, footnote, notConnected, severityRail } from "./view-states"
-import { vstack } from "../../../ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 
 // The Dependencies tab inside the Security frame. No plan gate: it reads lockfiles.
 

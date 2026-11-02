@@ -2,8 +2,8 @@ import { MapleRegion } from "@maple/domain/organization-regions"
 import { Schema } from "effect"
 import { AsyncData, File } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { DraftState } from "../kit/draft"
 
 // The General tab: the active Clerk organization's logo and name, its data region and the danger zone.

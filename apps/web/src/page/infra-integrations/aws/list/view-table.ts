@@ -13,10 +13,10 @@ import { formatUtilizationPercent } from "../../../../components/infra/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { meter } from "../../../../ui/meter"
-import { inlineCode } from "../../../../ui/inline-code"
-import { skeleton } from "../../../../ui/skeleton"
-import { statusDot } from "../../../../ui/status-dot"
+import { meter } from "@maple/views/ui/meter"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import type { TracedService } from "../../kit/traced"
@@ -35,8 +35,8 @@ import {
 	tracedAs,
 } from "../derive"
 import type { Message } from "./message"
-import { typography, typographyClass } from "../../../../ui/typography"
-import { hstack, vstack } from "../../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // One kind's resource table and its loading state.
 

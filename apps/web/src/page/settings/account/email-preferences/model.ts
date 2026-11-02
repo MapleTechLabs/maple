@@ -2,8 +2,8 @@ import { DigestSubscriptionResponse } from "@maple/domain/http"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../../data/load-failure"
-import * as Combobox from "../../../../ui/combobox"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
 import { DraftState } from "../../kit/draft"
 
 // The Email preferences tab: the weekly ops and web analytics digests this user gets for

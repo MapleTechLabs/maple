@@ -4,11 +4,11 @@ import type { IncidentTimelineEntry } from "@maple/web-data/alerts/incident-time
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { eyebrow } from "../../../ui/eyebrow"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { msIso } from "../shared/time"
-import { typography, typographyClass } from "../../../ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `IncidentTimeline`: the incident's events in order.
 

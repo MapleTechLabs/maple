@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { refreshButton } from "../../ui/refresh-button"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { refreshButton } from "@maple/views/ui/refresh-button"
 
 // The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 

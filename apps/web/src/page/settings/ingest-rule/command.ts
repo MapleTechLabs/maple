@@ -10,7 +10,7 @@ import {
 } from "@maple/web-data/warehouse/traces"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readIsAdmin } from "../../alerts/shared/commands"

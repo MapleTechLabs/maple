@@ -1,8 +1,8 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Select from "../../../ui/select"
-import * as Tabs from "../../../ui/tabs"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Select from "@maple/views/ui/select"
+import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "../../kit/signal-presence"
 import { InvestigationPage, TriageBudget } from "./model"
 

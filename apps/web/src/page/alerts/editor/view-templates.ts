@@ -1,15 +1,15 @@
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { cardButton } from "../../../ui/card-button"
-import * as DialogView from "../../../ui/dialog-view"
-import { icon, type IconName } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
+import { button } from "@maple/views/ui/button"
+import { cardButton } from "@maple/views/ui/card-button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `RuleTemplatesOverlay`: the first-touch picker.
 

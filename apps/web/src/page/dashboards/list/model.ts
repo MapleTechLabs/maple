@@ -1,9 +1,9 @@
 import { Schema } from "effect"
 import { DashboardsSearch } from "../../../route/search"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import * as TagEditor from "../kit/tag-editor"
-import * as Menu from "../../../ui/menu"
-import * as Combobox from "../../../ui/combobox"
+import * as Menu from "@maple/views/ui/menu"
+import * as Combobox from "@maple/views/ui/combobox"
 
 // The dashboards list.
 

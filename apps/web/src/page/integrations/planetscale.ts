@@ -7,10 +7,10 @@ import {
 import { Effect, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { Message } from "./message"
 

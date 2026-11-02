@@ -5,30 +5,30 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Struct } from "effect"
 import { AsyncData as FoldkitAsyncData, Mount } from "foldkit"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../charts/chart"
-import { chartSkeleton, type ChartSkeletonVariant } from "../../ui/chart-skeleton"
-import { chartEmpty } from "../../ui/chart-state"
-import * as FixedMetricChart from "../../charts/fixed-metric-chart"
-import type { FixedMetricChartInputs } from "../../charts/fixed-metric-chart"
-import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "../../charts/linked-cursor"
+import * as Chart from "@maple/views/charts/chart"
+import { chartSkeleton, type ChartSkeletonVariant } from "@maple/views/ui/chart-skeleton"
+import { chartEmpty } from "@maple/views/ui/chart-state"
+import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
+import type { FixedMetricChartInputs } from "@maple/views/charts/fixed-metric-chart"
+import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import {
 	fixedMetricModel,
 	type FixedMetricSeries,
 	LATENCY_SERIES,
 	throughputLegend,
 	throughputPlot,
-} from "../../charts/fixed-metric-series"
-import { ChartSpec, type FixedMetricRow } from "../../charts/chart-spec"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
-import { FAILURE_KEY_SEPARATOR, failureKey, type LoadFailure } from "../../data/load-failure"
-import { errorState, type FailureKind, failureKind } from "../../ui/error-state"
+} from "@maple/views/charts/fixed-metric-series"
+import { ChartSpec, type FixedMetricRow } from "@maple/views/charts/chart-spec"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { FAILURE_KEY_SEPARATOR, failureKey, type LoadFailure } from "@maple/views/data/load-failure"
+import { errorState, type FailureKind, failureKind } from "@maple/views/ui/error-state"
 import { presenceOf } from "../kit/signal-presence"
 import { stableSlice } from "../kit/stable-slice"
 import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
 import { widgetShell } from "./view-widget"
-import { typography } from "../../ui/typography"
-import { chartFrameClass } from "../../ui/chart-frame"
+import { typography } from "@maple/views/ui/typography"
+import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
 type MetricsData = Pick<Model, "overviewSeries" | "logSeries" | "refinement" | "presence">
 type CardId = "throughput" | "error-rate" | "latency" | "log-volume"

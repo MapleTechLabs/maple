@@ -3,7 +3,7 @@ import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { Clock, Effect, Option, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
-import { linkedCursorStream } from "../../../charts/linked-cursor"
+import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import type { TimeWindow } from "../../../data/time-range"
 import { Message } from "./model"
 

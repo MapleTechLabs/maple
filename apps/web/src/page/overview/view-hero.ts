@@ -1,10 +1,10 @@
 import { pluralize } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { card, cardPanel } from "../../ui/card"
-import { eyebrow } from "../../ui/eyebrow"
-import { statusDot } from "../../ui/status-dot"
-import { typography } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
+import { card, cardPanel } from "@maple/views/ui/card"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The firing-alerts hero, without the last-evaluated hint.
 

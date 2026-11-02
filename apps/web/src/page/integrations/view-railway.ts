@@ -2,10 +2,10 @@ import type { RailwayIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { spinner } from "../../ui/spinner"
-import { truncatedText } from "../../ui/truncated-text"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { spinner } from "@maple/views/ui/spinner"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { RAILWAY_ACCENT } from "./catalog"
@@ -22,10 +22,10 @@ import {
 	integrationErrorNotice,
 	integrationStatusCard,
 } from "./view-integration-card"
-import { typographyClass } from "../../ui/typography"
-import { hstack, vstack } from "../../ui/stack"
-import { stripClass } from "../../ui/rule"
-import { columnClass } from "../../ui/column"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // `RailwayIntegrationCard`.
 

@@ -2,8 +2,8 @@ import { gcpMessageParts } from "../../../components/integrations/gcp-connector-
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { icon } from "../../../ui/icon"
-import { typography } from "../../../ui/typography"
+import { icon } from "@maple/views/ui/icon"
+import { typography } from "@maple/views/ui/typography"
 
 // `GcpMessage`, `Linked` and `GcpExternalLink`: a failure in the API's own words, laid out to be scanned.
 

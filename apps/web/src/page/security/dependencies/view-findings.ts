@@ -7,7 +7,7 @@ import { displayAdvisoryId } from "@maple/domain/package-advisories"
 import { countLabel, formatRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
+import { badge } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -15,13 +15,13 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../ui/empty"
-import { heading } from "../../../ui/heading"
-import { icon } from "../../../ui/icon"
-import { middleTruncate } from "../../../ui/middle-truncate"
-import { pressable } from "../../../ui/pressable"
-import * as Select from "../../../ui/select"
-import * as SelectView from "../../../ui/select-view"
+} from "@maple/views/ui/empty"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { pressable } from "@maple/views/ui/pressable"
+import * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
 import {
 	clickableRowClass,
 	laneTableCell,
@@ -31,8 +31,8 @@ import {
 	tableHead,
 	tableHeader,
 	tableRow,
-} from "../../../ui/table"
-import { textLink } from "../../../ui/text-link"
+} from "@maple/views/ui/table"
+import { textLink } from "@maple/views/ui/text-link"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
 import { relativeTime } from "../../kit/relative-time"
@@ -47,8 +47,8 @@ import {
 	statusFilterOf,
 } from "./derive"
 import { Message, type Model } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { borderedBox } from "../../../ui/bordered-box"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { borderedBox } from "@maple/views/ui/bordered-box"
 
 // The findings table: one row per advisory on a package in a lockfile, worst first as the server
 // sorts them, under a status and a repository filter.

@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { chartEmpty } from "../../../ui/chart-state"
-import { panel, panelHeader, panelTitle } from "../../../ui/panel"
-import { typography } from "../../../ui/typography"
-import { vstack, vstackClass } from "../../../ui/stack"
+import { chartEmpty } from "@maple/views/ui/chart-state"
+import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
+import { typography } from "@maple/views/ui/typography"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `ChartCard` and `ChartCardMessage`.
 

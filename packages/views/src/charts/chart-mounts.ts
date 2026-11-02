@@ -23,6 +23,21 @@ type ChartMountMessage =
 
 const failed = (reason: string) => Message.FailedMountChart({ reason })
 
+interface ChartHostModule {
+	readonly createChartHost: typeof import("./chart-host").createChartHost
+}
+
+interface LabHostSlot {
+	load?: () => Promise<ChartHostModule>
+}
+
+/** The `/lab/charts` prototypes' host lives with the app, which registers it on the lab page. */
+const labHost: LabHostSlot = {}
+
+export const registerLabChartHost = (load: () => Promise<ChartHostModule>): void => {
+	labHost.load = load
+}
+
 /**
  * `PlotFrame` + `CanvasChart`/`Chart` on the plot box: measures the box's height
  * (`useMeasuredHeight`), mounts `@tanstack/charts` into `.ts-chart-surface`, keeps the plot anchor
@@ -36,7 +51,7 @@ export const MountChart = Mount.defineStream("MountChart", {
 		renderer: ChartRenderer,
 		/** Report the plot rect and time axis (`RenderedPlot`) for an overlay. */
 		reportPlot: Schema.Boolean,
-		/** `"lab"`: the `/lab/charts` prototypes' host, loaded only there. */
+		/** `"lab"`: the `/lab/charts` prototypes' host (`registerLabChartHost`), loaded only there. */
 		host: Schema.optional(Schema.Literal("lab")),
 	},
 	messages: [
@@ -47,12 +62,14 @@ export const MountChart = Mount.defineStream("MountChart", {
 		Message.ChangedChartTooltip,
 		Message.ToggledLegendSeries,
 	],
-	execute: ({ element, chartId, ariaLabel, renderer, reportPlot, host: hostKind }) =>
-		Stream.callback<ChartMountMessage>((queue) =>
+	execute: ({ element, chartId, ariaLabel, renderer, reportPlot, host: hostKind }) => {
+		const loadHost = hostKind === "lab" ? labHost.load : () => import("./chart-host")
+		if (loadHost === undefined) {
+			return Stream.concat(Stream.make(failed("lab chart host not registered")), Stream.never)
+		}
+		return Stream.callback<ChartMountMessage>((queue) =>
 			Effect.acquireRelease(
-				Effect.tryPromise(() =>
-					hostKind === "lab" ? import("../lab/charts/spike-host") : import("./chart-host"),
-				).pipe(
+				Effect.tryPromise(loadHost).pipe(
 					Effect.flatMap(({ createChartHost }) =>
 						Effect.try(() => {
 							const host = element.querySelector<HTMLElement>(".ts-chart-host")
@@ -167,7 +184,8 @@ export const MountChart = Mount.defineStream("MountChart", {
 				),
 				(release) => Effect.sync(release),
 			).pipe(Effect.flatMap(() => Effect.never)),
-		),
+		)
+	},
 })
 
 /**

@@ -8,7 +8,7 @@ import {
 import type { Node3D } from "../../components/service-map/three/types"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { machineBadge } from "../../page/service-map/badge"
-import { button } from "../../ui/button"
+import { button } from "@maple/views/ui/button"
 import { Message } from "./update"
 import { healthDot, topology } from "./view-inventory"
 

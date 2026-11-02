@@ -4,9 +4,9 @@ import { formatDuration } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
-import { pressable } from "../../../ui/pressable"
-import { truncatedText } from "../../../ui/truncated-text"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
@@ -14,8 +14,8 @@ import { clampedBody, messageBodyView, payloadCopyButton } from "./transcript-ki
 import { rowViewSwitch } from "./transcript-messages"
 import { avatar, CLOCK, clockOf, inlineNote, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
 import { failedBadge } from "./view-kit"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The transcript's model calls: `AssistantBlock`, `PromptBlock`, `StructureRow`.
 

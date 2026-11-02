@@ -2,11 +2,11 @@ import { ERROR_RATE_FILL, ERROR_RATE_TEXT, errorRateLevel } from "@maple/ui/lib/
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { meter } from "../../../ui/meter"
-import { pressable } from "../../../ui/pressable"
-import { selectableRow } from "../../../ui/selectable-row"
-import { sortButton } from "../../../ui/table"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { meter } from "@maple/views/ui/meter"
+import { pressable } from "@maple/views/ui/pressable"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+import { sortButton } from "@maple/views/ui/table"
 
 // The table chrome the tools pages share: open,
 // mono, uppercase heads and 38px rows, with client-side column sorting.

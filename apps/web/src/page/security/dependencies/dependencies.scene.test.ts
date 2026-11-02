@@ -18,7 +18,7 @@ import {
 	Mount,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	FINDING_IDS,
 	findingsOf,
@@ -31,9 +31,9 @@ import {
 	rescannedOf,
 } from "../../../lab/security-dependencies-fixture"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Select from "../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { UpdateFinding } from "./command"
 import { reasonErrorOf } from "./derive"

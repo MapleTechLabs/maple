@@ -8,11 +8,11 @@ import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel, panelHeader } from "../../../ui/panel"
-import { statusDot } from "../../../ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
 import {
 	ROW_LINK_LIFT,
 	rowLink,
@@ -22,7 +22,7 @@ import {
 	tableHead,
 	tableHeader,
 	tableRow,
-} from "../../../ui/table"
+} from "@maple/views/ui/table"
 import { relativeTime } from "../../kit/relative-time"
 import { WIDE_COLUMN } from "../kit/layout"
 import { repositoryName } from "../kit/parts"
@@ -38,8 +38,8 @@ import {
 } from "./derive"
 import { SEVERITY_FILL } from "../../errors/kit/severity"
 import { Message, type Model } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, hstackClass, vstackClass } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
 
 // Each connected repository as a row: its latest scan, open findings by severity, the upgrades
 // that clear them and what production runs. A row opens the repository's breakdown.

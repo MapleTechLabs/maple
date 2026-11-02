@@ -1,14 +1,14 @@
 import type { BranchCandidate } from "../../../../components/infra/planetscale/branch-selection"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as FilterSections from "../../../../ui/filters/filter-sections"
-import { filterSection } from "../../../../ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../../ui/filters/filter-sidebar"
+} from "@maple/views/ui/filters/filter-sidebar"
 import {
 	BRANCH_ROLE_LABEL,
 	BRANCH_STATE_LABEL,

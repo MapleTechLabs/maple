@@ -1,7 +1,7 @@
 import { Result } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { FrameMessage } from "../kit/frame"
 import { analyticsOf, context, names, NOW, PAYMENTS, window } from "../kit/test-fixtures"
 import { Message } from "./message"

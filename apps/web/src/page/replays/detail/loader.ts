@@ -16,7 +16,7 @@ import {
 	rangesCovering,
 	type ReplayRange,
 } from "../kit/replay-range"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Loader, LoadedRange, Manifest, Model, RangeRows } from "./model"
 
 // `useReplayChunkLoader` as pure functions of the Model: plan once per session, load ranges one at a

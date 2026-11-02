@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import { HostRows } from "./model"

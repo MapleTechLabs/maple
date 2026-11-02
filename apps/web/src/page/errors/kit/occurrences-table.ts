@@ -2,7 +2,7 @@ import type { ErrorIssueSampleTrace } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
 import {
 	table,
 	tableBody,
@@ -11,13 +11,13 @@ import {
 	tableHeader,
 	tableRow,
 	truncatedTableCell,
-} from "../../../ui/table"
-import { truncatedId } from "../../../ui/truncated-id"
-import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+} from "@maple/views/ui/table"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The issue occurrences table.
 

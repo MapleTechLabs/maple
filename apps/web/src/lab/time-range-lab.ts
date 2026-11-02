@@ -8,7 +8,7 @@ import { readEffectiveTimeZone, readSelectedTimeZone } from "../platform/time-zo
 import { presetLabel } from "../page/kit/time-controls"
 import { dashboardPage } from "../page/kit/dashboard-page"
 import * as TimeRangePicker from "../page/kit/time-range-picker"
-import { kbd } from "../ui/display"
+import { kbd } from "@maple/views/ui/display"
 
 // The header time range picker over plain state, and a strip
 // printing the window and two fixed instants in the effective zone.

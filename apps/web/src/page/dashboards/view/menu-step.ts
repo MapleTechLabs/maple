@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { Command } from "foldkit"
-import * as Menu from "../../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import type { Message } from "./message"
 
 /** One menu step: its next state, its commands, and the item it just picked (if any). */

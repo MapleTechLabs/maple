@@ -3,12 +3,12 @@ import { formatCountdown } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { DateTime, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { panel } from "../../../ui/panel"
-import { statusDot } from "../../../ui/status-dot"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { panel } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { actorChip } from "../kit/actor"
-import { typographyClass } from "../../../ui/typography"
-import { hstack, hstackClass, vstack } from "../../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 // The lease HUD: the countdown ring beside who holds the lease.
 

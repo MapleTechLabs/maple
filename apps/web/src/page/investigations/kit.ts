@@ -4,12 +4,12 @@ import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { investigationKindKey, type InvestigationKindKey } from "@maple/web-data/investigations/display"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { bareInput } from "../../ui/bare-input"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon, type IconName } from "../../ui/icon"
-import { typographyClass } from "../../ui/typography"
-import { hstackClass } from "../../ui/stack"
+import { bareInput } from "@maple/views/ui/bare-input"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The investigation status badge and confidence meter.
 

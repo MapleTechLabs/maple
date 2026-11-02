@@ -1,8 +1,8 @@
 import { Array as Arr, Option } from "effect"
 import { Command, type Update } from "foldkit"
 import Fuse from "fuse.js"
-import * as Combobox from "../../ui/combobox"
-import * as Dialog from "../../ui/dialog"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../../platform/resources"
 import {
 	browseEntries,

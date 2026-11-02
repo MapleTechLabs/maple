@@ -3,7 +3,7 @@ import { encodePublicId, PublicIdPrefixes, V2Recommendation } from "@maple/domai
 import { Result, Schema } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { type PageContext, PageOutMessage } from "../contract"
 import { DismissRecommendation, FetchRecommendations } from "./command"
 import { Message } from "./message"

@@ -1,6 +1,6 @@
 import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
-import * as ServiceMap from "@maple/web/service-map/map/service-map"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { Option, Result } from "effect"
 import { AsyncData, type Command } from "foldkit"
 import { accept, acceptCached, idle } from "../../data/slot"

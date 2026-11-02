@@ -1,13 +1,13 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ChartSpec, type FixedMetricRow } from "../../../charts/chart-spec"
-import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
+import { ChartSpec, type FixedMetricRow } from "@maple/views/charts/chart-spec"
+import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
 import {
 	fixedMetricModel,
 	LATENCY_SERIES,
 	throughputLegend,
 	throughputPlot,
-} from "../../../charts/fixed-metric-series"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
+} from "@maple/views/charts/fixed-metric-series"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import type { LegendItem } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 

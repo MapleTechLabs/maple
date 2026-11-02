@@ -9,7 +9,7 @@ import { type ChartValue, d3Curve, defineChart, dot, lineY } from "@tanstack/cha
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
-import { formatExactCount } from "../../page/kit/locale"
+import { formatExactCount } from "../../lib/locale"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"

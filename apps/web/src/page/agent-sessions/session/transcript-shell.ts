@@ -1,9 +1,9 @@
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import type { Message } from "./message"
-import { typographyClass } from "../../../ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The frame every transcript block shares: row, avatar and indent lanes.
 

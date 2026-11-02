@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { label } from "../../ui/label"
-import * as RadioGroup from "../../ui/radio-group"
-import * as ToggleGroup from "../../ui/toggle-group"
+import { label } from "@maple/views/ui/label"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { ConfigureModel, SetupMethod } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
-import { hstack, vstack, vstackClass } from "../../ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `GcpMethodChoice`: one row per way to connect.
 

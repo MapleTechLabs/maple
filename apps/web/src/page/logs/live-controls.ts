@@ -1,10 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import type * as Menu from "../../ui/menu"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import type * as Menu from "@maple/views/ui/menu"
 import { refreshControls } from "../kit/refresh-controls"
-import { typographyClass } from "../../ui/typography"
-import { hstack, hstackClass } from "../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 
 // The live-tail controls, shared by /logs and /lab/logs.
 

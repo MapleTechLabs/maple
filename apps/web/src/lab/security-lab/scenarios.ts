@@ -10,7 +10,7 @@ import {
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
 import type { Command } from "foldkit"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../page/contract"
 import * as AddTarget from "../../page/security/kit/add-target"
 import * as DependenciesPage from "../../page/security/dependencies/model"
@@ -26,9 +26,9 @@ import * as TelemetryUpdate from "../../page/security/telemetry/update"
 import type { Resources } from "../../platform/resources"
 import { AppRoute } from "../../route"
 import type { SecurityDependenciesSearch } from "../../route/search"
-import * as Field from "../../ui/field"
-import * as Select from "../../ui/select"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import {
 	DEEP_RUN_IDS,
 	DEEP_TARGET_ID,

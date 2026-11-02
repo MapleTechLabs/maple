@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge, badgeClass } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
+import { badge, badgeClass } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
 
 // `HeroChip`.
 

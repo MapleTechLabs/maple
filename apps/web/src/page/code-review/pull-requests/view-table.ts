@@ -4,11 +4,11 @@ import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { pressable } from "../../../ui/pressable"
-import { spinner } from "../../../ui/spinner"
+import { badge } from "@maple/views/ui/display"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
+import { spinner } from "@maple/views/ui/spinner"
 import {
 	ariaSort,
 	clickableRowClass,
@@ -20,13 +20,13 @@ import {
 	tableHead,
 	tableHeader,
 	tableRow,
-} from "../../../ui/table"
-import { emptyValue } from "../../../ui/values"
+} from "@maple/views/ui/table"
+import { emptyValue } from "@maple/views/ui/values"
 import { authorLabel } from "../kit/author"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, hstackClass } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 
 // `ReviewTable`: the pull requests and their reviews.
 

@@ -1,17 +1,17 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { GcpManualStep, GcpStepField } from "../../components/integrations/gcp-setup-steps"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { pressable } from "../../ui/pressable"
-import { heading } from "../../ui/heading"
-import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
+import { pressable } from "@maple/views/ui/pressable"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
 import { copyOf, SMALL } from "./view-gcp-parts"
-import { typographyClass } from "../../ui/typography"
-import { hstack, vstack } from "../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `GcpValue` and `GcpManualSteps`.
 

@@ -1,8 +1,8 @@
 import { isPushSourcePlatform } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../../ui/button"
-import { copyableField } from "../../../ui/copyable-field"
-import { icon } from "../../../ui/icon"
+import { button, linkButton } from "@maple/views/ui/button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { icon } from "@maple/views/ui/icon"
 import { type CheckRow, flowColumns, liveChecklist, savedBanner, stepCard } from "../../kit/connect-flow"
 import * as Setup from "../kit/setup"
 import { sourceHref } from "../kit/shared"
@@ -11,7 +11,7 @@ import type { Created, FlowHost, Model } from "./model"
 import { isReceiving } from "./update"
 import { flowFooter } from "./view-footer"
 import { showsUpRail } from "./view-push-rail"
-import { typography } from "../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // `TokenStep`: the Send data step. The one-time token, the setup snippet, then the first-data poll.
 

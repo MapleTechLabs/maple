@@ -11,20 +11,20 @@ import {
 	type ReleaseServiceImpact,
 } from "../../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { panel } from "../../../ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { emptyValue, errorRateValue, latencyValue, serviceDot } from "../../../ui/values"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { panel } from "@maple/views/ui/panel"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { emptyValue, errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitAvatar, isResolvableSha, firstLine, releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { MountReleasesTable } from "./command"
 import { Message } from "./message"
 import type { TimeSearch } from "./view-overview"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The releases table and its commit count.
 

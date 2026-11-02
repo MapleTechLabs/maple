@@ -5,9 +5,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button } from "../../ui/button"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { SUPABASE_NOT_CONFIGURED } from "../infra-integrations/supabase/connect"
 import { lifecycleOf } from "../infra-integrations/supabase/health"
@@ -32,10 +32,10 @@ import {
 	supabaseProjectNotes,
 	supabaseProjectSwitches,
 } from "./view-supabase"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstackClass, vstack } from "../../ui/stack"
-import { stripClass } from "../../ui/rule"
-import { columnClass } from "../../ui/column"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // Supabase in the connect flow: authorize an organization, switch on projects, watch the first data land.
 

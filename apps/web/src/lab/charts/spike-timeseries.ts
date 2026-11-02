@@ -13,14 +13,14 @@ import { areaY, type ChartPoint, type ChartValue, defineChart, lineY } from "@ta
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scaleTime } from "d3-scale"
 import { Option } from "effect"
-import { ChartTooltip } from "../../charts/chart-spec"
-import type { BuiltChart } from "../../charts/definitions/built-chart"
-import { AREA_FILL_END, roundCapDasharray, verticalGradient } from "../../charts/definitions/fixed-metric-axes"
+import { ChartTooltip } from "@maple/views/charts/chart-spec"
+import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
+import { AREA_FILL_END, roundCapDasharray, verticalGradient } from "@maple/views/charts/definitions/fixed-metric-axes"
 import {
 	cursorTooltip,
 	MUTED_COLOR_AMOUNT,
 	tooltipFocusCapture,
-} from "../../charts/definitions/plot-constants"
+} from "@maple/views/charts/definitions/plot-constants"
 import { type SpikeSpec, mutedOf, MUTED_OPACITY } from "./spike-spec"
 
 // `LineSpike` / `LineLegendSpike` and `AreaSpike` / `AreaLegendSpike`, definition half.

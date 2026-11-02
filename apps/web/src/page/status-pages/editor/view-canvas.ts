@@ -5,12 +5,12 @@ import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { pressable } from "../../../ui/pressable"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { pressable } from "@maple/views/ui/pressable"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -29,8 +29,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
-import { typography } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The page itself as the editor: a sidebar beside the preview. The sidebar lists what is on the
 // page; an opened component, incident or Add takes its place. Below `lg` the sidebar stacks on top.

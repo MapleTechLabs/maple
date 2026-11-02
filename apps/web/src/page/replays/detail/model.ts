@@ -1,9 +1,9 @@
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { ReplaySearch } from "../../../route/search"
-import * as CopyButton from "../../../ui/copy-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { RangeMeta, ReplayMeta } from "../kit/replay-meta"
 
 // The replay detail page.

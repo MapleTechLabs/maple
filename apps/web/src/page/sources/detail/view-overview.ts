@@ -3,12 +3,12 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as BarChart from "../../../charts/bar-chart"
-import type * as Chart from "../../../charts/chart"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { panel } from "../../../ui/panel"
-import { emptyMessage } from "../../../ui/empty"
-import { skeleton } from "../../../ui/skeleton"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import type * as Chart from "@maple/views/charts/chart"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { panel } from "@maple/views/ui/panel"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	integrationPlatformOf,
 	hasToken,
@@ -20,14 +20,14 @@ import {
 	viaLabel,
 } from "../kit/shared"
 import { platformMeta } from "../kit/platforms"
-import { icon } from "../../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import { sourceStatusBadge, sourceStatusLabel } from "../kit/status"
 import { signalCounts, volumeSize } from "../kit/volume"
 import { usageRows, usageTotals } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstackClass, vstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
 
 // `SourceOverview`.
 

@@ -75,7 +75,7 @@ import * as Shell from "./shell"
 import * as OrgSwitcher from "./shell/clerk-org-switcher"
 import { presenceOf } from "./shell/view-nav"
 import { isResolved } from "./shell/source-link"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>

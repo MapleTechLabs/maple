@@ -3,8 +3,8 @@ import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { badge } from "../../../../ui/display"
-import { skeleton } from "../../../../ui/skeleton"
+import { badge } from "@maple/views/ui/display"
+import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	columnHead,
 	dataTable,
@@ -24,8 +24,8 @@ import {
 } from "../../../../components/infra/planetscale/metrics"
 import { formatWholePercent } from "../../../../components/infra/format"
 import { Message, type SortKey } from "./model"
-import { typography } from "../../../../ui/typography"
-import { column, columnClass } from "../../../../ui/column"
+import { typography } from "@maple/views/ui/typography"
+import { column, columnClass } from "@maple/views/ui/column"
 
 // `PlanetScaleDatabaseTable` and its loading state.
 

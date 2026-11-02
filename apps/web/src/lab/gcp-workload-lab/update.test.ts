@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import * as Chart from "../../charts/chart"
+import * as Chart from "@maple/views/charts/chart"
 import * as Workload from "../../page/infra-integrations/gcp/workload/model"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import { Message, type Model } from "./model"

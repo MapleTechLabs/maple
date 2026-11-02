@@ -1,16 +1,16 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
-import * as DialogView from "../../ui/dialog-view"
-import * as Field from "../../ui/field"
-import * as SelectView from "../../ui/select-view"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import * as Field from "@maple/views/ui/field"
+import * as SelectView from "@maple/views/ui/select-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { FormFieldName } from "./prometheus"
 import { isFormValid, parsedInterval, prometheusTargets } from "./update-prometheus"
-import { typography } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ScrapeTargetsSection`'s `FormDialog` (add and edit) and its delete `ConfirmDialog`.
 

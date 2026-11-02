@@ -15,15 +15,15 @@ import { formatCount, formatUsage, formatUsageAgainst } from "../../../lib/billi
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
-import { segmentedBar } from "../../../ui/meter"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { button } from "@maple/views/ui/button"
+import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
+import { segmentedBar } from "@maple/views/ui/meter"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 

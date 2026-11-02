@@ -3,11 +3,11 @@ import type { AwsConnectionId, AwsMetricNamespace } from "@maple/domain/primitiv
 import { Option, type Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../data/keyed"
-import type { LoadFailure } from "../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "../../data/request-key"
-import * as CopyButton from "../../ui/copy-button"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	type AwsCardModel,

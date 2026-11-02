@@ -4,8 +4,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../platform/resources"
 import * as Shell from "../shell"
-import * as Toast from "../ui/toast"
-import * as ToastView from "../ui/toast-view"
+import * as Toast from "@maple/views/ui/toast"
+import * as ToastView from "@maple/views/ui/toast-view"
 import {
 	foldLabShell,
 	initLabShell,

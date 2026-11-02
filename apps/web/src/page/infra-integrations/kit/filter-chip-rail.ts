@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { removableChip } from "../../../ui/removable-chip"
-import { textLink } from "../../../ui/text-link"
-import { hstack } from "../../../ui/stack"
+import { removableChip } from "@maple/views/ui/removable-chip"
+import { textLink } from "@maple/views/ui/text-link"
+import { hstack } from "@maple/views/ui/stack"
 
 // `FilterChipRail`: the active filters as removable chips, six until expanded.
 

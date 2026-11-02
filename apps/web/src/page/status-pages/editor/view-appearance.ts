@@ -9,10 +9,10 @@ import {
 import { previewSnapshot } from "@maple/status-page"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
-import { heading } from "../../../ui/heading"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { heading } from "@maple/views/ui/heading"
 import { settingsSection } from "../../settings/kit/section"
 import { selectField, textField } from "../shared/fields"
 import {
@@ -37,8 +37,8 @@ import {
 	toSnapshotIncident,
 } from "../shared/preview"
 import { componentsOf, incidentsOf, monitorsOf, statusReadsReady } from "./reads"
-import { typography } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The Settings view's Appearance section and the live preview of the public page.
 

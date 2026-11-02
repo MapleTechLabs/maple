@@ -9,9 +9,9 @@ import { formatLatency, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../ui/empty"
-import { icon } from "../../ui/icon"
-import { pressable } from "../../ui/pressable"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
 import {
 	shareCell,
 	th,

@@ -4,7 +4,7 @@ import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-chart
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"

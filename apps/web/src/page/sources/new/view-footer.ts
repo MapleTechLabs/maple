@@ -1,9 +1,9 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import type { Message } from "./message"
 import type { FlowHost } from "./model"
-import { hstack } from "../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // The connect flow's sticky footer: Back on the left, the step's hint and its actions on the right.
 // It sits on the page's bottom edge, stuck or not, so it never moves between steps or at the scroll end.

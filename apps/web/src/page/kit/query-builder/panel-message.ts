@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Combobox from "../../../ui/combobox"
-import * as Select from "../../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Select from "@maple/views/ui/select"
 import { initWhereFields, WhereFieldMessage, WhereFields } from "../where-field"
 import { AddOnKey, QueryChange, QueryTextField } from "./change"
 

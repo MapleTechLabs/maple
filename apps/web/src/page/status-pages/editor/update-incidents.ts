@@ -8,7 +8,7 @@ import { StatusPageIncidentImpact, StatusPageIncidentStatus } from "@maple/domai
 import { worstStatus } from "@maple/domain/status-page"
 import type { V2StatusPageIncident } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { componentStatus, isOpenIncident, STATUSES_OF_KIND } from "../shared/derive"
 import { CreateIncident, FocusEditorElement, PostIncidentUpdate, PublishIncident } from "./command"

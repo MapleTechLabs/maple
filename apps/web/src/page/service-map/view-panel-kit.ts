@@ -4,9 +4,9 @@ import { formatErrorRate, formatRate } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../ui/display"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
+import { badge } from "@maple/views/ui/display"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The small pieces both detail panels share.
 

@@ -1,8 +1,8 @@
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import * as DialogView from "../../ui/dialog-view"
-import { dialogDescription, dialogHeader, dialogTitle } from "../../ui/dialog-view"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { dialogDescription, dialogHeader, dialogTitle } from "@maple/views/ui/dialog-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { filtersOf } from "./requests"
@@ -10,7 +10,7 @@ import { panelOf } from "./update"
 import { crawledPagesCard, aiDialogTable } from "./view-ai"
 import { breakdownTable, dimensionTabs, panelFilterInput, panelView } from "./view-breakdown"
 import { overviewCards } from "./view-overview"
-import { hstack } from "../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // The expand dialogs of `AnalyticsBreakdownPanel` and `AiPanel`: one dialog, whichever card opened it.
 

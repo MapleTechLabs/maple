@@ -14,10 +14,10 @@ import {
 } from "@maple/web-data/anomalies/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { statusDot } from "../../../ui/status-dot"
-import { serviceDot } from "../../../ui/values"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 
 // `AnomalyRow`: one anomaly in a list.

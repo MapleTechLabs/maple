@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-import { traceIdBadge } from "../../../ui/trace-badges"
-import { skeleton, skeletonList, skeletonMeter } from "../../../ui/skeleton"
+import { traceIdBadge } from "@maple/views/ui/trace-badges"
+import { skeleton, skeletonList, skeletonMeter } from "@maple/views/ui/skeleton"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { docsLink } from "../../kit/signal-empty-state"
 import type { Message } from "./message"

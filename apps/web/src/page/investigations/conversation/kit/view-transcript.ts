@@ -5,19 +5,19 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { messageResponse, type ViewOverrides } from "../../../kit/message-response"
-import { bubble, bubbleContent } from "../../../../ui/bubble"
-import { button } from "../../../../ui/button"
-import * as CopyButton from "../../../../ui/copy-button"
-import { icon } from "../../../../ui/icon"
-import { marker, markerContent, markerIcon } from "../../../../ui/marker"
+import { bubble, bubbleContent } from "@maple/views/ui/bubble"
+import { button } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { icon } from "@maple/views/ui/icon"
+import { marker, markerContent, markerIcon } from "@maple/views/ui/marker"
 import {
 	messageScroller,
 	messageScrollerButton,
 	messageScrollerContent,
 	messageScrollerItem,
 	messageScrollerViewport,
-} from "../../../../ui/message-scroller"
-import { message as messageRow, messageContent, messageFooter } from "../../../../ui/message"
+} from "@maple/views/ui/message-scroller"
+import { message as messageRow, messageContent, messageFooter } from "@maple/views/ui/message"
 import { dotLoader } from "./dot-loader"
 import { type MinimapState, turnMinimap } from "./turn-minimap"
 import { richTextSegments, transcriptMarkdown } from "./rich-text"
@@ -32,7 +32,7 @@ import {
 } from "./transcript-rows"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
-import { hstackClass, vstack, vstackClass } from "../../../../ui/stack"
+import { hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // The transcript: the scrolling thread.
 

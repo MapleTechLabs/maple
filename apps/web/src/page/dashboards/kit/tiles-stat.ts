@@ -1,16 +1,16 @@
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import * as Sparkline from "../../../charts/sparkline"
-import { resolveColor } from "../../../charts/theme-colors"
-import { chartSkeleton } from "../../../ui/chart-skeleton"
+import * as Chart from "@maple/views/charts/chart"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import * as Sparkline from "@maple/views/charts/sparkline"
+import { resolveColor } from "@maple/views/charts/theme-colors"
+import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import type { WidgetDataState } from "./data-state"
 import { widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
-import { vstackClass } from "../../../ui/stack"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // The stat widget, with its trend sparkline when
 // `display.sparkline` names a series (`StatSparkline`).

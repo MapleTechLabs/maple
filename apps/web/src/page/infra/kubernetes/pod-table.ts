@@ -10,9 +10,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { laneLink } from "../../../ui/lane-link"
-import { middleTruncate } from "../../../ui/middle-truncate"
-import { skeleton, skeletonLine } from "../../../ui/skeleton"
+import { laneLink } from "@maple/views/ui/lane-link"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { skeleton, skeletonLine } from "@maple/views/ui/skeleton"
 import { avgPeak } from "../kit/avg-peak"
 import {
 	columnHead,
@@ -29,9 +29,9 @@ import { listRelativeTime } from "../../kit/relative-time"
 import { hostStatusBadge } from "../kit/status"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { PodRow } from "./pod-data"
-import { typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
-import { column, columnClass } from "../../../ui/column"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { column, columnClass } from "@maple/views/ui/column"
 
 // `PodTable` / `PodTableLoading`.
 

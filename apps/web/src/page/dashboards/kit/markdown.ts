@@ -1,6 +1,6 @@
 import { validateUrlScheme } from "@maple/ui/lib/sanitizers"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { inlineCode } from "../../../ui/inline-code"
+import { inlineCode } from "@maple/views/ui/inline-code"
 
 // The markdown widget's renderer: headings, bullet
 // and numbered lists, paragraphs; inline links, bold, italic and code.

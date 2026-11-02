@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { navRailRow } from "../../../ui/nav-rail-row"
-import { vstack, vstackClass } from "../../../ui/stack"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { navRailRow } from "@maple/views/ui/nav-rail-row"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `SettingsNavShell`: the rail of `/settings`, `/account` and `/integrations`. Tabs are buttons, sibling
 // pages are links.

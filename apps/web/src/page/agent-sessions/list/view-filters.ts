@@ -3,8 +3,8 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Checkbox from "../../../ui/checkbox"
-import { filterDescriptionMark, filterSection } from "../../../ui/filters/filter-section"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { filterDescriptionMark, filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -13,12 +13,12 @@ import {
 	filterSidebarHeader,
 	filterSidebarLoading,
 	filterSidebarDivider,
-} from "../../../ui/filters/filter-sidebar"
-import { percentilePresets, toLogBuckets } from "../../../ui/filters/range-distribution"
-import { type RangePreset, rangeFilterSection } from "../../../ui/filters/range-filter-section"
-import type { RangeUnit } from "../../../ui/filters/range-format"
-import type { RangeBucket } from "../../../ui/filters/range-histogram"
-import { label } from "../../../ui/label"
+} from "@maple/views/ui/filters/filter-sidebar"
+import { percentilePresets, toLogBuckets } from "@maple/views/ui/filters/range-distribution"
+import { type RangePreset, rangeFilterSection } from "@maple/views/ui/filters/range-filter-section"
+import type { RangeUnit } from "@maple/views/ui/filters/range-format"
+import type { RangeBucket } from "@maple/views/ui/filters/range-histogram"
+import { label } from "@maple/views/ui/label"
 import { detectLookup } from "../kit/detected-models"
 import { modelVendorColor, modelVendorIcon, vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
 import { hasFilters, RANGE_PARAMS } from "./derive"

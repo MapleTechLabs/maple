@@ -1,8 +1,8 @@
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { FixedMetricRow } from "../../charts/chart-spec"
-import { MountLinkedCursor } from "../../charts/linked-cursor"
-import { ResolveThemeColors } from "../../charts/theme-colors"
+import type { FixedMetricRow } from "@maple/views/charts/chart-spec"
+import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { CHART_TOKENS, metricsGridOf } from "../../page/services/detail/view-charts"
 import { isReady, Message, type Model } from "./chart-bench"
 

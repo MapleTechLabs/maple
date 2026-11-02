@@ -3,7 +3,7 @@ import { getAiSessionsFacets, listAiSessions } from "@maple/web-data/warehouse/a
 import { getAiToolErrors, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { presentInputs } from "../list/derive"
 import { fetchTotals, Selection, toInput } from "../tools-kit/reads"

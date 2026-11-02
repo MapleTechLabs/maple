@@ -1,7 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { Option } from "effect"
-import * as Chart from "../../../charts/chart"
+import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "../../../data/keyed"
 import type { PageContext } from "../../contract"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"

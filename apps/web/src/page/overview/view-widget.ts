@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { FixedMetricSeries } from "../../charts/fixed-metric-series"
-import { card, cardHeader, cardPanel } from "../../ui/card"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import { typography } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
-import { swatch } from "../../ui/swatch"
+import type { FixedMetricSeries } from "@maple/views/charts/fixed-metric-series"
+import { card, cardHeader, cardPanel } from "@maple/views/ui/card"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { swatch } from "@maple/views/ui/swatch"
 
 // A read-only widget shell in view
 // mode with no widget actions: title, hoisted legend chips, headline value, content and footer.

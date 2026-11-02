@@ -1,11 +1,11 @@
 import { DashboardShareMode } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import { Schema } from "effect"
-import { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as RadioGroup from "../../../ui/radio-group"
-import * as Tabs from "../../../ui/tabs"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as Tabs from "@maple/views/ui/tabs"
 import { defineMessageUnion } from "foldkit/message"
 
 // `ShareDashboardDialog` and `EmbedWidgetDialog`: the board's share

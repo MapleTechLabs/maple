@@ -10,11 +10,11 @@ import { Clock, Effect, Option, Schema, type Stream } from "effect"
 import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { button } from "../../ui/button"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import * as Combobox from "../../ui/combobox"
-import * as Popover from "../../ui/popover"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Popover from "@maple/views/ui/popover"
 import {
 	readEffectiveTimeZone,
 	readSelectedTimeZone,
@@ -24,7 +24,7 @@ import {
 import { PageOutMessage } from "../contract"
 import { zoneListView } from "./timezone-select-view"
 import { formatUtcOffset, readZoneRows, ZoneRow } from "./timezone-zones"
-import { isMounted } from "../../ui/overlay/transition"
+import { isMounted } from "@maple/views/ui/overlay/transition"
 import * as CustomRange from "./custom-range"
 import * as CustomRangeView from "./custom-range-view"
 import {

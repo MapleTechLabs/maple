@@ -1,7 +1,7 @@
 import { Submodel } from "foldkit"
 import { click, expect, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, test } from "vitest"
-import { chartSkeleton } from "../../../ui/chart-skeleton"
+import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import type { WidgetDataState } from "./data-state"
 import { widgetFrame } from "./tile-shell"
 

@@ -6,6 +6,7 @@
 // chart renders the selected one's series — so a tile and the chart it drives
 // can never disagree about what they are showing.
 
+import type { Array as Arr } from "effect"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import type {
@@ -145,7 +146,7 @@ const fromPageviews = (
  * pages per session) lead, and the engagement and composition metrics follow, so
  * the top row reads as "how much traffic" and the bottom as "what kind".
  */
-export const ANALYTICS_METRICS: ReadonlyArray<AnalyticsMetricDescriptor> = [
+export const ANALYTICS_METRICS: Arr.NonEmptyReadonlyArray<AnalyticsMetricDescriptor> = [
 	{
 		key: "visitors",
 		label: "Unique visitors",
@@ -253,7 +254,7 @@ export const ANALYTICS_METRICS: ReadonlyArray<AnalyticsMetricDescriptor> = [
 ]
 
 export const findMetric = (key: AnalyticsMetricKey): AnalyticsMetricDescriptor =>
-	ANALYTICS_METRICS.find((metric) => metric.key === key) ?? ANALYTICS_METRICS[0]!
+	ANALYTICS_METRICS.find((metric) => metric.key === key) ?? ANALYTICS_METRICS[0]
 
 /**
  * Whether a descriptor can be shown at all for this window.

@@ -2,7 +2,7 @@ import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../data/time-range"
 
 // The last screen, "You're live": what the org's own first day of data already shows, read once.

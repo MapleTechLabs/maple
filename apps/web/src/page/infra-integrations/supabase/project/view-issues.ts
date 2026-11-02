@@ -4,12 +4,12 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../../ui/display"
+import { badge } from "@maple/views/ui/display"
 import { logSourceLabel, severityOf } from "../health"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../panel"
-import { typography } from "../../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // "Errors and warnings": the project's recurring WARN+ log messages.
 

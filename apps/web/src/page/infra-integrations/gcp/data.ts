@@ -16,7 +16,7 @@ import {
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 

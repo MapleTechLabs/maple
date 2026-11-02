@@ -1,13 +1,13 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
+import { button } from "@maple/views/ui/button"
+import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
 import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { canWidenRange, logFilterChips } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
-import { typography } from "../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // The logs table's empty state.
 

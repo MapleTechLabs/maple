@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import * as Field from "../../ui/field"
+import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"

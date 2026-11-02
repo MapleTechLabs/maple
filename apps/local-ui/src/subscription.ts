@@ -1,4 +1,4 @@
-import * as ServiceMap from "@maple/web/service-map/map/service-map"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import { MOBILE_QUERY } from "./env"
