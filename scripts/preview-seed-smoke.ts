@@ -11,6 +11,10 @@
  * Env: API_URL, WEB_URL, CLERK_SECRET_KEY, optional PREVIEW_SIGNIN_KEY,
  * PREVIEW_SEED_ORG_ID and PREVIEW_SEED_EMAIL.
  */
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const CLERK_API = "https://api.clerk.com/v1"
 const DEFAULT_EMAIL = "david+clerk_test@gmail.com"
 // Keep in step with `PREVIEW_REVIEWER_EMAIL` / `_ORG_NAME` in `PreviewSignInService.ts`.
@@ -83,7 +87,7 @@ if (previewSignInKey) {
 	const response = await timedFetch(`${apiUrl}/api/auth/preview/sign-in`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ key: previewSignInKey }),
+		body: encodeJson({ key: previewSignInKey }),
 	})
 	if (response.status !== 200) {
 		fail(`Preview sign-in returned ${response.status}: ${(await response.text()).slice(0, 500)}`)
@@ -114,11 +118,11 @@ const orgId = await resolveOrgId()
 // `POST /sessions` is testing-only on Clerk and unavailable on production instances.
 const session = await clerkFetch<{ id: string }>("/sessions", {
 	method: "POST",
-	body: JSON.stringify({ user_id: user.id, active_organization_id: orgId }),
+	body: encodeJson({ user_id: user.id, active_organization_id: orgId }),
 })
 const { jwt: token } = await clerkFetch<{ jwt: string }>(`/sessions/${session.id}/tokens`, {
 	method: "POST",
-	body: JSON.stringify({ expires_in_seconds: TOKEN_TTL_SECONDS }),
+	body: encodeJson({ expires_in_seconds: TOKEN_TTL_SECONDS }),
 })
 console.log(`Session minted for ${email} in org ${orgId}`)
 
@@ -130,7 +134,7 @@ const call = async (name: string, method: "GET" | "POST", path: string, body?: u
 	const outcome = await timedFetch(`${apiUrl}${path}`, {
 		method,
 		headers,
-		body: body === undefined ? undefined : JSON.stringify(body),
+		body: body === undefined ? undefined : encodeJson(body),
 	}).then(
 		// Every call is a known-good request from an org admin, so any 4xx is a regression too.
 		async (response) => ({

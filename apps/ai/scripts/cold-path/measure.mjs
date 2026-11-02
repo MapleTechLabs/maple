@@ -26,8 +26,12 @@ if (process.env.MAPLE_CPU_PROBE_CHILD === "1") {
 	const probe = await measure("probeImport", () => import(new URL("probe.js", base)))
 	await measure("routeGraph", () => probe.build("mcp"))
 	await measure("toolGraph", () => probe.buildTools())
+	// oxlint-disable-next-line effecttsgo/global-json -- importing effect here would warm the module graph this child times
 	console.log("MEASUREMENT " + JSON.stringify(results))
 } else {
+	const { Schema } = await import("effect")
+	const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
+	const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 	const runs = Array.from({ length: Number(count) }, () => {
 		const child = spawnSync(
 			"node",
@@ -42,7 +46,7 @@ if (process.env.MAPLE_CPU_PROBE_CHILD === "1") {
 		)
 		const line = child.stdout.split("\n").find((l) => l.startsWith("MEASUREMENT "))
 		if (child.status !== 0 || !line) throw new Error(child.stderr || child.stdout)
-		return JSON.parse(line.slice(12))
+		return decodeJson(line.slice(12))
 	})
 	const median = (xs) => xs.toSorted((a, b) => a - b)[Math.floor(xs.length / 2)]
 	const keys = Object.keys(runs[0])
@@ -53,14 +57,10 @@ if (process.env.MAPLE_CPU_PROBE_CHILD === "1") {
 		]),
 	)
 	console.log(
-		JSON.stringify(
-			{
-				engine: spawnSync("node", ["--version"], { encoding: "utf8" }).stdout.trim(),
-				runs: runs.length,
-				median: summary,
-			},
-			null,
-			2,
-		),
+		encodePrettyJson({
+			engine: spawnSync("node", ["--version"], { encoding: "utf8" }).stdout.trim(),
+			runs: runs.length,
+			median: summary,
+		}),
 	)
 }

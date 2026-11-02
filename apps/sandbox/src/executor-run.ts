@@ -4,7 +4,7 @@
  * that it always destroys the container. The Durable Object in `executor.ts` implements both ports
  * over `ctx.container` and `ctx.storage`, so everything here tests without a Workers runtime.
  */
-import { Duration, Effect } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import {
 	type AssessedCheck,
 	EXECUTOR_PROBE_VERSION,
@@ -12,6 +12,8 @@ import {
 	parseProbe,
 	probeScript,
 } from "./executor-probe"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** One step of the probe: what it took, or why it failed. */
 export interface ProbeStep {
@@ -139,11 +141,11 @@ export const logReport = (report: ExecutorProbeReport): Effect.Effect<void> => {
 	const summary = Effect.logInfo("executor probe finished").pipe(
 		Effect.annotateLogs({
 			"maple.executor.probe.version": report.version,
-			"maple.executor.probe.start": JSON.stringify(report.start),
-			"maple.executor.probe.intercept_http": JSON.stringify(report.interceptHttp),
-			"maple.executor.probe.intercept_https": JSON.stringify(report.interceptHttps),
-			"maple.executor.probe.script": JSON.stringify(report.script),
-			"maple.executor.probe.container_snapshot": JSON.stringify(report.containerSnapshot),
+			"maple.executor.probe.start": encodeJson(report.start),
+			"maple.executor.probe.intercept_http": encodeJson(report.interceptHttp),
+			"maple.executor.probe.intercept_https": encodeJson(report.interceptHttps),
+			"maple.executor.probe.script": encodeJson(report.script),
+			"maple.executor.probe.container_snapshot": encodeJson(report.containerSnapshot),
 			"maple.executor.probe.failed": failed.map((check) => check.id).join(","),
 		}),
 	)

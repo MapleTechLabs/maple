@@ -1,8 +1,11 @@
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** JSON with every non-ASCII character escaped: the generated module stays plain ASCII. */
 const asciiJson = (value: unknown): string =>
-	JSON.stringify(value).replace(
+	encodeJson(value).replace(
 		/[^\x00-\x7f]/g,
 		(char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
 	)

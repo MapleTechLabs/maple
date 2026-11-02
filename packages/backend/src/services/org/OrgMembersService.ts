@@ -101,17 +101,17 @@ const make = Effect.gen(function* () {
 					offset,
 				}),
 			).pipe(
-				Effect.mapError(
-					(cause) =>
+				Effect.mapBoth({
+					onFailure: (cause) =>
 						new AlertMemberDirectoryUnavailableError({
 							message: `Failed to list workspace members for ${orgId}`,
 							cause,
 						}),
-				),
-				Effect.map((page) => {
-					const next = offset + page.data.length
-					const done = next >= page.totalCount || page.data.length === 0
-					return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					onSuccess: (page) => {
+						const next = offset + page.data.length
+						const done = next >= page.totalCount || page.data.length === 0
+						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					},
 				}),
 			),
 		).pipe(Stream.runCollect)

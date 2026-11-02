@@ -64,7 +64,8 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 	data: ListReplaysInput
 }) {
 	const input = yield* decodeInput(ListReplaysInput, data ?? {}, "listReplays")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQueryV2("listReplays", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Http
@@ -128,7 +129,8 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 	data: ReplaysFacetsInput
 }) {
 	const input = yield* decodeInput(ReplaysFacetsInput, data ?? {}, "replaysFacets")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQuery("replaysFacets", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -336,7 +338,8 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 	data: ReplaysForTraceInput
 }) {
 	const input = yield* decodeInput(ReplaysForTraceInput, data ?? {}, "replaysForTrace")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const replays = yield* runWarehouseQueryV2("replaysForTrace", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Http

@@ -104,7 +104,8 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 
 			/** The row as it is, or `None`; never creates one. */
 			const findState = Effect.fn("OnboardingService.findState")(function* (orgId: OrgId) {
-				return Option.fromNullishOr(yield* findRow(orgId))
+				const row = yield* findRow(orgId)
+				return Option.fromNullishOr(row)
 			})
 
 			const getState = Effect.fn("OnboardingService.getState")(function* (

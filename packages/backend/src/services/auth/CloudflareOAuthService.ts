@@ -36,6 +36,7 @@ const decodeOrgId = Schema.decodeUnknownSync(OrgId)
  */
 const GrantedAccounts = Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.NullOr(Schema.String) }))
 const decodeGrantedAccounts = Schema.decodeUnknownOption(Schema.fromJsonString(GrantedAccounts))
+const encodeGrantedAccounts = Schema.encodeSync(Schema.fromJsonString(GrantedAccounts))
 
 interface GrantedAccount {
 	readonly id: string
@@ -343,7 +344,7 @@ export class CloudflareOAuthService extends Context.Service<
 				externalAccountName: primaryAccount.name,
 				// The full account fan-out of the grant; externalUserId keeps the first account for
 				// the shared helpers' single-principal columns.
-				grantedAccountsJson: JSON.stringify(
+				grantedAccountsJson: encodeGrantedAccounts(
 					accounts.map((account) => ({ id: account.id, name: account.name })),
 				),
 				connectedByUserId: stateRow.initiatedByUserId,

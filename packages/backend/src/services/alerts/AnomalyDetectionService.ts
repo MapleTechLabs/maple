@@ -99,6 +99,8 @@ import {
 } from "./anomaly/consolidation"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const decodeIncidentIdSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.id)
 const decodeMutedSignalResult = Schema.decodeUnknownResult(AnomalySignalType)
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgIdSchema)
@@ -164,7 +166,7 @@ const parseRowFingerprints = (row: AnomalyIncidentRow): IncidentFingerprintEntry
 		openedValue: row.openedValue,
 		lastObservedValue: row.lastObservedValue,
 		firstTriggeredAt: row.firstTriggeredAt,
-		fingerprintsJson: JSON.stringify(row.fingerprintsJson),
+		fingerprintsJson: encodeJson(row.fingerprintsJson),
 	})
 
 interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
@@ -290,7 +292,8 @@ const make: Effect.Effect<
 	const edgeCache = yield* EdgeCacheService
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
-	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
+	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
+	const chatSessions = Option.getOrUndefined(chatSessionsOption)
 
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
 

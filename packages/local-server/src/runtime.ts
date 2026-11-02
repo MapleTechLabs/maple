@@ -406,5 +406,6 @@ export const startLocal = (options: LocalOptions) =>
 			options.port === undefined
 				? { port: DEFAULT_PORT, strict: false }
 				: { port: options.port, strict: true }
-		return yield* ownOrShare(options, portChoice, yield* Scope.Scope)
+		const scope = yield* Scope.Scope
+		return yield* ownOrShare(options, portChoice, scope)
 	})

@@ -35,7 +35,8 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 	"@maple/backend/services/SourceRemovalService",
 	{
 		make: Effect.gen(function* () {
-			const dbExecute = makeDbExecute(yield* Database, "SourceRemovalService", toPersistenceError)
+			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "SourceRemovalService", toPersistenceError)
 			const sources = yield* SourcesService
 			const scrapeTargets = yield* ScrapeTargetsService
 			const gcp = yield* GcpConnectorService

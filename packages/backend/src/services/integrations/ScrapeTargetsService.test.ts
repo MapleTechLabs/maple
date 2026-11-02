@@ -780,7 +780,7 @@ describe("ScrapeTargetsService", () => {
 			assert.lengthOf(pruned, 1)
 			assert.strictEqual(pruned[0]?.checkedAt, now - 60 * 60 * 1000)
 			// `makeLayer` consumes the db layer; the retention job needs `Database` directly.
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb), testDb.layer)))
+		}).pipe(Effect.provide([makeLayer(testDb), testDb.layer]))
 	})
 
 	it.effect("folds a batch of results per target into one final row state", () => {

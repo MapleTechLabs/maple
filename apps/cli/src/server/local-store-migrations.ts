@@ -353,6 +353,11 @@ export const abandonLocalStoreMigration = async (dataDir: string): Promise<strin
 	return abandonedPath
 }
 
+class LocalServerPidProbeError extends Schema.TaggedError<LocalServerPidProbeError>()(
+	"@maple/cli/LocalServerPidProbeError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** The PID a file names if that process still exists; a failed probe counts as not live.
  *  Our own PID is stale: in a container every `maple` run is PID 1, so a dead
  *  server's file names whichever process reads it. */
@@ -361,7 +366,10 @@ const livePidIn = (path: string): number | null => {
 	const pid = Number.parseInt(readFileSync(path, "utf8").trim(), 10)
 	if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
 	return Effect.runSync(
-		Effect.try(() => process.kill(pid, 0)).pipe(
+		Effect.try({
+			try: () => process.kill(pid, 0),
+			catch: (cause) => new LocalServerPidProbeError({ message: `cannot signal pid ${pid}`, cause }),
+		}).pipe(
 			Effect.as(pid),
 			Effect.orElseSucceed(() => null),
 		),

@@ -76,12 +76,17 @@ export class IntegrationStatuses extends Context.Service<
 					Effect.flatMap(Ref.get(openOrg), (org) =>
 						loader({ ...options, orgId: options?.orgId ?? Option.getOrUndefined(org) }),
 					)
+			const cloudflare = yield* sharedLoader(internal.integrations.cloudflareStatus())
+			const railway = yield* sharedLoader(internal.integrations.railwayStatus())
+			const planetscale = yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status())
+			const gcp = yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status())
+			const supabase = yield* sharedLoader(internal.integrations.supabaseStatus())
 			return {
-				cloudflare: inOrg(yield* sharedLoader(internal.integrations.cloudflareStatus())),
-				railway: inOrg(yield* sharedLoader(internal.integrations.railwayStatus())),
-				planetscale: inOrg(yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status())),
-				gcp: inOrg(yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status())),
-				supabase: inOrg(yield* sharedLoader(internal.integrations.supabaseStatus())),
+				cloudflare: inOrg(cloudflare),
+				railway: inOrg(railway),
+				planetscale: inOrg(planetscale),
+				gcp: inOrg(gcp),
+				supabase: inOrg(supabase),
 				scopeTo: (orgId: string) => Ref.set(openOrg, Option.some(orgId)),
 			}
 		}),

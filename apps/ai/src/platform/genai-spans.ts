@@ -18,7 +18,7 @@ import {
 	MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR,
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
-import { Duration, Effect, Exit, Layer, Option, Predicate, Stream, Tracer } from "effect"
+import { Duration, Effect, Exit, Layer, Option, Predicate, Schema, Stream, Tracer } from "effect"
 import * as AiError from "effect/ai/AiError"
 import type * as LanguageModel from "effect/ai/LanguageModel"
 import type * as Prompt from "effect/ai/Prompt"
@@ -57,9 +57,11 @@ const TRUNCATION_MARKER = "…[truncated]"
 const truncated = (text: string, cap: number): string =>
 	text.length > cap ? text.slice(0, cap) + TRUNCATION_MARKER : text
 
-/** `JSON.stringify` that reports an unserializable value (a cycle, a bigint) as nothing. */
-const stringify = (value: unknown): string | undefined =>
-	Option.getOrUndefined(Option.liftThrowable((input: unknown) => JSON.stringify(input))(value))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
+/** JSON that reports an unserializable value (a cycle, a bigint) as nothing. */
+const stringify = (value: unknown): string | undefined => Option.getOrUndefined(encodeJsonOption(value))
 
 /**
  * The convention's message part for one prompt part. Media is size and reasoning is
@@ -100,10 +102,10 @@ const systemInstructionsJson = (prompt: Prompt.Prompt): string | undefined => {
 			: [],
 	)
 	if (parts.length === 0) return undefined
-	const json = JSON.stringify(parts)
+	const json = encodeJson(parts)
 	if (json.length <= SYSTEM_INSTRUCTIONS_BUDGET) return json
 	const cap = Math.max(256, Math.floor(SYSTEM_INSTRUCTIONS_BUDGET / parts.length))
-	return JSON.stringify(parts.map((part) => ({ ...part, content: truncated(part.content, cap) })))
+	return encodeJson(parts.map((part) => ({ ...part, content: truncated(part.content, cap) })))
 }
 
 /**
@@ -210,8 +212,7 @@ const fitFrom = (encoded: ReadonlyArray<string>, budget: number): number => {
 }
 
 const encodeMessage = (message: SerializedMessage): string =>
-	stringify(message) ??
-	JSON.stringify({ ...message, parts: message.parts.map((part) => boundPart(part, 256)) })
+	stringify(message) ?? encodeJson({ ...message, parts: message.parts.map((part) => boundPart(part, 256)) })
 
 /** Exported for tests. */
 export const messagesJson = (
@@ -513,7 +514,7 @@ const withinToolBudget = (text: string, wrap: (prefix: string) => string): strin
 /** `{result: text}`, truncated so an oversized string still reads as its text, not an escaped prefix. */
 const resultJson = (text: string): string =>
 	withinToolBudget(text, (prefix) =>
-		JSON.stringify({ result: prefix.length < text.length ? prefix + TRUNCATION_MARKER : prefix }),
+		encodeJson({ result: prefix.length < text.length ? prefix + TRUNCATION_MARKER : prefix }),
 	)
 
 /**
@@ -522,11 +523,11 @@ const resultJson = (text: string): string =>
  */
 export const toolCallJson = (value: unknown): string => {
 	if (Predicate.isString(value)) return resultJson(value)
-	if (!Predicate.isObjectOrArray(value)) return JSON.stringify({ result: value })
+	if (!Predicate.isObjectOrArray(value)) return encodeJson({ result: value })
 	const json = stringify(value)
 	if (json === undefined) return resultJson(String(value))
 	if (json.length <= TOOL_JSON_BUDGET) return json
-	return withinToolBudget(json, (prefix) => JSON.stringify({ truncated: true, prefix }))
+	return withinToolBudget(json, (prefix) => encodeJson({ truncated: true, prefix }))
 }
 
 /**
@@ -544,15 +545,13 @@ const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined
 	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
 	const full = Option.getOrUndefined(
 		Option.liftThrowable(() =>
-			JSON.stringify(
+			encodeJson(
 				tools.map((tool, index) => ({ ...described[index], parameters: Tool.getJsonSchema(tool) })),
 			),
 		)(),
 	)
 	if (full !== undefined && full.length <= TOOL_DEFINITIONS_BUDGET) return full
-	return JSON.stringify(
-		described.map((tool) => ({ ...tool, description: truncated(tool.description, 128) })),
-	)
+	return encodeJson(described.map((tool) => ({ ...tool, description: truncated(tool.description, 128) })))
 }
 
 /**
@@ -675,7 +674,8 @@ export const ReturnedToolFailuresOkLive = Layer.effect(
  * `execute_tool` span this looks for.
  */
 const annotateExecuteToolSpan = Effect.fnUntraced(function* (attributes: Readonly<Record<string, string>>) {
-	const span = Option.flatMap(yield* Effect.option(Effect.currentSpan), executeToolSpan)
+	const currentSpan = yield* Effect.option(Effect.currentSpan)
+	const span = Option.flatMap(currentSpan, executeToolSpan)
 	if (Option.isNone(span)) return
 	for (const [key, value] of Object.entries(attributes)) span.value.attribute(key, value)
 })

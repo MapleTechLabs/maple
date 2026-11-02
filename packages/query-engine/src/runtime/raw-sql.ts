@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import {
 	MAX_RAW_SQL_CELL_LENGTH,
 	MAX_RAW_SQL_RESULT_BYTES,
@@ -160,6 +160,8 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	} satisfies PreparedRawSql
 })
 
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): string | null => {
 	if (rows.length > MAX_RAW_SQL_RESULT_ROWS) {
 		return `Raw SQL results may contain at most ${MAX_RAW_SQL_RESULT_ROWS} rows`
@@ -173,9 +175,9 @@ const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): s
 			}
 		}
 
-		// A cyclic value or a BigInt cell throws out of `JSON.stringify` rather
-		// than returning, and the caller owes the user that as a 400.
-		const encoded = Effect.runSync(Effect.option(Effect.try(() => JSON.stringify(row) ?? "null")))
+		// A cyclic value or a BigInt cell fails to encode, and the caller owes
+		// the user that as a 400.
+		const encoded = encodeJsonOption(row)
 		if (Option.isNone(encoded)) return "Raw SQL results must be JSON serializable"
 		totalBytes += new TextEncoder().encode(encoded.value).byteLength + 1
 		if (totalBytes > MAX_RAW_SQL_RESULT_BYTES) {

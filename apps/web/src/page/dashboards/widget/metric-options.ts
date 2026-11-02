@@ -20,21 +20,26 @@ export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions
 	messages: [Message.CompletedFetchMetricOptions],
 	execute: ({ search }) =>
 		listMetrics({ data: { limit: 100, ...(search === "" ? undefined : { search }) } }).pipe(
-			Effect.map((response) => ({
-				options: response.data
-					.filter((row) => toQueryBuilderMetricType(row.metricType) !== undefined)
-					.map((row) => ({
-						value: `${row.metricName}::${row.metricType}`,
-						label: `${row.metricName} (${row.metricType})`,
-						isMonotonic: row.isMonotonic,
-					}))
-					.filter((option, index, all) => all.findIndex((other) => other.value === option.value) === index),
-				// `toNames`: trimmed, non-empty, each once.
-				services: response.data
-					.map((row) => row.serviceName.trim())
-					.filter((name, index, all) => name !== "" && all.indexOf(name) === index),
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({
+					options: response.data
+						.filter((row) => toQueryBuilderMetricType(row.metricType) !== undefined)
+						.map((row) => ({
+							value: `${row.metricName}::${row.metricType}`,
+							label: `${row.metricName} (${row.metricType})`,
+							isMonotonic: row.isMonotonic,
+						}))
+						.filter(
+							(option, index, all) =>
+								all.findIndex((other) => other.value === option.value) === index,
+						),
+					// `toNames`: trimmed, non-empty, each once.
+					services: response.data
+						.map((row) => row.serviceName.trim())
+						.filter((name, index, all) => name !== "" && all.indexOf(name) === index),
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMetricOptions({ search, result })),
 		),
@@ -46,31 +51,43 @@ export const FetchMetricKeys = Command.define("FetchWidgetEditorMetricKeys", {
 	messages: [Message.CompletedFetchMetricKeys],
 	execute: ({ metricName, metricType }) =>
 		getMetricAttributeKeys({ data: { metricName, metricType } }).pipe(
-			Effect.map((response) => response.data.map((row) => row.attributeKey)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => response.data.map((row) => row.attributeKey),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMetricKeys({ metric: `${metricName}::${metricType}`, result })),
+			Effect.map((result) =>
+				Message.CompletedFetchMetricKeys({ metric: `${metricName}::${metricType}`, result }),
+			),
 		),
 })
 
 const metricsQueriesOf = (state: EditorState | null) =>
 	(state?.queries ?? []).flatMap((query) => (query.dataSource === "metrics" ? [query] : []))
 
-type Asked = Readonly<{ model: Model; commands: ReadonlyArray<ReturnType<typeof FetchMetricOptions | typeof FetchMetricKeys>> }>
+type Asked = Readonly<{
+	model: Model
+	commands: ReadonlyArray<ReturnType<typeof FetchMetricOptions | typeof FetchMetricKeys>>
+}>
 
 /** The list is asked for once per search, and each picked metric's keys once, while a query reads metrics. */
 export const askMetricOptions = (model: Model): Asked => {
 	const queries = metricsQueriesOf(model.state)
 	if (queries.length === 0) return { model, commands: [] }
-	const list = model.metricRequested === model.metricSearch ? [] : [FetchMetricOptions({ search: model.metricSearch })]
+	const list =
+		model.metricRequested === model.metricSearch
+			? []
+			: [FetchMetricOptions({ search: model.metricSearch })]
 	const missing = queries
 		.filter((query) => query.metricName !== "")
 		.map((query) => ({ metricName: query.metricName, metricType: query.metricType }))
 		.filter(
 			(metric, index, all) =>
 				!model.metricKeysRequested.includes(`${metric.metricName}::${metric.metricType}`) &&
-				all.findIndex((other) => other.metricName === metric.metricName && other.metricType === metric.metricType) ===
-					index,
+				all.findIndex(
+					(other) =>
+						other.metricName === metric.metricName && other.metricType === metric.metricType,
+				) === index,
 		)
 	return {
 		model: {
@@ -105,7 +122,9 @@ export const withDefaultMetric = (state: EditorState, options: ReadonlyArray<Met
 	return {
 		...state,
 		queries: state.queries.map((query) =>
-			query.dataSource === "metrics" && query.metricName === "" ? applyQueryChange(query, change) : query,
+			query.dataSource === "metrics" && query.metricName === ""
+				? applyQueryChange(query, change)
+				: query,
 		),
 	}
 }

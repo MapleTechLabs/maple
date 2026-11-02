@@ -63,7 +63,8 @@ export const IngestKeysProvider = () =>
 			const api = yield* MapleApi
 			const fetchKeys = Effect.gen(function* () {
 				const fetched = yield* api.get("/v2/ingest_keys")
-				return toAttributes(yield* decodeWireIngestKeys(fetched))
+				const decoded = yield* decodeWireIngestKeys(fetched)
+				return toAttributes(decoded)
 			})
 			return {
 				// Always-present org configuration: deleting the resource only stops

@@ -28,7 +28,8 @@ export const LoadInfraSurfaces = Command.define("LoadInfraSurfaces", {
 	messages: [Message.SucceededLoadInfraSurfaces, Message.FailedLoadInfraSurfaces],
 	execute: ({ orgId }) =>
 		Effect.gen(function* () {
-			const window = lastHourWindow(yield* Clock.currentTimeMillis)
+			const now = yield* Clock.currentTimeMillis
+			const window = lastHourWindow(now)
 			const response = yield* (yield* MapleInternalApiClient).integrations.infraSurfaces({
 				payload: new InfraPresenceRequest({ startTime: window.startTime, endTime: window.endTime }),
 			})

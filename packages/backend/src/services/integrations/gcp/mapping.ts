@@ -14,7 +14,7 @@ import {
 	type MetricSumRow,
 } from "@maple/backend/services/warehouse/metric-rows"
 import { timestampMs } from "@maple/backend/platform/time"
-import { Predicate } from "effect"
+import { Predicate, Schema } from "effect"
 import {
 	gcpAlignmentMs,
 	type GcpBucketOptions,
@@ -164,14 +164,16 @@ export const mapGcpResource = (result: GcpResourceSearchResult) => {
 /** A group of more series than Maple keeps: see `GcpMetricGroup.top`. */
 export type GcpTopGroup = GcpMetricGroup & { readonly top: NonNullable<GcpMetricGroup["top"]> }
 
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const resourceKey = (group: GcpMetricGroup, series: GcpTimeSeries) => {
 	const labels = series.resource.labels ?? {}
-	return JSON.stringify([labels.project_id, ...group.resourceLabels.map((label) => labels[label])])
+	return encodeJsonSync([labels.project_id, ...group.resourceLabels.map((label) => labels[label])])
 }
 
 /** A series of a top group by its resource and its item, whichever metric it is of. */
 export const gcpTopKey = (group: GcpTopGroup, series: GcpTimeSeries) =>
-	JSON.stringify([resourceKey(group, series), series.metric.labels?.[group.top.label]])
+	encodeJsonSync([resourceKey(group, series), series.metric.labels?.[group.top.label]])
 
 /**
  * The items a top group keeps, by `gcpTopKey`: per resource, the `limit` series of the ranking

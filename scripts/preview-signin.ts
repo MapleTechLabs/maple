@@ -8,6 +8,9 @@
  * and expires in two minutes.
  */
 import { resolveMapleDomains } from "../packages/infra/src/cloudflare/stage.ts"
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const prNumber = Number(process.argv[2])
 if (!Number.isInteger(prNumber) || prNumber <= 0) {
@@ -26,7 +29,7 @@ const domains = resolveMapleDomains({ stage: { kind: "pr", prNumber }, region: "
 const response = await fetch(`https://${domains.api}/api/auth/preview/sign-in`, {
 	method: "POST",
 	headers: { "content-type": "application/json" },
-	body: JSON.stringify({ key }),
+	body: encodeJson({ key }),
 	signal: AbortSignal.timeout(30_000),
 }).catch((error: unknown) => {
 	console.error(`Could not reach https://${domains.api}: ${String(error)}`)

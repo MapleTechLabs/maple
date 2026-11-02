@@ -16,6 +16,7 @@ import { existsSync } from "node:fs"
 import { lstatSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
+import { decodeJsonSync } from "./json"
 import { durableJson } from "./durable-files"
 import { markStoreClosed, markStoreOpen, storeHasData } from "./store-version"
 import { MAPLE_VERSION } from "./version"
@@ -189,13 +190,22 @@ const decodeRetentionConfig = Schema.decodeUnknownSync(RawTelemetryRetentionConf
 
 const parseRawTelemetryRetentionDays = (value: unknown): number => decodeRetentionConfig(value).minimumDays
 
+const decodeTableTtlRow = Schema.decodeUnknownSync(
+	Schema.fromJsonString(
+		Schema.Struct({
+			name: Schema.optionalKey(Schema.Unknown),
+			create_table_query: Schema.optionalKey(Schema.Unknown),
+		}),
+	),
+)
+
 export const readRawTelemetryRetentionDays = (dataDir: string): number | undefined => {
 	const path = rawTelemetryRetentionConfigPath(dataDir)
 	if (!existsSync(path)) return undefined
 	const stat = lstatSync(path)
 	if (stat.isSymbolicLink() || !stat.isFile())
 		throw new Error(`raw telemetry retention config is not a real file: ${path}`)
-	return parseRawTelemetryRetentionDays(JSON.parse(readFileSync(path, "utf8")) as unknown)
+	return parseRawTelemetryRetentionDays(decodeJsonSync(readFileSync(path, "utf8")))
 }
 
 export const configureRawTelemetryRetentionDays = async (
@@ -240,7 +250,7 @@ export const applyRawTelemetryRetentionFloor = (db: Pick<Chdb, "query" | "exec">
 		)
 		.split("\n")
 		.filter((line) => line.trim().length > 0)
-		.map((line) => JSON.parse(line) as { name?: unknown; create_table_query?: unknown })
+		.map((line) => decodeTableTtlRow(line))
 	const definitions = new Map(
 		rows.map((row) => {
 			if (typeof row.name !== "string" || typeof row.create_table_query !== "string")

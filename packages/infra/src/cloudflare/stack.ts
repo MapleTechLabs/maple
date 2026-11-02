@@ -96,7 +96,8 @@ export const stageProps = <Props extends object>(
 ): Effect.Effect<Partial<Props>, never, Stage> =>
 	Effect.gen(function* () {
 		if (globalThis.__ALCHEMY_RUNTIME__) return {}
-		const deployment = parseMapleDeployment(yield* Stage)
+		const stage = yield* Stage
+		const deployment = parseMapleDeployment(stage)
 		return make(resolveWorkerName(base, deployment.stage, deployment.region), deployment)
 	})
 

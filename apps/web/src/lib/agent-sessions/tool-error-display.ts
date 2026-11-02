@@ -10,6 +10,13 @@
 // span of text the grouping really did ignore.
 
 import { MSG_TEXT_REDACTIONS } from "@maple/domain/tinybird/fingerprint"
+import { Option, Schema } from "effect"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
+/** `JSON.stringify` that falls back to `String` for a value JSON cannot hold. */
+const stringify = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
 /* -------------------------------------------------------------------------------------------------
  * The message
@@ -27,14 +34,7 @@ export type JsonValue =
 	| ReadonlyArray<JsonValue>
 	| { readonly [key: string]: JsonValue }
 
-const parseJson = (text: string): JsonValue | undefined => {
-	try {
-		const value: JsonValue = JSON.parse(text)
-		return value
-	} catch {
-		return undefined
-	}
-}
+const parseJson = (text: string): JsonValue | undefined => Option.getOrUndefined(decodeJson(text))
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value)
@@ -433,9 +433,9 @@ const PATH_STRING_MAX = 160
 const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length
 
 const shorten = (value: string, max: number): { readonly text: string; readonly hiddenBytes: number } => {
-	const json = JSON.stringify(value)
+	const json = stringify(value)
 	if (value.length <= max) return { text: json, hiddenBytes: 0 }
-	const kept = JSON.stringify(value.slice(0, max))
+	const kept = stringify(value.slice(0, max))
 	return { text: `${kept.slice(0, -1)} …"`, hiddenBytes: utf8Bytes(json) - utf8Bytes(kept) }
 }
 
@@ -447,10 +447,10 @@ const outlineOf = (value: unknown): string => {
 	if (Array.isArray(value)) return "[…]"
 	if (isRecord(value)) {
 		return `{ ${Object.entries(value)
-			.map(([key, inner]) => `${JSON.stringify(key)}: ${outlineOf(inner)}`)
+			.map(([key, inner]) => `${stringify(key)}: ${outlineOf(inner)}`)
 			.join(", ")} }`
 	}
-	return typeof value === "string" ? '"…"' : JSON.stringify(value)
+	return typeof value === "string" ? '"…"' : stringify(value)
 }
 
 const samePath = (a: ErrorPath, b: ErrorPath) =>
@@ -501,11 +501,11 @@ export function payloadLines(value: unknown, message: string): ReadonlyArray<Pay
 						depth: depth + 1,
 						text: `${outlineOf(inner)}${innerComma}`,
 						highlight: false,
-						folded: `item [${key}] · ${utf8Bytes(JSON.stringify(inner)).toLocaleString()} B`,
+						folded: `item [${key}] · ${utf8Bytes(stringify(inner)).toLocaleString()} B`,
 					})
 					return
 				}
-				const innerLabel = Array.isArray(node) ? "" : `${JSON.stringify(key)}: `
+				const innerLabel = Array.isArray(node) ? "" : `${stringify(key)}: `
 				walk(inner, innerAt, depth + 1, innerLabel, innerComma, highlight)
 			})
 			if (isTarget && missing) {
@@ -539,7 +539,7 @@ export function payloadLines(value: unknown, message: string): ReadonlyArray<Pay
 
 		lines.push({
 			depth,
-			text: `${label}${JSON.stringify(node)}${comma}`,
+			text: `${label}${stringify(node)}${comma}`,
 			highlight,
 			...(isTarget &&
 				!missing &&

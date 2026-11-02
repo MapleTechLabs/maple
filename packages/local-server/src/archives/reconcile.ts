@@ -17,6 +17,7 @@ import {
 	type CreateOperationIntent,
 	type GcOperationIntent,
 } from "./journal"
+import { encodeJson } from "../json"
 
 // Inspection result: the complete output of read-only validation.
 
@@ -248,7 +249,7 @@ const decideCreate = (
 /** Helper for tests/snapshot builders: derive the journal digest of an intent. */
 export const digestOfIntent = (intent: ArchiveOperationIntent): string => {
 	const c = require("node:crypto") as typeof import("node:crypto")
-	return c.createHash("sha256").update(JSON.stringify(intent)).digest("hex")
+	return c.createHash("sha256").update(encodeJson(intent)).digest("hex")
 }
 
 void PHASE_ORDER

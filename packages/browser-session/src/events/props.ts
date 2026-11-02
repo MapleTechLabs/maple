@@ -57,6 +57,7 @@ function coerce(value: unknown): string | undefined {
 	}
 	try {
 		if (value instanceof Date) return value.toISOString()
+		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		const json = JSON.stringify(value)
 		return json === undefined ? undefined : capText(json, MAX_PROP_VALUE_LENGTH)
 	} catch {

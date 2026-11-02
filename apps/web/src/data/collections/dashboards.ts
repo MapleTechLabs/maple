@@ -10,15 +10,14 @@ import type { MapleApiV2Client } from "../../platform/api-clients"
 
 const decodeDocument = Schema.decodeUnknownOption(DashboardDocument)
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 /** `rowToDashboard`: migrate the stored payload, then decode; an undecodable row is `None`. */
 export const rowToDocument = (row: DashboardRow): Option.Option<DashboardDocument> =>
-	Option.flatMap(
-		Option.liftThrowable((payload: unknown) =>
-			migrateToLatest(typeof payload === "string" ? JSON.parse(payload) : payload),
-		)(row.payload_json),
-		decodeDocument,
-	)
+	(typeof row.payload_json === "string"
+		? decodeJson(row.payload_json)
+		: Option.some(row.payload_json)
+	).pipe(Option.flatMap(Option.liftThrowable(migrateToLatest)), Option.flatMap(decodeDocument))
 
 /** `rowToUpdateRequest`: the full PATCH body from the row's optimistic payload. */
 const toUpdateRequest = (document: DashboardDocument): V2DashboardUpdateParams => ({

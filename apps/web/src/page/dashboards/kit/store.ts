@@ -25,6 +25,9 @@ export class DashboardWriteError extends Schema.TaggedError<DashboardWriteError>
 	{ message: Schema.String, cause: Schema.Defect() },
 ) {}
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 const messageField = (value: unknown): Option.Option<string> =>
 	typeof value === "object" && value !== null && "message" in value && typeof value.message === "string"
 		? Option.some(value.message).pipe(Option.filter((message) => message.trim().length > 0))
@@ -126,10 +129,16 @@ export const mutateDashboard = (
 		const collection = yield* dashboardsOf(orgId)
 		const current = yield* readDocument(orgId, id)
 		// The updaters' `updatedAt` timestamp.
-		const nowIso = IsoDateTimeString.make(new Date(yield* Clock.currentTimeMillis).toISOString())
+		const nowMs = yield* Clock.currentTimeMillis
+		const nowIso = IsoDateTimeString.make(new Date(nowMs).toISOString())
 		const updated = updater(current, nowIso)
 		if (updated === current) return "Synced" satisfies WriteSync
-		const plain: unknown = JSON.parse(JSON.stringify(updated))
+		const plain = yield* encodeJson(updated).pipe(
+			Effect.flatMap(decodeJson),
+			Effect.mapError(
+				(cause) => new DashboardWriteError({ message: "Dashboard is not JSON-serializable", cause }),
+			),
+		)
 		const transaction = collection.update(id, (draft) => {
 			draft.payload_json = plain
 			draft.name = updated.name
@@ -152,5 +161,11 @@ export const awaitTxid = (orgId: string, txid: string | undefined) =>
 	txid === undefined
 		? Effect.void
 		: Effect.flatMap(dashboardsOf(orgId), (collection) =>
-				Effect.ignore(Effect.tryPromise(() => collection.utils.awaitTxId(Number(txid)))),
+				Effect.ignore(
+					Effect.tryPromise({
+						try: () => collection.utils.awaitTxId(Number(txid)),
+						catch: (cause) =>
+							new DashboardWriteError({ message: "Dashboard sync was not confirmed", cause }),
+					}),
+				),
 			)

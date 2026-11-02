@@ -81,6 +81,7 @@ import {
 	RetiredDayAuthority,
 	retireLiveDayInServer,
 } from "./archives/retention"
+import { encodeJson } from "./json"
 
 /** Resolves a request path to a static asset (the bundled SPA). Returns
  *  `undefined` to fall through to the SPA shell (client-side routing). */
@@ -200,7 +201,7 @@ export const makeBrowserOriginPolicy = (options: {
 			return Result.fail(
 				new LocalServerConfigError({
 					source: ALLOWED_ORIGINS_ENV,
-					message: `invalid origin ${JSON.stringify(value)} in ${ALLOWED_ORIGINS_ENV}; expected e.g. http://localhost:5173`,
+					message: `invalid origin ${encodeJson(value)} in ${ALLOWED_ORIGINS_ENV}; expected e.g. http://localhost:5173`,
 				}),
 			)
 		trusted.add(origin)
@@ -279,7 +280,7 @@ const withCors = (response: Response, headers: Readonly<Record<string, string>> 
 }
 
 const json = (body: unknown, status = 200): Response =>
-	new Response(JSON.stringify(body), {
+	new Response(encodeJson(body), {
 		status,
 		headers: { "content-type": "application/json" },
 	})
@@ -303,7 +304,7 @@ export const describeThrown = (error: unknown): string => {
 				const message = error.message
 				if (typeof message === "string" && message !== "") return message
 			}
-			const json = JSON.stringify(error)
+			const json = encodeJson(error)
 			// `{}` here means every own property was non-enumerable or unserializable
 			// (a `Response`, a class instance) — the empty object is the bug, so say so.
 			if (json !== undefined && json !== "{}") return json

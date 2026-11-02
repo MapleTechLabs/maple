@@ -32,6 +32,11 @@ export interface ApnsAlert {
 	readonly body: string
 }
 
+const encodeJwtPart = (part: Record<string, unknown>) =>
+	Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(part).pipe(
+		Effect.mapError((cause) => new ApnsError({ message: "Failed to encode APNs JWT", cause })),
+	)
+
 export interface ApnsPush {
 	readonly deviceToken: string
 	readonly environment: MobilePushEnvironment
@@ -283,10 +288,13 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 
 			const mintToken = Effect.fn("ApnsClient.mintToken")(function* () {
 				const nowMs = yield* Clock.currentTimeMillis
-				const header = base64UrlString(JSON.stringify({ alg: "ES256", kid: config.keyId }))
-				const payload = base64UrlString(
-					JSON.stringify({ iss: config.teamId, iat: Math.floor(nowMs / 1000) }),
-				)
+				const headerJson = yield* encodeJwtPart({ alg: "ES256", kid: config.keyId })
+				const payloadJson = yield* encodeJwtPart({
+					iss: config.teamId,
+					iat: Math.floor(nowMs / 1000),
+				})
+				const header = base64UrlString(headerJson)
+				const payload = base64UrlString(payloadJson)
 				const signingInput = `${header}.${payload}`
 				// WebCrypto ECDSA emits the raw r||s form, which is exactly JWS ES256.
 				const key = yield* signingKey

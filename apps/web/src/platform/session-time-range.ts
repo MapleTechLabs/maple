@@ -10,7 +10,6 @@ const codec = Schema.fromJsonString(SessionTimeRange)
 const decode = Schema.decodeUnknownOption(codec)
 const encode = Schema.encodeSync(codec)
 
-// oxlint-disable-next-line effecttsgo/strict-effect-provide
 const withSessionStorage = Effect.provide(BrowserKeyValueStore.layerSessionStorage)
 
 /** The window remembered for the org in this tab; nothing (`{}`) when unset or unreadable. */
