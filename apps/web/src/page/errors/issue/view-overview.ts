@@ -140,15 +140,25 @@ const isFixHeldSince = (issue: ErrorIssueDocument): boolean =>
 export const issueStats = (h: H, issue: ErrorIssueDocument, inputs: StatInputs): Html => {
 	const isSurging = inputs.surge !== null && inputs.surge >= SURGE_THRESHOLD
 	const tone: Tone = issue.severity === null ? "neutral" : SEVERITY_STAT_TONE[issue.severity]
-	return statRail(h, { columns: 4, className: "shrink-0" }, [
-		statRailItem(h, {
-			eyebrow: `Events · ${inputs.windowLabel}`,
-			value: h.span([h.Title(formatExactCount(inputs.windowCount))], [exact(inputs.windowCount)]),
-			tone: isSurging ? tone : "neutral",
-			spark: inputs.spark,
-			sparkColor: issue.severity === null ? undefined : `var(${SEVERITY_TOKEN[issue.severity]})`,
-			subline: trendLine(inputs),
-		}),
+	// Only error issues read a window timeseries; an alert's window was never queried.
+	const hasWindow = issue.kind === "error"
+	return statRail(h, { columns: hasWindow ? 4 : 3, className: "shrink-0" }, [
+		...(hasWindow
+			? [
+					statRailItem(h, {
+						eyebrow: `Events · ${inputs.windowLabel}`,
+						value: h.span(
+							[h.Title(formatExactCount(inputs.windowCount))],
+							[exact(inputs.windowCount)],
+						),
+						tone: isSurging ? tone : "neutral",
+						spark: inputs.spark,
+						sparkColor:
+							issue.severity === null ? undefined : `var(${SEVERITY_TOKEN[issue.severity]})`,
+						subline: trendLine(inputs),
+					}),
+				]
+			: []),
 		statRailItem(h, {
 			eyebrow: "All time",
 			value: h.span([h.Title(formatExactCount(issue.occurrenceCount))], [exact(issue.occurrenceCount)]),

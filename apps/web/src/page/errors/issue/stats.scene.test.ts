@@ -13,12 +13,15 @@ import { issueStats, type StatInputs } from "./view-overview"
 const issueId = Schema.decodeSync(ErrorIssueId)("0199a004-0000-7000-8000-000000000001")
 const NOW = Date.UTC(2026, 9, 1, 12)
 
-const issueWith = (history: Readonly<{ lastRegressedAt: string | null; lastResolvedAt: string | null }>) =>
+const issueWith = (
+	history: Readonly<{ lastRegressedAt: string | null; lastResolvedAt: string | null }>,
+	kind: "error" | "alert" = "error",
+) =>
 	errorIssueDetailFromV2(
 		Schema.decodeUnknownSync(V2ErrorIssueDetail)({
 			id: encodePublicId("iss", issueId),
 			object: "error_issue",
-			kind: "error",
+			kind,
 			fingerprint_hash: "12660752272409977512",
 			service_name: "payment-svc",
 			exception_type: "ConnectionTimeout",
@@ -56,7 +59,12 @@ const issueWith = (history: Readonly<{ lastRegressedAt: string | null; lastResol
 		}),
 	).issue
 
-type Model = Readonly<{ surge: number | null; windowCount: number; history: Parameters<typeof issueWith>[0] }>
+type Model = Readonly<{
+	surge: number | null
+	windowCount: number
+	history: Parameters<typeof issueWith>[0]
+	kind?: "error" | "alert"
+}>
 
 const inputsOf = (model: Model): StatInputs => ({
 	windowCount: model.windowCount,
@@ -68,7 +76,7 @@ const inputsOf = (model: Model): StatInputs => ({
 })
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	issueStats(h, issueWith(model.history), inputsOf(model))
+	issueStats(h, issueWith(model.history, model.kind), inputsOf(model))
 const update = (model: Model) => ({ model, commands: [] })
 const noHistory = { lastRegressedAt: null, lastResolvedAt: null }
 
@@ -125,6 +133,16 @@ describe("issue stats", () => {
 				},
 			}),
 			expectView(text(/regressed/)).toExist(),
+		)
+	})
+
+	test("an alert issue has no window events tile, so no claim about a window it never read", () => {
+		scene(
+			{ update, view },
+			given<Model>({ surge: null, windowCount: 0, history: noHistory, kind: "alert" }),
+			expectView(text("Quiet in this window")).not.toExist(),
+			expectView(text(/Events ·/)).not.toExist(),
+			expectView(text("All time")).toExist(),
 		)
 	})
 })

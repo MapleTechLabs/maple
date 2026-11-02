@@ -58,20 +58,23 @@ const latestOccurrences = (
 				panel(h, { className: "shrink-0 overflow-hidden" }, [
 					panelHeader(h, {
 						title: "Latest occurrences",
-						action: h.a(
-							[
-								h.Href(
-									hrefOf(
-										AppRoute.ErrorIssue({
-											issueId: model.issueId,
-											search: { ...model.search, tab: "occurrences" },
-										}),
+						action:
+							detail.sampleTraces.length <= LATEST_OCCURRENCES
+								? undefined
+								: h.a(
+										[
+											h.Href(
+												hrefOf(
+													AppRoute.ErrorIssue({
+														issueId: model.issueId,
+														search: { ...model.search, tab: "occurrences" },
+													}),
+												),
+											),
+											h.Class(textLinkClass("muted", false, "text-xs")),
+										],
+										[`All ${detail.sampleTraces.length} samples`],
 									),
-								),
-								h.Class(textLinkClass("muted", false, "text-xs")),
-							],
-							[`All ${detail.sampleTraces.length} samples`],
-						),
 					}),
 					occurrencesTable(h, detail.sampleTraces.slice(0, LATEST_OCCURRENCES), clock),
 				]),
