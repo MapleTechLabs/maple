@@ -471,11 +471,13 @@ const mcpTracerAnticipatedErrors = {
 }
 
 import { designRules } from "./design-rules.mjs"
+import { uiKitRules } from "./ui-kit-rules.mjs"
 
 export default {
 	meta: { name: "maple" },
 	rules: {
 		...designRules,
+		...uiKitRules,
 		"dialog-body-padding": dialogBodyPadding,
 		"mcp-tracer-anticipated-errors": mcpTracerAnticipatedErrors,
 		"no-date-parse": noDateParse,

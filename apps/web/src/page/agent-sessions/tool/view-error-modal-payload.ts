@@ -1,3 +1,4 @@
+import { formatBytes, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	type PayloadLine,
@@ -7,12 +8,13 @@ import {
 	unwrapToolErrorText,
 	whatsWrong,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { statusDot } from "../../../ui/status-dot"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `SampleBody` of `ToolErrorModal`: what the call was handed and what it gave back, and where the
 // arguments confirm a schema failure, what is wrong with them.
@@ -29,7 +31,7 @@ const payloadHead = (
 			eyebrow(h, { variant: "mono" }, [options.label]),
 			h.span(
 				[h.Class("truncate text-2xs text-foreground-faint")],
-				[options.attribute, ...(options.bytes > 0 ? [` · ${formatToolCount(options.bytes)} B`] : [])],
+				[options.attribute, ...(options.bytes > 0 ? [` · ${formatBytes(options.bytes)}`] : [])],
 			),
 			h.span([h.Class("grow")], []),
 			...(options.action === undefined ? [] : [options.action]),
@@ -40,7 +42,7 @@ const notRecorded = (h: H, what: "arguments" | "result"): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-1 rounded-md border border-dashed border-input p-3.5 font-mono")],
 		[
-			h.span([h.Class("text-xs text-muted-foreground")], ["Not recorded"]),
+			typography(h, { size: "xs", tone: "muted" }, ["Not recorded"]),
 			h.span(
 				[h.Class("text-2xs leading-[15px] text-foreground-subtle")],
 				["The span has no ", what, " attribute."],
@@ -61,7 +63,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 				? h.span(
 						[
 							h.Class(
-								"my-0.5 inline-flex items-center gap-2 rounded-xs border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error",
+								"my-0.5 inline-flex items-center gap-2 rounded-xs border border-dashed border-severity-error-a4 px-1.5 text-2xs leading-4 text-severity-error",
 							),
 						],
 						['"', line.missingKey, '"', h.span([h.Class("opacity-80")], ["missing, required"])],
@@ -104,7 +106,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 														"rounded-xs bg-muted px-1 text-2xs text-muted-foreground",
 													),
 												],
-												["+", formatToolCount(line.note.hiddenBytes), " B not shown"],
+												["+", formatBytes(line.note.hiddenBytes), " not shown"],
 											),
 										]
 									: []),
@@ -142,9 +144,9 @@ const argumentsBlock = (
 				? "Copied"
 				: "Copy"
 	const note = isTruncatedByRead
-		? `The first ${formatToolCount(row.arguments.length)} characters of ${formatToolCount(row.argumentsBytes)} B`
+		? `The first ${formatNumber(row.arguments.length)} characters of ${formatBytes(row.argumentsBytes)}`
 		: lines !== undefined && !isFull
-			? `Showing ${formatToolCount(Math.min(payloadLinesBytes(lines), row.argumentsBytes))} of ${formatToolCount(row.argumentsBytes)} B · long strings shortened around the error path`
+			? `Showing ${formatBytes(Math.min(payloadLinesBytes(lines), row.argumentsBytes))} of ${formatBytes(row.argumentsBytes)} · long strings shortened around the error path`
 			: undefined
 	return h.div(
 		[h.Class("flex w-0 min-w-0 grow flex-col gap-2 max-lg:w-full")],
@@ -265,7 +267,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 								h.span(
 									[h.Class("text-xs leading-4 text-foreground-soft")],
 									[
-										h.span([h.Class("font-medium text-foreground")], [hint.subject]),
+										typography(h, { tone: "foreground", weight: "medium" }, [hint.subject]),
 										" ",
 										hint.text,
 									],
@@ -283,8 +285,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 							],
 							[
 								statusDot(h, { tone: "custom", className: "mt-[5px] bg-muted-foreground" }),
-								h.span(
-									[h.Class("flex flex-col gap-1")],
+								vstack(h, { gap: "1", as: "span" },
 									[
 										h.span(
 											[h.Class("text-xs leading-4 text-foreground")],

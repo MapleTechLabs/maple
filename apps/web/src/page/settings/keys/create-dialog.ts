@@ -91,7 +91,6 @@ export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	GotNameMessage: { message: Field.Message },
 	GotDescriptionMessage: { message: Field.Message },
-	PressedNameKey: { key: Schema.String },
 	GotExpirationMessage: { message: Select.Message },
 	ClickedAccessMode: { mode: AccessMode },
 	ClickedAllScopes: { level: ScopeLevel },
@@ -224,7 +223,6 @@ export const update = (model: Model, message: Message): Return =>
 		GotDescriptionMessage: ({ message: child }) => ({
 			model: { ...model, description: field(model.description, child) },
 		}),
-		PressedNameKey: ({ key }) => (key === "Enter" ? create(model) : { model }),
 		GotExpirationMessage: ({ message: child }) => {
 			const step = Select.update(model.expiration, child)
 			return {

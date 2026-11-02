@@ -1,16 +1,17 @@
 import { shortId } from "@maple/ui/lib/ids"
-import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { encodeLogKey } from "../../../lib/log-key"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { linkButton } from "../../../ui/button"
 import { copyButton } from "../../../ui/copy-button"
 import { icon } from "../../../ui/icon"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
-import { buildLogJsonPayload, formatLogTimestamp } from "./derive"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { buildLogJsonPayload } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
+import { hstack } from "../../../ui/stack"
 
 // The log's meta strip, as the drawer shows it.
 
@@ -36,15 +37,14 @@ export const metaStrip = (
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5 shrink-0")],
+			hstack(h, { gap: "1.5", className: "shrink-0" },
 				[
 					icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
 					h.span(
 						[h.Class("font-mono")],
 						[
 							copyable(h, model, "meta-time", log.timestamp, [
-								formatLogTimestamp(log.timestamp, timeZone),
+								formatTimestampInTimezone(log.timestamp, { timeZone, withMilliseconds: true }),
 							]),
 						],
 					),
@@ -89,23 +89,20 @@ export const metaStrip = (
 				[
 					...(showOpenFullPage
 						? [
-								h.a(
-									[
-										h.AriaLabel("Open in full page"),
-										h.Class(
-											cn(
-												buttonVariants({
-													size: "icon-xs",
-													variant: "ghost",
-													className: "text-muted-foreground",
-												}),
-											),
-										),
-										h.DataAttribute("base-ui-tooltip-trigger", ""),
-										h.DataAttribute("slot", "icon-button"),
-										h.Href(`/logs/${encodeLogKey(log)}`),
-										h.Id("log-detail-open-full-page"),
-									],
+								linkButton(
+									h,
+									{
+										size: "icon-xs",
+										variant: "ghost",
+										className: "text-muted-foreground",
+										slot: "icon-button",
+										href: `/logs/${encodeLogKey(log)}`,
+										attributes: [
+											h.AriaLabel("Open in full page"),
+											h.DataAttribute("base-ui-tooltip-trigger", ""),
+											h.Id("log-detail-open-full-page"),
+										],
+									},
 									[icon(h, "ExternalLinkIcon")],
 								),
 							]

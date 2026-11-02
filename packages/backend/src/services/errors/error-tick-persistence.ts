@@ -336,6 +336,7 @@ const mergeScanRows = (rows: ReadonlyArray<ErrorTickScanRow>): ReadonlyArray<Err
 				? {
 						...row,
 						count: prior.count + row.count,
+						serviceVersions: mergeVersions(prior.serviceVersions, row.serviceVersions),
 						firstSeenMs: Math.min(prior.firstSeenMs, row.firstSeenMs),
 						lastSeenMs: Math.max(prior.lastSeenMs, row.lastSeenMs),
 					}

@@ -1,10 +1,12 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { click, expect as expectView, expectOutMessage, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
+import { RELEASE_HEALTH_ORDER } from "../../../components/releases/release-model"
+import { deriveOf } from "./derive"
 import { ReleasesData, type Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
@@ -43,6 +45,18 @@ const loaded = (): Model => {
 	const entered = init({ search: {} }, context).model
 	const resolved = pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
 	return pageUpdate(resolved, Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.succeed(data) })).model
+}
+
+const noReleases = Schema.decodeUnknownSync(ReleasesData)({ ...data, releases: [] })
+
+/** A window with no releases, after the presence read answered. */
+const empty = (traces: "present" | "absent"): Model => {
+	const entered = init({ search: {} }, context).model
+	const resolved = pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+	return [
+		Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.succeed(noReleases) }),
+		Message.CompletedLoadSignalPresence({ result: Result.succeed({ traces: { status: traces, lastSeenMs: null } }) }),
+	].reduce((model, message) => pageUpdate(model, message).model, resolved)
 }
 
 describe("releases list", () => {
@@ -104,5 +118,45 @@ describe("releases list", () => {
 		expect(resolved.commands?.[0]?.args).toMatchObject({ input: { namespaces: ["payments"] } })
 		expect(resolved.model.releases.key).not.toEqual(loaded().releases.key)
 		expect(names(contextChanged(loaded(), pinned).commands)).toEqual(["FetchReleases"])
+	})
+
+	test("entry reads signal presence once, and a window change does not read it again", () => {
+		const entered = init({ search: {} }, context)
+		expect(names(entered.commands).filter((name) => name === "LoadReleasesSignalPresence")).toHaveLength(1)
+		const resolved = pageUpdate(entered.model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
+		expect(names(resolved.commands)).not.toContain("LoadReleasesSignalPresence")
+	})
+
+	test("with no traces yet, an empty window offers setup", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(empty("absent")),
+			expectView(text("No releases yet")).toExist(),
+			expectView(role("link", { name: "Set up tracing" })).toExist(),
+		)
+	})
+
+	test("with traces arriving, an empty window names the missing attribute instead of setup", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(empty("present")),
+			expectView(text("No releases in this window")).toExist(),
+			expectView(text("vcs.ref.head.revision")).toExist(),
+			expectView(role("link", { name: "Set up tracing" })).toBeAbsent(),
+		)
+	})
+
+	test("a health filter that matches nothing offers to clear it", () => {
+		const shown = new Set(deriveOf(data).groups.map((group) => group.health))
+		const unmatched = RELEASE_HEALTH_ORDER.find((health) => !shown.has(health))
+		expect(unmatched).toBeDefined()
+		const filtered = { ...loaded(), search: { impact: unmatched } }
+		scene(
+			{ update: pageUpdate, view },
+			given(filtered),
+			expectView(text("No releases match these filters")).toExist(),
+			click(role("button", { name: "Clear filter" })),
+			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/releases", isReplace: false })),
+		)
 	})
 })

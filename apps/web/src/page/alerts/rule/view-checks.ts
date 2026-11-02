@@ -2,13 +2,13 @@ import type { AlertCheckDocument, AlertRuleDocument } from "@maple/domain/http"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { formatTimeInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { segmentedSelect } from "../../../ui/segmented-select"
@@ -21,6 +21,8 @@ import { alertStatusBadge } from "../shared/badges"
 import { Message } from "./message"
 import type { CheckStatusFilter, ChecksResponse, Model } from "./model"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `ChecksPanel` and `CheckDelta`: the rule's recent checks.
 
@@ -70,7 +72,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CheckIcon", { size: 18 })]),
 					emptyTitle(h, ["No checks in this window"]),
 					emptyDescription(h, [
-						"No evaluations were recorded for the selected time range. Try widening the range, or wait for the scheduler to record the next check.",
+						"No evaluations were recorded in this window. Try widening the range, or wait for the scheduler to record the next check.",
 					]),
 				]),
 				docsLink(h, "alertRules"),
@@ -158,10 +160,9 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 							h.div(
 								[h.Class("space-y-1")],
 								[
-									h.div(
-										[h.Class("flex flex-wrap items-center gap-2")],
+									hstack(h, { gap: "2", wrap: true },
 										[
-											h.h3([h.Class("text-sm font-semibold")], ["All checks"]),
+											heading(h, { level: 3, variant: "section" }, ["All checks"]),
 											...(bucket != null
 												? [
 														badge(h, { variant: "secondary", className: "gap-1.5 font-mono text-xs" }, [
@@ -172,7 +173,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 																	size: "icon-2xs",
 																	label: "Clear bucket filter",
 																	hasTooltip: false,
-																	className: "text-muted-foreground hover:text-foreground active:text-foreground",
+																	className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 																	attributes: [h.OnClick(Message.ClickedClearBucket())],
 																},
 																[icon(h, "XmarkIcon")],
@@ -182,8 +183,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 												: []),
 										],
 									),
-									h.p(
-										[h.Class("text-muted-foreground text-xs")],
+									typography(h, { size: "xs", tone: "muted", as: "p" },
 										[
 											bucket != null
 												? model.isBucketLoading
@@ -226,16 +226,11 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 												tableRow(
 													h,
 													[
-														h.td(
-															[
-																h.Attribute("colspan", isGrouped ? "6" : "5"),
-																h.Attribute(
-																	"class",
-																	cn(tableCellStyles, "bg-surface-sunken py-1.5 text-2xs text-muted-foreground"),
-																),
-																h.DataAttribute("slot", "table-cell"),
-															],
+														tableCell(
+															h,
 															[countLabel(skipped, "evaluation"), " hidden by the status filter"],
+															"bg-surface-sunken py-1.5 text-2xs text-muted-foreground",
+															[h.Attribute("colspan", isGrouped ? "6" : "5")],
 														),
 													],
 													"hover:bg-transparent active:bg-transparent",
@@ -249,11 +244,9 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 					]),
 					...(bucket == null && nextCursor !== null
 						? [
-								h.div(
-									[h.Class("flex items-center justify-between gap-4")],
+								hstack(h, { gap: "4", justify: "between" },
 									[
-										h.span(
-											[h.Class("text-2xs text-muted-foreground")],
+										typography(h, { size: "2xs", tone: "muted" },
 											[String(loadedChecks.length), " of ", String(totals.total), " loaded"],
 										),
 										button(
@@ -291,13 +284,11 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 	return tableRow(
 		h,
 		[
-			h.td(
-				[
-					h.Attribute("class", cn(tableCellStyles, "font-mono text-xs")),
-					h.Title(`Evaluated in ${check.evaluationDurationMs}ms`),
-					h.DataAttribute("slot", "table-cell"),
-				],
+			tableCell(
+				h,
 				[formatTimestampInTimezone(check.timestamp, { timeZone, withYear: true })],
+				typographyClass({ size: "xs", mono: true }),
+				[h.Title(`Evaluated in ${check.evaluationDurationMs}ms`)],
 			),
 			tableCell(h, [alertStatusBadge(h, state, { label })]),
 			tableCell(h, [
@@ -309,8 +300,7 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 						}, [check.errorMessage ?? "Evaluation failed"])
 					: check.observedValue == null
 						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
-						: h.div(
-								[h.Class("flex items-baseline gap-2")],
+						: hstack(h, { gap: "2", align: "baseline" },
 								[
 									h.span(
 										[
@@ -328,13 +318,11 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 								],
 							),
 			]),
-			h.td(
-				[
-					h.Attribute("class", cn(tableCellStyles, "tabular-nums text-muted-foreground")),
-					h.Title(check.sampleCount.toLocaleString("en-US")),
-					h.DataAttribute("slot", "table-cell"),
-				],
+			tableCell(
+				h,
 				[formatNumber(check.sampleCount)],
+				typographyClass({ tone: "muted", numeric: true }),
+				[h.Title(check.sampleCount.toLocaleString("en-US"))],
 			),
 			...(isGrouped
 				? [
@@ -346,7 +334,7 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 									[check.groupKey || "all"],
 								),
 							],
-							"font-mono text-muted-foreground",
+							typographyClass({ tone: "muted", mono: true }),
 						),
 					]
 				: []),

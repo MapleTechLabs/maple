@@ -33,6 +33,8 @@ import {
 	UTILIZATION_TEXT,
 } from "./node-card"
 import { formatRuntime } from "./runtime"
+import { typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `ServiceNode`, `DatabaseNode`, `NamespaceAggregateNode` and the `ServiceMapNode` wrapper.
 
@@ -112,8 +114,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 				h.div(
 					[h.Class("flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5")],
 					[
-						h.div(
-							[h.Class("flex items-center gap-1.5")],
+						hstack(h, { gap: "1.5" },
 							[
 								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
 								tooltipTrigger(h, [
@@ -128,7 +129,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 								middleTruncate(h, {
 									text: label,
 									tail: 12,
-									className: "text-xs font-medium text-foreground",
+									className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
 								}),
 								...(runtimeInfo === null
 									? []
@@ -231,8 +232,7 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 				h.div(
 					[h.Class("flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5")],
 					[
-						h.div(
-							[h.Class("flex items-center gap-1.5")],
+						hstack(h, { gap: "1.5" },
 							[
 								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
 								tooltipTrigger(h, [
@@ -301,8 +301,7 @@ const namespaceAggregateNode = <M>(
 				h.div(
 					[h.Class("flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5")],
 					[
-						h.div(
-							[h.Class("flex items-center gap-1.5")],
+						hstack(h, { gap: "1.5" },
 							[
 								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
 								h.span(

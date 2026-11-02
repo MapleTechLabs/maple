@@ -1,10 +1,11 @@
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
-import { errorRate, formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
+import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
 import { backdropBar } from "../../ui/meter"
 import { panel, panelBody, panelHeader } from "../../ui/panel"
+import { pressable } from "../../ui/pressable"
 import { textLink } from "../../ui/text-link"
 import { truncatedText } from "../../ui/truncated-text"
 import { errorRateValue, latencyValue } from "../../ui/values"
@@ -12,6 +13,8 @@ import { statRail, statRailItem } from "../kit/stat-rail"
 import { toolSpark } from "../agent-sessions/tools-kit/spark"
 import type { McpServerOverview } from "./data"
 import { clientIcon, kindTag, type McpSparkEnv, toolColor } from "./view-kit"
+import { typographyClass } from "../../ui/typography"
+import { vstack } from "../../ui/stack"
 
 // The service page's MCP tab: a summary of the server that links into `/mcp/:service`. Its panels
 // are the Overview tab's (`topOperationsPanel`): backdrop bars, toned values, a spark per row.
@@ -50,12 +53,9 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 					h.li(
 						[h.Key(row.tool)],
 						[
-							h.button(
-								[
-									h.Type("button"),
-									h.OnClick(options.onOpenTool(row.tool)),
-									h.Class(rowClass),
-								],
+							pressable(
+								h,
+								{ onClick: options.onOpenTool(row.tool), className: rowClass },
 								[
 									backdropBar(h, {
 										value: row.calls,
@@ -84,7 +84,7 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 										[
 											h.span(
 												[h.Class("text-foreground")],
-												[formatToolCount(row.calls)],
+												[formatNumber(row.calls)],
 											),
 											errorRateValue(h, { rate: errorRate(row) }),
 											latencyValue(h, { ms: row.p95 / 1_000_000, scale: "p95" }),
@@ -114,7 +114,7 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 }
 
 const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServiceTabOptions<M>): Html => {
-	const clients = data.clients.slice(0, PANEL_LIMIT)
+	const clients = data.clients.filter((client) => client.calls > 0).slice(0, PANEL_LIMIT)
 	const maxCalls = Math.max(...clients.map((client) => client.calls), 1)
 	return panel(h, { className: "min-w-0" }, [
 		panelHeader(h, { title: "Clients", action: viewAll(h, "View all", options.onOpenServer) }),
@@ -133,7 +133,7 @@ const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 									truncatedText(h, {
 										text: client.name,
 										mono: true,
-										className: "text-xs text-foreground",
+										className: typographyClass({ size: "xs", tone: "foreground" }),
 									}),
 									...kindTag(h, client.kind),
 								],
@@ -145,7 +145,7 @@ const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 									),
 								],
 								[
-									h.span([h.Class("text-foreground")], [formatToolCount(client.calls)]),
+									h.span([h.Class("text-foreground")], [formatNumber(client.calls)]),
 									errorRateValue(h, { rate: errorRate(client) }),
 								],
 							),
@@ -163,9 +163,10 @@ export const serviceMcpTab = <M>(
 	options: ServiceTabOptions<M>,
 ): Html => {
 	const { totals } = data
-	const top = data.clients[0]
-	return h.div(
-		[h.Class("flex flex-col gap-4 p-4")],
+	// Clients that only connected have no calls to rank.
+	const callers = data.clients.filter((client) => client.calls > 0)
+	const top = callers[0]
+	return vstack(h, { gap: "4", className: "p-4" },
 		[
 			h.div(
 				[
@@ -187,13 +188,13 @@ export const serviceMcpTab = <M>(
 							),
 						],
 					),
-					viewAll(h, "Open in MCP Servers", options.onOpenServer),
+					viewAll(h, "Open in MCP servers", options.onOpenServer),
 				],
 			),
 			statRail(h, { columns: 4 }, [
 				statRailItem(h, {
 					eyebrow: "Tool calls",
-					value: formatToolCount(totals.calls),
+					value: formatNumber(totals.calls),
 					spark: data.series.map((point) => point.calls),
 					sparkColor: "var(--primary)",
 					subline: `${data.tools.length} ${pluralize(data.tools.length, "tool")}`,
@@ -215,7 +216,7 @@ export const serviceMcpTab = <M>(
 				}),
 				statRailItem(h, {
 					eyebrow: "Clients",
-					value: String(data.clients.length),
+					value: String(callers.length),
 					subline:
 						top === undefined
 							? ""

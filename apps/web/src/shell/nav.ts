@@ -111,7 +111,7 @@ const servicesItem: NavItem = {
 	icon: "ServerIcon",
 	subItems: [
 		{ title: "All services", href: "/services", icon: "UnorderedListIcon", paletteTitle: "Services" },
-		{ title: "Map", href: "/service-map", icon: "NetworkNodesIcon", paletteTitle: "Service Map" },
+		{ title: "Map", href: "/service-map", icon: "NetworkNodesIcon", paletteTitle: "Service map" },
 	],
 }
 
@@ -124,7 +124,8 @@ const exploreItem: NavItem = {
 		{ title: "Logs", href: "/logs", icon: "FileIcon" },
 		{ title: "Metrics", href: "/metrics", icon: "ChartLineIcon" },
 		{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
-		{ title: "Agent Sessions", href: "/agent-sessions", icon: "SquareSparkleIcon" },
+		{ title: "Agent sessions", href: "/agent-sessions", icon: "SquareSparkleIcon" },
+		{ title: "MCP servers", href: "/mcp-servers", icon: "PlugIcon" },
 	],
 }
 
@@ -159,7 +160,7 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		label: "Analyze",
 		items: [
 			exploreItem,
-			{ title: "Web Analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
+			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 		],
 	},
@@ -170,7 +171,7 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
 			{ title: "Alerts", href: "/alerts", icon: "BellIcon", alsoActive: ["/anomalies"] },
 			{
-				title: "Code Review",
+				title: "Code review",
 				href: "/code-review",
 				icon: "CodeIcon",
 				badge: "Beta",

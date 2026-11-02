@@ -24,7 +24,8 @@ import {
 	tableRow,
 } from "../../../ui/table"
 import { relativeTime } from "../../kit/relative-time"
-import { repositoryName, SECURITY_SEVERITY_FILL } from "../kit/parts"
+import { WIDE_COLUMN } from "../kit/layout"
+import { repositoryName } from "../kit/parts"
 import {
 	isScanPending,
 	openFindingsOf,
@@ -35,7 +36,10 @@ import {
 	shortSha,
 	upgradePlanOf,
 } from "./derive"
+import { SEVERITY_FILL } from "../../errors/kit/severity"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass, vstackClass } from "../../../ui/stack"
 
 // Each connected repository as a row: its latest scan, open findings by severity, the upgrades
 // that clear them and what production runs. A row opens the repository's breakdown.
@@ -64,12 +68,12 @@ const lockfileIssue = (h: H, lockfile: DependencyScanLockfile): Html =>
 	h.li(
 		[h.Key(lockfile.path), h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs")],
 		[
-			h.span([h.Class("font-mono text-foreground")], [lockfile.path]),
-			badge(h, { variant: lockfile.status === "failed" ? "warn" : "muted" }, [
+			typography(h, { tone: "foreground", mono: true }, [lockfile.path]),
+			badge(h, { variant: lockfile.status === "failed" ? "crit" : "muted" }, [
 				LOCKFILE_STATUS_LABEL[lockfile.status],
 			]),
 			h.span(
-				[h.Class("min-w-0 text-muted-foreground")],
+				[h.Class("min-w-0 text-muted-foreground wrap-anywhere")],
 				[lockfile.message ?? LOCKFILE_FALLBACK[lockfile.status]],
 			),
 		],
@@ -140,7 +144,7 @@ const scanState = (h: H, scan: DependencyScanSummary | null): ReadonlyArray<Html
 export const repositoryHref = (repositoryId: string | null): string =>
 	hrefOf(AppRoute.SecurityDependencies({ search: repositoryId === null ? {} : { repo: repositoryId } }))
 
-const muted = (h: H, text: string): Html => h.span([h.Class("text-xs text-muted-foreground")], [text])
+const muted = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted" }, [text])
 
 const RANKED = ["critical", "high", "medium", "low"] as const
 
@@ -148,7 +152,12 @@ const RANKED = ["critical", "high", "medium", "low"] as const
 const severityCounts = (h: H, findings: ReadonlyArray<DependencyFindingView>): Html => {
 	const counts = openSeverityCounts(findings)
 	return h.span(
-		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
+		// Two by two on phones, where the row has room for one narrow column beside the name.
+		[
+			h.Class(
+				"grid grid-cols-2 gap-x-2.5 gap-y-1 font-mono text-xs tabular-nums sm:flex sm:items-center",
+			),
+		],
 		[
 			...RANKED.map((severity) =>
 				h.span(
@@ -156,7 +165,7 @@ const severityCounts = (h: H, findings: ReadonlyArray<DependencyFindingView>): H
 						h.Key(severity),
 						h.Class(
 							cn(
-								"inline-flex items-center gap-1.5",
+								hstackClass({ gap: "1.5", inline: true }),
 								counts[severity] === 0 && "text-foreground-faint",
 								ROW_LINK_LIFT,
 							),
@@ -167,7 +176,7 @@ const severityCounts = (h: H, findings: ReadonlyArray<DependencyFindingView>): H
 						statusDot(h, {
 							tone: "custom",
 							size: "lg",
-							className: SECURITY_SEVERITY_FILL[severity],
+							className: SEVERITY_FILL[severity],
 						}),
 						String(counts[severity]),
 					],
@@ -177,7 +186,10 @@ const severityCounts = (h: H, findings: ReadonlyArray<DependencyFindingView>): H
 				? []
 				: [
 						h.span(
-							[h.Key("unrated"), h.Class("whitespace-nowrap font-sans text-muted-foreground")],
+							[
+								h.Key("unrated"),
+								h.Class("col-span-2 whitespace-nowrap font-sans text-muted-foreground"),
+							],
 							[`+${counts.unknown} unrated`],
 						),
 					]),
@@ -215,7 +227,7 @@ const productionCell = (h: H, repository: DependencyScanRepository): Html => {
 		: h.span(
 				[h.Class(cn("flex min-w-0 max-w-40 flex-col", ROW_LINK_LIFT)), h.Title(services.join(", "))],
 				[
-					h.span([h.Class("truncate text-sm")], [first]),
+					typography(h, { size: "sm", truncate: true }, [first]),
 					...(services.length > 1
 						? [muted(h, `+${countLabel(services.length - 1, "service")}`)]
 						: []),
@@ -253,7 +265,7 @@ const repositoryRow = (
 						[h.Class("flex min-w-0 max-w-xl flex-col gap-1")],
 						[
 							h.span(
-								[h.Class("flex min-w-0 items-center gap-2")],
+								[h.Class("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5")],
 								[
 									icon(h, "GithubIcon", {
 										size: 14,
@@ -281,7 +293,11 @@ const repositoryRow = (
 											h.AriaLabel(`Open ${repository.fullName} on GitHub`),
 											h.Class(
 												cn(
-													"shrink-0 text-muted-foreground hover:text-foreground active:text-foreground",
+													typographyClass({
+														tone: "muted",
+														hoverTone: "foreground",
+														className: "shrink-0",
+													}),
 													ROW_LINK_LIFT,
 												),
 											),
@@ -295,32 +311,41 @@ const repositoryRow = (
 								: scanSummary(h, scan, clock),
 							...(scan?.error === null || scan?.error === undefined
 								? []
-								: [h.p([h.Class("text-xs text-severity-error")], [scan.error])]),
+								: [typography(h, { size: "xs", tone: "error", as: "p" }, [scan.error])]),
 							...(issues.length === 0
 								? []
 								: [
 										h.ul(
-											[h.Class(cn("flex flex-col gap-1", ROW_LINK_LIFT))],
+											[h.Class(cn(vstackClass({ gap: "1" }), ROW_LINK_LIFT))],
 											issues.map((lockfile) => lockfileIssue(h, lockfile)),
 										),
 									]),
+							// Phones drop the scan column, so its state and button ride here.
+							h.div(
+								[h.Class("flex flex-wrap items-center gap-2 pt-1 sm:hidden")],
+								[...scanState(h, scan), scanButton(h, model, repository)],
+							),
 						],
 					),
 				],
-				"w-full whitespace-normal align-top",
+				"whitespace-normal align-top sm:w-full",
 			),
 			tableCell(h, [emptyNote === null ? severityCounts(h, open) : muted(h, emptyNote)], "align-top"),
-			tableCell(h, [emptyNote === null ? planCell(h, open) : muted(h, "")], "align-top"),
+			tableCell(
+				h,
+				[emptyNote === null ? planCell(h, open) : muted(h, "")],
+				cn("align-top", WIDE_COLUMN),
+			),
 			tableCell(h, [productionCell(h, repository)], "hidden md:table-cell align-top"),
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center justify-end gap-2")],
-						[...scanState(h, scan), scanButton(h, model, repository)],
-					),
+					hstack(h, { gap: "2", justify: "end" }, [
+						...scanState(h, scan),
+						scanButton(h, model, repository),
+					]),
 				],
-				"align-top text-right",
+				cn("align-top text-right", WIDE_COLUMN),
 			),
 		],
 		cn(isFocused && "bg-surface-strong"),
@@ -339,19 +364,18 @@ export const repositoriesPanel = (
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Repositories",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
-				["Select a repository for its upgrade plan"],
-			),
+			action: typography(h, { size: "xs", tone: "muted" }, [
+				"Select a repository for its upgrade plan",
+			]),
 		}),
 		table(h, { variant: "bare", ariaLabel: "Repositories" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Repository"]),
 					tableHead(h, ["Open"]),
-					tableHead(h, ["Fix plan"]),
+					tableHead(h, ["Fix plan"], WIDE_COLUMN),
 					tableHead(h, ["Running in"], "hidden md:table-cell"),
-					tableHead(h, [h.span([h.Class("sr-only")], ["Scan"])], "text-right"),
+					tableHead(h, [h.span([h.Class("sr-only")], ["Scan"])], cn("text-right", WIDE_COLUMN)),
 				]),
 			]),
 			tableBody(

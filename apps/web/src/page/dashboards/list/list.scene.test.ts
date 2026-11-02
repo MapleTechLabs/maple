@@ -157,16 +157,18 @@ describe("dashboards list", () => {
 
 	test("confirming a delete sends it; a failed write turns the list read-only", () => {
 		const model = { ...loaded(), pendingDelete: dashboard() }
-		expect(names(pageUpdate(model, Message.ClickedConfirmDelete()).commands)).toContain(
-			DeleteDashboard.name,
-		)
+		const confirmed = pageUpdate(model, Message.ClickedConfirmDelete())
+		expect(names(confirmed.commands)).toContain(DeleteDashboard.name)
+		expect(confirmed.model.isDeleting).toBe(true)
+		expect(names(pageUpdate(confirmed.model, Message.ClickedConfirmDelete()).commands)).toEqual([])
 		const failed = pageUpdate(
-			model,
+			confirmed.model,
 			Message.CompletedDeleteDashboard({
 				result: Result.fail("Dashboard persistence is temporarily unavailable"),
 			}),
 		).model
 		expect(failed.persistenceError).toBe("Dashboard persistence is temporarily unavailable")
+		expect(failed.isDeleting).toBe(false)
 		expect(names(pageUpdate(failed, Message.ClickedCreate()).commands)).toEqual([])
 	})
 

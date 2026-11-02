@@ -36,7 +36,7 @@ describe("command palette", () => {
 			shownEntries(typed(loadedWith([]), query).model, context, ALL_FLAGGED).entries.map(
 				(entry) => entry.title,
 			)
-		expect(titles("serv")).toEqual(expect.arrayContaining(["Services", "Service Map"]))
+		expect(titles("serv")).toEqual(expect.arrayContaining(["Services", "Service map"]))
 		expect(titles("serv")).not.toContain("Overview")
 		expect(titles("srevices")).toContain("Services")
 	})

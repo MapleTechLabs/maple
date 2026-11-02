@@ -12,6 +12,7 @@ import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from 
 import { SignalPresenceData } from "../../kit/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { PresetValue } from "../../kit/time-controls"
 import {
 	CompleteReloadSpin,
 	DebounceDraft,
@@ -42,7 +43,7 @@ import {
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
-export const DEFAULT_PRESET = "24h"
+export const DEFAULT_PRESET: PresetValue = "24h"
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
@@ -356,6 +357,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearUser: () => navigate(model, { ...model.search, user: undefined }),
 		ClickedClearUserId: () => navigate(model, { ...model.search, userId: undefined }),
 		ClickedClearVisitor: () => navigate(model, { ...model.search, visitorId: undefined }),
+		ClickedClearGroupId: () => navigate(model, { ...model.search, groupId: undefined }),
 		ClickedClearSidebarFilters: () => navigate(model, clearedSidebar(model.search)),
 		ClickedClearFilters: () => navigate(model, clearedFilters(model.search)),
 		ClickedSession: ({ sessionId, startTime }) => ({

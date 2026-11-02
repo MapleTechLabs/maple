@@ -7,6 +7,7 @@ import {
 } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../../../ui/pressable"
 import type { QuickPickItem } from "./quick-pick"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityIcon } from "./severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
@@ -50,15 +51,17 @@ export const severityPickerTrigger = <M>(
 	trigger?: TriggerAttributes<M>,
 ): Html => {
 	const label = value === null ? "Severity not set" : `Severity: ${SEVERITY_LABEL[value]}`
-	return h.button(
-		[
-			...triggerAttributes(h, trigger),
-			h.Type("button"),
-			h.AriaLabel(`${label}. Change severity`),
-			h.Class(cn(TRIGGER, "inline-flex size-6 items-center justify-center", className)),
-			h.DataAttribute("picker", "severity"),
-			h.Title(`${label} · click to change`),
-		],
+	return pressable(
+		h,
+		{
+			label: `${label}. Change severity`,
+			className: cn(TRIGGER, "inline-flex size-6 items-center justify-center", className),
+			attributes: [
+				...triggerAttributes(h, trigger),
+				h.DataAttribute("picker", "severity"),
+				h.Title(`${label} · click to change`),
+			],
+		},
 		[severityIcon(h, value, 16)],
 	)
 }
@@ -69,20 +72,20 @@ export const statePickerTrigger = <M>(
 	className?: string,
 	trigger?: TriggerAttributes<M>,
 ): Html =>
-	h.button(
-		[
-			...triggerAttributes(h, trigger),
-			h.Type("button"),
-			h.Class(
-				cn(
-					TRIGGER,
-					"-ml-1.5 inline-flex h-6 max-w-full items-center gap-1.5 px-1.5 text-2xs whitespace-nowrap text-muted-foreground hover:text-foreground active:text-foreground data-popup-open:text-foreground",
-					className,
-				),
+	pressable(
+		h,
+		{
+			className: cn(
+				TRIGGER,
+				"-ml-1.5 inline-flex h-6 max-w-full items-center gap-1.5 px-1.5 text-2xs whitespace-nowrap text-muted-foreground hover:text-foreground active:text-foreground data-popup-open:text-foreground",
+				className,
 			),
-			h.DataAttribute("picker", "state"),
-			h.Title(`Status: ${WORKFLOW_LABEL[current]} · click to change`),
-		],
+			attributes: [
+				...triggerAttributes(h, trigger),
+				h.DataAttribute("picker", "state"),
+				h.Title(`Status: ${WORKFLOW_LABEL[current]} · click to change`),
+			],
+		},
 		[
 			workflowRingIcon(h, current, 12, "shrink-0"),
 			h.span([h.Class("truncate")], [WORKFLOW_LABEL[current]]),

@@ -1,13 +1,12 @@
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import * as C from "@maple/ui/styles/ui/combobox"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as Combobox from "../../../ui/combobox"
-import { hiddenInput, inputAttributes, listPopup } from "../../../ui/combobox-view"
+import { chipsInput, hiddenInput, inputAttributes, listPopup } from "../../../ui/combobox-view"
 import { icon } from "../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
 import { isMounted } from "../../../ui/overlay/transition"
@@ -17,6 +16,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { optionsByNameOf, variablesOf } from "./plan"
 import { variableComboIdOf } from "./variable-update"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The variable selects: one chip per variable, and in
 // edit mode the `+` chip that opens the manager.
@@ -101,11 +102,11 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 					listPopup(h, model, {
 						slot: "combobox",
 						items,
-						emptyText: inputs.options.loading ? "Loading values…" : "No matching values.",
+						emptyText: inputs.options.loading ? "Loading values…" : "No matching values",
 						anchorSelector: anchor,
 						className: "min-w-52",
 						listClassName: "max-h-72 overflow-y-auto p-1",
-						itemClassName: (value) => (value === ALL_VALUE ? "text-xs" : "font-mono text-xs"),
+						itemClassName: (value) => (value === ALL_VALUE ? "text-xs" : typographyClass({ size: "xs", mono: true })),
 						renderItem: (value) =>
 							value === ALL_VALUE
 								? ["All", h.span([h.Class("ml-auto pl-4 text-3xs text-muted-foreground")], ["no filter"])]
@@ -116,16 +117,16 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 							header: h.div(
 								[h.Class("border-b border-border px-1.5 py-1.5")],
 								[
-									h.input([
-										...inputAttributes(
+									chipsInput(h, {
+										size: "sm",
+										className: "w-full font-mono",
+										attributes: inputAttributes(
 											h,
 											searchModel,
 											{ slot: "combobox-chips-input", placeholder: `Search ${label}…`, items },
 											(message) => message,
 										),
-										h.DataAttribute("size", "sm"),
-										h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputSmStyles, "w-full font-mono")),
-									]),
+									}),
 								],
 							),
 						},
@@ -188,8 +189,7 @@ export const variableSelects = (h: H, model: Model, context: PageContext, canMan
 	const variables = model.document?.variables ?? []
 	if (variables.length === 0 && !canManage) return []
 	return [
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
+		hstack(h, { gap: "1.5" },
 			[
 				...variables.map((variable) => control(h, model, context, variable)),
 				...(canManage

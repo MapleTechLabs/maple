@@ -86,7 +86,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
-			title: "Agent Sessions",
+			title: "Agent sessions",
 			filters: filtersRail(h, model),
 			tabs: agentSessionsTabs(h, {
 				active: "sessions",
@@ -94,7 +94,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					sessions: tabSessions,
 					tools: Option.getOrUndefined(AsyncData.getData(model.tabTools.data)),
 				},
-				className: "border-b border-border",
 			}),
 			sticky: toolbar(h, model, {
 				sessionCount: AsyncData.hasData(firstPage)

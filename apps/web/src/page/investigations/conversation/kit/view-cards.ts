@@ -12,6 +12,7 @@ import { keyValue, keyValueList } from "../../../../ui/key-value"
 import { toolLabel } from "./tool-metadata"
 import { inputRecord } from "./tool-output"
 import { dashboardSummary } from "./view-approval"
+import { typography } from "../../../../ui/typography"
 
 // `ApprovalCard` and `TaskCard`: a proposal waiting on the user, and
 // a sub-agent run as a line.
@@ -65,7 +66,7 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 				([, value]) => value !== undefined && value !== null && value !== "",
 			)
 			if (entries.length === 0)
-				return h.div([h.Class("text-xs text-muted-foreground")], ["No input fields"])
+				return typography(h, { size: "xs", tone: "muted", as: "div" }, ["No input fields"])
 			return keyValueList(
 				h,
 				{ layout: "grid", className: "gap-x-2 gap-y-1" },
@@ -75,8 +76,7 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 					return keyValue(h, { label, labelContent: h.span([h.Class("font-prose")], [label]) }, [
 						formatted.kind === "scalar"
 							? h.span([h.Class("font-medium")], [formatted.text])
-							: h.span(
-									[h.Class("text-muted-foreground italic")],
+							: typography(h, { tone: "muted", className: "italic" },
 									["JSON · ", String(formatted.chars), " chars"],
 								),
 					])

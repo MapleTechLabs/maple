@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { LOCAL_SCHEMA_VERSION } from "../apps/cli/src/server/local-schema-version"
+import { LOCAL_SCHEMA_VERSION } from "../packages/local-server/src/local-schema-version"
 import { latestSnapshotStatements, projectRevision } from "../packages/domain/src/generated/clickhouse-schema"
 
-const outputPath = fileURLToPath(new URL("../apps/cli/src/server/schema/local-schema.sql", import.meta.url))
+const outputPath = fileURLToPath(
+	new URL("../packages/local-server/src/schema/local-schema.sql", import.meta.url),
+)
 const checkMode = process.argv.includes("--check")
 
 const rendered = render(latestSnapshotStatements, projectRevision, LOCAL_SCHEMA_VERSION)

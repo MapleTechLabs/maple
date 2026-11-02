@@ -1,7 +1,8 @@
-import { areaY, d3Curve, defineChart, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
+import { findFirstPartialIndex, splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
+import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -42,7 +43,7 @@ const STROKE_WIDTH = SERIES_STROKE_WIDTH
 const curve = d3Curve(curveMonotoneX)
 const at = (row: TimeseriesRow) => row.date
 const valueOf = (key: string) => (row: TimeseriesRow) => asFiniteNumber(row[key])
-/** A missing value stays null, so the line and its focus dot leave a gap instead of dropping to 0. */
+/** A missing value stays null, so the line bridges or breaks on it and the focus dot skips it. */
 const gapValueOf = (key: string) => (row: TimeseriesRow) =>
 	row[key] == null ? null : asFiniteNumber(row[key])
 const read = (key: string) => (row: TimeseriesRow) => {
@@ -312,6 +313,17 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 	}
 }
 
+/**
+ * A run split at the first in-flight bucket. Like `splitAtFirstPartial`, the last closed reading
+ * belongs to both halves, so the dashed tail starts where the solid line ends.
+ */
+const splitRunAt = (run: ReadonlyArray<TimeseriesRow>, partialFromMs: number | null) => {
+	const first = partialFromMs === null ? -1 : run.findIndex((row) => row.date.getTime() >= partialFromMs)
+	return first === -1
+		? { solid: run, dashed: [] }
+		: { solid: run.slice(0, first), dashed: run.slice(Math.max(0, first - 1)) }
+}
+
 const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
 	const focus = tooltipFocusCapture()
@@ -322,23 +334,50 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 		color: colorOf(spec, entry.key),
 	}))
 	const keys = series.map((entry) => entry.key)
-	const { solid, dashed } = splitAtFirstPartial(plotRows, keys, model.trimOptions)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
-	const line = (slice: ReadonlyArray<TimeseriesRow>, entry: (typeof series)[number], dash: boolean) =>
+	const line = (
+		slice: ReadonlyArray<TimeseriesRow>,
+		entry: (typeof series)[number],
+		dash: boolean,
+		run: number,
+	) =>
 		lineY(slice, {
 			curve,
-			id: dash ? `${entry.key}-partial` : entry.key,
+			id: dash ? `${entry.key}-partial:${run}` : `${entry.key}:${run}`,
 			x: at,
 			y: gapValueOf(entry.key),
 			stroke: entry.color,
 			strokeWidth: STROKE_WIDTH,
 			strokeDasharray: dash ? partialDash : undefined,
 		})
+	const runs = series.map((entry) => ({ entry, ...seriesRuns(plotRows, gapValueOf(entry.key), at) }))
+	// The in-flight boundary comes from the whole window: a run's own readings can sit buckets apart,
+	// which would read as a wider bucket and mark closed readings in flight.
+	const partialFromMs = plotRows[findFirstPartialIndex(plotRows, model.trimOptions)]?.date.getTime() ?? null
+	const lines = runs.flatMap(({ entry, runs: entryRuns }) =>
+		entryRuns.flatMap((run, index) => {
+			const { solid, dashed } = splitRunAt(run, partialFromMs)
+			return [
+				line(solid, entry, false, index),
+				...(dashed.length > 0 ? [line(dashed, entry, true, index)] : []),
+			]
+		}),
+	)
 	const definition = defineChart({
 		margin: marginOf(spec),
 		marks: [
-			...series.map((entry) => line(solid, entry, false)),
-			...(dashed.length > 0 ? series.map((entry) => line(dashed, entry, true)) : []),
+			...runs.map(({ entry, silences }) =>
+				silenceBridges(`${entry.key}-silence`, silences, at, gapValueOf(entry.key), entry.color),
+			),
+			...lines,
+			...runs.map(({ entry, lone }) =>
+				dot(lone, {
+					x: at,
+					y: gapValueOf(entry.key),
+					r: STROKE_WIDTH + 1,
+					fill: entry.color,
+				}),
+			),
 			...series.map((entry) => focusDot(plotRows, at, gapValueOf(entry.key), entry.color, chrome)),
 			focusCrosshair(chrome),
 		],

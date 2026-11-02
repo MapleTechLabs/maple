@@ -1,16 +1,17 @@
-import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
+import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
-import { formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../ui/empty"
+import { filteredEmpty } from "../kit/signal-empty-state"
 import { icon } from "../../ui/icon"
 import { meter } from "../../ui/meter"
 import { miniBars } from "../../ui/mini-bars"
 import {
 	shareCell,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
@@ -35,6 +36,9 @@ import {
 	sectionTitle,
 	seriesRows,
 } from "./view-kit"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
+import { columnClass } from "../../ui/column"
 
 // `/mcp/:service/tools/:tool`: the agent tool detail page for one MCP tool. Four charts, the
 // failures grouped by `error.type` (and message, once the server records one), then the calls.
@@ -80,7 +84,7 @@ const charts = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOpti
 			mcpPlot(h, env, {
 				chartId: "mcp-tool-error-rate",
 				title: "Failure rate",
-				action: headingNote(h, `${data.errors} of ${formatToolCount(data.calls)}`),
+				action: headingNote(h, `${formatNumber(data.errors)} of ${formatNumber(data.calls)}`),
 				rows,
 				series: [{ key: "errorRate", label: "Failure rate", token: "--color-severity-error" }],
 				format: "errorRate",
@@ -115,51 +119,49 @@ const errorRow = <M>(
 	options: ToolBodyOptions<M>,
 ): Html => {
 	const share = group.count / Math.max(total, 1)
-	return h.button(
-		[h.Type("button"), h.Class(toolRowClass(false)), h.OnClick(options.onOpenGroup(group.errorType))],
-		[
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2 font-mono text-xs")],
-				[
-					errorTypeChip(h, group.errorType),
-					group.message === null
-						? h.span([h.Class("truncate text-foreground-subtle")], ["no message recorded"])
-						: h.span([h.Class("truncate text-foreground")], [group.message]),
-				],
-			),
-			h.span(
-				[h.Class("hidden w-24 shrink-0 items-center @min-[720px]/panel:flex")],
-				[
-					miniBars(h, {
-						values: group.trend,
-						color: "var(--color-severity-error)",
-						floor: 12.5,
-						floorColor: "var(--input)",
-						minHeight: 18.75,
-						gap: group.trend.length > 12 ? 1 : 4.3,
-						className: "h-4 w-24 shrink-0",
-					}),
-				],
-			),
-			shareCell(h, {
-				ratio: share,
-				max: 1,
-				label: formatErrorRate(share),
-				tone: { bar: TONE_FILL.crit, text: "text-muted-foreground" },
-			}),
-			numberCell(h, String(group.count), "w-20 text-foreground"),
-			numberCell(
-				h,
-				String(group.clients),
-				"hidden w-20 text-muted-foreground @min-[640px]/panel:block",
-			),
-			lastSeenCell(h, group.lastSeenMs, options.nowMs, options.env.timeZone),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
-				[icon(h, "ChevronRightIcon", { size: 14 })],
-			),
-		],
-	)
+	return toolTableRow(h, { onClick: options.onOpenGroup(group.errorType) }, [
+		h.span(
+			[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2 font-mono text-xs")],
+			[
+				errorTypeChip(h, group.errorType),
+				group.message === null
+					? typography(h, { tone: "subtle", truncate: true }, ["no message recorded"])
+					: typography(h, { tone: "foreground", truncate: true }, [group.message]),
+			],
+		),
+		h.span(
+			[h.Class("hidden w-24 shrink-0 items-center @min-[720px]/panel:flex")],
+			[
+				miniBars(h, {
+					values: group.trend,
+					color: "var(--color-severity-error)",
+					floor: 12.5,
+					floorColor: "var(--input)",
+					minHeight: 18.75,
+					gap: group.trend.length > 12 ? 1 : 4.3,
+					className: "h-4 w-24 shrink-0",
+				}),
+			],
+		),
+		shareCell(h, {
+			ratio: share,
+			max: 1,
+			label: formatErrorRate(share),
+			tone: { bar: TONE_FILL.crit, text: "text-muted-foreground" },
+		}),
+		numberCell(h, String(group.count), "w-20 text-foreground"),
+		numberCell(h, String(group.clients), "hidden w-20 text-muted-foreground @min-[640px]/panel:block"),
+		lastSeenCell(h, group.lastSeenMs, options.nowMs, options.env.timeZone),
+		hstack(
+			h,
+			{
+				justify: "end",
+				as: "span",
+				className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+			},
+			[icon(h, "ChevronRightIcon", { size: 14 })],
+		),
+	])
 }
 
 const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptions<M>): Html => {
@@ -171,20 +173,20 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 				h,
 				"Failures",
 				`${data.errors} ${pluralize(data.errors, "failed call")} · ${data.errorGroups.length} ${pluralize(data.errorGroups.length, "kind")}`,
-				h.span(
-					[h.Class("font-mono text-2xs text-muted-foreground")],
-					["grouped by ", attr(h, "error.type")],
-				),
+				typography(h, { size: "2xs", tone: "muted", mono: true }, [
+					"grouped by ",
+					attr(h, "error.type"),
+				]),
 			),
 			toolTable(h, [
 				toolTableHead(h, [
-					th(h, { label: "Error", width: "w-0 flex-1 min-w-0" }),
+					th(h, { label: "Error", width: columnClass({ min: "0" }) }),
 					th(h, {
 						label: options.window.label,
 						width: "w-24 shrink-0",
 						hidden: "hidden @min-[720px]/panel:flex",
 					}),
-					th(h, { label: "Share", width: "w-36 shrink-0 pl-6" }),
+					th(h, { label: "Share", width: columnClass({ width: "36", shrink: false, inset: "6" }) }),
 					th(h, { label: "Count", width: "w-20 shrink-0", align: "right" }),
 					th(h, {
 						label: "Clients",
@@ -205,7 +207,7 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 					data.errorGroups.length === 0
 						? [
 								emptyMessage(h, { className: "py-8 font-mono" }, [
-									"No failed calls in this window.",
+									"No failed calls in this window",
 								]),
 							]
 						: data.errorGroups.map((group) => errorRow(h, group, data.errors, options)),
@@ -222,7 +224,10 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 							[
 								icon(h, "CircleInfoIcon", {
 									size: 14,
-									className: "mt-0.5 shrink-0 text-muted-foreground",
+									className: typographyClass({
+										tone: "muted",
+										className: "mt-0.5 shrink-0",
+									}),
 								}),
 								h.p(
 									[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
@@ -243,57 +248,51 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 }
 
 const callRow = <M>(h: HtmlBuilder<M>, call: McpCallRow, max: number, options: ToolBodyOptions<M>): Html =>
-	h.button(
-		[h.Type("button"), h.Class(toolRowClass(false)), h.OnClick(options.onOpenTrace(call.traceId))],
-		[
-			h.span(
-				[h.Class("w-20 shrink-0 font-mono text-xs tabular-nums text-muted-foreground")],
-				[formatClock(call.timeMs, options.env.timeZone)],
-			),
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2 font-mono text-xs")],
-				[clientIcon(h, call.client, 12), h.span([h.Class("truncate")], [call.client])],
-			),
-			numberCell(
-				h,
-				`#${call.requestId}`,
-				"hidden w-16 text-foreground-subtle @min-[640px]/panel:block",
-			),
-			h.span(
-				[h.Class("flex w-52 shrink-0 items-center justify-end gap-2.5")],
-				[
-					meter(h, {
-						value: call.durationNs,
-						max,
-						minVisible: 3,
-						fillClassName: call.errorType === null ? "bg-primary" : "bg-severity-error",
-						className: "hidden w-28 shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
-					}),
-					h.span(
-						[h.Class("w-14 text-right font-mono text-xs tabular-nums")],
-						[formatDurationNs(call.durationNs)],
-					),
-				],
-			),
-			h.span(
-				[h.Class("w-28 shrink-0 pl-4")],
-				[
-					call.errorType === null
-						? h.span([h.Class("font-mono text-xs text-foreground-subtle")], ["ok"])
-						: errorTypeChip(h, call.errorType),
-				],
-			),
-			numberCell(
-				h,
-				call.traceId.slice(0, 8),
-				"hidden w-20 text-muted-foreground @min-[800px]/panel:block",
-			),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
-				[icon(h, "ArrowRightIcon", { size: 14 })],
-			),
-		],
-	)
+	toolTableRow(h, { onClick: options.onOpenTrace(call.traceId) }, [
+		h.span(
+			[h.Class("w-20 shrink-0 font-mono text-xs tabular-nums text-muted-foreground")],
+			[formatClock(call.timeMs, options.env.timeZone)],
+		),
+		h.span(
+			[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2 font-mono text-xs")],
+			[clientIcon(h, call.client, 12), h.span([h.Class("truncate")], [call.client])],
+		),
+		numberCell(h, `#${call.requestId}`, "hidden w-16 text-foreground-subtle @min-[640px]/panel:block"),
+		h.span(
+			[h.Class("flex w-52 shrink-0 items-center justify-end gap-2.5")],
+			[
+				meter(h, {
+					value: call.durationNs,
+					max,
+					minVisible: 3,
+					fillClassName: call.errorType === null ? "bg-primary" : "bg-severity-error",
+					className: "hidden w-28 shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
+				}),
+				h.span(
+					[h.Class("w-14 text-right font-mono text-xs tabular-nums")],
+					[formatDurationNs(call.durationNs)],
+				),
+			],
+		),
+		h.span(
+			[h.Class("w-28 shrink-0 pl-4")],
+			[
+				call.errorType === null
+					? h.span([h.Class("font-mono text-xs text-foreground-subtle")], ["ok"])
+					: errorTypeChip(h, call.errorType),
+			],
+		),
+		numberCell(h, call.traceId.slice(0, 8), "hidden w-20 text-muted-foreground @min-[800px]/panel:block"),
+		hstack(
+			h,
+			{
+				justify: "end",
+				as: "span",
+				className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+			},
+			[icon(h, "ArrowRightIcon", { size: 14 })],
+		),
+	])
 
 const LIST_NOUN = { slowest: "slowest", failed: "failed", recent: "most recent" } satisfies {
 	readonly [K in McpCallList]: string
@@ -309,7 +308,7 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 			toolTable(h, [
 				toolTableHead(h, [
 					th(h, { label: "Time", width: "w-20 shrink-0" }),
-					th(h, { label: "Client", width: "w-0 flex-1 min-w-0" }),
+					th(h, { label: "Client", width: columnClass({ min: "0" }) }),
 					th(h, {
 						label: "Request",
 						width: "w-16 shrink-0",
@@ -329,13 +328,13 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 				toolTableBody(
 					h,
 					list.length === 0
-						? [emptyMessage(h, { className: "py-8 font-mono" }, ["No calls match the filters."])]
+						? [filteredEmpty(h, { noun: "calls", description: "", className: "py-10 md:py-12" })]
 						: list.map((call) => callRow(h, call, max, options)),
 				),
 			]),
 			toolTableFooter(
 				h,
-				`${list.length} ${LIST_NOUN[options.callList]} of ${formatToolCount(data.calls)}`,
+				`${list.length} ${LIST_NOUN[options.callList]} of ${formatNumber(data.calls)}`,
 				"· each row opens its trace",
 			),
 		],
@@ -348,7 +347,12 @@ export const toolBody = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: Too
 		[h.Class("flex flex-col")],
 		[
 			options.toolbar,
-			mcpScopeRow(h, options.scope, formatToolCount(data.calls), `calls · ${data.errors} failed`),
+			mcpScopeRow(
+				h,
+				options.scope,
+				formatNumber(data.calls),
+				`calls · ${formatNumber(data.errors)} failed`,
+			),
 			charts(h, data, options),
 			failures(h, data, options),
 			calls(h, data, options),

@@ -295,7 +295,7 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 				}),
 				onFailure: (error) => ({
 					...closed,
-					outMessage: toast("error", "Unable to complete request", error.message),
+					outMessage: toast("error", "Couldn't regenerate the key", error.message),
 				}),
 			})
 		},

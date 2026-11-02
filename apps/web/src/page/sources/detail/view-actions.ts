@@ -9,6 +9,7 @@ import { integrationPlatformOf } from "../kit/shared"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { PAUSE_CHOICES, PAUSE_MENU_ID } from "./update"
+import { typography } from "../../../ui/typography"
 
 // `SourceActions`, `IntegrationActions` and `PauseMenu`.
 
@@ -34,9 +35,10 @@ const pauseMenu = (h: H, model: Model, source: V2Source): Html =>
 					content: h.div(
 						[h.Class("space-y-1 px-2 pt-1.5 pb-2")],
 						[
-							h.p([h.Class("text-xs font-medium")], ["Pause ingestion"]),
-							h.p(
-								[h.Class("text-muted-foreground text-xs leading-relaxed")],
+							typography(h, { size: "xs", weight: "medium", as: "p" }, ["Pause ingestion"]),
+							typography(
+								h,
+								{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
 								[
 									isIntegration(source)
 										? "Maple keeps collecting, but what it collects is dropped, not stored or billed."
@@ -76,7 +78,8 @@ const pauseMenu = (h: H, model: Model, source: V2Source): Html =>
 		},
 	})
 
-const name = (h: H, source: V2Source) => h.span([h.Class("text-foreground font-medium")], [source.name])
+const name = (h: H, source: V2Source) =>
+	typography(h, { tone: "foreground", weight: "medium" }, [source.name])
 
 /** Resume while paused, the pause menu otherwise. Every source but the default one pauses. */
 export const pauseControl = (h: H, model: Model, source: V2Source): Html =>
@@ -117,7 +120,7 @@ const tokenDeleteDialog = (h: H, model: Model, source: V2Source): Html =>
 			name(h, source),
 			" are rejected within a minute. This cannot be undone.",
 		],
-		confirmLabel: "Delete",
+		confirmLabel: "Delete source",
 		onConfirm: Message.ConfirmedDelete(),
 		isPending: model.busy === "delete",
 	})

@@ -7,6 +7,7 @@ import { canWidenRange, logFilterChips } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
+import { typography } from "../../../ui/typography"
 
 // The logs table's empty state.
 
@@ -26,14 +27,15 @@ const searchEmpty = (h: HtmlBuilder<Message>, model: Model): Html => {
 	return h.div(
 		[h.Class("flex h-48 flex-col items-center justify-center gap-2 rounded-md border px-6 text-center")],
 		[
-			h.span(
-				[h.Class("text-sm text-muted-foreground")],
+			typography(
+				h,
+				{ size: "sm", tone: "muted" },
 				traceId
 					? [
 							"No logs on trace",
 							" ",
 							h.span([h.Class("font-mono text-foreground break-all")], [traceId]),
-							" in this time range",
+							" in this window",
 						]
 					: [
 							"No log message contains",

@@ -2,6 +2,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartEmpty } from "../../../ui/chart-state"
 import { panel, panelHeader, panelTitle } from "../../../ui/panel"
+import { typography } from "../../../ui/typography"
+import { vstack, vstackClass } from "../../../ui/stack"
 
 // `ChartCard` and `ChartCardMessage`.
 
@@ -32,19 +34,16 @@ const header = <M>(h: HtmlBuilder<M>, options: ChartCardOptions): Html | null =>
 			options.description === undefined
 				? undefined
 				: [
-						h.div(
-							[h.Class("flex min-w-0 flex-col gap-0.5")],
-							[
-								h.div(
-									[h.Class("flex min-w-0 flex-wrap items-center gap-2")],
-									[
-										panelTitle(h, [title]),
-										...(options.scope === undefined ? [] : [options.scope]),
-									],
-								),
-								h.p([h.Class("text-2xs text-foreground-subtle")], [options.description]),
-							],
-						),
+						vstack(h, { gap: "0.5", shrink: true }, [
+							h.div(
+								[h.Class("flex min-w-0 flex-wrap items-center gap-2")],
+								[
+									panelTitle(h, [title]),
+									...(options.scope === undefined ? [] : [options.scope]),
+								],
+							),
+							typography(h, { size: "2xs", tone: "subtle", as: "p" }, [options.description]),
+						]),
 					],
 	})
 }
@@ -57,7 +56,7 @@ export const chartCard = <M>(
 	const head = header(h, options)
 	const content = [...(head === null ? [] : [head]), ...children]
 	return options.bare === true
-		? h.section([h.Class(cn("flex min-w-0 flex-col", options.className))], content)
+		? h.section([h.Class(cn(vstackClass({ shrink: true }), options.className))], content)
 		: panel(h, { className: options.className }, content)
 }
 

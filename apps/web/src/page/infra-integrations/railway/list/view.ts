@@ -18,7 +18,7 @@ import { integrationConnectCta } from "../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import { filteredEmpty } from "../../../kit/signal-empty-state"
 import { avgPeakContent } from "../../../infra/kit/avg-peak"
-import { pageHeroParts, countLabel, searchToolbar } from "../../../infra/kit/page-parts"
+import { countLabel, searchToolbar } from "../../../infra/kit/page-parts"
 import { formatAbsolute } from "../../../kit/relative-time"
 import type { RailwayServiceRow, RailwayStatus } from "../model"
 import { filterServices, formatVcpu, hasConfiguredLimits, unsyncedEnvironments } from "./derive"
@@ -93,7 +93,7 @@ export const servicesList = (
 	if (services.length === 0) {
 		return integrationNotConnected(h, {
 			icon: icon(h, "RailwayIcon", { size: 16 }),
-			title: syncing ? "Pulling your Railway metrics" : "No Railway metrics in this time range",
+			title: syncing ? "Pulling your Railway metrics" : "No Railway metrics in this window",
 			description: syncing
 				? "Some environments haven't finished their first sync. This page updates on its own as they land."
 				: "Services that ran in this window show up here. Try a wider time range, or check the connection for errors.",
@@ -203,16 +203,13 @@ const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePicker
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
-	const hero = pageHeroParts(h, {
-		title: "Railway",
-		description:
-			"CPU, memory, network and disk for every Railway service, polled from Railway's metrics API.",
-	})
 	return dashboardPage(
 		h,
 		{
 			gap: "lg",
-			titleContent: hero.title,
+			title: "Railway",
+			description:
+				"CPU, memory, network and disk for every Railway service, polled from Railway's metrics API.",
 			actions: timeControls(h, {
 				search: model.search,
 				defaultPreset: DEFAULT_PRESET,
@@ -236,6 +233,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					}),
 			}),
 		},
-		[hero.body, statusView(h, model, clock)],
+		[statusView(h, model, clock)],
 	)
 })

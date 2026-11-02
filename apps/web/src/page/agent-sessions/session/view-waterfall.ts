@@ -19,7 +19,6 @@ import { shortId } from "@maple/ui/lib/ids"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -29,6 +28,7 @@ import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { segmentedBar } from "../../../ui/meter"
+import { pressable } from "../../../ui/pressable"
 import { type DetectedModel, detectLookup } from "../kit/detected-models"
 import { modelLabel } from "../kit/model-label"
 import { virtualAttributes, virtualize } from "../kit/virtualize"
@@ -39,6 +39,8 @@ import type { Model } from "./model"
 import { CATEGORY_FILL, CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 import { failedBadge } from "./view-kit"
 import { rowHeight, spanHeading, spanTarget, type WaterfallRow, waterfallRowsOf } from "./waterfall-rows"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstackClass } from "../../../ui/stack"
 
 // The session waterfall: turns, spans and idle gaps on one axis.
 
@@ -98,7 +100,10 @@ const tokenCell = (h: H, tokens: SessionTokenTotals | undefined, locale: string,
 			h.span(
 				[
 					h.Class(
-						cn("shrink-0 tabular-nums text-muted-foreground", isErrored && "text-severity-error"),
+						cn(
+							typographyClass({ tone: "muted", numeric: true, className: "shrink-0" }),
+							isErrored && "text-severity-error",
+						),
 					),
 				],
 				[formatNumber(tokens.total)],
@@ -122,18 +127,16 @@ const traceLink = (h: H, traceId: string, timestamp: string): Html =>
 	)
 
 const turnToggle = (h: H, row: Extract<WaterfallRow, { kind: "turn" }>, isCollapsed: boolean): Html =>
-	h.button(
-		[
-			h.AriaExpanded(!isCollapsed),
-			h.Class(
-				cn(
-					"flex min-w-0 flex-1 items-center gap-1.5 rounded-xs text-left",
-					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-				),
+	pressable(
+		h,
+		{
+			onClick: Message.ToggledTurn({ turnId: row.turn.id }),
+			className: cn(
+				"flex min-w-0 flex-1 items-center gap-1.5 rounded-xs text-left",
+				"focus-visible:ring-ring focus-visible:ring-inset",
 			),
-			h.Type("button"),
-			h.OnClick(Message.ToggledTurn({ turnId: row.turn.id })),
-		],
+			attributes: [h.AriaExpanded(!isCollapsed)],
+		},
 		[
 			icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon", {
 				size: 12,
@@ -142,14 +145,11 @@ const turnToggle = (h: H, row: Extract<WaterfallRow, { kind: "turn" }>, isCollap
 			eyebrow(h, { className: "shrink-0 text-primary" }, [
 				`${row.turn.anchorKind === "trace" ? "Segment" : "Turn"} ${row.turn.index}`,
 			]),
-			h.span(
-				[h.Class("min-w-0 truncate text-muted-foreground")],
-				[
-					row.turn.label === undefined
-						? h.span([h.Class("italic")], ["no captured message"])
-						: row.turn.label,
-				],
-			),
+			typography(h, { tone: "muted", truncate: true, className: "min-w-0" }, [
+				row.turn.label === undefined
+					? h.span([h.Class("italic")], ["no captured message"])
+					: row.turn.label,
+			]),
 			...(row.turn.failed ? [failedBadge(h)] : []),
 			...(isCollapsed
 				? [
@@ -188,7 +188,7 @@ const turnHeader = (
 					...(traceId === undefined
 						? []
 						: [
-								eyebrow(h, { className: "flex shrink-0 items-center gap-1" }, [
+								eyebrow(h, { className: hstackClass({ gap: "1", className: "shrink-0" }) }, [
 									traceLink(h, traceId, turn.anchor.timestamp),
 									...(turn.traceIds.length > 1
 										? [h.span([], ["+", String(turn.traceIds.length - 1)])]
@@ -299,7 +299,11 @@ const spanCell = (
 				: [h.span([h.Class("max-w-[60%] shrink-0 truncate font-medium")], [heading.subject])]),
 			...(span.statusMessage === ""
 				? []
-				: [h.span([h.Class("min-w-0 truncate text-muted-foreground")], [span.statusMessage])]),
+				: [
+						typography(h, { tone: "muted", truncate: true, className: "min-w-0" }, [
+							span.statusMessage,
+						]),
+					]),
 			...(isErrored ? [failedBadge(h, span.genAi.errorType ?? "Error")] : []),
 			...(isDelegated ? [badge(h, { variant: "tag" }, ["Subagent"])] : []),
 		],
@@ -319,26 +323,28 @@ const spanRow = (
 	const isErrored = spanFailed(span)
 	const target = spanTarget(span, category)
 	const model = category === "tool" ? undefined : spanModel(span)
-	return h.button(
-		[
-			...(state.isSelected ? [h.AriaCurrent("true")] : []),
-			h.AriaExpanded(state.isSelected),
-			h.AriaHasPopup("dialog"),
-			h.Class(
-				cn(
-					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-					isErrored && "bg-severity-error-a1",
-					state.isFocused && "bg-accent/60",
-					rowSelectedClass(state.isSelected || state.isRevealed),
-					state.isRevealed && "bg-primary-a2",
-				),
+	// The lane's own tint wins over the error and focus tints; a revealed row's wins over the lane.
+	const hasLane = state.isSelected || state.isRevealed
+	return pressable(
+		h,
+		{
+			onClick: Message.ClickedWaterfallSpan({ spanId: span.spanId }),
+			selectedLane: hasLane,
+			className: cn(
+				"flex h-full w-full items-center px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
+				"focus-visible:ring-ring focus-visible:ring-inset",
+				!hasLane && isErrored && "bg-severity-error-a1",
+				!hasLane && state.isFocused && "bg-surface-strong",
+				state.isRevealed && "bg-primary-a2",
 			),
-			...(state.isRevealed ? [h.DataAttribute("revealed", "true")] : []),
-			h.DataAttribute("span-row", span.spanId),
-			h.Type("button"),
-			h.OnClick(Message.ClickedWaterfallSpan({ spanId: span.spanId })),
-		],
+			attributes: [
+				...(state.isSelected ? [h.AriaCurrent("true")] : []),
+				h.AriaExpanded(state.isSelected),
+				h.AriaHasPopup("dialog"),
+				...(state.isRevealed ? [h.DataAttribute("revealed", "true")] : []),
+				h.DataAttribute("span-row", span.spanId),
+			],
+		},
 		[
 			spanCell(h, span, row.depth, category, isDelegation(span, spansById)),
 			h.span(
@@ -481,7 +487,7 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 				],
 				[
 					rows.length === 0
-						? emptyMessage(h, {}, ["No spans match this filter."])
+						? emptyMessage(h, {}, ["No spans match this filter"])
 						: h.div(
 								[h.Class("relative w-full"), h.Style({ height: `${totalSize}px` })],
 								items.flatMap((item) => {

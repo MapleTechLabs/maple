@@ -15,12 +15,12 @@ import {
 	generationManifestPath,
 	rangeRoot,
 	shardsRoot,
-} from "../src/server/archives/paths"
-import { promoteGeneration } from "../src/server/archives/generation"
-import { rebuildCatalog, listActiveGenerations } from "../src/server/archives/listing"
-import { type ArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/paths"
+import { promoteGeneration } from "@maple/local-server/archives/generation"
+import { rebuildCatalog, listActiveGenerations } from "@maple/local-server/archives/listing"
+import { type ArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 
 // External-sentinel tests proving archive-root path escapes are closed (C-1).
 // These mirror the reviewer's deterministic probes: a symlinked descendant must
@@ -233,7 +233,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 describe("archive path safety — read-side symlink escapes (HIGH-1/HIGH-2)", () => {
 	it("readArchiveGenerationManifest refuses a symlinked generation dir and does not read outside content", async () => {
 		await withArchive(async (archiveDir, outside) => {
-			const { readArchiveGenerationManifest } = await import("../src/server/archives/manifest")
+			const { readArchiveGenerationManifest } = await import("@maple/local-server/archives/manifest")
 			const generationId = randomUUID()
 			// Plant a real generation outside the root with an attacker manifest.
 			const outsideGen = join(outside, "evil-gen")

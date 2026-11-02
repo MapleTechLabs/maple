@@ -1,5 +1,6 @@
 // The search schema of every route. Shapes match the URLs already in use, so existing links decode.
 import { Schema, SchemaGetter } from "effect"
+import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import {
 	AiSessionSortDir,
 	AiSessionSortKey,
@@ -602,6 +603,7 @@ export const ReplaysSearch = Schema.Struct({
 	userId: Schema.optional(Schema.String),
 	user: Schema.optional(Schema.String),
 	group: Schema.optional(Schema.String),
+	groupId: Schema.optional(Schema.String),
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 	durationMin: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
@@ -728,6 +730,20 @@ export const InfraSupabaseProjectSearch = Schema.Struct({
 })
 
 // Nested list routes
+
+// sessionTimeRangeSearchMiddleware()
+/** `/mcp-servers`, a server and its tool page share one search: the time range and the toolbar. */
+export const McpServersSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+	client: Schema.optional(Schema.String),
+	kind: Schema.optional(Schema.Literals(MCP_CLIENT_KINDS)),
+	q: Schema.optional(Schema.String),
+	failing: Schema.optional(Schema.Boolean),
+	metric: Schema.optional(Schema.Literals(["calls", "error_rate", "duration", "clients"])),
+	percentile: Schema.optional(Schema.Literals(["p50", "p90", "p95"])),
+	identity: Schema.optional(Schema.Literals(["ua", "info"])),
+	calls: Schema.optional(Schema.Literals(["slowest", "failed", "recent"])),
+})
 
 // sessionTimeRangeSearchMiddleware()
 export const AgentSessionToolsSearch = Schema.Struct({

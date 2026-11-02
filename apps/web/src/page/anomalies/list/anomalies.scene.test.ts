@@ -153,7 +153,7 @@ describe("anomalies list", () => {
 			{ update: pageUpdate, view },
 			given(withPresence(loaded([]), "absent")),
 			measured(),
-			expectView(text("No open anomalies")).toExist(),
+			expectView(text("No anomalies yet")).toExist(),
 			expectView(role("link", { name: "Set up tracing" })).toExist(),
 		)
 		scene(

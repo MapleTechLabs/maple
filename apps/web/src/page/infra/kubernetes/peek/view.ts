@@ -24,6 +24,7 @@ import { Message } from "./message"
 import { type Model, PEEK_CHART_HEIGHT, PEEK_METRICS, seriesId } from "./model"
 import type { Peek } from "./update"
 import { peekHeader } from "./view-header"
+import { hstack } from "../../../../ui/stack"
 
 // `PodPeekSheet`.
 
@@ -58,7 +59,7 @@ const peekSummary = (h: H, model: Model, pod: PodRow): Html => {
 			errorState(h, { failure, title: "Couldn't load pod metrics", onRetry: Message.ClickedRetrySummary() }),
 		onData: (summary) =>
 			summary === null || summary === undefined
-				? emptyMessage(h, { dashed: true }, ["No metrics arrived for this pod in this window."])
+				? emptyMessage(h, { dashed: true }, ["No metrics arrived for this pod in this window"])
 				: statRail(h, { className: refreshingClass(AsyncData.isRefreshing(data)) }, [
 						compactItem(h, "CPU vs limit", summary.cpuLimitPct, true),
 						compactItem(h, "CPU vs request", summary.cpuRequestPct, false),
@@ -104,8 +105,7 @@ const peekFooter = (h: H, peek: Peek, timeSearch: TimeSearch, locale: string): H
 		h,
 		"sheet",
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5" },
 				[
 					stepButton(h, "Previous pod", "ArrowUpIcon", peek.index > 0, -1),
 					stepButton(h, "Next pod", "ArrowDownIcon", peek.index < peek.count - 1, 1),

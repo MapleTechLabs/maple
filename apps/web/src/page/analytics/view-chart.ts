@@ -20,7 +20,7 @@ import { seriesLegend } from "../kit/series-legend"
 
 export const TRAFFIC_TOKENS = ["--border", "--background", "--primary", "--chart-2"]
 
-const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 type Series = Readonly<{
 	key: "primary" | "companion"

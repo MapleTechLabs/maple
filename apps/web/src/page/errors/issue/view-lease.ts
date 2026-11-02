@@ -7,6 +7,8 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { panel } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
 import { actorChip } from "../kit/actor"
+import { typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../../ui/stack"
 
 // The lease HUD: the countdown ring beside who holds the lease.
 
@@ -53,7 +55,7 @@ export const leaseHud = <M>(
 		h,
 		{
 			className: cn(
-				"flex-row items-center gap-3 border-border-subtle bg-card/50 px-3 py-2.5",
+				"flex-row items-center gap-3 border-border-subtle bg-surface-faint px-3 py-2.5",
 				isDanger && "border-severity-error-a4",
 			),
 		},
@@ -91,42 +93,34 @@ export const leaseHud = <M>(
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
-				[
-					h.div(
-						[h.Class("flex items-baseline justify-between gap-3")],
+			vstack(h, { gap: "1", shrink: true, grow: true }, [
+				hstack(h, { gap: "3", align: "baseline", justify: "between" }, [
+					eyebrow(h, { className: hstackClass({ gap: "2" }) }, [
+						statusDot(h, { tone: isExpired ? "neutral" : isDanger ? "crit" : "live" }),
+						isExpired ? "Lease expired" : "Active lease",
+					]),
+					h.span(
 						[
-							eyebrow(h, { className: "flex items-center gap-2" }, [
-								statusDot(h, { tone: isExpired ? "neutral" : isDanger ? "crit" : "live" }),
-								isExpired ? "Lease expired" : "Active lease",
-							]),
-							h.span(
-								[
-									h.Class(
-										cn(
-											"font-mono text-base font-semibold tabular-nums leading-none",
-											isExpired
-												? "text-muted-foreground"
-												: isDanger
-													? "text-severity-error"
-													: "text-foreground",
-										),
-									),
-								],
-								[formatCountdown(remainingMs)],
+							h.Class(
+								cn(
+									"font-mono text-base font-semibold tabular-nums leading-none",
+									isExpired
+										? "text-muted-foreground"
+										: isDanger
+											? "text-severity-error"
+											: "text-foreground",
+								),
 							),
 						],
+						[formatCountdown(remainingMs)],
 					),
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground")],
-						[
-							h.span([h.Class("shrink-0")], ["held by"]),
-							actorChip(h, lease.leaseHolder, "min-w-0"),
-						],
-					),
-				],
-			),
+				]),
+				hstack(
+					h,
+					{ gap: "1.5", shrink: true, className: typographyClass({ size: "xs", tone: "muted" }) },
+					[h.span([h.Class("shrink-0")], ["held by"]), actorChip(h, lease.leaseHolder, "min-w-0")],
+				),
+			]),
 		],
 	)
 }

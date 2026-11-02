@@ -30,6 +30,8 @@ import { Message, type TextField } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf, numberField, wasNote } from "./view-fields"
 import { formSelect } from "./view-select"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `RuleConditionFields`: the rule's condition row.
 
@@ -63,7 +65,7 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 	{
 		value: "critical",
 		label: "Critical",
-		selected: "border-severity-error/60 bg-severity-error-a2 text-severity-error",
+		selected: "border-severity-error-a4 bg-severity-error-a2 text-severity-error",
 		dot: "bg-severity-error",
 	},
 ]
@@ -197,22 +199,19 @@ const criticalRow = (
 	h.div(
 		[h.Class("grid items-start gap-4 border-t pt-3 md:grid-cols-3")],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-2")],
-				[
-					tierLabel(h, "critical"),
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "sm",
-							className: "mt-6 px-2 text-xs text-muted-foreground",
-							attributes: [h.OnClick(Message.ClickedRemoveCriticalTier())],
-						},
-						["Remove"],
-					),
-				],
-			),
+			hstack(h, { gap: "2", justify: "between" }, [
+				tierLabel(h, "critical"),
+				button(
+					h,
+					{
+						variant: "ghost",
+						size: "sm",
+						className: "mt-6 px-2 text-xs text-muted-foreground",
+						attributes: [h.OnClick(Message.ClickedRemoveCriticalTier())],
+					},
+					["Remove"],
+				),
+			]),
 			numberField(h, {
 				id: "rule-critical-threshold",
 				label: "Threshold",
@@ -263,7 +262,9 @@ const intervalPicker = (
 	}
 	const current = options.find((option) => option.value === selected)
 	return field(h, { className: "items-stretch gap-1.5", state: filledState }, [
-		h.span([h.Id("rule-interval-label"), h.Class("text-sm font-medium")], ["Check every"]),
+		typography(h, { size: "sm", weight: "medium", attributes: [h.Id("rule-interval-label")] }, [
+			"Check every",
+		]),
 		...slowdownNotice(h, model, form),
 		h.div(
 			[
@@ -287,7 +288,7 @@ const intervalPicker = (
 						isSelected
 							? isBlocked
 								? "border-severity-warn/60 bg-severity-warn-a2 text-severity-warn"
-								: "border-primary/50 bg-primary-a2 text-foreground"
+								: "border-primary-a4 bg-primary-a2 text-foreground"
 							: "text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 						!isSelected && isBlocked && "text-foreground-subtle",
 					),
@@ -315,7 +316,7 @@ const intervalPicker = (
 				)
 			}),
 		),
-		h.p([h.Class("text-xs text-muted-foreground")], [intervalNote(form, current, timing)]),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [intervalNote(form, current, timing)]),
 	])
 }
 

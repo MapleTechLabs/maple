@@ -30,6 +30,8 @@ const ListReplaysInput = Schema.Struct({
 	userSearch: Schema.optional(Schema.String),
 	/** Identified group (company / team) name. */
 	groupName: Schema.optional(Schema.String),
+	/** Identified group id; unlike the name, unique. */
+	groupId: Schema.optional(Schema.String),
 	/** Every session from one browser — the marketing-visit → signup join. */
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
@@ -78,6 +80,7 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 			if (input.userId !== undefined) payload.user_id = input.userId
 			if (input.userSearch !== undefined) payload.user_search = input.userSearch
 			if (input.groupName !== undefined) payload.group_name = input.groupName
+			if (input.groupId !== undefined) payload.group_id = input.groupId
 			if (input.visitorId !== undefined) payload.visitor_id = input.visitorId
 			if (input.hasErrors !== undefined) payload.has_errors = input.hasErrors
 			if (input.search !== undefined) payload.search = input.search
@@ -110,6 +113,7 @@ const ReplaysFacetsInput = Schema.Struct({
 	userId: Schema.optional(Schema.String),
 	userSearch: Schema.optional(Schema.String),
 	groupName: Schema.optional(Schema.String),
+	groupId: Schema.optional(Schema.String),
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
@@ -139,6 +143,7 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 					userId: input.userId,
 					userSearch: input.userSearch,
 					groupName: input.groupName,
+					groupId: input.groupId,
 					visitorId: input.visitorId,
 					hasErrors: input.hasErrors,
 					search: input.search,

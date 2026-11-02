@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { icon } from "../../../../ui/icon"
 import { iconButton } from "../../../../ui/icon-button"
+import { pressable } from "../../../../ui/pressable"
 import { isMachineTurn, messageText, type TranscriptRow } from "./transcript-rows"
 
 // The turn minimap: one marker per human turn down the transcript's gutter, lit while its turn
@@ -197,20 +198,20 @@ export const turnMinimap = <M>(
 				],
 				[
 					step(h, "previous", neighbour(-1)),
-					h.button(
-						[
-							h.Type("button"),
-							h.AriaLabel(
+					pressable(
+						h,
+						{
+							label:
 								activeItem === undefined
 									? "Jump to a turn"
 									: `Jump to turn: ${activeItem.userText ?? "user message"}`,
-							),
-							h.Class(
-								"absolute inset-y-0 start-0 w-full cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
-							),
-							h.DataAttribute("turn-rail", String(items.length)),
-							h.DataAttribute("turn-current", String(currentIndex ?? 0)),
-						],
+							className:
+								"absolute inset-y-0 start-0 w-full bg-transparent focus-visible:ring-ring/70",
+							attributes: [
+								h.DataAttribute("turn-rail", String(items.length)),
+								h.DataAttribute("turn-current", String(currentIndex ?? 0)),
+							],
+						},
 						[
 							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border-subtle")], []),
 							...items.map((item, index) =>

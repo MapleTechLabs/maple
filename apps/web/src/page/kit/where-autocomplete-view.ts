@@ -37,7 +37,7 @@ export const suggestionListbox = <M>(
 					h.Class(
 						cn(
 							"flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-xs",
-							index === inputs.activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60 active:bg-accent/60",
+							index === inputs.activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-surface-sunken active:bg-surface-sunken",
 						),
 					),
 					h.OnClick(inputs.onApply(index)),

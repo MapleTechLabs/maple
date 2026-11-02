@@ -22,6 +22,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
+import { vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -65,33 +66,30 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 		h,
 		[
 			tableCell(h, [
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-0.5")],
-					[
-						rowLink(
-							h,
-							{
-								href: metricLink(model, metric.metricName, metric.metricType),
-								className: "block min-w-0",
-							},
-							[
-								truncatedText(h, {
-									text: metric.metricName,
-									mono: true,
-									className: cn("text-xs", ROW_LINK_LIFT),
-								}),
-							],
-						),
-						...(metric.metricDescription === ""
-							? []
-							: [
-									h.span(
-										[h.Class("text-3xs text-muted-foreground line-clamp-1")],
-										[metric.metricDescription],
-									),
-								]),
-					],
-				),
+				vstack(h, { gap: "0.5", shrink: true }, [
+					rowLink(
+						h,
+						{
+							href: metricLink(model, metric.metricName, metric.metricType),
+							className: "block min-w-0",
+						},
+						[
+							truncatedText(h, {
+								text: metric.metricName,
+								mono: true,
+								className: cn("text-xs", ROW_LINK_LIFT),
+							}),
+						],
+					),
+					...(metric.metricDescription === ""
+						? []
+						: [
+								h.span(
+									[h.Class("text-3xs text-muted-foreground line-clamp-1")],
+									[metric.metricDescription],
+								),
+							]),
+				]),
 			]),
 			tableCell(h, [metricTypeBadge(h, metric.metricType)], MD_CELL),
 			tableCell(

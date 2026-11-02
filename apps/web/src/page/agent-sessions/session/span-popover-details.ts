@@ -31,6 +31,8 @@ import { Message as SessionMessage, type Message } from "./message"
 import type { Model } from "./model"
 import { payloadCard } from "./span-popover-messages"
 import { toolIo } from "./tool-io"
+import { typographyClass } from "../../../ui/typography"
+import { hstackClass, vstackClass } from "../../../ui/stack"
 
 // The span expansion's Tool calls, Details and Logs tabs.
 // Details and Logs draw the trace span panel's parts over the popover's own `PanelState`.
@@ -59,7 +61,7 @@ const toolCallCard = (
 								truncatedText(h, {
 									text: call.name,
 									mono: true,
-									className: "text-foreground text-xs",
+									className: typographyClass({ size: "xs", tone: "foreground" }),
 								}),
 							]),
 					...(call.id === undefined
@@ -111,7 +113,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 		],
 		[
 			b.div(
-				[b.Class("flex flex-wrap items-center gap-2")],
+				[b.Class(hstackClass({ gap: "2", wrap: true }))],
 				[
 					icon(b, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-error" }),
 					b.span([b.Class("font-medium text-ui text-severity-error")], ["This call failed"]),
@@ -123,7 +125,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 				],
 			),
 			b.p(
-				[b.Class("text-muted-foreground text-xs leading-relaxed")],
+				[b.Class(typographyClass({ size: "xs", tone: "muted", className: "leading-relaxed" }))],
 				[
 					"The pills here are the attributes the failure was read from; the span carries no status message.",
 				],
@@ -199,7 +201,7 @@ const spanAttributesView = Submodel.defineView<PanelState, PanelMessage, PanelIn
 	AsyncData.matchData(state.detail.data, {
 		onEmpty: () =>
 			p.div(
-				[p.Class("flex flex-col gap-2")],
+				[p.Class(vstackClass({ gap: "2" }))],
 				[
 					skeleton(p, "h-4 w-32"),
 					skeleton(p, "h-24 w-full"),
@@ -258,9 +260,9 @@ const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>
 						? []
 						: [
 								p.span(
-									[p.Class("flex items-baseline gap-1.5")],
+									[p.Class(hstackClass({ gap: "1.5", align: "baseline" }))],
 									[
-										p.span([p.Class("text-2xs text-muted-foreground")], [label]),
+										p.span([p.Class(typographyClass({ size: "2xs", tone: "muted" }))], [label]),
 										p.span(
 											[p.Class("font-mono text-foreground text-xs")],
 											[typeof value === "number" ? String(value) : value],
@@ -362,7 +364,7 @@ export const toolCallsSection = (
 	toolCalls: ReadonlyArray<SpanToolCall>,
 	keyPrefix: string,
 ): Html => {
-	if (toolCalls.length === 0) return emptyMessage(h, {}, ["No tool calls were captured on this span."])
+	if (toolCalls.length === 0) return emptyMessage(h, {}, ["No tool calls were captured on this span"])
 	const isFailed = spanFailed(span)
 	return h.div(
 		[h.Class("flex flex-col gap-3 pb-1")],

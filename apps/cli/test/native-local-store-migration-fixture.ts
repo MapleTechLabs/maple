@@ -4,8 +4,8 @@
 // the migration probe must prove that a physical legacy source can be opened
 // by native chDB before the current target schema is created.
 
-import { Chdb } from "../src/server/chdb"
-import { markStoreClosedDurable, markStoreOpenDurable } from "../src/server/store-version"
+import { Chdb } from "@maple/local-server/chdb"
+import { markStoreClosedDurable, markStoreOpenDurable } from "@maple/local-server/store-version"
 
 const [dataDir, configFile] = process.argv.slice(2)
 if (!dataDir || !configFile)

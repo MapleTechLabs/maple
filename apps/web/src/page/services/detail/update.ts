@@ -54,7 +54,7 @@ import { deriveDeploys, isResolvableSha } from "./derive-panels"
 import { matchesFilter } from "./derive-api"
 import * as EndpointPeek from "./endpoint-peek/model"
 import * as EndpointPeekUpdate from "./endpoint-peek/update"
-import { Message, type RequestMode } from "./message"
+import { Message, type RequestMode, type RetryTarget } from "./message"
 import type { Commit, CommitFailure, Model } from "./model"
 import type { Endpoint } from "./model-tabs"
 import { groupsOf, visibleEndpoints } from "./view-api"
@@ -715,6 +715,24 @@ const settleCommit = (model: Model, sha: string, result: Result.Result<Commit, C
 	},
 })
 
+/** Clears the failed read so `sync` asks for it again. */
+const retrying = (model: Model, target: RetryTarget): Model => {
+	switch (target) {
+		case "Overview":
+			return { ...model, overview: Keyed.idle() }
+		case "Operations":
+			return { ...model, operations: Keyed.idle() }
+		case "Dependencies":
+			return { ...model, dependencies: Keyed.idle() }
+		case "Endpoints":
+			return { ...model, endpoints: Keyed.idle() }
+		case "ApiOverview":
+			return { ...model, apiOverview: Keyed.idle() }
+		case "StatusBreakdown":
+			return { ...model, statusBreakdown: Keyed.idle() }
+	}
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveClock: ({ nowMs, mode }) => sync({ ...model, nowMs }, context, mode),
@@ -833,7 +851,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		// `useAtomRefresh` on the failed overview: forget the slot, so the next sync requests it again.
-		ClickedRetry: () => sync({ ...model, overview: Keyed.idle() }, context, "Load"),
+		ClickedRetry: ({ target }) => sync(retrying(model, target), context, "Load"),
 		ClickedResetTimeRange: () =>
 			navigate(
 				model,

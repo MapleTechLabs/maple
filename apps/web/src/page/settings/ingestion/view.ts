@@ -18,6 +18,8 @@ import { credentialRow, ingestKeyRows } from "./view-keys"
 import { connectInstructions, frameworkIconStrip, frameworkPicker } from "./view-setup"
 import { deleteMappingDialog, mappingsSection, recommendationsSection } from "./view-rules"
 import { deleteRuleDialog, ingestRulesSection } from "./view-ingest-rules"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `IngestionSection`.
 
@@ -43,8 +45,7 @@ const unknownStatusBanner = (h: H): Html =>
 	panel(h, { className: "flex-row items-center gap-3 px-4 py-2.5" }, [
 		statusDot(h, { tone: "neutral", size: "lg" }),
 		h.span([h.Class("text-sm font-medium whitespace-nowrap")], ["Status unknown"]),
-		h.span(
-			[h.Class("truncate font-prose text-xs text-muted-foreground")],
+		typography(h, { size: "xs", tone: "muted", truncate: true, className: "font-prose" },
 			["Couldn't check for incoming telemetry."],
 		),
 	])
@@ -61,8 +62,7 @@ const statusBanner = (h: H, model: Model): Html => {
 			[h.Class("text-sm font-medium whitespace-nowrap")],
 			[connection.isConnected ? "Receiving telemetry" : "Waiting for telemetry"],
 		),
-		h.span(
-			[h.Class("text-muted-foreground truncate font-mono text-xs")],
+		typography(h, { size: "xs", tone: "muted", mono: true, truncate: true },
 			[
 				connection.isConnected
 					? [
@@ -196,8 +196,7 @@ const addServiceSection = (h: H, model: Model): Html => {
 							connectInstructions(h, model, connection.privateKey),
 						],
 					)
-				: h.div(
-						[h.Class("flex items-center gap-3 px-4 py-3")],
+				: hstack(h, { gap: "3", className: "px-4 py-3" },
 						[
 							frameworkIconStrip(h),
 							h.span(

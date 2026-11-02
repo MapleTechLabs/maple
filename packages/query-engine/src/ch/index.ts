@@ -163,6 +163,7 @@ export {
 	sessionActivityAggregateQuery,
 	IDLE_GAP_THRESHOLD_MS,
 	type SessionTranscriptOutput,
+	type SessionTranscriptOpts,
 	type SessionEventMatchOpts,
 	type SessionActivityOpts,
 	type SessionActivityOutput,
@@ -612,6 +613,22 @@ export {
 	type AuditLogEntriesOutput,
 } from "./queries/audit-log"
 
+// Queries — Cancellation evidence (what a cancelling org sent and did)
+export {
+	CANCELLATION_RESOURCE_KEYS,
+	cancellationAlertChecksQuery,
+	cancellationAuditActionsQuery,
+	cancellationAuditActorsQuery,
+	cancellationErrorFingerprintsQuery,
+	cancellationErrorsByDayQuery,
+	cancellationProductEventsQuery,
+	cancellationResourceAttributesQuery,
+	cancellationResourceSpansQuery,
+	cancellationServiceCountsQuery,
+	cancellationServiceUsageQuery,
+	cancellationToolCallsQuery,
+} from "./queries/cancellation-evidence"
+
 // Queries — Cloudflare integration usage (integrations-page ingest proof)
 
 // Queries — Cloudflare service-map stats (per-zone / per-Worker node rollups)
@@ -658,6 +675,31 @@ export {
 	type TopOperationsOpts,
 	type TopOperationsOutput,
 } from "./queries/top-operations"
+
+// Queries - MCP hub (MCP server spans per the OpenTelemetry MCP conventions)
+export {
+	mcpCallListQuery,
+	mcpCallSeriesQuery,
+	mcpCallSplitSeriesQuery,
+	mcpCallTotalsQuery,
+	mcpClientName,
+	mcpClientReachQuery,
+	mcpClientsQuery,
+	mcpErrorGroupsQuery,
+	mcpErrorTrendQuery,
+	mcpFirstSeenQuery,
+	mcpInitializersQuery,
+	mcpMethodsQuery,
+	mcpServerClientsQuery,
+	mcpServerSparkQuery,
+	mcpServerStatsQuery,
+	mcpServicesQuery,
+	mcpSpanSummaryQuery,
+	mcpToolErrorsQuery,
+	mcpToolStatsQuery,
+	type McpCallFilter,
+	type McpCallOrder,
+} from "./queries/mcp"
 
 // Queries — Infrastructure (host-centric aggregations over hostmetrics)
 export {

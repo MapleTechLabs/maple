@@ -10,6 +10,8 @@ import { serviceMapLoading } from "./loading"
 import { serviceMapBackground, serviceMapControls, serviceMapMiniMap } from "./panels"
 import { Message, type Model } from "./service-map"
 import { serviceMapToolbar } from "./toolbar"
+import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 const nodesSlot = createLazy()
 const edgesSlot = createLazy()
@@ -28,36 +30,29 @@ export type MapViewOptions = Readonly<{
 
 /** Declutter hid every node: offer a reset instead of the "no instrumentation" empty state. */
 const hiddenState = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Message) => M): Html =>
-	h.div(
-		[h.Class("flex h-full items-center justify-center")],
-		[
-			h.div(
-				[h.Class("space-y-3 text-center")],
-				[
-					h.p(
-						[h.Class("text-sm font-medium text-foreground")],
-						["Everything is hidden by the current filters"],
-					),
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						[
-							String(model.source.rawNodes.length),
-							" services are below the traffic threshold or outside the focus.",
-						],
-					),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							attributes: [h.OnClick(toMessage(Message.ClickedResetFilters()))],
-						},
-						["Reset filters"],
-					),
-				],
-			),
-		],
-	)
+	hstack(h, { justify: "center", className: "h-full" }, [
+		h.div(
+			[h.Class("space-y-3 text-center")],
+			[
+				typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [
+					"Everything is hidden by the current filters",
+				]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					String(model.source.rawNodes.length),
+					" services are below the traffic threshold or outside the focus.",
+				]),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						attributes: [h.OnClick(toMessage(Message.ClickedResetFilters()))],
+					},
+					["Reset filters"],
+				),
+			],
+		),
+	])
 
 const canvasArea = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Message) => M): Html => {
 	const toCanvas = (message: Canvas.Message) => toMessage(Message.GotCanvasMessage({ message }))
@@ -105,41 +100,38 @@ const mapColumn = <M>(
 	options: MapViewOptions,
 ): Html => {
 	const is3d = options.viewMode === "3d"
-	return h.div(
-		[h.Class("flex flex-col h-full")],
-		[
-			serviceMapToolbar(h, {
-				model: model.toolbar,
-				focus: model.focus,
-				services: model.source.services,
-				minTrafficPct: model.minTrafficPct,
-				colorMode: model.colorMode,
-				hiddenNodeCount: model.graph.declutter.hiddenNodeCount,
-				hiddenEdgeCount: model.graph.declutter.hiddenEdgeCount,
-				showPresentationControls: !is3d,
-				toCombobox: (message) => toMessage(Message.GotFocusComboboxMessage({ message })),
-				toTraffic: (message) => toMessage(Message.GotTrafficSelectMessage({ message })),
-				toColor: (message) => toMessage(Message.GotColorSelectMessage({ message })),
-				toDepth: (message) => toMessage(Message.GotDepthSelectMessage({ message })),
-				toTooltip: (message) => toMessage(Message.GotTooltipMessage({ message })),
-				onClearFocus: toMessage(Message.ClickedClearFocus()),
-				onToggleHideRest: toMessage(Message.ClickedToggleHideRest()),
-				onShowAllTraffic: toMessage(Message.ClickedShowAllTraffic()),
-				onResort: toMessage(Message.ClickedResort()),
-			}),
-			h.div(
-				[h.Class("flex-1 min-h-0 relative")],
-				[is3d ? (options.render3D?.() ?? h.div([], [])) : canvasArea(h, model, toMessage)],
-			),
-			...(is3d
-				? []
-				: [
-						serviceMapLegend(h, model.colorMode, model.source.services, model.legend, (message) =>
-							toMessage(Message.GotLegendMessage({ message })),
-						),
-					]),
-		],
-	)
+	return vstack(h, { className: "h-full" }, [
+		serviceMapToolbar(h, {
+			model: model.toolbar,
+			focus: model.focus,
+			services: model.source.services,
+			minTrafficPct: model.minTrafficPct,
+			colorMode: model.colorMode,
+			hiddenNodeCount: model.graph.declutter.hiddenNodeCount,
+			hiddenEdgeCount: model.graph.declutter.hiddenEdgeCount,
+			showPresentationControls: !is3d,
+			toCombobox: (message) => toMessage(Message.GotFocusComboboxMessage({ message })),
+			toTraffic: (message) => toMessage(Message.GotTrafficSelectMessage({ message })),
+			toColor: (message) => toMessage(Message.GotColorSelectMessage({ message })),
+			toDepth: (message) => toMessage(Message.GotDepthSelectMessage({ message })),
+			toTooltip: (message) => toMessage(Message.GotTooltipMessage({ message })),
+			onClearFocus: toMessage(Message.ClickedClearFocus()),
+			onToggleHideRest: toMessage(Message.ClickedToggleHideRest()),
+			onShowAllTraffic: toMessage(Message.ClickedShowAllTraffic()),
+			onResort: toMessage(Message.ClickedResort()),
+		}),
+		h.div(
+			[h.Class("flex-1 min-h-0 relative")],
+			[is3d ? (options.render3D?.() ?? h.div([], [])) : canvasArea(h, model, toMessage)],
+		),
+		...(is3d
+			? []
+			: [
+					serviceMapLegend(h, model.colorMode, model.source.services, model.legend, (message) =>
+						toMessage(Message.GotLegendMessage({ message })),
+					),
+				]),
+	])
 }
 
 /**
@@ -160,8 +152,9 @@ export const view = <M>(
 	const detail = Option.flatMap(model.selectedId, (id) =>
 		options.detailPanel === undefined ? Option.none() : Option.some(options.detailPanel(id)),
 	)
-	return h.div(
-		[h.Class("flex flex-col h-full"), h.DataAttribute("elk-status", model.layout.status)],
+	return vstack(
+		h,
+		{ className: "h-full", attributes: [h.DataAttribute("elk-status", model.layout.status)] },
 		[
 			h.submodel({
 				slotId: "service-map-split",

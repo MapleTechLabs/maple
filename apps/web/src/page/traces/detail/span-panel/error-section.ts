@@ -4,9 +4,12 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../../ui/eyebrow"
 import { icon } from "../../../../ui/icon"
+import { pressable } from "../../../../ui/pressable"
+import { textLink } from "../../../../ui/text-link"
 import { copyButton, statusOf } from "./copy"
 import { Message } from "./message"
 import type { PanelState as Model } from "./model"
+import { hstack } from "../../../../ui/stack"
 
 // `ErrorSection` (packages/ui/src/components/error-section.tsx), with a "Copy as prompt" payload.
 
@@ -41,67 +44,61 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-2")],
-				[
-					icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-error" }),
-					eyebrow(h, { variant: "label", className: "shrink-0 text-severity-error" }, ["Error"]),
-					...(input.badge === undefined || input.badge === ""
-						? []
-						: [
-								h.span(
-									[
-										h.Class("min-w-0 truncate font-mono text-2xs text-foreground-soft"),
-										h.Title(input.badge),
-									],
-									[input.badge],
-								),
-							]),
-					...(body.format === "json"
-						? [
-								h.span(
-									[
-										h.Class(
-											"flex shrink-0 items-center gap-1 rounded-sm border border-severity-error-a3 px-1 py-px font-mono text-4xs text-severity-error uppercase",
-										),
-										h.Title("JSON payload"),
-									],
-									[icon(h, "BracketsCurlyIcon", { size: 9 }), "json"],
-								),
-							]
-						: []),
-					copyButton(h, model, {
-						id: "error-prompt",
-						value: formatErrorPrompt({
-							message,
-							serviceName: input.prompt.serviceName,
-							operation: input.prompt.operation,
-							attributes: { ...input.prompt.attributes },
-						}),
-						label: "error as an AI prompt",
-						idleIcon: "SparkleIcon",
-						iconSize: 12,
-						tooltipId: "span-panel-error-prompt",
-						className:
-							"ml-auto size-5 shrink-0 rounded-sm text-severity-error/70 hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
+			hstack(h, { gap: "2", shrink: true }, [
+				icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-error" }),
+				eyebrow(h, { variant: "label", className: "shrink-0 text-severity-error" }, ["Error"]),
+				...(input.badge === undefined || input.badge === ""
+					? []
+					: [
+							h.span(
+								[
+									h.Class("min-w-0 truncate font-mono text-2xs text-foreground-soft"),
+									h.Title(input.badge),
+								],
+								[input.badge],
+							),
+						]),
+				...(body.format === "json"
+					? [
+							h.span(
+								[
+									h.Class(
+										"flex shrink-0 items-center gap-1 rounded-sm border border-severity-error-a3 px-1 py-px font-mono text-4xs text-severity-error uppercase",
+									),
+									h.Title("JSON payload"),
+								],
+								[icon(h, "BracketsCurlyIcon", { size: 9 }), "json"],
+							),
+						]
+					: []),
+				copyButton(h, model, {
+					id: "error-prompt",
+					value: formatErrorPrompt({
+						message,
+						serviceName: input.prompt.serviceName,
+						operation: input.prompt.operation,
+						attributes: { ...input.prompt.attributes },
 					}),
-				],
-			),
-			h.button(
-				[
-					h.AriaLabel("Copy error message"),
-					h.Class(
-						cn(
-							"mt-1.5 block w-full cursor-copy rounded-sm text-left font-mono text-2xs text-foreground-soft leading-relaxed",
-							"duration-150 hover:text-foreground active:text-foreground motion-reduce:transition-none",
-							"data-[copy-status=copied]:text-severity-info",
-						),
+					label: "error as an AI prompt",
+					idleIcon: "SparkleIcon",
+					iconSize: 12,
+					tooltipId: "span-panel-error-prompt",
+					className:
+						"ml-auto size-5 shrink-0 rounded-sm text-muted-foreground hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
+				}),
+			]),
+			pressable(
+				h,
+				{
+					label: "Copy error message",
+					onClick: Message.ClickedCopy({ id: BODY_ID, text: body.full }),
+					className: cn(
+						"mt-1.5 block w-full cursor-copy rounded-sm text-left font-mono text-2xs text-foreground-soft leading-relaxed",
+						"duration-150 hover:text-foreground active:text-foreground motion-reduce:transition-none",
+						"data-[copy-status=copied]:text-severity-info",
 					),
-					h.DataAttribute("copy-status", status),
-					h.Title("Click to copy"),
-					h.Type("button"),
-					h.OnClick(Message.ClickedCopy({ id: BODY_ID, text: body.full })),
-				],
+					attributes: [h.DataAttribute("copy-status", status), h.Title("Click to copy")],
+				},
 				[
 					h.pre(
 						[
@@ -122,7 +119,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 								)
 							: splitErrorText(body.full).map((line) =>
 									h.span(
-										[h.Class(cn("block", line.frame && "text-severity-error/55"))],
+										[h.Class(cn("block", line.frame && "text-foreground-subtle"))],
 										[line.text === "" ? " " : line.text],
 									),
 								),
@@ -131,15 +128,14 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 			),
 			...(isLong
 				? [
-						h.button(
-							[
-								h.AriaExpanded(model.isErrorExpanded),
-								h.Class(
-									"mt-1 rounded-sm text-2xs text-severity-error/70 hover:text-severity-error active:text-severity-error",
-								),
-								h.Type("button"),
-								h.OnClick(Message.ToggledErrorExpanded()),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								onClick: Message.ToggledErrorExpanded(),
+								className: "mt-1 rounded-sm text-2xs",
+								attributes: [h.AriaExpanded(model.isErrorExpanded)],
+							},
 							[model.isErrorExpanded ? "Show less" : "Show more"],
 						),
 					]

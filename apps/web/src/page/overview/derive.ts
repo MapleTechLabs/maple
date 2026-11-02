@@ -10,6 +10,7 @@ import {
 } from "../../components/dashboard/service-health"
 import { DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
+import { isPresetValue, type PresetValue } from "../kit/time-controls"
 import type { FacetsHint, HealthSnapshot, Incident, Model } from "./model"
 
 // Pure derivations of the home page (`defaultPreset`, `environmentFilter`) and its service health
@@ -17,10 +18,11 @@ import type { FacetsHint, HealthSnapshot, Incident, Model } from "./model"
 
 export type { ServiceHealth, ServiceHealthCause }
 
-/** `defaultPreset`: the hint's preset until facets resolve; 6h for all-demo orgs, else 24h. */
-export const defaultPreset = (model: Model): string =>
+/** `defaultPreset`: the hint's preset until facets resolve (when it is still a rail preset); 6h for
+ * all-demo orgs, else 24h. */
+export const defaultPreset = (model: Model): PresetValue =>
 	Option.match(AsyncData.getData(model.facets.data), {
-		onNone: () => model.hint.preset,
+		onNone: () => (isPresetValue(model.hint.preset) ? model.hint.preset : "24h"),
 		onSome: ({ services }) =>
 			services.length === 0 ? "24h" : services.every((name) => name.startsWith("demo-")) ? "6h" : "24h",
 	})

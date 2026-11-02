@@ -26,7 +26,14 @@ export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
 
 /** The reads that can be retried from their error state. */
-export const RetryTarget = Schema.Literals(["Overview"])
+export const RetryTarget = Schema.Literals([
+	"Overview",
+	"Operations",
+	"Dependencies",
+	"Endpoints",
+	"ApiOverview",
+	"StatusBreakdown",
+])
 export type RetryTarget = typeof RetryTarget.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({

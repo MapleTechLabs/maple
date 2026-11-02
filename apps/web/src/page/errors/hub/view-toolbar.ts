@@ -13,6 +13,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "../../../ui/search-input"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The errors stat strip, list toolbar, search and the sort and severity selects.
 
@@ -60,7 +62,7 @@ export const statStrip = (h: H, model: Model): Html | null =>
 									stat(h, formatErrorRate(summary.errorRate), "of all spans"),
 								],
 							),
-							h.span([h.Class("text-xs text-foreground-subtle")], ["in the last 24 hours"]),
+							typography(h, { size: "xs", tone: "subtle" }, ["in the last 24 hours"]),
 						],
 					),
 	})
@@ -105,7 +107,7 @@ const severityContent = (
 	labels: Record<SeverityFilter, string>,
 ): ReadonlyArray<Html | string> =>
 	isSeverityFilter(value)
-		? [h.span([h.Class("flex items-center gap-2")], [severityFilterDot(h, value), labels[value]])]
+		? [hstack(h, { gap: "2", as: "span" }, [severityFilterDot(h, value), labels[value]])]
 		: ["Severity"]
 
 const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = HUB_SORTS.map((value) => ({
@@ -131,8 +133,14 @@ const toolbarSearch = (h: H, draft: string): Html =>
 	})
 
 /** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
-export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null): Html =>
+export const toolbar = (
+	h: H,
+	model: Model,
+	count: ReadonlyArray<string> | null,
+	className?: string,
+): Html =>
 	listToolbar(h, {
+		className,
 		leading: h.submodel({
 			slotId: "errors-view-tabs",
 			model: model.tabs,

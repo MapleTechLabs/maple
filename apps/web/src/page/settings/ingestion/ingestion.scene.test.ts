@@ -103,7 +103,7 @@ describe("ingestion tab", () => {
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Unable to complete request",
+				title: "Couldn't regenerate the key",
 				description: failure.message,
 			}),
 		)

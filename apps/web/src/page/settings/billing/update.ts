@@ -607,7 +607,7 @@ export const update = (
 				onFailure: (error) =>
 					same({
 						model: { ...model, isOpeningPortal: false },
-						outMessage: toast("error", error.message || "Couldn't open the billing portal."),
+						outMessage: toast("error", error.message || "Couldn't open the billing portal"),
 					}),
 			}),
 		CompletedRedirect: () => same({ model }),
@@ -654,7 +654,7 @@ export const update = (
 				onFailure: (error) =>
 					same({
 						model: { ...model, isSavingCap: false },
-						outMessage: toast("error", "The overage cap could not be saved.", error.message),
+						outMessage: toast("error", "Couldn't save the overage cap", error.message),
 					}),
 			}),
 		ToggledBreakdown: () => same({ model: { ...model, isBreakdownOpen: !model.isBreakdownOpen } }),
@@ -689,7 +689,7 @@ export const update = (
 									daily: revalidate(model.daily),
 								},
 								commands: [FetchPlans(), FetchInvoices(), FetchDaily()],
-								outMessage: toast("success", "Plan updated successfully"),
+								outMessage: toast("success", "Plan updated"),
 							}),
 				onFailure: (error) =>
 					same({

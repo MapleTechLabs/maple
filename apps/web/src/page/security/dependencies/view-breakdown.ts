@@ -11,11 +11,15 @@ import { middleTruncate } from "../../../ui/middle-truncate"
 import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { textLink } from "../../../ui/text-link"
-import { repositoryName } from "../kit/parts"
+import { WIDE_COLUMN } from "../kit/layout"
+import { advisorySeverityBadge, repositoryName } from "../kit/parts"
 import { planSummaryOf, RELATION_LABEL, type UpgradeStep, upgradePlanOf } from "./derive"
 import type { Message } from "./model"
-import { dependencySeverityBadge, notRunningLabel, productionScanStates } from "./view-findings"
+import { notRunningLabel, productionScanStates } from "./view-findings"
 import { repositoryHref } from "./view-repositories"
+import { typography, typographyClass } from "../../../ui/typography"
+import { stripClass } from "../../../ui/rule"
+import { hstack } from "../../../ui/stack"
 
 // One repository's open findings as the package bumps that clear them, the first to make on top.
 
@@ -33,12 +37,17 @@ const bumpCell = (h: H, step: UpgradeStep): Html =>
 	h.span(
 		[h.Class("flex min-w-0 max-w-72 flex-col")],
 		[
-			h.span([h.Class("truncate font-mono text-sm"), h.Title(step.packageName)], [step.packageName]),
+			typography(
+				h,
+				{ size: "sm", mono: true, truncate: true, attributes: [h.Title(step.packageName)] },
+				[step.packageName],
+			),
 			h.span(
 				[h.Class("flex min-w-0 items-center gap-1.5 font-mono text-xs tabular-nums")],
 				[
-					h.span(
-						[h.Class("truncate text-muted-foreground"), h.Title(step.installed.join(", "))],
+					typography(
+						h,
+						{ tone: "muted", truncate: true, attributes: [h.Title(step.installed.join(", "))] },
 						[step.installed.join(", ")],
 					),
 					...(step.target === null
@@ -77,10 +86,9 @@ const runningCell = (h: H, step: UpgradeStep, notRunning: string): Html => {
 		: h.span(
 				[h.Class("flex min-w-0 max-w-48 flex-col"), h.Title(step.services.join(", "))],
 				[
-					h.span(
-						[h.Class("truncate text-sm")],
-						[step.services.length > 1 ? `${busiest} +${step.services.length - 1}` : busiest],
-					),
+					typography(h, { size: "sm", truncate: true }, [
+						step.services.length > 1 ? `${busiest} +${step.services.length - 1}` : busiest,
+					]),
 					muted(h, `${formatRate(step.productionSpans)} spans/day`, "tabular-nums"),
 				],
 			)
@@ -90,10 +98,10 @@ const stepRow = (h: H, step: UpgradeStep, notRunning: string): Html =>
 	tableRow(
 		h,
 		[
-			tableCell(h, [dependencySeverityBadge(h, step.severity)], "w-24"),
+			tableCell(h, [advisorySeverityBadge(h, step.severity)], "w-24"),
 			tableCell(h, [bumpCell(h, step)]),
-			tableCell(h, [clearsCell(h, step)]),
-			tableCell(h, [runningCell(h, step, notRunning)]),
+			tableCell(h, [clearsCell(h, step)], WIDE_COLUMN),
+			tableCell(h, [runningCell(h, step, notRunning)], WIDE_COLUMN),
 			tableCell(h, [muted(h, RELATION_LABEL[step.relation])], "hidden md:table-cell"),
 			tableCell(
 				h,
@@ -105,7 +113,7 @@ const stepRow = (h: H, step: UpgradeStep, notRunning: string): Html =>
 								text: step.lockfiles[0] ?? "",
 								tail: Math.min(24, step.lockfiles[0]?.length ?? 0),
 								mono: true,
-								className: "text-xs text-muted-foreground",
+								className: typographyClass({ size: "xs", tone: "muted" }),
 							}),
 							...(step.lockfiles.length > 1
 								? [muted(h, `+${countLabel(step.lockfiles.length - 1, "lockfile")}`)]
@@ -141,28 +149,27 @@ export const repositoryBreakdown = (
 	const notRunning = notRunningLabel(production, productionScanStates([repository]).get(repository.id))
 	return panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
-			title: h.span(
-				[h.Class("flex min-w-0 items-baseline gap-2")],
-				[
-					repositoryName(h, repository.fullName),
-					h.span([h.Class("text-muted-foreground")], ["Upgrade plan"]),
-				],
-			),
+			title: hstack(h, { gap: "2", align: "baseline", shrink: true, as: "span" }, [
+				repositoryName(h, repository.fullName),
+				h.span([h.Class("text-muted-foreground")], ["Upgrade plan"]),
+			]),
 			action: textLink(h, { tone: "muted", className: "text-xs", href: repositoryHref(null) }, [
 				"All repositories",
 			]),
 		}),
 		...(plan.length === 0
-			? [emptyMessage(h, {}, ["No open advisories in this repository's latest scan."])]
+			? [emptyMessage(h, {}, ["No open advisories in this repository's latest scan"])]
 			: [
-					h.p([h.Class("border-b px-4 py-2 text-xs text-muted-foreground")], [planLine(plan)]),
+					typography(h, { size: "xs", tone: "muted", as: "p", className: stripClass("head") }, [
+						planLine(plan),
+					]),
 					table(h, { variant: "bare", ariaLabel: `Upgrade plan for ${repository.fullName}` }, [
 						tableHeader(h, [
 							tableRow(h, [
 								tableHead(h, ["Worst"]),
 								tableHead(h, ["Upgrade"]),
-								tableHead(h, ["Clears"]),
-								tableHead(h, ["Running in"]),
+								tableHead(h, ["Clears"], WIDE_COLUMN),
+								tableHead(h, ["Running in"], WIDE_COLUMN),
 								tableHead(h, ["Relation"], "hidden md:table-cell"),
 								tableHead(h, ["Lockfile"], "hidden lg:table-cell"),
 							]),

@@ -3,7 +3,7 @@ import type { AlertDestinationDocument, AlertIncidentDocument } from "@maple/dom
 import type { AlertRuleRow } from "@maple/web-data/collections/alerts"
 import {
 	buildRuleStatesByRuleId,
-	rowToAlertDestinationDocument,
+	rowsToAlertDestinationDocuments,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
@@ -18,7 +18,7 @@ import type { Model, TraceFacets } from "./model"
 // The live rows as the documents the editor reads.
 
 export const destinationsOf = (model: Pick<Model, "destinations">): ReadonlyArray<AlertDestinationDocument> =>
-	(model.destinations ?? []).map(rowToAlertDestinationDocument)
+	rowsToAlertDestinationDocuments(model.destinations ?? [])
 
 const NO_STATES = buildRuleStatesByRuleId([])
 
@@ -28,7 +28,9 @@ export const tagSuggestionsOf = (
 	previous: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
 	const tags = [...new Set(rows.flatMap((row) => rowToAlertRuleDocument(row, NO_STATES).tags))].sort()
-	return tags.length === previous.length && tags.every((tag, index) => tag === previous[index]) ? previous : tags
+	return tags.length === previous.length && tags.every((tag, index) => tag === previous[index])
+		? previous
+		: tags
 }
 
 /** The edited rule's open incidents (`clearedIncidents` input). */
@@ -41,7 +43,13 @@ export const openIncidentsOf = (
 				.map(rowToAlertIncidentDocument)
 				.filter((incident) => incident.ruleId === model.editingRuleId && incident.status === "open")
 
-const NO_FACETS: TraceFacets = { services: [], environments: [], spanNames: [], httpMethods: [], httpStatusCodes: [] }
+const NO_FACETS: TraceFacets = {
+	services: [],
+	environments: [],
+	spanNames: [],
+	httpMethods: [],
+	httpStatusCodes: [],
+}
 
 /** The traces facets once answered (`autocompleteValues.traces`). */
 export const traceFacetsOf = (model: Pick<Model, "traceFacets">): TraceFacets =>
@@ -81,7 +89,10 @@ const hasPayload = (model: Pick<Model, "previewWindow">, form: RuleForm): boolea
 	model.previewWindow !== null && previewPayload(form, model.previewWindow)._tag === "Some"
 
 /** The timing of the draft's own preview: none while a new one loads, so nothing gates on an older query. */
-export const draftTimingOf = (model: Pick<Model, "preview" | "previewWindow">, form: RuleForm): AlertQueryTiming | null =>
+export const draftTimingOf = (
+	model: Pick<Model, "preview" | "previewWindow">,
+	form: RuleForm,
+): AlertQueryTiming | null =>
 	hasPayload(model, form)
 		? AsyncData.match(model.preview.data, {
 				onIdle: () => null,
@@ -94,5 +105,7 @@ export const draftTimingOf = (model: Pick<Model, "preview" | "previewWindow">, f
 		: null
 
 /** The draft's preview as `useAlertRulePreview` reads it. */
-export const draftPreviewOf = (model: Pick<Model, "preview" | "previewWindow">, form: RuleForm): PreviewState =>
-	previewStateOf(model.preview, hasPayload(model, form), previewIssue(form))
+export const draftPreviewOf = (
+	model: Pick<Model, "preview" | "previewWindow">,
+	form: RuleForm,
+): PreviewState => previewStateOf(model.preview, hasPayload(model, form), previewIssue(form))

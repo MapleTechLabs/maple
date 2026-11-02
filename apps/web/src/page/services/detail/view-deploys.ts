@@ -2,7 +2,6 @@ import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { countLabel, formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
-import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { IssueSeverity } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -24,6 +23,8 @@ import { DEPLOYS_EXPANDED, DEPLOYS_RAIL } from "./update"
 import { sectionCard } from "./view-panels"
 import { relativeTime } from "../../kit/relative-time"
 import { severityBadge } from "../../errors/kit/severity"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys` (components/services/).
 
@@ -50,10 +51,10 @@ const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 		trailing: h.span(
 			[h.Class("contents")],
 			[
-				h.span(
-					[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
-					[formatNumber(issue.occurrenceCount), "×"],
-				),
+				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+					formatNumber(issue.occurrenceCount),
+					"×",
+				]),
 				relativeTime(h, {
 					value: issue.lastSeenAt,
 					...clock,
@@ -71,15 +72,10 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 		h,
 		{
 			title: "Open issues",
-			action: h.div(
-				[h.Class("flex items-center gap-3")],
-				[
-					...(isLimited
-						? [h.span([h.Class("text-2xs text-muted-foreground")], ["Latest 90 days"])]
-						: []),
-					textLink(h, { href: "/errors", className: "text-xs" }, ["View all →"]),
-				],
-			),
+			action: hstack(h, { gap: "3" }, [
+				...(isLimited ? [typography(h, { size: "2xs", tone: "muted" }, ["Latest 90 days"])] : []),
+				textLink(h, { href: "/errors", className: "text-xs" }, ["View all →"]),
+			]),
 		},
 		children,
 	)
@@ -98,7 +94,7 @@ export const issuesPanel = (h: H, model: Model, clock: Clock, isLimited: boolean
 const issuesReady = (h: H, issues: ReadonlyArray<Issue>, clock: Clock, isLimited: boolean): Html =>
 	issuesFrame(h, isLimited, [
 		issues.length === 0
-			? emptyMessage(h, {}, ["No open issues for this service."])
+			? emptyMessage(h, {}, ["No open issues for this service"])
 			: h.div(
 					[h.Class("space-y-px p-2")],
 					issues.map((issue) => issueLine(h, issue, clock)),
@@ -138,10 +134,10 @@ const rowFrame = (h: H, avatar: Html, line1: Html, chip: Html, line2: ReadonlyAr
 			h.div(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 leading-tight")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[h.div([h.Class("min-w-0 flex-1 truncate text-ui")], [line1]), chip],
-					),
+					hstack(h, { gap: "2" }, [
+						h.div([h.Class("min-w-0 flex-1 truncate text-ui")], [line1]),
+						chip,
+					]),
 					h.div([h.Class("flex items-baseline gap-1.5 text-2xs text-muted-foreground")], line2),
 				],
 			),
@@ -210,14 +206,7 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolean): Html => {
 	if (isLoading) {
 		return sectionCard(h, { title: "Recent deploys" }, [
-			h.div(
-				[
-					h.AriaBusy(true),
-					h.Class(cn(skeletonListStyles, skeletonListGapStyles.px, "p-2")),
-					h.DataAttribute("slot", "skeleton-list"),
-				],
-				Array.from({ length: 4 }, () => deploySkeleton(h)),
-			),
+			skeletonList(h, { rows: 4, className: "p-2", renderRow: () => deploySkeleton(h) }),
 		])
 	}
 	const releases = AsyncData.getOrElse(
@@ -235,10 +224,10 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 			action:
 				deploys.length === 0
 					? undefined
-					: h.span(
-							[h.Class("text-xs text-foreground-subtle")],
-							[countLabel(deploys.length, "version"), " in window"],
-						),
+					: typography(h, { size: "xs", tone: "subtle" }, [
+							countLabel(deploys.length, "version"),
+							" in window",
+						]),
 		},
 		deploys.length === 0
 			? [deploysEmpty(h)]
@@ -325,10 +314,10 @@ const deploySkeleton = (h: H): Html =>
 		[h.Class("flex items-start gap-2.5 px-2 py-1.5")],
 		[
 			skeleton(h, "mt-0.5 size-5 shrink-0 rounded-full"),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
-				[skeleton(h, "h-3.5 w-3/4"), skeleton(h, "h-3 w-1/2")],
-			),
+			vstack(h, { gap: "1", shrink: true, grow: true }, [
+				skeleton(h, "h-3.5 w-3/4"),
+				skeleton(h, "h-3 w-1/2"),
+			]),
 		],
 	)
 

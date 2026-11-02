@@ -3,46 +3,58 @@ import type {
 	DependencyProductionCoverage,
 	DependencyScanRepository,
 } from "@maple/domain/http"
-import { type AdvisorySeverity, displayAdvisoryId } from "@maple/domain/package-advisories"
+import { displayAdvisoryId } from "@maple/domain/package-advisories"
 import { countLabel, formatRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
+import { pressable } from "../../../ui/pressable"
 import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	clickableRowClass,
+	laneTableCell,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "../../../ui/table"
 import { textLink } from "../../../ui/text-link"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { relativeTime } from "../../kit/relative-time"
-import { securitySeverityBadge } from "../kit/parts"
+import { ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
+import { advisorySeverityBadge, repositoryName } from "../kit/parts"
 import {
 	filteredFindings,
 	RELATION_LABEL,
 	repositoryFilterOf,
-	SEVERITY_LABEL,
 	STATUS_FILTER_LABEL,
 	STATUS_FILTERS,
 	statusFilterOf,
 } from "./derive"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // The findings table: one row per advisory on a package in a lockfile, worst first as the server
 // sorts them, under a status and a repository filter.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
-
-/** The code audit's severity badge; an advisory with no score reads as "Unrated". */
-export const dependencySeverityBadge = (h: H, severity: AdvisorySeverity, className?: string): Html =>
-	severity === "unknown"
-		? badge(h, { variant: "muted", className: cn("text-muted-foreground", className) }, [
-				SEVERITY_LABEL.unknown,
-			])
-		: securitySeverityBadge(h, severity, className)
 
 export const advisoryHref = (advisoryId: string): string =>
 	`https://osv.dev/vulnerability/${encodeURIComponent(advisoryId)}`
@@ -51,7 +63,7 @@ export const advisoryLink = (h: H, finding: DependencyFindingView, className?: s
 	textLink(
 		h,
 		{
-			className: cn("font-mono text-xs", className),
+			className: cn(typographyClass({ size: "xs", mono: true }), className),
 			href: advisoryHref(finding.advisoryId),
 			attributes: [
 				h.Target("_blank"),
@@ -109,7 +121,7 @@ const toolbar = (
 		repositories.find((repository) => repository.id === value)?.fullName ?? "All repositories"
 	return listToolbar(h, {
 		framed: true,
-		leading: h.h2([h.Class("px-1 text-sm font-medium")], ["Vulnerable packages"]),
+		leading: heading(h, { level: 2, variant: "subsection", className: "px-1" }, ["Vulnerable packages"]),
 		trailing: [
 			filterSelect(
 				h,
@@ -145,7 +157,7 @@ const toolbar = (
 }
 
 const muted = (h: H, text: string, className?: string): Html =>
-	h.span([h.Class(cn("text-xs text-muted-foreground", className))], [text])
+	h.span([h.Class(cn(typographyClass({ size: "xs", tone: "muted" }), className))], [text])
 
 export type ProductionScanState = "running" | "unscanned" | "failed"
 
@@ -198,10 +210,9 @@ const productionCell = (
 	return h.span(
 		[h.Class("flex min-w-0 max-w-48 flex-col")],
 		[
-			h.span(
-				[h.Class("truncate text-sm"), h.Title(busiest.serviceName)],
-				[others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName],
-			),
+			typography(h, { size: "sm", truncate: true, attributes: [h.Title(busiest.serviceName)] }, [
+				others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName,
+			]),
 			muted(h, `${formatRate(productionSpans(finding))} spans/day`, "tabular-nums"),
 		],
 	)
@@ -236,52 +247,62 @@ const findingRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(h, [dependencySeverityBadge(h, finding.severity)], "w-24"),
+			laneTableCell(h, isSelected, [advisorySeverityBadge(h, finding.severity)], "w-24"),
 			tableCell(h, [
-				h.button(
-					[
-						h.Type("button"),
-						h.OnClick(open, { propagation: "Stop" }),
-						h.Class(
+				pressable(
+					h,
+					{
+						className:
 							"flex min-w-0 max-w-72 flex-col items-start text-left focus-visible:underline focus-visible:outline-none",
-						),
-					],
+						attributes: [h.OnClick(open, { propagation: "Stop" })],
+					},
 					[
-						h.span(
-							[h.Class("truncate font-mono text-sm"), h.Title(versionsLabel(finding))],
+						typography(
+							h,
+							{
+								size: "sm",
+								mono: true,
+								truncate: true,
+								attributes: [h.Title(versionsLabel(finding))],
+							},
 							[finding.packageName],
 						),
 						muted(
 							h,
 							`${finding.ecosystem} · ${finding.versions.join(", ")}`,
-							"truncate font-mono",
+							typographyClass({ mono: true, truncate: true }),
 						),
 					],
 				),
 			]),
-			tableCell(h, [advisoryLink(h, finding)]),
-			tableCell(h, [productionCell(h, finding, production, scans)]),
+			tableCell(h, [advisoryLink(h, finding)], WIDE_COLUMN),
+			tableCell(h, [productionCell(h, finding, production, scans)], WIDE_COLUMN),
 			tableCell(h, [
 				finding.fixedIn === null
 					? muted(h, "No fix yet")
-					: h.span([h.Class("font-mono text-xs tabular-nums")], [finding.fixedIn]),
+					: typography(h, { size: "xs", mono: true, numeric: true }, [finding.fixedIn]),
 			]),
-			tableCell(h, [muted(h, RELATION_LABEL[finding.relation])], "hidden md:table-cell"),
+			tableCell(h, [muted(h, RELATION_LABEL[finding.relation])], ROOMY_COLUMN),
 			tableCell(
 				h,
 				[
 					h.span(
 						[h.Class("flex min-w-0 max-w-64 flex-col")],
 						[
-							h.span(
-								[h.Class("truncate text-sm"), h.Title(finding.repositoryFullName)],
-								[finding.repositoryFullName],
+							typography(
+								h,
+								{
+									size: "sm",
+									truncate: true,
+									attributes: [h.Title(finding.repositoryFullName)],
+								},
+								[repositoryName(h, finding.repositoryFullName)],
 							),
 							middleTruncate(h, {
 								text: finding.lockfilePath,
 								tail: Math.min(24, finding.lockfilePath.length),
 								mono: true,
-								className: "text-xs text-muted-foreground",
+								className: typographyClass({ size: "xs", tone: "muted" }),
 							}),
 						],
 					),
@@ -304,16 +325,17 @@ const findingRow = (
 						timeZone: clock.timeZone,
 						variant: "orDate",
 						tooltip: "title",
-						className: "whitespace-nowrap text-xs text-muted-foreground",
+						className: typographyClass({
+							size: "xs",
+							tone: "muted",
+							className: "whitespace-nowrap",
+						}),
 					}),
 				],
-				"whitespace-nowrap text-right",
+				cn("whitespace-nowrap text-right", WIDE_COLUMN),
 			),
 		],
-		cn(
-			"cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken",
-			isSelected && "bg-surface-strong",
-		),
+		clickableRowClass(isSelected),
 		[h.Key(finding.id), h.OnClick(open)],
 	)
 }
@@ -331,12 +353,12 @@ const findingsTable = (
 			tableRow(h, [
 				tableHead(h, ["Severity"]),
 				tableHead(h, ["Package"]),
-				tableHead(h, ["Advisory"]),
-				tableHead(h, ["In production"]),
+				tableHead(h, ["Advisory"], WIDE_COLUMN),
+				tableHead(h, ["In production"], WIDE_COLUMN),
 				tableHead(h, ["Fixed in"]),
-				tableHead(h, ["Relation"], "hidden md:table-cell"),
+				tableHead(h, ["Relation"], ROOMY_COLUMN),
 				tableHead(h, ["Location"], "hidden lg:table-cell"),
-				tableHead(h, ["First seen"], "text-right"),
+				tableHead(h, ["First seen"], cn("text-right", WIDE_COLUMN)),
 			]),
 		]),
 		tableBody(
@@ -395,17 +417,19 @@ export const findingsSection = (
 				: h.div(
 						[h.Class("p-4")],
 						[
-							nothingInWindow(h, {
-								title: "No findings match",
+							filteredEmpty(h, {
+								noun: "findings",
+								className: emptyFrameClass("dashed"),
 								description:
 									status === "all"
-										? "No findings for these filters."
-										: `No ${STATUS_FILTER_LABEL[status].toLowerCase()} findings for these filters.`,
+										? ""
+										: `Showing ${STATUS_FILTER_LABEL[status].toLowerCase()} findings only.`,
 							}),
 						],
 					)
-	return h.section(
-		[h.AriaLabel("Vulnerable packages"), h.Class("overflow-hidden rounded-md border bg-card")],
+	return borderedBox(
+		h,
+		{ as: "section", overflow: "hidden", card: true, attributes: [h.AriaLabel("Vulnerable packages")] },
 		[toolbar(h, model, findings, repositories), ...productionHint(h, production), content],
 	)
 }

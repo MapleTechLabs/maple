@@ -3,6 +3,7 @@ import { formatErrorRate, formatLatency, formatNumber, formatPercent } from "@ma
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { textLink } from "../../../../ui/text-link"
 import * as BarChart from "../../../../charts/bar-chart"
 import * as Chart from "../../../../charts/chart"
 import type { ThemeColors } from "../../../../charts/theme-colors"
@@ -12,6 +13,7 @@ import { STATUS_CLASSES, trafficRows, trafficShares } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../panel"
+import { typography } from "../../../../ui/typography"
 
 // "API requests": the gateway's requests by status class, its totals, and the busiest paths.
 
@@ -28,7 +30,7 @@ const total = (h: H, value: string, label: string, className?: string): Html =>
 				[h.Class(cn("font-mono text-lg font-semibold tabular-nums text-foreground", className))],
 				[value],
 			),
-			h.span([h.Class("text-2xs text-muted-foreground")], [label]),
+			typography(h, { size: "2xs", tone: "muted" }, [label]),
 		],
 	)
 
@@ -74,13 +76,14 @@ const legend = (h: H, traffic: SupabaseApiTrafficResponse, isOpen: boolean): Htm
 					),
 				),
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.AriaExpanded(isOpen),
-					h.OnClick(Message.ClickedToggleTopPaths()),
-					h.Class("text-2xs text-muted-foreground hover:text-foreground active:text-foreground"),
-				],
+			textLink(
+				h,
+				{
+					onClick: Message.ClickedToggleTopPaths(),
+					tone: "muted",
+					className: "text-2xs",
+					attributes: [h.AriaExpanded(isOpen)],
+				},
 				[isOpen ? "Hide top paths" : "Top paths →"],
 			),
 		],
@@ -118,7 +121,7 @@ const PATH_ROW = "flex items-center gap-4 border-t border-border-subtle px-4 py-
 
 const topPathsList = (h: H, paths: SupabaseApiTopPathsResponse): Html =>
 	paths.paths.length === 0
-		? panelEmpty(h, ["No paths in this time range."])
+		? panelEmpty(h, ["No paths in this window"])
 		: h.div(
 				[h.AriaLabel("Top paths")],
 				paths.paths.map((path) =>
@@ -169,7 +172,7 @@ const trafficBody = (
 ): Html => {
 	if (traffic.requests === 0)
 		return isLogsEnabled
-			? panelEmpty(h, ["No API requests in this time range."])
+			? panelEmpty(h, ["No API requests in this window"])
 			: panelEmpty(h, [
 					"API traffic comes from this project's logs. Turn on Logs for it to see requests here. ",
 					panelLink(h, MANAGE_HREF, "Manage projects"),

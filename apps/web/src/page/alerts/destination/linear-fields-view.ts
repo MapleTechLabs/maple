@@ -14,6 +14,8 @@ import {
 	type Model as LinearModel,
 	TEAM_SELECT_ID,
 } from "./linear-fields"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `LinearFields`' view: a team picker, or connecting Linear in a popup (admins only).
 
@@ -47,7 +49,7 @@ const isPending = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 const teamLabel = (team: LinearTeam): string => `${team.name} (${team.key})`
 
 const note = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.p([h.Class("text-2xs text-muted-foreground")], [text])
+	typography(h, { size: "2xs", tone: "muted", as: "p" }, [text])
 
 /** A re-read of a failed slot keeps the failure on screen, so the button shows it is working. */
 const isRetrying = (model: LinearModel): boolean =>
@@ -74,55 +76,46 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 	return h.div(
 		[h.Class("space-y-2 rounded-md border border-dashed border-border-subtle p-3")],
 		[
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				[
-					model.isAdmin === false
-						? "Ask an org admin to connect Linear on the Integrations page, then check again."
-						: isRevoked
-							? "Linear revoked Maple's access. Reconnect it, then pick a team here."
-							: "Connect your Linear workspace, then pick the team issues open in.",
-				],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				model.isAdmin === false
+					? "Ask an org admin to connect Linear on the Integrations page, then check again."
+					: isRevoked
+						? "Linear revoked Maple's access. Reconnect it, then pick a team here."
+						: "Connect your Linear workspace, then pick the team issues open in.",
+			]),
 			...(model.connectNote === null
 				? []
 				: [
-						h.p(
-							[h.Class("text-xs text-severity-error")],
-							[
-								model.connectNote === "Blocked"
-									? "Allow pop-ups for Maple, then try again."
-									: "Couldn't start the Linear connection. Try again.",
-							],
-						),
+						typography(h, { size: "xs", tone: "destructive", as: "p" }, [
+							model.connectNote === "Blocked"
+								? "Allow pop-ups for Maple, then try again."
+								: "Couldn't start the Linear connection. Try again.",
+						]),
 					]),
-			h.div(
-				[h.Class("flex flex-wrap gap-2")],
-				[
-					...(model.isAdmin === false
-						? []
-						: [
-								button(
-									h,
-									{
-										size: "sm",
-										isLoading: model.isConnecting,
-										isDisabled: !isAdmin,
-										attributes: [
-											h.OnClick(inputs.toMessage(LinearMessage.ClickedConnect())),
-											h.Style({
-												background: accent.accent,
-												"border-color": accent.accent,
-												color: model.isConnecting ? "transparent" : accent.accentOn,
-											}),
-										],
-									},
-									[isRevoked ? "Reconnect Linear" : "Connect Linear"],
-								),
-							]),
-					retry(h, inputs, "Check again"),
-				],
-			),
+			hstack(h, { gap: "2", align: "stretch", wrap: true }, [
+				...(model.isAdmin === false
+					? []
+					: [
+							button(
+								h,
+								{
+									size: "sm",
+									isLoading: model.isConnecting,
+									isDisabled: !isAdmin,
+									attributes: [
+										h.OnClick(inputs.toMessage(LinearMessage.ClickedConnect())),
+										h.Style({
+											background: accent.accent,
+											"border-color": accent.accent,
+											color: model.isConnecting ? "transparent" : accent.accentOn,
+										}),
+									],
+								},
+								[isRevoked ? "Reconnect Linear" : "Connect Linear"],
+							),
+						]),
+				retry(h, inputs, "Check again"),
+			]),
 		],
 	)
 }
@@ -194,10 +187,9 @@ export const linearFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 		return h.div(
 			[h.Class("space-y-2")],
 			[
-				h.p(
-					[h.Class("text-xs text-severity-error")],
-					["Couldn't check your Linear connection. This may be a temporary issue."],
-				),
+				typography(h, { size: "xs", tone: "destructive", as: "p" }, [
+					"Couldn't check your Linear connection. This may be a temporary issue.",
+				]),
 				retry(h, inputs, "Try again"),
 			],
 		)

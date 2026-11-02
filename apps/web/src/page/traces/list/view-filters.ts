@@ -84,7 +84,7 @@ const loadedRail = (
 			}),
 			isRootOnly
 				? singleCheckboxFilter(h, {
-						title: "Hide Single-Span Noise",
+						title: "Hide single-span noise",
 						isChecked: search.hideNoise ?? true,
 						onToggle: Message.ToggledHideNoise(),
 					})

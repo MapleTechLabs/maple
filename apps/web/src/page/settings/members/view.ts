@@ -1,4 +1,3 @@
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -18,13 +17,15 @@ import * as Menu from "../../../ui/menu"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import * as SelectView from "../../../ui/select-view"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "../../../ui/table"
 import { truncatedText } from "../../../ui/truncated-text"
 import { accountSectionSkeleton, noOrganization } from "../kit/account-skeleton"
 import { adminOnlyNotice } from "../kit/members"
 import { settingsSection, settingsSections } from "../kit/section"
 import { type InvitationRow, type MemberRow, Message, type Model } from "./model"
 import { hasMore, roleSelectFor } from "./update"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
@@ -36,7 +37,7 @@ const ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 
 /** `isInset`: the members column holds role selects, so both tables put values and headers at their text inset. */
 const roleText = (h: H, role: string, isInset: boolean): Html =>
-	h.span([h.Class(cn("text-xs text-foreground", isInset && "px-2.5"))], [orgRoleLabel(role)])
+	h.span([h.Class(cn(typographyClass({ size: "xs", tone: "foreground" }), isInset && "px-2.5"))], [orgRoleLabel(role)])
 
 const roleHead = (h: H, isInset: boolean): Html =>
 	tableHead(h, [h.span([h.Class(cn(isInset && "px-2.5"))], ["Role"])], COLUMN.role)
@@ -46,9 +47,6 @@ const COLUMN = { role: "w-36", date: "w-36", actions: "w-12" } as const
 
 /** Without the actions column the date column ends the row, so it sits flush right. */
 const dateAlign = (isAdmin: boolean): string | undefined => (isAdmin ? undefined : "text-right")
-
-const truncatedCell = (h: H, children: ReadonlyArray<Html>, className?: string): Html =>
-	tableCell(h, children, cn(truncatedCellStyles, className))
 
 const loadMore = (h: H, isLoading: boolean, onClick: Message): Html =>
 	h.div(
@@ -65,8 +63,7 @@ const skeletonRow = (h: H, isAdmin: boolean, index: number): Html =>
 		h,
 		[
 			tableCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-3")],
+				hstack(h, { gap: "3" },
 					[
 						skeleton(h, "size-6 rounded-full"),
 						h.div([h.Class("space-y-1.5")], [skeleton(h, "h-3 w-32"), skeleton(h, "h-3 w-48")]),
@@ -110,9 +107,8 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 	const row = tableRow(
 		h,
 		[
-			truncatedCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-3")],
+			truncatedTableCell(h, [
+				hstack(h, { gap: "3" },
 					[
 						personAvatar(h, member.name, member.imageUrl),
 						h.div(
@@ -134,7 +130,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 								),
 								truncatedText(h, {
 									text: member.identifier,
-									className: "text-xs text-muted-foreground",
+									className: typographyClass({ size: "xs", tone: "muted" }),
 								}),
 							],
 						),
@@ -150,7 +146,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 						[formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone })],
 					),
 				],
-				cn("text-xs text-muted-foreground", dateAlign(model.isAdmin)),
+				cn(typographyClass({ size: "xs", tone: "muted" }), dateAlign(model.isAdmin)),
 			),
 			...(model.isAdmin
 				? [
@@ -205,8 +201,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 										prompt.question,
 									],
 								),
-								h.div(
-									[h.Class("flex shrink-0 items-center gap-1.5")],
+								hstack(h, { gap: "1.5", className: "shrink-0" },
 									[
 										button(
 											h,
@@ -307,9 +302,8 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 	return tableRow(
 		h,
 		[
-			truncatedCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-3")],
+			truncatedTableCell(h, [
+				hstack(h, { gap: "3" },
 					[
 						personAvatar(h, invitation.email, ""),
 						truncatedText(h, { text: invitation.email, className: "text-xs" }),
@@ -326,7 +320,7 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 						[formatDateInTimezone(invitation.createdAtMs, { timeZone: inputs.timeZone })],
 					),
 				],
-				cn("text-xs text-muted-foreground", dateAlign(model.isAdmin)),
+				cn(typographyClass({ size: "xs", tone: "muted" }), dateAlign(model.isAdmin)),
 			),
 			...(model.isAdmin
 				? [
@@ -503,8 +497,7 @@ const loadingSkeleton = (h: H): Html =>
 			rows: 3,
 			gap: "3",
 			renderRow: () =>
-				h.div(
-					[h.Class("flex items-center gap-3")],
+				hstack(h, { gap: "3" },
 					[
 						skeleton(h, "size-8 rounded-full"),
 						h.div([h.Class("space-y-1.5")], [skeleton(h, "h-3.5 w-32"), skeleton(h, "h-3 w-48")]),

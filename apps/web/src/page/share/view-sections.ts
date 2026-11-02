@@ -1,10 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { DashboardSection } from "@maple/widgets/dashboard"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../../ui/pressable"
 import { emptyMessage } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
 import { Message } from "./message"
+import { hstackClass } from "../../ui/stack"
 
 // `DashboardSectionView` with `readOnly`: the chevron, the title and the tabs, no editing; the classes are
 // the editable header's.
@@ -29,14 +31,13 @@ const tabBar = (h: H, section: DashboardSection, activeTabId: string): Html =>
 					),
 				],
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.Role("tab"),
-							h.AriaSelected(isActive),
-							h.OnClick(Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id })),
-							h.Class("min-w-0 max-w-48 cursor-pointer font-medium outline-none"),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id }),
+							className: "min-w-0 max-w-48 font-medium outline-none",
+							attributes: [h.Role("tab"), h.AriaSelected(isActive)],
+						},
 						[h.span([h.Class("block truncate text-xs font-medium"), h.Title(tab.title)], [tab.title])],
 					),
 				],
@@ -84,14 +85,14 @@ export const sharedSection = (h: H, { section, activeTabId, isCollapsed, grid }:
 					...(hasTabs && !isCollapsed
 						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, section, activeTabId)])]
 						: []),
-					h.div([h.Class(cn("flex items-center gap-1", !hasTabs && "ml-auto"))], []),
+					h.div([h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))], []),
 				],
 			),
 			...(isCollapsed
 				? []
 				: [
 						grid === null
-							? emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty."])
+							? emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty"])
 							: h.div([h.Class("pt-2")], [grid]),
 					]),
 		],

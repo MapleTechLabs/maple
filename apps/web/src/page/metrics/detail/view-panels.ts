@@ -15,10 +15,11 @@ import { errorState } from "../../../ui/error-state"
 import { keyValue, keyValueList } from "../../../ui/key-value"
 import { backdropBar } from "../../../ui/meter"
 import { panel, panelHeader } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
 import { metricTypeBadge } from "../shared"
-import { formatSeen } from "../time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import {
 	breakdownAggregation,
 	breakdownGroupBy,
@@ -31,6 +32,9 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { breakdownKeyOf } from "./update"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass } from "../../../ui/stack"
+import { chartFrameClass } from "../../../ui/chart-frame"
 
 // `MetricChart`, `MetricBreakdown` and `MetricMetadataPanel` (components/metrics/).
 
@@ -42,11 +46,12 @@ const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownCombob
 const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
 		onEmpty: () => chartSkeleton(h, "area"),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load metric data" }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load metric data", onRetry: Message.ClickedRetryChart() }),
 		onData: (rows) =>
 			rows.length === 0
-				? emptyMessage(h, { className: "flex h-full items-center justify-center" }, [
-						"No datapoints match this query in the selected range.",
+				? emptyMessage(h, { className: hstackClass({ justify: "center", className: "h-full" }) }, [
+						"No datapoints match this query in this window",
 					])
 				: model.themeColors === null || !isChartRuntimeReady(model.chartRuntime)
 					? chartSkeleton(h, "area")
@@ -62,7 +67,7 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 								unit: chartUnitFromOtel(unit),
 								timeZone,
 								nowMs: model.nowMs,
-								className: "h-full w-full aspect-auto",
+								className: chartFrameClass("fill"),
 								showTooltip: true,
 								legend: draft.groupBy.length > 0 ? "visible" : "hidden",
 							},
@@ -91,8 +96,7 @@ export const metricChart = (
 			title: h.span([h.Class("font-mono"), h.Title(label)], [label]),
 			action:
 				capped || unit !== ""
-					? h.span(
-							[h.Class("flex items-center gap-3 text-xs text-muted-foreground")],
+					? hstack(h, { gap: "3", as: "span", className: typographyClass({ size: "xs", tone: "muted" }) },
 							[
 								...(capped ? [h.span([], [`Top ${GROUP_BY_SERIES_LIMIT} series`])] : []),
 								...(unit === "" ? [] : [h.span([], ["unit: ", unit])]),
@@ -113,20 +117,19 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 			errorState(h, { failure, title: "Couldn't load breakdown", variant: "inline" }),
 		onData: (rows) => {
 			if (rows.length === 0)
-				return emptyMessage(h, {}, ["No values for this attribute in the selected range."])
+				return emptyMessage(h, {}, ["No values for this attribute in this window"])
 			const max = Math.max(...rows.map((row) => row.value), 1)
 			return h.div(
 				[h.Class("space-y-1")],
 				rows.map((row) =>
-					h.button(
-						[
-							h.Key(row.name),
-							h.Type("button"),
-							h.Class(
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedBreakdownValue({ groupBy: filterKey, value: row.name }),
+							className:
 								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left hover:bg-accent active:bg-accent",
-							),
-							h.OnClick(Message.ClickedBreakdownValue({ groupBy: filterKey, value: row.name })),
-						],
+							attributes: [h.Key(row.name)],
+						},
 						[
 							backdropBar(h, {
 								value: row.value,
@@ -193,8 +196,7 @@ const attributesList = (h: H, model: Model): Html =>
 			}),
 		onData: (rows) =>
 			rows.length === 0
-				? h.p(
-						[h.Class("text-xs text-muted-foreground")],
+				? typography(h, { size: "xs", tone: "muted", as: "p" },
 						["This metric has no datapoint attributes."],
 					)
 				: h.ul(
@@ -206,7 +208,7 @@ const attributesList = (h: H, model: Model): Html =>
 									h.Class("flex items-center justify-between gap-2 text-xs"),
 								],
 								[
-									h.span([h.Class("truncate font-mono")], [row.attributeKey]),
+									typography(h, { mono: true, truncate: true }, [row.attributeKey]),
 									h.span(
 										[h.Class("shrink-0 font-mono text-muted-foreground")],
 										[formatNumber(row.usageCount)],
@@ -223,8 +225,7 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 		h.div(
 			[h.Class("space-y-2")],
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				hstack(h, { gap: "2", wrap: true },
 					[
 						metricTypeBadge(h, summary.metricType),
 						...(summary.unit === ""
@@ -241,13 +242,17 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 				),
 				...(summary.description === ""
 					? []
-					: [h.p([h.Class("text-xs text-muted-foreground")], [summary.description])]),
+					: [typography(h, { size: "xs", tone: "muted", as: "p" }, [summary.description])]),
 			],
 		),
 		keyValueList(h, { className: "gap-2" }, [
 			keyValue(h, { label: "Datapoints in range", mono: true }, [formatNumber(summary.dataPointCount)]),
-			keyValue(h, { label: "First seen", mono: true }, [formatSeen(summary.firstSeen, timeZone)]),
-			keyValue(h, { label: "Last seen", mono: true }, [formatSeen(summary.lastSeen, timeZone)]),
+			keyValue(h, { label: "First seen", mono: true }, [
+				formatTimestampInTimezone(summary.firstSeen, { timeZone, withYear: true }),
+			]),
+			keyValue(h, { label: "Last seen", mono: true }, [
+				formatTimestampInTimezone(summary.lastSeen, { timeZone, withYear: true }),
+			]),
 		]),
 		...(summary.services.length === 0
 			? []
@@ -255,12 +260,10 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 					h.div(
 						[h.Class("space-y-1.5")],
 						[
-							h.p(
-								[h.Class("text-xs text-muted-foreground")],
+							typography(h, { size: "xs", tone: "muted", as: "p" },
 								["Emitted by ", countLabel(summary.services.length, "service")],
 							),
-							h.div(
-								[h.Class("flex flex-wrap gap-1.5")],
+							hstack(h, { gap: "1.5", align: "stretch", wrap: true },
 								summary.services.map((service) =>
 									badge(
 										h,
@@ -280,6 +283,6 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 				]),
 		h.div(
 			[h.Class("space-y-1.5")],
-			[h.p([h.Class("text-xs text-muted-foreground")], ["Attributes"]), attributesList(h, model)],
+			[typography(h, { size: "xs", tone: "muted", as: "p" }, ["Attributes"]), attributesList(h, model)],
 		),
 	])

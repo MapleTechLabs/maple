@@ -11,6 +11,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { secretReveal } from "./secret-reveal"
+import { typography } from "../../../ui/typography"
 
 // `RollApiKeyDialog`.
 
@@ -127,7 +128,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 								DialogView.dialogDescription(h, "dialog", model.dialog.id, [
 									"A new secret will be issued for",
 									" ",
-									h.span([h.Class("text-foreground font-medium")], [model.apiKey?.name ?? ""]),
+									typography(h, { tone: "foreground", weight: "medium" }, [model.apiKey?.name ?? ""]),
 									" and the current key will be revoked immediately. Any integrations using the old key will stop working until you update them with the new one.",
 								]),
 							]),

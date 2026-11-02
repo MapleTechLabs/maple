@@ -60,6 +60,8 @@ export class ReplaysFacetsRequest extends Schema.Class<ReplaysFacetsRequest>("Re
 	userId: Schema.optional(Schema.String),
 	userSearch: Schema.optional(Schema.String),
 	groupName: Schema.optional(Schema.String),
+	/** The identified group's id; unlike the name, unique. */
+	groupId: Schema.optional(Schema.String),
 	/** Scopes every facet and both header counts to one browser, like the list. */
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),

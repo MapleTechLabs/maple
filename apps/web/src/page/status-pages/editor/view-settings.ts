@@ -6,8 +6,8 @@ import { button } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { copyableField } from "../../../ui/copyable-field"
 import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
 import { failureMessage } from "../../../data/load-failure"
+import { dangerRow, dangerZone } from "../../settings/kit/danger-zone"
 import { saveBar } from "../../settings/kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../settings/kit/section"
 import { switchRow } from "../../settings/kit/switch-row"
@@ -25,6 +25,8 @@ import { appearanceSection, previewPanel } from "./view-appearance"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The Settings tab: the page's fields, the break-glass token and deleting the page.
 
@@ -157,7 +159,7 @@ export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 		? []
 		: [
 				h.div(
-					[h.Class("flex flex-col gap-2 rounded-md border bg-muted/30 p-3")],
+					[h.Class("flex flex-col gap-2 rounded-md border bg-surface-faint p-3")],
 					[
 						copyableField(h, {
 							id: "status-page-break-glass-token",
@@ -166,26 +168,20 @@ export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 							copy: model.tokenCopy,
 							toCopyMessage: (message) => Message.GotTokenCopyMessage({ message }),
 						}),
-						h.div(
-							[h.Class("flex items-center justify-between gap-3")],
-							[
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
-									[
-										"Store it outside Maple, in your password manager. It is not shown again.",
-									],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "ghost",
-										attributes: [h.OnClick(Message.ClickedDismissToken())],
-									},
-									["Done"],
-								),
-							],
-						),
+						hstack(h, { gap: "3", justify: "between" }, [
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								"Store it outside Maple, in your password manager. It is not shown again.",
+							]),
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "ghost",
+									attributes: [h.OnClick(Message.ClickedDismissToken())],
+								},
+								["Done"],
+							),
+						]),
 					],
 				),
 			]
@@ -199,106 +195,79 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 			title: "Break-glass token",
 			description: [
 				"If Maple itself is down, post updates straight to the page with this token at ",
-				h.code([h.Class("font-mono text-xs")], [`${publicAddress(page.slug)}/_manage`]),
+				h.code(
+					[h.Class(typographyClass({ size: "xs", mono: true }))],
+					[`${publicAddress(page.slug)}/_manage`],
+				),
 				". The page keeps serving from edge storage either way.",
 			],
 		},
 		[
-			h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-between gap-3")],
-						[
-							h.p(
-								[h.Class("text-sm")],
-								suffix === null
-									? [h.span([h.Class("text-muted-foreground")], ["No token issued"])]
-									: [
-											"Active token ending in ",
-											h.code([h.Class("font-mono text-xs")], [suffix]),
-										],
-							),
-							...(model.isAdmin
-								? [
-										h.div(
-											[h.Class("flex items-center gap-2")],
-											[
-												...(suffix === null
-													? []
-													: [
-															button(
-																h,
-																{
-																	size: "sm",
-																	variant: "destructive-outline",
-																	attributes: [
-																		h.OnClick(
-																			Message.ClickedRevokeToken(),
-																		),
-																	],
-																},
-																["Revoke"],
-															),
-														]),
+			vstack(h, { gap: "3" }, [
+				hstack(h, { gap: "3", justify: "between", wrap: true }, [
+					h.p(
+						[h.Class("text-sm")],
+						suffix === null
+							? [h.span([h.Class("text-muted-foreground")], ["No token issued"])]
+							: [
+									"Active token ending in ",
+									h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [suffix]),
+								],
+					),
+					...(model.isAdmin
+						? [
+								hstack(h, { gap: "2" }, [
+									...(suffix === null
+										? []
+										: [
 												button(
 													h,
 													{
 														size: "sm",
-														variant: "outline",
-														isLoading:
-															model.isChangingBreakGlass &&
-															model.breakGlassAction === "rotate",
-														attributes: [h.OnClick(Message.ClickedRotateToken())],
+														variant: "destructive-outline",
+														attributes: [h.OnClick(Message.ClickedRevokeToken())],
 													},
-													[
-														icon(h, "KeyIcon"),
-														suffix === null ? "Issue token" : "Replace token",
-													],
+													["Revoke"],
 												),
-											],
-										),
-									]
-								: []),
-						],
-					),
-					...revealedToken(h, model),
-				],
-			),
+											]),
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "outline",
+											isLoading:
+												model.isChangingBreakGlass &&
+												model.breakGlassAction === "rotate",
+											attributes: [h.OnClick(Message.ClickedRotateToken())],
+										},
+										[
+											icon(h, "KeyIcon"),
+											suffix === null ? "Issue token" : "Replace token",
+										],
+									),
+								]),
+							]
+						: []),
+				]),
+				...revealedToken(h, model),
+			]),
 		],
 	)
 }
 
-const dangerZone = (h: H): Html =>
-	settingsSection(h, { id: "status-page-settings-danger", title: "Danger zone", framed: false }, [
-		panel(h, { className: "border-destructive-a4" }, [
-			h.div(
-				[h.Class("flex items-start justify-between gap-6 p-4")],
-				[
-					h.div(
-						[h.Class("space-y-1")],
-						[
-							h.p([h.Class("text-sm font-medium text-foreground")], ["Delete status page"]),
-							h.p(
-								[h.Class("font-prose text-xs text-muted-foreground")],
-								[
-									"Takes the page offline and deletes its components and incidents. This cannot be undone.",
-								],
-							),
-						],
-					),
-					button(
-						h,
-						{
-							variant: "destructive",
-							size: "sm",
-							attributes: [h.OnClick(Message.ClickedDeletePage())],
-						},
-						["Delete status page"],
-					),
-				],
+const deleteSection = (h: H): Html =>
+	dangerZone(h, { id: "status-page-settings-danger" }, [
+		dangerRow(h, {
+			title: "Delete status page",
+			description: [
+				"Takes the page offline and deletes its components and incidents. This cannot be undone.",
+			],
+			action: button(
+				h,
+				{ variant: "destructive", size: "sm", attributes: [h.OnClick(Message.ClickedDeletePage())] },
+				["Delete status page"],
 			),
-		]),
+		}),
 	])
 
 /**
@@ -366,7 +335,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
 		breakGlassSection(h, model, page),
-		...(model.isAdmin ? [dangerZone(h)] : []),
+		...(model.isAdmin ? [deleteSection(h)] : []),
 	])
 
 export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>

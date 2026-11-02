@@ -1153,6 +1153,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					requestId: true,
 					since: true,
 					until: true,
+					excludeActionSuffixes: [".read", ".called"],
 					limit: 50,
 					offset: 50,
 				}),
@@ -1173,6 +1174,97 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					until: END_TIME,
 				},
 			),
+	},
+	// Cancellation evidence (CancellationTelemetryEvidence.read).
+	{
+		module: "cancellation-evidence",
+		name: "cancellationServiceUsageQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationServiceUsageQuery({ limit: 15 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationServiceCountsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationServiceCountsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationResourceAttributesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationResourceAttributesQuery({ limit: 500 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationResourceSpansQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationResourceSpansQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationErrorFingerprintsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationErrorFingerprintsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAuditActionsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationAuditActionsQuery({ limit: 25 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAuditActorsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationAuditActorsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationToolCallsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationToolCallsQuery({ limit: 15 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAlertChecksQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationAlertChecksQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationErrorsByDayQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationErrorsByDayQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationProductEventsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationProductEventsQuery({ limit: 50 }), {
+				...window,
+				splitTime: START_TIME,
+				groupId: "org_customer",
+			}),
 	},
 	// Session replay fixtures used by the replay routes.
 	{
@@ -1875,6 +1967,164 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "ciRunTotalsQuery",
 		label: "allWorkflows",
 		compile: () => CH.compileUnsafe(CH.ciRunTotalsQuery({}), window),
+	},
+	{
+		module: "mcp",
+		name: "mcpServicesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpServicesQuery(), window),
+	},
+	{
+		module: "mcp",
+		name: "mcpFirstSeenQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpFirstSeenQuery(), { ...window, serviceName: "maple-ai" }),
+	},
+	{
+		module: "mcp",
+		name: "mcpToolErrorsQuery",
+		label: "searched",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpToolErrorsQuery({ search: "sql" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpServerStatsQuery",
+		label: "twoServers",
+		compile: () => CH.compileUnsafe(CH.mcpServerStatsQuery(["maple-ai", "docs-mcp"]), window),
+	},
+	{
+		module: "mcp",
+		name: "mcpServerSparkQuery",
+		label: "hourly",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpServerSparkQuery(["maple-ai"]), { ...window, bucketSeconds: 3_600 }),
+	},
+	{
+		module: "mcp",
+		name: "mcpServerClientsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpServerClientsQuery(["maple-ai"]), window),
+	},
+	{
+		module: "mcp",
+		name: "mcpClientsQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpClientsQuery({ search: "sql", kind: "agent", failingOnly: true }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpClientReachQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpClientReachQuery({ kind: "agent" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpSpanSummaryQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpSpanSummaryQuery(), { ...window, serviceName: "maple-ai" }),
+	},
+	{
+		module: "mcp",
+		name: "mcpInitializersQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpInitializersQuery(), { ...window, serviceName: "maple-ai" }),
+	},
+	{
+		module: "mcp",
+		name: "mcpMethodsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpMethodsQuery(), { ...window, serviceName: "maple-ai" }),
+	},
+	{
+		module: "mcp",
+		name: "mcpCallTotalsQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpCallTotalsQuery({ client: "Claude Code", failingOnly: true }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpCallSeriesQuery",
+		label: "hourly",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpCallSeriesQuery(), {
+				...window,
+				serviceName: "maple-ai",
+				bucketSeconds: 3_600,
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpCallSplitSeriesQuery",
+		label: "byClient",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpCallSplitSeriesQuery("client", { tool: "run_sql" }), {
+				...window,
+				serviceName: "maple-ai",
+				bucketSeconds: 3_600,
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpToolStatsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpToolStatsQuery(), { ...window, serviceName: "maple-ai" }),
+	},
+	{
+		module: "mcp",
+		name: "mcpErrorGroupsQuery",
+		label: "oneTool",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpErrorGroupsQuery({ tool: "run_sql" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpErrorTrendQuery",
+		label: "oneTool",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpErrorTrendQuery({ tool: "run_sql" }, ["", "Query error"]), {
+				...window,
+				serviceName: "maple-ai",
+				bucketSeconds: 3_600,
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpCallListQuery",
+		label: "slowest",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpCallListQuery("slowest", { tool: "run_sql" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpCallListQuery",
+		label: "failed",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpCallListQuery("failed", { tool: "run_sql" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
 	},
 	{
 		module: "ci-runs",

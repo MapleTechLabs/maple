@@ -47,8 +47,8 @@ export type LinkTab<M = never> = Readonly<{
 	href: string
 	label: string
 	icon?: IconName
-	/** A tally after the label; `error` tints it for counts that need attention. */
-	count?: number | undefined
+	/** A tally after the label (a number, or one already formatted); `error` tints it. */
+	count?: number | string | undefined
 	countTone?: "muted" | "error"
 	/** Handles a plain click in place of the router; the href still serves new tabs. */
 	onClick?: M | undefined

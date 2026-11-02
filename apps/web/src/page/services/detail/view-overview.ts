@@ -12,6 +12,8 @@ import { deploysPanel, issuesPanel } from "./view-deploys"
 import { dependencyStrip, runsOnPanel, usagePanel } from "./view-footprint"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
 import { uptimePanel } from "./view-uptime"
+import { vstack } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // The Overview tab: the chart grid, then the quiet panels and the "Talks to" strip.
 
@@ -40,29 +42,23 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 		parseWarehouseDateTime(window.endTime) - parseWarehouseDateTime(window.startTime) >
 			ISSUES_DETAIL_LIMIT_MS
 	const clock = { nowMs, timeZone: context.timeZone }
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			metricsGrid(h, model, {
-				isLoading: isDetailLoading || !isChartReady,
-				isWaiting: AsyncData.isRefreshing(overview),
-				context:
-					model.themeColors === null
-						? null
-						: { theme: model.themeColors, timeZone: context.timeZone, nowMs },
-			}),
-			topOperationsPanel(h, model, model.themeColors),
-			h.div(
-				[h.Class("grid gap-3 lg:grid-cols-2")],
-				[
-					issuesPanel(h, model, clock, isLimited),
-					deploysPanel(h, model, clock, isDetailLoading),
-					usagePanel(h, model, envFilterActive),
-					uptimePanel(h, model),
-					runsOnPanel(h, model, envFilterActive),
-				],
-			),
-			dependencyStrip(h, model),
-		],
-	)
+	return vstack(h, { gap: "3" }, [
+		metricsGrid(h, model, {
+			isLoading: isDetailLoading || !isChartReady,
+			isWaiting: AsyncData.isRefreshing(overview),
+			context:
+				model.themeColors === null
+					? null
+					: { theme: model.themeColors, timeZone: context.timeZone, nowMs },
+		}),
+		topOperationsPanel(h, model, model.themeColors),
+		grid(h, { lg: 2, gap: "3" }, [
+			issuesPanel(h, model, clock, isLimited),
+			deploysPanel(h, model, clock, isDetailLoading),
+			usagePanel(h, model, envFilterActive),
+			uptimePanel(h, model),
+			runsOnPanel(h, model, envFilterActive),
+		]),
+		dependencyStrip(h, model),
+	])
 }

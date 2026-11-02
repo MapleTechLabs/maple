@@ -124,8 +124,8 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 }
 
 const SPAN_OPTIONS = [
-	{ value: "all", label: "All Spans" },
-	{ value: "root", label: "Root Spans" },
+	{ value: "all", label: "All spans" },
+	{ value: "root", label: "Root spans" },
 ]
 
 /** `TracesLogsBody`, or `MetricsBody` for a metrics query. */

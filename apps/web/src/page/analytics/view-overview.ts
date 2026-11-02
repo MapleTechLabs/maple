@@ -31,6 +31,7 @@ import { filtersOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
+import { hstack } from "../../ui/stack"
 
 // `AnalyticsContent`: bot notice, metric strip, traffic chart, the
 // breakdown cards and the traces behind a filtered event.
@@ -244,8 +245,10 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 								favicon(h, model, row.secondary ?? "")
 						: undefined,
 					emptyMessage: (h: H) => [
-						"No page views in the selected window.",
-						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "webAnalytics")]),
+						"No page views in this window",
+						hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+							docsLink(h, "webAnalytics"),
+						]),
 					],
 				},
 				{
@@ -337,8 +340,10 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 					nounPlural: "events",
 					viewsLabel: "Events",
 					emptyMessage: (h: H) => [
-						'No custom events in the selected window. Send one with track("name", props) from the browser SDK.',
-						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "productEventsApi")]),
+						'No custom events in this window. Send one with track("name", props) from the browser SDK.',
+						hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+							docsLink(h, "productEventsApi"),
+						]),
 					],
 				},
 			],

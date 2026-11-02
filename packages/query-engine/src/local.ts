@@ -3,7 +3,7 @@
 // The endpoint runs raw SQL through the in-process chDB session and returns a
 // bare JSON array.
 //
-// The output FORMAT is owned by the server: `apps/cli/src/server/query-guard.ts`
+// The output FORMAT is owned by the server: `packages/local-server/src/query-guard.ts`
 // peels whatever trailing `FORMAT <fmt>` the compiler emitted (`CH.compile(...)`
 // appends `FORMAT JSON`) and runs the single read-only statement as JSON rows.
 // So callers POST `compiled.sql` verbatim.

@@ -5,7 +5,6 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { statusDot } from "../../../ui/status-dot"
-import { tableCellStyles as tableCellClass, tableRowStyles } from "@maple/ui/styles/ui/table"
 import { HEALTH_TONE } from "../../../components/dashboard/service-health"
 import { Option } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
@@ -18,6 +17,7 @@ import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { meter } from "../../../ui/meter"
 import { middleTruncate } from "../../../ui/middle-truncate"
+import { pressable } from "../../../ui/pressable"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
@@ -44,8 +44,9 @@ import { MountTable } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstackClass, vstack } from "../../../ui/stack"
 
-export const ERROR_RATE_COLOR = TONE_COLOR.crit
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"
 const CHART_MODEL = Chart.init()
@@ -118,7 +119,7 @@ const sparkline = (
 /** The deploy cell's lines: commit subject (once resolved) over `sha · age`, or the state line. */
 const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: ServiceRow): Html => {
 	const info = deployInfo(service.commits)
-	if (info === undefined) return h.span([h.Class("text-xs text-muted-foreground")], ["N/A"])
+	if (info === undefined) return typography(h, { size: "xs", tone: "muted" }, ["N/A"])
 	const age =
 		info.firstSeen !== "" ? formatRelativeTimeOrDate(info.firstSeen, ctx.model.nowMs, ctx.timeZone) : ""
 	const messages: Readonly<Record<string, string>> = Option.getOrElse(
@@ -134,14 +135,16 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 				[...(age !== "" ? [`${age} · `] : []), "errors ↑ since"],
 			)
 		: info.rollout !== undefined
-			? h.button(
-					[
-						h.Class("flex cursor-default items-center gap-1.5"),
-						h.DataAttribute("base-ui-tooltip-trigger", ""),
-						h.DataAttribute("slot", "tooltip-trigger"),
-						h.Type("button"),
-						...(ctx.overlays?.tooltip("rollout", rowIdOf(service)) ?? []),
-					],
+			? pressable(
+					h,
+					{
+						className: "flex cursor-default items-center gap-1.5",
+						attributes: [
+							h.DataAttribute("base-ui-tooltip-trigger", ""),
+							h.DataAttribute("slot", "tooltip-trigger"),
+							...(ctx.overlays?.tooltip("rollout", rowIdOf(service)) ?? []),
+						],
+					},
 					[
 						meter(h, {
 							value: info.rollout.percentage,
@@ -166,14 +169,13 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 				[message !== "" ? message : shortSha],
 			)
 		: h.span([h.Class("min-w-0 max-w-full truncate text-xs text-foreground")], [shortSha])
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-0.5")],
+	return vstack(h, { gap: "0.5", shrink: true },
 		[
 			trigger,
 			stateLine ??
 				(metaText === ""
 					? null
-					: h.span([h.Class("truncate font-mono text-3xs text-muted-foreground")], [metaText])),
+					: typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [metaText])),
 		],
 	)
 }
@@ -207,24 +209,8 @@ const serviceRow = (
 		environment: service.environment,
 	})
 	const throughputText = formatThroughput(service.throughput, "/s")
-	return h.tr(
-		[
-			h.Key(rowKey),
-			h.Attribute(
-				"class",
-				cn(
-					tableRowStyles,
-					"cursor-pointer border-l-2 border-l-transparent hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-					health === "unhealthy" && "border-l-severity-error",
-				),
-			),
-			h.DataAttribute("slot", "table-row"),
-			h.Tabindex(0),
-			h.OnClick(open),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " " ? Option.some(open) : Option.none(),
-			),
-		],
+	return tableRow(
+		h,
 		[
 			tableCell(h, [
 				h.a(
@@ -245,7 +231,7 @@ const serviceRow = (
 					],
 				),
 				...(subtitle !== ""
-					? [h.div([h.Class("truncate text-xs text-muted-foreground")], [subtitle])]
+					? [typography(h, { size: "xs", tone: "muted", truncate: true, as: "div" }, [subtitle])]
 					: []),
 			]),
 			tableCell(
@@ -276,14 +262,23 @@ const serviceRow = (
 						h.AriaLabel(`Error rate: ${formatErrorRate(service.errorRate)}`),
 					],
 					[
-						sparkline(h, ctx, `err-${rowKey}`, errorRates, ERROR_RATE_COLOR),
+						sparkline(
+							h,
+							ctx,
+							`err-${rowKey}`,
+							errorRates,
+							// Red for any error in the window, so a spike under a low average still reads.
+							service.errorRate > 0 || errorRates.some((rate) => rate > 0)
+								? TONE_COLOR.crit
+								: TONE_COLOR.neutral,
+						),
 						h.div(
 							[h.Class("absolute inset-0 flex items-center justify-center")],
 							[
-								h.span(
-									[h.Class(cn("font-mono text-xs font-semibold", TEXT_HALO))],
-									[formatErrorRate(service.errorRate)],
-								),
+								errorRateValue(h, {
+									rate: service.errorRate,
+									className: cn("text-xs font-semibold", TEXT_HALO),
+								}),
 							],
 						),
 					],
@@ -292,17 +287,19 @@ const serviceRow = (
 			tableCell(
 				h,
 				[
-					h.button(
-						[
-							h.AriaLabel(`Throughput: ${throughputText}`),
-							h.Class("relative block h-8 w-full max-w-[120px]"),
-							h.DataAttribute("base-ui-tooltip-trigger", ""),
-							h.DataAttribute("slot", "tooltip-trigger"),
-							h.Type("button"),
-							...(service.hasSampling
-								? (ctx.overlays?.tooltip("sampling", rowIdOf(service)) ?? [])
-								: []),
-						],
+					pressable(
+						h,
+						{
+							label: `Throughput: ${throughputText}`,
+							className: "relative block h-8 w-full max-w-[120px] cursor-default",
+							attributes: [
+								h.DataAttribute("base-ui-tooltip-trigger", ""),
+								h.DataAttribute("slot", "tooltip-trigger"),
+								...(service.hasSampling
+									? (ctx.overlays?.tooltip("sampling", rowIdOf(service)) ?? [])
+									: []),
+							],
+						},
 						[
 							sparkline(h, ctx, `thr-${rowKey}`, throughput, THROUGHPUT_COLOR),
 							h.div(
@@ -340,6 +337,18 @@ const serviceRow = (
 			),
 			tableCell(h, [deployCell(h, ctx, service)], "hidden lg:table-cell"),
 		],
+		cn(
+			"cursor-pointer border-l-2 border-l-transparent hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+			health === "unhealthy" && "border-l-severity-error",
+		),
+		[
+			h.Key(rowKey),
+			h.Tabindex(0),
+			h.OnClick(open),
+			h.OnKeyDownPreventDefault((key) =>
+				key === "Enter" || key === " " ? Option.some(open) : Option.none(),
+			),
+		],
 	)
 }
 
@@ -374,18 +383,18 @@ const groupHeaderRow = (
 	children: ReadonlyArray<Html>,
 	className?: string,
 ): Html =>
-	h.tr(
-		[h.Key(key), h.Attribute("class", cn(tableRowStyles, tint)), h.DataAttribute("slot", "table-row")],
+	tableRow(
+		h,
 		[
-			h.td(
-				[
-					h.Attribute("class", cn(tableCellClass, "py-2")),
-					h.Attribute("colspan", "7"),
-					h.DataAttribute("slot", "table-cell"),
-				],
-				[h.div([h.Class(cn("flex items-center gap-2", className))], children)],
+			tableCell(
+				h,
+				[h.div([h.Class(cn(hstackClass({ gap: "2" }), className))], children)],
+				"py-2",
+				[h.Attribute("colspan", "7")],
 			),
 		],
+		tint,
+		[h.Key(key)],
 	)
 
 const emptyState = (h: HtmlBuilder<Message>, ctx: TableContext) => {
@@ -417,24 +426,14 @@ const desktopTable = (
 	const body =
 		services.length === 0
 			? [
-					tableRow(h, [
-						h.td(
-							[
-								h.Attribute("class", cn(tableCellClass, "p-0")),
-								h.Attribute("colspan", "7"),
-								h.DataAttribute("slot", "table-cell"),
-							],
-							[emptyState(h, ctx)],
-						),
-					]),
+					tableRow(h, [tableCell(h, [emptyState(h, ctx)], "p-0", [h.Attribute("colspan", "7")])]),
 				]
 			: groupServices(services, mode).flatMap(([namespace, envGroups]) => [
 					...(mode === "namespace"
 						? [
 								groupHeaderRow(h, `ns-${namespace}`, "bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong", [
 									namespaceLabel(h, namespace),
-									h.span(
-										[h.Class("text-xs text-muted-foreground")],
+									typography(h, { size: "xs", tone: "muted" },
 										[
 											countLabel(
 												envGroups.reduce((sum, [, rows]) => sum + rows.length, 0),
@@ -452,8 +451,7 @@ const desktopTable = (
 							"bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
 							[
 								environmentBadge(h, environment),
-								h.span(
-									[h.Class("text-xs text-muted-foreground")],
+								typography(h, { size: "xs", tone: "muted" },
 									[String(rows.length), " ", pluralize(rows.length, "service")],
 								),
 							],
@@ -512,8 +510,7 @@ const mobileList = (
 											],
 											[
 												namespaceLabel(h, namespace),
-												h.span(
-													[h.Class("text-xs text-muted-foreground")],
+												typography(h, { size: "xs", tone: "muted" },
 													[
 														countLabel(
 															envGroups.reduce(
@@ -543,8 +540,7 @@ const mobileList = (
 											],
 											[
 												environmentBadge(h, environment),
-												h.span(
-													[h.Class("text-xs text-muted-foreground")],
+												typography(h, { size: "xs", tone: "muted" },
 													[countLabel(rows.length, "service")],
 												),
 											],
@@ -596,12 +592,7 @@ const mobileList = (
 															...(mode === "environment" &&
 															service.serviceNamespace !== ""
 																? [
-																		h.div(
-																			[
-																				h.Class(
-																					"truncate text-xs text-muted-foreground",
-																				),
-																			],
+																		typography(h, { size: "xs", tone: "muted", truncate: true, as: "div" },
 																			[service.serviceNamespace],
 																		),
 																	]
@@ -665,7 +656,7 @@ const mobileList = (
 														[
 															errorRateValue(h, {
 																rate: service.errorRate,
-																className: "block text-sm font-semibold",
+																className: typographyClass({ size: "sm", weight: "semibold", className: "block" }),
 															}),
 															eyebrow(h, { as: "div" }, ["err"]),
 														],

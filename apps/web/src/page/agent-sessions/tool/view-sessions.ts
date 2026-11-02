@@ -20,6 +20,7 @@ import { statusDot } from "../../../ui/status-dot"
 import { vendorLabel } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
 import type { Message } from "./message"
+import { typography } from "../../../ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -75,10 +76,9 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 						],
 						[sessionRowId(session.sessionId)],
 					),
-					h.span(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[vendorLabel(session.vendorId)],
-					),
+					typography(h, { size: "xs", tone: "muted", truncate: true }, [
+						vendorLabel(session.vendorId),
+					]),
 				],
 			),
 			h.span(
@@ -96,15 +96,12 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 						[h.Class("font-mono text-ui font-semibold tabular-nums text-foreground")],
 						[formatSessionDuration(session.durationMs)],
 					),
-					h.span(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[
-							countLabel(session.traceCount, "trace"),
-							" ·",
-							" ",
-							countLabel(session.spanCount, "span"),
-						],
-					),
+					typography(h, { size: "xs", tone: "muted", truncate: true }, [
+						countLabel(session.traceCount, "trace"),
+						" ·",
+						" ",
+						countLabel(session.spanCount, "span"),
+					]),
 				],
 			),
 			h.span(
@@ -147,12 +144,13 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 					h.div(
 						[h.Class("flex min-w-0 items-baseline gap-2.5 font-mono")],
 						[
-							h.span(
-								[h.Class("text-xs font-medium text-foreground")],
-								["Sessions running ", inputs.tool],
-							),
-							h.span(
-								[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
+							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [
+								"Sessions running ",
+								inputs.tool,
+							]),
+							typography(
+								h,
+								{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 								[countLabel(inputs.rows.length, "session")],
 							),
 						],
@@ -192,7 +190,7 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 									emptyMessage(h, { className: "py-12 font-mono" }, [
 										"No sessions called ",
 										inputs.tool,
-										" in the selected window.",
+										" in this window",
 									]),
 								]
 							: inputs.rows.map((session) =>

@@ -20,6 +20,7 @@ import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { label } from "../../../../ui/label"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
@@ -190,7 +191,7 @@ const zonesView = (
 		searchToolbar(h, {
 			id: "cloudflare-search",
 			value: query,
-			placeholder: "Filter zones",
+			placeholder: "Filter zones…",
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
@@ -208,7 +209,7 @@ const zonesView = (
 				: undefined,
 			sort: model.zoneSort,
 			emptyMessage:
-				filtered.length === zones.length ? undefined : "No zones match. Clear the search or scope.",
+				filtered.length === zones.length ? undefined : "No zones match these filters",
 			spark,
 		}),
 	])
@@ -233,7 +234,7 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 		searchToolbar(h, {
 			id: "cloudflare-search",
 			value: query,
-			placeholder: "Filter Workers",
+			placeholder: "Filter Workers…",
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
@@ -243,8 +244,9 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 			children:
 				previews > 0
 					? [
-							h.label(
-								[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],
+							label(
+								h,
+								{ className: "flex text-xs font-normal text-muted-foreground sm:text-xs" },
 								[
 									...switchControl(h, {
 										id: "cloudflare-previews",
@@ -263,7 +265,7 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 			accounts: scope.showAccountColumn ? scope.accountNames : undefined,
 			emptyMessage:
 				filtered.length === 0 && rows.length > 0
-					? "No Workers match. Clear the search or scope."
+					? "No Workers match these filters"
 					: undefined,
 		}),
 	])

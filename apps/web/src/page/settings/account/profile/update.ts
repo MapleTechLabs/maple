@@ -114,6 +114,7 @@ export const update = (model: Model, message: Message): Return =>
 				commands: [SaveName({ firstName: names.firstName.trim(), lastName: names.lastName.trim() })],
 			}
 		},
+		ClickedDiscardName: () => (model.isSavingName ? { model } : { model: { ...model, draft: null } }),
 		CompletedSaveName: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({

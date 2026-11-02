@@ -22,6 +22,7 @@ import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "../
 import { markersOverlay } from "./view-markers"
 import { Message } from "./message"
 import type { DetailPoint, Model } from "./model"
+import { chartFrameClass } from "../../../ui/chart-frame"
 
 // `MetricsGrid` as the Overview tab feeds it (`SERVICE_CHARTS`, `syncId`, `overlay`, `yAxisWidth={72}`).
 
@@ -80,7 +81,7 @@ const CHARTS: ReadonlyArray<{
 	{
 		id: "error-rate",
 		kind: "ErrorRate",
-		title: "Error Rate",
+		title: "Error rate",
 		ariaLabel: "Error rate",
 		skeleton: "area",
 		gradientPrefix: "errorRate",
@@ -198,7 +199,7 @@ const chartBody = <M>(
 					chartId: chart.id,
 					ariaLabel: chart.ariaLabel,
 					spec: specOf(chart, rows, context),
-					className: "h-full w-full aspect-auto",
+					className: chartFrameClass("fill"),
 					overlay,
 					reportPlot: true,
 				},

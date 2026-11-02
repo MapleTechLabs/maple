@@ -3,6 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 import type { Message } from "./message"
+import { typographyClass } from "../../../ui/typography"
 
 // The frame every transcript block shares: row, avatar and indent lanes.
 
@@ -11,10 +12,16 @@ type H = HtmlBuilder<Message>
 export const AVATAR_SLOT = "flex w-6 shrink-0 justify-center"
 export const BODY = "min-w-0 max-w-[900px] grow pl-3"
 export const SPEAKER = "shrink-0 font-semibold text-ui text-foreground"
-export const CLOCK = "shrink-0 font-mono text-2xs text-muted-foreground tabular-nums"
+export const CLOCK = typographyClass({
+	size: "2xs",
+	tone: "muted",
+	mono: true,
+	numeric: true,
+	className: "shrink-0",
+})
 export const ON_HOVER =
 	"opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100"
-export const LABEL = "shrink-0 font-medium text-xs"
+export const LABEL = typographyClass({ size: "xs", weight: "medium", className: "shrink-0" })
 export const META = "min-w-0 truncate font-mono text-2xs text-muted-foreground"
 const INDENT = "flex w-6 shrink-0 justify-center"
 const MAX_INDENT_DEPTH = 6
@@ -82,7 +89,10 @@ export const inlineNote = (h: H, children: ReadonlyArray<Html | string>, classNa
 			),
 		],
 		[
-			icon(h, "CircleQuestionIcon", { size: 14, className: "mt-0.5 shrink-0 text-muted-foreground" }),
+			icon(h, "CircleQuestionIcon", {
+				size: 14,
+				className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
+			}),
 			h.p([h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")], children),
 		],
 	)

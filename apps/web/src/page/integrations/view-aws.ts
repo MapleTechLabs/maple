@@ -5,15 +5,16 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
 import { badge } from "../../ui/display"
 import { errorState } from "../../ui/error-state"
 import { icon } from "../../ui/icon"
 import type { IconName } from "../../ui/icons.generated"
-import { item, itemContent, itemMedia } from "../../ui/item"
-import { skeleton } from "../../ui/skeleton"
+import { itemContent, mediaCard } from "../../ui/item"
+import { skeletonBlock } from "../../ui/skeleton"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../ui/table"
 import { relativeTime } from "../kit/relative-time"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { isSelectionSaved, metricStreamOf, selectionOf } from "./aws"
@@ -23,7 +24,10 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { dataPicker } from "./view-aws-choose"
 import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
+import { disconnectConfirm } from "./view-disconnect"
 import { externalLink } from "./view-gcp-configure-parts"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // `AwsIntegrationCard`.
 
@@ -57,34 +61,37 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 			...dataPicker(h, model, connection),
 			...(card.metricsError === null
 				? []
-				: [h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [card.metricsError])]),
-			h.div(
-				[h.Class("flex flex-wrap gap-2")],
-				[
-					button(
-						h,
-						{
-							size: "sm",
-							type: "submit",
-							isDisabled:
-								Option.isNone(metricStreamOf(selection)) ||
-								isSelectionSaved(connection, selection),
-							isLoading: card.isSavingMetrics,
-						},
-						["Save"],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: card.isSavingMetrics,
-							attributes: [h.OnClick(Message.ClickedAwsMetricsCancel())],
-						},
-						["Cancel"],
-					),
-				],
-			),
+				: [
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+							[card.metricsError],
+						),
+					]),
+			hstack(h, { gap: "2", align: "stretch", wrap: true }, [
+				button(
+					h,
+					{
+						size: "sm",
+						type: "submit",
+						isDisabled:
+							Option.isNone(metricStreamOf(selection)) ||
+							isSelectionSaved(connection, selection),
+						isLoading: card.isSavingMetrics,
+					},
+					["Save changes"],
+				),
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						isDisabled: card.isSavingMetrics,
+						attributes: [h.OnClick(Message.ClickedAwsMetricsCancel())],
+					},
+					["Cancel"],
+				),
+			]),
 		],
 	)
 }
@@ -139,41 +146,38 @@ const stepList = (h: H, steps: ReadonlyArray<Step>): Html =>
 				[h.Class("flex gap-2.5"), h.DataAttribute("step-state", step.state)],
 				[
 					h.span([h.Class("mt-0.5")], [stepGlyph(h, step.state, index)]),
-					h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
-						[
-							h.p(
-								[
-									h.Class(
-										cn(
-											"text-sm",
-											step.state === "todo" ? "text-muted-foreground" : "font-medium",
-										),
+					vstack(h, { gap: "1", shrink: true, grow: true }, [
+						h.p(
+							[
+								h.Class(
+									cn(
+										"text-sm",
+										step.state === "todo" ? "text-muted-foreground" : "font-medium",
 									),
-								],
-								[step.title, h.span([h.Class("sr-only")], [`: ${STEP_LABEL[step.state]}`])],
-							),
-							...(step.detail.length === 0
-								? []
-								: [
-										h.p(
-											[
-												h.Class(
-													cn(
-														"text-xs [overflow-wrap:anywhere]",
-														step.state === "crit"
-															? "text-severity-error"
-															: "text-muted-foreground",
-													),
+								),
+							],
+							[step.title, h.span([h.Class("sr-only")], [`: ${STEP_LABEL[step.state]}`])],
+						),
+						...(step.detail.length === 0
+							? []
+							: [
+									h.p(
+										[
+											h.Class(
+												cn(
+													"text-xs [overflow-wrap:anywhere]",
+													step.state === "crit"
+														? "text-severity-error"
+														: "text-muted-foreground",
 												),
-												...(step.state === "crit" ? [h.Role("alert")] : []),
-											],
-											step.detail,
-										),
-									]),
-							...(step.extra ?? []),
-						],
-					),
+											),
+											...(step.state === "crit" ? [h.Role("alert")] : []),
+										],
+										step.detail,
+									),
+								]),
+						...(step.extra ?? []),
+					]),
 				],
 			),
 		),
@@ -351,98 +355,86 @@ const ingestBody = (
 			],
 		),
 		h.div(
-			[h.Class("w-full overflow-x-auto rounded-md border")],
+			[h.Class("w-full overflow-hidden rounded-md border")],
 			[
-				h.table(
-					[h.Class("w-full text-xs")],
-					[
-						h.thead(
-							[h.Class("bg-surface-sunken text-left text-muted-foreground")],
-							[
-								h.tr(
-									[],
-									INGEST_COLUMNS.map((column) =>
-										h.th(
-											[
-												h.Class(
-													cn(
-														"px-2.5 py-1.5 font-medium",
-														(column === "Metrics" || column === "Data points") &&
-															"text-right",
-													),
-												),
-												h.Scope("col"),
-											],
-											[column],
-										),
+				table(h, { size: "sm" }, [
+					tableHeader(
+						h,
+						[
+							tableRow(
+								h,
+								INGEST_COLUMNS.map((column) =>
+									tableHead(
+										h,
+										[column],
+										column === "Metrics" || column === "Data points"
+											? "text-right"
+											: undefined,
+										[h.Scope("col")],
 									),
 								),
-							],
-						),
-						h.tbody(
-							[],
-							ingest.groups.map((group) =>
-								h.tr(
-									[h.Class("border-t align-top")],
-									[
-										h.td([h.Class("px-2.5 py-1.5 font-mono")], [group.namespace]),
-										h.td(
-											[h.Class("px-2.5 py-1.5 font-mono text-muted-foreground")],
-											[group.region ?? "unknown"],
-										),
-										h.td(
-											[h.Class("px-2.5 py-1.5 text-right tabular-nums")],
-											[formatNumber(group.metrics)],
-										),
-										h.td(
-											[h.Class("px-2.5 py-1.5 text-right tabular-nums")],
-											[formatNumber(group.data_points)],
-										),
-										h.td(
-											[h.Class("px-2.5 py-1.5 [overflow-wrap:anywhere]")],
-											[
-												h.span(
-													[h.Class("tabular-nums")],
-													[formatNumber(group.resources)],
-												),
-												h.span(
-													[h.Class("text-muted-foreground")],
-													[
-														` · ${group.sample_resources.join(", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
-													],
-												),
-											],
-										),
-										h.td(
-											[
-												h.Class(
-													"whitespace-nowrap px-2.5 py-1.5 text-muted-foreground",
-												),
-											],
-											[
-												relativeTime(h, {
-													value: group.last_point_at,
-													nowMs: model.nowMs,
-													timeZone,
-													variant: "short",
-												}),
-											],
-										),
-									],
-								),
+							),
+						],
+						{ className: "bg-surface-sunken" },
+					),
+					tableBody(
+						h,
+						ingest.groups.map((group) =>
+							tableRow(
+								h,
+								[
+									tableCell(h, [group.namespace], "font-mono"),
+									tableCell(
+										h,
+										[group.region ?? "unknown"],
+										typographyClass({ tone: "muted", mono: true }),
+									),
+									tableCell(h, [formatNumber(group.metrics)], "text-right tabular-nums"),
+									tableCell(
+										h,
+										[formatNumber(group.data_points)],
+										"text-right tabular-nums",
+									),
+									tableCell(
+										h,
+										[
+											h.span(
+												[h.Class("tabular-nums")],
+												[formatNumber(group.resources)],
+											),
+											h.span(
+												[h.Class("text-muted-foreground")],
+												[
+													` · ${group.sample_resources.join(", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
+												],
+											),
+										],
+										"whitespace-normal [overflow-wrap:anywhere]",
+									),
+									tableCell(
+										h,
+										[
+											relativeTime(h, {
+												value: group.last_point_at,
+												nowMs: model.nowMs,
+												timeZone,
+												variant: "short",
+											}),
+										],
+										"text-muted-foreground",
+									),
+								],
+								"align-top",
 							),
 						),
-					],
-				),
+					),
+				]),
 			],
 		),
 		...silentRegions.map((region) =>
-			h.p(
-				[h.Class("text-xs text-severity-warn")],
-				[
-					`Nothing from ${region} in the last hour. If its resources publish metrics, its stack may not be deployed: run the setup script again.`,
-				],
-			),
+			typography(h, { size: "xs", tone: "warning", as: "p" }, [
+				`Nothing from ${region} in the last hour. If its resources publish metrics, its stack may not be deployed: run the setup script again.`,
+			]),
 		),
 	]
 }
@@ -460,10 +452,10 @@ export const ingestPanel = (
 		h.section(
 			[h.Class("flex w-full flex-col gap-2 border-t pt-3"), h.AriaLabel("What Maple receives")],
 			[
-				h.h4([h.Class("text-sm font-medium")], ["What Maple receives"]),
+				heading(h, { level: 4, variant: "subsection" }, ["What Maple receives"]),
 				...AsyncData.match(slot.data, {
-					onIdle: () => [skeleton(h, "h-16 w-full rounded-md")],
-					onLoading: () => [skeleton(h, "h-16 w-full rounded-md")],
+					onIdle: () => [skeletonBlock(h, { height: "16" })],
+					onLoading: () => [skeletonBlock(h, { height: "16" })],
 					onFailure: (failure) => [
 						errorState(h, {
 							failure,
@@ -503,21 +495,22 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 			},
 			[label],
 		)
-	return item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-		itemMedia(h, {}, [integrationIconPlate(h, BRAND)]),
+	return mediaCard(h, integrationIconPlate(h, BRAND), [
 		itemContent(
 			h,
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[
-						h.h3(
-							[h.Class("font-mono text-sm font-semibold tabular-nums")],
-							[connection.account_id],
-						),
-						badge(h, { variant: CONDITION_VARIANT[condition] }, [AWS_CONDITION_LABEL[condition]]),
-					],
-				),
+				hstack(h, { gap: "2", wrap: true }, [
+					heading(
+						h,
+						{
+							level: 3,
+							variant: "section",
+							className: typographyClass({ mono: true, numeric: true }),
+						},
+						[connection.account_id],
+					),
+					badge(h, { variant: CONDITION_VARIANT[condition] }, [AWS_CONDITION_LABEL[condition]]),
+				]),
 				stepList(h, [
 					roleStep(h, model, connection, timeZone),
 					streamStep(connection),
@@ -565,16 +558,12 @@ const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	return h.div(
 		[h.Class("mt-2 flex w-full flex-col gap-3 rounded-md border bg-surface-faint p-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					h.h4(
-						[h.Class("text-sm font-medium")],
-						[waiting ? "Deploy the stack" : "Deploy the stack again"],
-					),
-					h.span([h.Class("ml-auto")], [methodSelect(h, model, "role")]),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				heading(h, { level: 4, variant: "subsection" }, [
+					waiting ? "Deploy the stack" : "Deploy the stack again",
+				]),
+				h.span([h.Class("ml-auto")], [methodSelect(h, model, "role")]),
+			]),
 			...setupBody(h, model, connection, "role"),
 			h.p(
 				[h.Class(SMALL)],
@@ -596,35 +585,31 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 			h.div(
 				[h.Class("flex flex-col gap-3 rounded-md border p-4")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
-						[
-							h.h4(
-								[h.Class("text-sm font-medium")],
-								[`Delete the stack in ${stack.accountId}`],
-							),
-							h.span(
-								[h.Class("ml-auto")],
-								[
-									button(
-										h,
-										{
-											size: "sm",
-											variant: "ghost",
-											attributes: [
-												h.OnClick(
-													Message.DismissedAwsRemoved({
-														connectionId: stack.connectionId,
-													}),
-												),
-											],
-										},
-										["Dismiss"],
-									),
-								],
-							),
-						],
-					),
+					hstack(h, { gap: "2", wrap: true }, [
+						heading(h, { level: 4, variant: "subsection" }, [
+							`Delete the stack in ${stack.accountId}`,
+						]),
+						h.span(
+							[h.Class("ml-auto")],
+							[
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "ghost",
+										attributes: [
+											h.OnClick(
+												Message.DismissedAwsRemoved({
+													connectionId: stack.connectionId,
+												}),
+											),
+										],
+									},
+									["Dismiss"],
+								),
+							],
+						),
+					]),
 					h.p(
 						[h.Class(SMALL)],
 						[
@@ -648,14 +633,12 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 export const awsDisconnectDialog = (h: H, model: Model): Html => {
 	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
 	const connection = status?.connections.find((entry) => entry.id === model.awsCard.disconnectId)
-	return confirmDialog(h, {
+	return disconnectConfirm(h, {
+		provider: "aws",
 		slotId: "aws-disconnect",
 		model: model.awsCard.disconnectDialog,
 		toParentMessage: (message) => Message.GotAwsDisconnectDialogMessage({ message }),
-		title: `Disconnect AWS account ${connection?.account_id ?? ""}`,
-		description:
-			"Maple stops assuming the role and removes this source. Data already collected stays. Afterwards, delete the stack in AWS with the script Maple shows.",
-		confirmLabel: "Disconnect",
+		subject: `AWS account ${connection?.account_id ?? ""}`,
 		isPending: model.awsCard.isDisconnecting,
 		onConfirm: Message.ConfirmedAwsDisconnect(),
 	})
@@ -670,27 +653,24 @@ const connectedView = (
 	focusId: string | null,
 ): Html => {
 	const shown = status.connections.filter((connection) => focusId === null || connection.id === focusId)
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			...removedPanel(h, model, focusId),
-			...shown.map((connection) => connectionRow(h, model, connection, timeZone)),
-			...(focusId !== null || !status.available
-				? []
-				: [
-						h.div(
-							[],
-							[
-								linkButton(h, { size: "sm", variant: "outline", href: AWS_FLOW_HREF }, [
-									icon(h, "PlusIcon", { size: 14 }),
-									"Add another account",
-								]),
-							],
-						),
-					]),
-			...(focusId === null ? [awsDisconnectDialog(h, model)] : []),
-		],
-	)
+	return vstack(h, { gap: "3" }, [
+		...removedPanel(h, model, focusId),
+		...shown.map((connection) => connectionRow(h, model, connection, timeZone)),
+		...(focusId !== null || !status.available
+			? []
+			: [
+					h.div(
+						[],
+						[
+							linkButton(h, { size: "sm", variant: "outline", href: AWS_FLOW_HREF }, [
+								icon(h, "PlusIcon", { size: 14 }),
+								"Add another account",
+							]),
+						],
+					),
+				]),
+		...(focusId === null ? [awsDisconnectDialog(h, model)] : []),
+	])
 }
 
 /** A source whose connection was removed: the way back is the connect flow. */
@@ -700,7 +680,10 @@ const reconnectLink = (h: H): Html =>
 		[
 			"This AWS account is no longer connected. ",
 			h.a(
-				[h.Href(AWS_FLOW_HREF), h.Class("text-foreground underline-offset-4 hover:underline active:underline")],
+				[
+					h.Href(AWS_FLOW_HREF),
+					h.Class(typographyClass({ tone: "foreground", hoverUnderline: true })),
+				],
 				["Reconnect"],
 			),
 		],
@@ -715,12 +698,12 @@ const byStatus = (
 ): Html =>
 	status.connections.some((connection) => focusId === null || connection.id === focusId)
 		? connectedView(h, model, status, timeZone, focusId)
-		: h.div([h.Class("flex flex-col gap-3")], [...removedPanel(h, model, focusId), reconnectLink(h)])
+		: vstack(h, { gap: "3" }, [...removedPanel(h, model, focusId), reconnectLink(h)])
 
 export const awsCard = (h: H, model: Model, timeZone: string, focusId: string | null): Html =>
 	AsyncData.match(model.statuses.aws.data, {
-		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "32" }),
+		onLoading: () => skeletonBlock(h, { height: "32" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

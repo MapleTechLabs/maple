@@ -16,7 +16,9 @@ export type FormDialogOptions<M> = Readonly<{
 	slotId: string
 	model: Dialog.Model
 	toParentMessage: (message: Dialog.Message) => M
-	title: string
+	/** Rich copy (a provider logo before the text) as children. */
+	title: string | ReadonlyArray<Html | string>
+	titleClassName?: string
 	/** Rich copy (a `<Kbd>` inside) as children. */
 	description?: string | ReadonlyArray<Html | string>
 	onSubmit: M
@@ -32,6 +34,14 @@ export type FormDialogOptions<M> = Readonly<{
 	panelClassName?: string
 	fields: ReadonlyArray<Html>
 }>
+
+/** The `<form>` a `FormDialog` body sits in, for a dialog that draws its own header and footer. */
+export const formDialogForm = <M>(
+	h: HtmlBuilder<M>,
+	onSubmit: M | undefined,
+	children: ReadonlyArray<Html>,
+): Html =>
+	h.form([h.Class(formDialogFormStyles), ...(onSubmit === undefined ? [] : [h.OnSubmit(onSubmit)])], children)
 
 export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>): Html => {
 	const isPending = options.isPending ?? false
@@ -58,7 +68,7 @@ export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>):
 					],
 					[
 						DialogView.dialogHeader(h, "dialog", [
-							DialogView.dialogTitle(h, "dialog", id, options.title),
+							DialogView.dialogTitle(h, "dialog", id, options.title, options.titleClassName),
 							...(options.description === undefined
 								? []
 								: [DialogView.dialogDescription(h, "dialog", id, options.description)]),

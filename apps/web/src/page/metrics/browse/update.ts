@@ -13,6 +13,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { SignalPresenceData } from "../../kit/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { PresetValue } from "../../kit/time-controls"
 import { SPARKLINE_METRIC_TYPES } from "../shared"
 import {
 	CompleteReloadSpin,
@@ -42,7 +43,7 @@ type Search = typeof MetricsSearch.Type
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 /** `DashboardPage`'s `defaultPreset` for `/metrics`. */
-export const DEFAULT_PRESET = "24h"
+export const DEFAULT_PRESET: PresetValue = "24h"
 export const TYPE_SELECT_ID = "metrics-type-filter"
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>

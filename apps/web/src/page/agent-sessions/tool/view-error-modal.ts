@@ -1,4 +1,4 @@
-import { formatPercent, pluralize } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	errorTextTokens,
@@ -8,7 +8,7 @@ import {
 	variantDifferences,
 	type VariantDifference,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatToolCount, UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
+import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -18,6 +18,7 @@ import type * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { linkButton } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { miniBars } from "../../../ui/mini-bars"
@@ -27,6 +28,8 @@ import { occurrencesOf } from "./error-modal-update"
 import { railView } from "./view-error-modal-rail"
 import { samplesPane } from "./view-error-modal-samples"
 import type { Prepared } from "./view-errors"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The tool error modal: one error group of one tool in full.
 
@@ -75,14 +78,14 @@ const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =
 		),
 	)
 
-const MUTED_HEADING = "font-mono text-lg leading-[26px] font-semibold tracking-tight text-muted-foreground"
+const mutedHeading = (h: H, text: string): Html =>
+	heading(h, { level: 2, variant: "code", className: "text-muted-foreground" }, [text])
 
 const headingOf = (h: H, group: Prepared, text: string): Html => {
 	if (group.fingerprint === UNGROUPED_FINGERPRINT)
-		return h.div(
-			[h.Class("flex flex-col gap-1")],
+		return vstack(h, { gap: "1" },
 			[
-				h.h2([h.Class(MUTED_HEADING)], ["Failures recorded before error grouping"]),
+				mutedHeading(h, "Failures recorded before error grouping"),
 				h.p(
 					[h.Class("max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground")],
 					[
@@ -91,7 +94,7 @@ const headingOf = (h: H, group: Prepared, text: string): Html => {
 				),
 			],
 		)
-	if (text === "") return h.h2([h.Class(MUTED_HEADING)], ["No error message recorded"])
+	if (text === "") return mutedHeading(h, "No error message recorded")
 	return errorTextHeading(h, errorTextTokens(text))
 }
 
@@ -103,10 +106,10 @@ const headerFacts = (h: H, inputs: ModalInputs): ReadonlyArray<Html> => {
 	return facts(h, [
 		h.span(
 			[h.Class("text-foreground")],
-			[formatToolCount(group.calls), ` failed ${pluralize(group.calls, "call")}`],
+			[formatNumber(group.calls), ` failed ${pluralize(group.calls, "call")}`],
 		),
 		`${share} of failures`,
-		`${formatToolCount(group.sessions)} ${pluralize(group.sessions, "session")}`,
+		`${formatNumber(group.sessions)} ${pluralize(group.sessions, "session")}`,
 		`first seen ${formatTimestampInTimezone(group.firstSeen, { timeZone })}`,
 		`last seen ${formatTimestampInTimezone(group.lastSeen, { timeZone })}`,
 	])
@@ -177,9 +180,8 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 						"Failed calls / ",
 						bucket.unit,
 					]),
-					h.span(
-						[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
-						["max ", formatToolCount(Math.max(0, ...group.spark))],
+					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
+						["max ", formatNumber(Math.max(0, ...group.spark))],
 					),
 				],
 			),
@@ -288,12 +290,11 @@ const errorModal = (h: H, model: Model, inputs: ModalInputs | undefined): Html =
 		},
 	})
 
-const NAV_BUTTON = "text-muted-foreground hover:text-foreground active:text-foreground"
+const NAV_BUTTON = typographyClass({ tone: "muted", hoverTone: "foreground" })
 
 const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 	const { position } = inputs
-	return h.div(
-		[h.Class("flex items-center gap-2")],
+	return hstack(h, { gap: "2" },
 		[
 			iconButton(
 				h,

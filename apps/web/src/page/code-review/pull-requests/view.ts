@@ -1,14 +1,15 @@
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { listFooter } from "../../../ui/list-footer"
 import type * as Select from "../../../ui/select"
 import { type SelectEntry, view as selectView } from "../../../ui/select-view"
 import type { PageViewInputs } from "../../contract"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { filtersView } from "../kit/filters-view"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
 import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
@@ -17,6 +18,7 @@ import { searchBox } from "../kit/search"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS, sortOf, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
+import { vstack } from "../../../ui/stack"
 
 // The code review pull requests page.
 
@@ -45,13 +47,22 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onData: (response) => {
 			if (response.reviews.length === 0) {
 				const filtered = isFiltered(model)
-				return nothingInWindow(h, {
-					title: "No reviews in this window",
-					description: filtered
-						? "Nothing matches these filters."
-						: "Reviews appear here once a pull request is opened on a reviewed repository.",
-					onClear: filtered ? Message.ClickedClearFilters() : undefined,
-				})
+				if (filtered)
+					return filteredEmpty(h, {
+						noun: "reviews",
+						onClear: Message.ClickedClearFilters(),
+						className: emptyFrameClass("dashed"),
+					})
+				return empty(
+					h,
+					[
+						emptyHeader(h, [
+							emptyTitle(h, ["No reviews in this window"]),
+							emptyDescription(h, ["Reviews appear here once a pull request is opened on a reviewed repository."]),
+						]),
+					],
+					emptyFrameClass("dashed"),
+				)
 			}
 			const footer =
 				response.nextCursor === null
@@ -64,8 +75,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							isLoading: AsyncData.isRefreshing(model.reviews.data),
 							onLoadMore: Message.ClickedLoadMore(),
 						})
-			return h.div(
-				[h.Class("flex flex-col gap-3")],
+			return vstack(h, { gap: "3" },
 				[
 					reviewTable(h, response.reviews, sortOf(model.search), {
 						selected: model.search.review,

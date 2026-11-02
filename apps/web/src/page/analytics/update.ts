@@ -14,6 +14,7 @@ import { SignalPresenceData } from "../kit/signal-presence"
 import { nextSort } from "../kit/table-sort"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import type { PresetValue } from "../kit/time-controls"
 import { CompleteReloadSpin, LoadSignalPresence, ResolveWindow } from "./command"
 import { type FilterKey, Message, type RequestMode, type SlotName } from "./message"
 import {
@@ -36,7 +37,7 @@ import { filtersOf, requestSlots, showsOverviewContent, tabOf } from "./requests
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
-export const DEFAULT_PRESET = "7d"
+export const DEFAULT_PRESET: PresetValue = "1w"
 
 const SLOT_SCHEMAS = {
 	breakdowns: Breakdowns,
@@ -237,6 +238,10 @@ const lift = <A>(
 const refreshOnly = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
 	model.window === null ? { model } : requestSlots(model, context, model.window, "Refresh", slots)
 
+/** A failure card's Try again: `Load` asks again only for the slots among `slots` that failed. */
+const retryFailed = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
+	model.window === null ? { model } : requestSlots(model, context, model.window, "Load", slots)
+
 /** `onClearFilters`: the window and the tab stay; the filters go. */
 const clearedFilters = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -288,6 +293,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetrySummary: () => refreshOnly(model, context, ["summary"]),
 		ClickedRetryBreakdowns: () => refreshOnly(model, context, ["breakdowns"]),
 		ClickedRetrySummaryAndBreakdowns: () => refreshOnly(model, context, ["summary", "breakdowns"]),
+		ClickedRetryAiReferrals: () => retryFailed(model, context, ["aiReferrals", "previousAiReferrals"]),
+		ClickedRetryAiCrawlers: () => retryFailed(model, context, ["aiCrawlers"]),
 		ToggledFilter: ({ key, value }) => {
 			const filters = filtersOf(model.search)
 			return navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value)))

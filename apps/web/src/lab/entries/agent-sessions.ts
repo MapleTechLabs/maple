@@ -168,7 +168,6 @@ const listPage = Submodel.defineView<ListModel, ListMessage, ListInputs>((list, 
 									agentSessionsTabs(h, {
 										active: "sessions",
 										counts: inputs.tabCounts,
-										className: "border-b border-border",
 										isOnRoute: false,
 									}),
 									toolbar(h, list, {

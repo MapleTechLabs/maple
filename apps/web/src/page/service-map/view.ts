@@ -31,6 +31,7 @@ import { serviceMapEmptyState } from "./view-empty"
 import type * as Scene3d from "./scene3d"
 import { scene3dView } from "./view-scene3d"
 import { servicePanel } from "./view-service-panel"
+import { hstack } from "../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -88,8 +89,7 @@ const headerActions = (h: H, model: Model): Html => {
 			renderValue: (value) => [
 				environmentItems(model).find((item) => item.value === value)?.label ?? value,
 			],
-			toView: (parts) =>
-				h.div([h.Class("flex flex-wrap items-center gap-2")], [views, ...parts, controls]),
+			toView: (parts) => hstack(h, { gap: "2", wrap: true }, [views, ...parts, controls]),
 		},
 	})
 }
@@ -178,7 +178,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: DB_CHART_TOKENS }))],
 		[
-			dashboardPage(h, { title: "Service Map", actions: headerActions(h, model) }, [
+			dashboardPage(h, { title: "Service map", actions: headerActions(h, model) }, [
 				Option.match(AsyncData.getError(model.facets.data), {
 					onSome: (failure) =>
 						errorState(h, {

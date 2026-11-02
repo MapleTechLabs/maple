@@ -25,6 +25,7 @@ import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { PresetValue } from "../../kit/time-controls"
 import {
 	BuildAlertLink,
 	CompleteReloadSpin,
@@ -56,7 +57,7 @@ type Route = { readonly metricName: string; readonly search: Search }
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 /** `DashboardPage`'s `defaultPreset` for a metric. */
-export const DEFAULT_PRESET = "24h"
+export const DEFAULT_PRESET: PresetValue = "24h"
 /** `MetricQueryControls`' "no breakdown" item, shown as its label (`itemToStringLabel`). */
 export const GROUP_BY_NONE_LABEL = "Everything (no breakdown)"
 
@@ -505,6 +506,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		ClickedRetryChart: () => requestContent(model, context, "Load"),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

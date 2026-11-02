@@ -14,6 +14,7 @@ import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
 import { scopeChip } from "../../kit/scope-chip"
 import type { TimeseriesRow } from "../data"
 import { Message, type Model } from "./model"
+import { grid as gridLayout } from "../../../../ui/grid"
 
 // `PlanetScaleChart` cards and the chart section of `PlanetScaleDatabaseData`.
 
@@ -159,10 +160,7 @@ const metricCard = (
 const grid = (h: H, children: ReadonlyArray<Html>): Html =>
 	h.div(
 		[h.Class("space-y-4")],
-		[
-			children[0] ?? h.empty,
-			h.div([h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")], children.slice(1)),
-		],
+		[children[0] ?? h.empty, gridLayout(h, { cols: 1, lg: 2, gap: "4" }, children.slice(1))],
 	)
 
 const loadingCharts = (h: H): Html =>

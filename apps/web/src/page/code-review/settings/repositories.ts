@@ -16,6 +16,7 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import * as Switch from "../../../ui/switch"
 import { searchInput } from "../../../ui/search-input"
+import { typography } from "../../../ui/typography"
 
 // `RepositoryList`, `RepositoryRow` and `RepositoryName`, shared with
 // `/lab/code-review-repos`.
@@ -80,7 +81,7 @@ const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
 	return h.span(
 		[h.Class("truncate")],
 		[
-			h.span([h.Class("font-normal text-muted-foreground")], [fullName.slice(0, slash + 1)]),
+			typography(h, { tone: "muted", weight: "normal" }, [fullName.slice(0, slash + 1)]),
 			fullName.slice(slash + 1),
 		],
 	)
@@ -155,7 +156,7 @@ const searchBox = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html =>
 		id: "code-review-repo-search",
 		size: "sm",
 		className: "min-w-48 flex-1",
-		placeholder: "Search repositories",
+		placeholder: "Search repositories…",
 		value: options.state.search,
 		onInput: options.onSearch,
 		onClear: options.onSearch(""),

@@ -11,11 +11,11 @@ import { barY, defineChart } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { Option } from "effect"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
-import type { ChartSpec } from "../chart-spec"
+import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"
 
-// The issue occurrence chart's definition. TODO(tooltip): the cursor tooltip body (`PlotTooltipBody`).
+// The issue occurrence chart's definition: severity-coloured bars, one count per bucket on hover.
 
 type OccurrencesSpec = Extract<ChartSpec, { readonly _tag: "Occurrences" }>
 type Point = OccurrencesSpec["points"][number]
@@ -66,6 +66,19 @@ export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date,
 			tooltip: cursorTooltip("pointer"),
 		}),
 		focusKeyOf: (point) => point.datum.bucket,
-		tooltipOf: () => Option.none(),
+		tooltipOf: (points) =>
+			Option.map(Option.fromNullishOr(points[0]), ({ datum }) =>
+				ChartTooltip.Bucket({
+					heading: axis.heading(datum.bucket),
+					rows: [
+						{
+							label: "Occurrences",
+							color: spec.color,
+							dashed: false,
+							value: datum.count.toLocaleString("en-US"),
+						},
+					],
+				}),
+			),
 	}
 }

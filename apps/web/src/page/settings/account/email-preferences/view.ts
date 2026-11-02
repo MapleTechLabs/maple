@@ -23,6 +23,7 @@ import {
 	isOpsEnabled,
 	isWebEnabled,
 } from "./update"
+import { typography } from "../../../../ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -107,12 +108,9 @@ const scheduleField = (h: H, model: Model): Html => {
 			{ ids, state: IDLE },
 			"Sent in your time zone. Both digests follow this schedule.",
 		),
-		h.p(
-			[h.Class("text-xs text-muted-foreground")],
-			[
-				"Changes apply from the next send, so moving the day right after a digest went out skips to next week.",
-			],
-		),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"Changes apply from the next send, so moving the day right after a digest went out skips to next week.",
+		]),
 	])
 }
 
@@ -146,7 +144,7 @@ const scopeField = (
 				ariaLabelledBy: ids.label,
 				ariaDescribedBy: ids.description,
 				placeholder: values.length === 0 ? `All ${options.plural}` : `Add ${options.noun}...`,
-				emptyText: `No ${options.plural} detected.`,
+				emptyText: `No ${options.plural} detected`,
 				toView: (parts) => h.div([h.Class("sm:max-w-xs")], parts),
 			},
 		}),
@@ -263,10 +261,9 @@ export const view = Submodel.defineView<Model, Message, Readonly<Record<never, n
 						],
 						onData: () => preferences(h, model),
 					}),
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						["Unsubscribe links in each email turn the matching digest off."],
-					),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Unsubscribe links in each email turn the matching digest off.",
+					]),
 				],
 			),
 		])

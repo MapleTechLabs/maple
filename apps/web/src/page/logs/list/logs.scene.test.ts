@@ -263,7 +263,7 @@ describe("logs list", () => {
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			Mount.resolve(VirtualizeLogStream, streamWindow(0, 20)),
 			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
-			type(placeholder("Text or trace id"), traceId),
+			type(placeholder("Text or trace ID…"), traceId),
 			Command.resolve(WaitSearchDebounce, Message.ElapsedSearchDebounce({ generation: 1 })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({ url: `/logs?traceId=${traceId}`, isReplace: false }),

@@ -5,6 +5,7 @@ import * as Overlays from "../overlays"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import { SignalPresences } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { IssuePage, ReleasesData } from "./model"
 
@@ -24,6 +25,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchIssues: result(IssuePage),
 	CompletedFetchCommits: result(Schema.Array(VcsCommitDetailResponse)),
 	CompletedFetchRanges: result(Schema.Array(VcsCommitRangeResponse)),
+	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	PaintedTable: {},
 	MeasuredTrack: { width: Schema.Number },
 	ClickedReload: {},

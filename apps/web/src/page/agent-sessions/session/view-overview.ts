@@ -14,6 +14,7 @@ import { separator } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { keyValue, keyValueList } from "../../../ui/key-value"
+import { pressable } from "../../../ui/pressable"
 import { truncatedText } from "../../../ui/truncated-text"
 import { detectLookup } from "../kit/detected-models"
 import type { LoadProgress, SessionData } from "./derive"
@@ -25,6 +26,8 @@ import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
 import { errorChip, TOOL_CHIP } from "../kit/error-chip"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The session overview: checks and the tool ledger, the rail.
 
@@ -58,42 +61,37 @@ const ledgerHeader = (h: H, summary: SessionSummary): Html => {
 			sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Tools", className: "mb-0" }),
 			...(summary.tools.length > 0
 				? [
-						h.div(
-							[h.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1")],
-							[
-								keyValueList(h, { layout: "inline" }, [
-									keyValue(
-										h,
-										{ label: "Distinct", mono: true, valueClassName: "font-semibold" },
-										[formatNumber(summary.tools.length)],
-									),
-									keyValue(
-										h,
-										{ label: "Calls", mono: true, valueClassName: "font-semibold" },
-										[formatNumber(calls)],
-									),
-									keyValue(
-										h,
-										{
-											label: "Tool time",
-											mono: true,
-											valueClassName: "font-semibold text-chart-4",
-										},
-										[formatDuration(toolMs)],
-									),
+						hstack(h, { align: "baseline", wrap: true, className: "gap-x-4 gap-y-1" }, [
+							keyValueList(h, { layout: "inline" }, [
+								keyValue(
+									h,
+									{ label: "Distinct", mono: true, valueClassName: "font-semibold" },
+									[formatNumber(summary.tools.length)],
+								),
+								keyValue(h, { label: "Calls", mono: true, valueClassName: "font-semibold" }, [
+									formatNumber(calls),
 								]),
-								...(failed > 0
-									? [
-											errorChip(h, {
-												iconName: "GearIcon",
-												count: failed,
-												noun: "failed call",
-												className: TOOL_CHIP,
-											}),
-										]
-									: []),
-							],
-						),
+								keyValue(
+									h,
+									{
+										label: "Tool time",
+										mono: true,
+										valueClassName: "font-semibold text-chart-4",
+									},
+									[formatDuration(toolMs)],
+								),
+							]),
+							...(failed > 0
+								? [
+										errorChip(h, {
+											iconName: "GearIcon",
+											count: failed,
+											noun: "failed call",
+											className: TOOL_CHIP,
+										}),
+									]
+								: []),
+						]),
 					]
 				: []),
 		],
@@ -147,26 +145,24 @@ const callLane = (
 		[
 			h.span([h.AriaHidden(true), h.Class("absolute top-1/2 left-0 h-px w-full bg-border")], []),
 			...tool.events.map((event) =>
-				h.button(
-					[
-						h.Key(event.spanId),
-						h.AriaHasPopup("dialog"),
-						h.Class(
-							cn(
-								"absolute cursor-pointer rounded-2xs",
-								event.failed
-									? "top-[5px] h-3.5 bg-severity-error"
-									: "top-[7px] h-2.5 bg-chart-4",
-							),
+				pressable(
+					h,
+					{
+						onClick: openSpan(model, event.spanId),
+						className: cn(
+							"absolute rounded-2xs",
+							event.failed ? "top-[5px] h-3.5 bg-severity-error" : "top-[7px] h-2.5 bg-chart-4",
 						),
-						h.Style({
-							left: `min(${axis.fraction(event.startMs) * 100}%, 100% - 3px)`,
-							width: `max(3px, ${(event.durationMs / axis.totalMs) * 100}%)`,
-						}),
-						h.Title(callTitle(tool.name, event, sessionStartMs)),
-						h.Type("button"),
-						h.OnClick(openSpan(model, event.spanId)),
-					],
+						attributes: [
+							h.Key(event.spanId),
+							h.AriaHasPopup("dialog"),
+							h.Style({
+								left: `min(${axis.fraction(event.startMs) * 100}%, 100% - 3px)`,
+								width: `max(3px, ${(event.durationMs / axis.totalMs) * 100}%)`,
+							}),
+							h.Title(callTitle(tool.name, event, sessionStartMs)),
+						],
+					},
 					[h.span([h.Class("sr-only")], [callTitle(tool.name, event, sessionStartMs)])],
 				),
 			),
@@ -186,10 +182,10 @@ const failedCallRow = (h: H, model: Model, event: SessionToolCall, sessionStartM
 				[h.Class("font-medium font-mono text-severity-error text-xs")],
 				[event.errorLabel ?? "error"],
 			),
-			h.span([h.Class("font-mono text-muted-foreground text-xs")], [callWhen(event, sessionStartMs)]),
+			typography(h, { size: "xs", tone: "muted", mono: true }, [callWhen(event, sessionStartMs)]),
 			...(event.errorDetail === undefined
 				? []
-				: [h.span([h.Class("min-w-0 text-muted-foreground text-xs")], [event.errorDetail])]),
+				: [typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [event.errorDetail])]),
 			button(
 				h,
 				{
@@ -220,18 +216,16 @@ const ledgerRow = (
 				[h.Class("flex h-6 items-center gap-4")],
 				[
 					isDisclosable
-						? h.button(
-								[
-									h.AriaExpanded(isExpanded),
-									h.Class(
-										cn(
-											LEDGER_NAME,
-											"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary active:text-primary",
-										),
+						? pressable(
+								h,
+								{
+									onClick: Message.ToggledLedgerTool({ name: tool.name }),
+									className: cn(
+										LEDGER_NAME,
+										"flex items-center gap-1.5 text-left hover:text-primary active:text-primary",
 									),
-									h.Type("button"),
-									h.OnClick(Message.ToggledLedgerTool({ name: tool.name })),
-								],
+									attributes: [h.AriaExpanded(isExpanded)],
+								},
 								[
 									disclosureChevron(h, { isOpen: isExpanded, size: 9 }),
 									truncatedText(h, { text: tool.name, mono: true, className: "text-xs" }),
@@ -243,7 +237,11 @@ const ledgerRow = (
 								className: cn(LEDGER_NAME, "pl-[15px] text-xs"),
 							}),
 					h.span(
-						[h.Class(cn(LEDGER_COUNT, "font-mono text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(LEDGER_COUNT, typographyClass({ size: "xs", mono: true, numeric: true })),
+							),
+						],
 						[String(tool.calls)],
 					),
 					h.span(
@@ -251,7 +249,7 @@ const ledgerRow = (
 							h.Class(
 								cn(
 									LEDGER_COUNT,
-									"font-mono text-xs tabular-nums",
+									typographyClass({ size: "xs", mono: true, numeric: true }),
 									tool.failed > 0 ? "text-severity-error" : "text-foreground-faint",
 								),
 							),
@@ -259,11 +257,22 @@ const ledgerRow = (
 						[String(tool.failed)],
 					),
 					h.span(
-						[h.Class(cn(LEDGER_TIME, "font-mono text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(LEDGER_TIME, typographyClass({ size: "xs", mono: true, numeric: true })),
+							),
+						],
 						[formatDuration(tool.totalMs)],
 					),
 					h.span(
-						[h.Class(cn(LEDGER_TIME, "font-mono text-muted-foreground text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(
+									LEDGER_TIME,
+									typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }),
+								),
+							),
+						],
 						[formatDuration(tool.slowestMs)],
 					),
 					callLane(h, model, tool, axis, sessionStartMs),
@@ -302,7 +311,7 @@ const toolUsage = (h: H, model: Model, summary: SessionSummary): Html => {
 		[
 			ledgerHeader(h, summary),
 			summary.tools.length === 0
-				? h.p([h.Class("text-muted-foreground text-xs")], ["no tool calls"])
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, ["no tool calls"])
 				: h.div(
 						[h.Class("flex flex-col")],
 						[
@@ -321,15 +330,13 @@ const waiting = (h: H, model: Model, progress: LoadProgress): Html =>
 			h.Class("flex grow flex-col items-center justify-center gap-3 py-16 text-center"),
 		],
 		[
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
-				["The overview reads the whole session, and this one is still arriving."],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"The overview reads the whole session, and this one is still arriving.",
+			]),
 			loadIndicator(h, model, progress, "items-center"),
-			h.p(
-				[h.Class("text-xs text-foreground-subtle")],
-				["The Traces, Flow and Transcript views already show what has loaded."],
-			),
+			typography(h, { size: "xs", tone: "subtle", as: "p" }, [
+				"The Traces, Flow and Transcript views already show what has loaded.",
+			]),
 		],
 	)
 

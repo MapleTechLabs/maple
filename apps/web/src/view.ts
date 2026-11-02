@@ -21,25 +21,24 @@ import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
 import { resolveSourceLink, type SourceLink } from "./shell/source-link"
+import { heading } from "./ui/heading"
 import * as ToastView from "./ui/toast-view"
+import { typography } from "./ui/typography"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
 const placeholder = (model: Model, h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
 	h.main(
 		[h.Class("flex min-h-screen flex-col gap-2 bg-background p-8 text-foreground")],
 		[
-			h.h1([h.Class("font-display text-xl font-semibold")], [model.route._tag]),
-			h.p(
-				[h.Class("font-mono text-muted-foreground text-xs")],
-				[
-					Session.match(model.session, {
-						Resolving: () => "Session resolving",
-						SignedOut: () => "Signed out",
-						SignedIn: ({ maybeOrgId }) =>
-							`Signed in to ${Option.getOrElse(maybeOrgId, () => "no organization")}`,
-					}),
-				],
-			),
+			heading(h, { level: 1, variant: "title" }, [model.route._tag]),
+			typography(h, { size: "xs", tone: "muted", mono: true, as: "p" }, [
+				Session.match(model.session, {
+					Resolving: () => "Session resolving",
+					SignedOut: () => "Signed out",
+					SignedIn: ({ maybeOrgId }) =>
+						`Signed in to ${Option.getOrElse(maybeOrgId, () => "no organization")}`,
+				}),
+			]),
 			...children,
 		],
 	)

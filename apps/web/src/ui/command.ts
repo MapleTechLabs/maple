@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import * as A from "@maple/ui/styles/ui/autocomplete"
 import {
+	commandEmptyStyles,
 	commandFooterStyles,
 	commandInputStyles,
 	commandInputWrapperStyles,
@@ -201,9 +202,82 @@ export const commandList = <M>(
 	])
 }
 
+/** `CommandGroup` and its label, around option rows the caller draws (`commandOption`). */
+export const commandGroup = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ labelId: string; label: string }>,
+	children: ReadonlyArray<Html>,
+): Html =>
+	h.div(
+		[
+			h.AriaLabelledBy(options.labelId),
+			h.Class(cn(A.autocompleteGroupStyles)),
+			h.DataAttribute("slot", "command-group"),
+			h.Role("group"),
+		],
+		[
+			h.div(
+				[
+					h.AriaHidden(true),
+					h.Class(cn(A.autocompleteGroupLabelStyles)),
+					h.DataAttribute("slot", "command-group-label"),
+					h.Id(options.labelId),
+				],
+				[options.label],
+			),
+			...children,
+		],
+	)
+
 /** `CommandFooter`. Positioned so the popup's tinted `::before` layer paints under its hints, not over them. */
 export const commandFooter = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class(cn("relative", commandFooterStyles)), h.DataAttribute("slot", "command-footer")], children)
 
 /** The autocomplete's hidden input, last in the popup. */
 export const commandHiddenInput = hiddenInput
+
+type Part<M> = Readonly<{ className?: string; attributes?: ReadonlyArray<Attribute<M>> }>
+
+/** A bare `role="option"` command row for a hand-rolled list (a quick-pick popover); the caller
+ *  owns its ids, highlight and events. */
+export const commandOption = <M>(h: HtmlBuilder<M>, options: Part<M>, children: ReadonlyArray<Html>): Html =>
+	h.div(
+		[
+			h.Class(cn(A.autocompleteItemStyles, cn(commandItemStyles, options.className))),
+			h.DataAttribute("slot", "command-item"),
+			h.Role("option"),
+			...(options.attributes ?? []),
+		],
+		children,
+	)
+
+/** A bare `role="listbox"` command list for a hand-rolled list. */
+export const commandListbox = <M>(h: HtmlBuilder<M>, options: Part<M>, children: ReadonlyArray<Html>): Html =>
+	h.div(
+		[
+			h.Class(cn(A.autocompleteListStyles, cn(commandListStyles, options.className))),
+			h.DataAttribute("slot", "command-list"),
+			h.Role("listbox"),
+			h.Tabindex(-1),
+			...(options.attributes ?? []),
+		],
+		children,
+	)
+
+/** `CommandEmpty`: a live status line, filled only while nothing matches. */
+export const commandEmpty = <M>(
+	h: HtmlBuilder<M>,
+	options: Part<M>,
+	children: ReadonlyArray<Html | string>,
+): Html =>
+	h.div(
+		[
+			h.AriaAtomic(true),
+			h.AriaLive("polite"),
+			h.Class(cn(A.autocompleteEmptyStyles, cn(commandEmptyStyles, options.className))),
+			h.DataAttribute("slot", "command-empty"),
+			h.Role("status"),
+			...(options.attributes ?? []),
+		],
+		children,
+	)

@@ -10,7 +10,6 @@ import {
 } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import {
 	ROLLOUT_COMPLETE_SHARE,
 	shortReleaseLabel,
@@ -30,6 +29,8 @@ import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitAvatar, firstLine, releaseHealthFigure, releaseHref } from "../kit"
 import { type Overlays, releaseHealthPill } from "../overlays-view"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `ReleaseDeployOverview`'s sections, `ReleaseChangeset` and `IssueList` + `IssueLine`.
 
@@ -71,7 +72,7 @@ export const deploySummary = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, clock: 
 			h.span(
 				[],
 				[
-					h.span([h.Class("font-medium tabular-nums text-foreground")], [String(services)]),
+					typography(h, { tone: "foreground", weight: "medium", numeric: true }, [String(services)]),
 					" ",
 					pluralize(services, "service"),
 				],
@@ -79,8 +80,7 @@ export const deploySummary = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, clock: 
 			h.span(
 				[],
 				[
-					h.span(
-						[h.Class("font-medium tabular-nums text-foreground")],
+					typography(h, { tone: "foreground", weight: "medium", numeric: true },
 						[formatNumber(group.spanCount)],
 					),
 					" ",
@@ -106,7 +106,7 @@ const beforeAfter = <M>(
 		[
 			...(before === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-foreground-subtle")], [format(before), " →"])]),
+				: [typography(h, { size: "3xs", tone: "subtle" }, [format(before), " →"])]),
 			h.span(
 				[
 					h.Class(
@@ -172,9 +172,9 @@ const serviceRow = <M>(
 			tableCell(
 				h,
 				[impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : EMPTY_VALUE],
-				"font-mono text-2xs text-muted-foreground",
+				typographyClass({ size: "2xs", tone: "muted", mono: true }),
 			),
-			tableCell(h, [formatNumber(impact.spanCount)], "text-right font-mono tabular-nums"),
+			tableCell(h, [formatNumber(impact.spanCount)], typographyClass({ mono: true, numeric: true, className: "text-right" })),
 			tableCell(h, [
 				beforeAfter(
 					h,
@@ -223,8 +223,7 @@ export const deployServices = <M>(
 		h,
 		{
 			title: "Services",
-			action: h.span(
-				[h.Class("text-2xs text-foreground-subtle")],
+			action: typography(h, { size: "2xs", tone: "subtle" },
 				["against the version each replaced"],
 			),
 		},
@@ -241,7 +240,6 @@ export const deployServices = <M>(
 							tableHead(h, ["p95"]),
 							tableHead(h, ["Live share"], "pr-4 text-right"),
 						],
-						eyebrowVariants(),
 					),
 				]),
 				tableBody(
@@ -272,7 +270,7 @@ export type ChangesetState =
 export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, clock: Clock): Html => {
 	if (state._tag === "NoBase")
 		return sectionCard(h, { title: "What shipped" }, [
-			emptyMessage(h, {}, ["No earlier version in this window to compare against."]),
+			emptyMessage(h, {}, ["No earlier version in this window to compare against"]),
 		])
 	if (state._tag === "NotShas")
 		return sectionCard(h, { title: "What shipped" }, [
@@ -280,8 +278,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 				"These versions are not commit shas, so the commits between them are unknown.",
 			]),
 		])
-	const action = h.span(
-		[h.Class("text-2xs text-foreground-subtle")],
+	const action = typography(h, { size: "2xs", tone: "subtle" },
 		["since ", h.span([h.Class("font-mono")], [shortReleaseLabel(state.base)])],
 	)
 	if (state._tag === "Loading")
@@ -322,8 +319,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 									[h.Class("mt-px shrink-0")],
 									[commitAvatar(h, commit.authorAvatarUrl, author)],
 								),
-								h.div(
-									[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+								vstack(h, { gap: "0.5", shrink: true, grow: true },
 									[
 										h.a(
 											[
@@ -414,11 +410,7 @@ const issueLine = <M>(
 		trailing: h.span(
 			[h.Class("contents")],
 			[
-				h.span(
-					[
-						h.Class("font-mono text-xs tabular-nums text-muted-foreground"),
-						h.Title("Occurrences on this version in the window"),
-					],
+				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true, attributes: [h.Title("Occurrences on this version in the window")] },
 					[formatNumber(occurrences ?? issue.occurrenceCount), "×"],
 				),
 				relativeTime(h, {
@@ -457,12 +449,12 @@ export const issueList = <M>(
 				[
 					h.Class(
 						options.issues.length === 0
-							? "text-2xs text-foreground-subtle"
+							? typographyClass({ size: "2xs", tone: "subtle" })
 							: options.tone === "error"
 								? "text-2xs font-medium text-severity-error"
 								: options.tone === "warn"
 									? "text-2xs font-medium text-severity-warn"
-									: "text-2xs text-muted-foreground",
+									: typographyClass({ size: "2xs", tone: "muted" }),
 					),
 				],
 				[String(options.issues.length)],
