@@ -122,7 +122,8 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* adminTenant("view")
-					return toV2Source(yield* sources.get(tenant.orgId, params.id))
+					const source = yield* sources.get(tenant.orgId, params.id)
+					return toV2Source(source)
 				}),
 			)
 			.handle("create", ({ payload }) =>

@@ -93,8 +93,7 @@ export const FetchEndpointPeekSeries = Command.define("FetchServiceEndpointPeekS
 				spanNames: [input.spanName],
 			},
 		}).pipe(
-			Effect.map((response) => response.buckets),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.buckets, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSeries({ spanName, key, result })),
 		),

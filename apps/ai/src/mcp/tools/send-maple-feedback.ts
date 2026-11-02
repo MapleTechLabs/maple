@@ -112,9 +112,10 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 			// Same attribution as the executor's `mcp_tool.called` entry: a pinned agent,
 			// an autonomous turn or a chat connector is the actor, not the key's user.
 			const audit = yield* AuditLogService
+			const actor = yield* CurrentAuditActor
 			yield* audit.record({
 				orgId: tenant.orgId,
-				...auditAttribution(tenant, yield* CurrentAuditActor),
+				...auditAttribution(tenant, actor),
 				action: "agent_feedback.submitted",
 				resourceId: feedback.id,
 				metadata: { kind: feedback.kind, agent_type: feedback.agent.type },

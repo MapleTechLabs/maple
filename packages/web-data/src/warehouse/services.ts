@@ -69,7 +69,8 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 	data: GetServiceOverviewInput
 }) {
 	const input = yield* decodeInput(GetServiceOverviewInput, data ?? {}, "getServiceOverview")
-	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultServicesTimeRange(now)
 
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
@@ -138,7 +139,8 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 	data: GetServiceHealthSnapshotInput
 }) {
 	const input = yield* decodeInput(GetServiceHealthSnapshotInput, data ?? {}, "getServiceHealthSnapshot")
-	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultServicesTimeRange(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 	// The snapshot reads whole hours, so its rates are per the hours it actually covered.
@@ -224,7 +226,8 @@ const getServiceHealthBaselineEffect = Effect.fn("QueryEngine.getServiceHealthBa
 	data: GetServiceHealthBaselineInput
 }) {
 	const input = yield* decodeInput(GetServiceHealthBaselineInput, data ?? {}, "getServiceHealthBaseline")
-	const nowDateTime = formatWarehouseDateTime(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const nowDateTime = formatWarehouseDateTime(now)
 
 	const endTime = floorToHour(input.rangeStartTime ?? nowDateTime)
 	const startTime = formatWarehouseDateTime(warehouseDateTimeToMs(endTime) - BASELINE_WINDOW_MS)
@@ -344,7 +347,8 @@ const getServicesFacetsEffect = Effect.fn("QueryEngine.getServicesFacets")(funct
 	data: GetServicesFacetsInput
 }) {
 	const input = yield* decodeInput(GetServicesFacetsInput, data ?? {}, "getServicesFacets")
-	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultServicesTimeRange(now)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getServicesFacets",
@@ -430,7 +434,8 @@ const getServiceApdexTimeSeriesEffect = Effect.fn("QueryEngine.getServiceApdexTi
 	data: GetServiceDetailInput
 }) {
 	const input = yield* decodeInput(GetServiceDetailInput, data, "getServiceApdexTimeSeries")
-	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultServicesTimeRange(now)
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
 
 	const result = yield* runWarehouseQuery("serviceApdex", () =>

@@ -39,7 +39,9 @@ interface KeyRow {
 }
 
 const traceKeys = (scope: AttributeScope, window: { startTime: string; endTime: string }) =>
-	withTenantExecutor(exploreAttributeKeys({ source: "traces", scope, timeRange: window, limit: 1000 })).pipe(
+	withTenantExecutor(
+		exploreAttributeKeys({ source: "traces", scope, timeRange: window, limit: 1000 }),
+	).pipe(
 		Effect.map((rows) => rows.map((r) => r.key)),
 		Effect.orElseSucceed((): ReadonlyArray<string> => []),
 	)
@@ -55,28 +57,25 @@ export const resolveAttributeScope = Effect.fn("McpTool.resolveAttributeScope")(
 	if (params.group_by === "resource_attribute") return fixed("resource")
 	if (params.source === "product_events") return fixed("span")
 
-	const scope =
-		params.source === "metrics"
-			? pickAttributeScope(
-					key,
-					// A metric's own label set; resource keys of metrics are not catalogued.
-					yield* queryWarehouse<KeyRow>("metric_attribute_keys", {
-						metric_name: params.metric_name,
-						metric_type: params.metric_type,
-						start_time: window.startTime,
-						end_time: window.endTime,
-						limit: 1000,
-					}).pipe(
-						Effect.map(({ data }) => data.map((r) => r.attributeKey)),
-						Effect.orElseSucceed((): ReadonlyArray<string> => []),
-					),
-					"unknown",
-				)
-			: pickAttributeScope(
-					key,
-					yield* traceKeys("span", window),
-					yield* traceKeys("resource", window),
-				)
+	let scope: AttributeScope
+	if (params.source === "metrics") {
+		// A metric's own label set; resource keys of metrics are not catalogued.
+		const metricKeys = yield* queryWarehouse<KeyRow>("metric_attribute_keys", {
+			metric_name: params.metric_name,
+			metric_type: params.metric_type,
+			start_time: window.startTime,
+			end_time: window.endTime,
+			limit: 1000,
+		}).pipe(
+			Effect.map(({ data }) => data.map((r) => r.attributeKey)),
+			Effect.orElseSucceed((): ReadonlyArray<string> => []),
+		)
+		scope = pickAttributeScope(key, metricKeys, "unknown")
+	} else {
+		const spanKeys = yield* traceKeys("span", window)
+		const resourceKeys = yield* traceKeys("resource", window)
+		scope = pickAttributeScope(key, spanKeys, resourceKeys)
+	}
 	return scope === "resource"
 		? ({
 				scope,

@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { trySync } from "./try-sync"
 
 /**
@@ -15,7 +15,20 @@ export const readLocalStorage = (key: string): Option.Option<string> =>
 		(value) => value,
 	)
 
+class LocalStorageWriteError extends Schema.TaggedError<LocalStorageWriteError>()(
+	"@maple/ui/lib/LocalStorageWriteError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** Best-effort write. A quota or availability failure is silently dropped. */
 export const writeLocalStorage = (key: string, value: string): void => {
-	Effect.runSync(Effect.ignore(Effect.try(() => localStorage.setItem(key, value))))
+	Effect.runSync(
+		Effect.ignore(
+			Effect.try({
+				try: () => localStorage.setItem(key, value),
+				catch: (cause) =>
+					new LocalStorageWriteError({ message: `localStorage write failed for ${key}`, cause }),
+			}),
+		),
+	)
 }

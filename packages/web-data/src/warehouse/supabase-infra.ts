@@ -94,7 +94,8 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 	data: SupabaseTimeRangeInput
 }) {
 	const input = yield* decodeInput(InfraWindowInput, data, "getSupabaseProjects")
-	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	const result = yield* runWarehouseQuery("supabaseInfraProjects", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -132,7 +133,8 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 	data: SupabaseTimeseriesInput
 }) {
 	const input = yield* decodeInput(TimeseriesInputSchema, data, "getSupabaseProjectTimeseries")
-	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	const result = yield* runWarehouseQuery("supabaseInfraProjectTimeseries", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp

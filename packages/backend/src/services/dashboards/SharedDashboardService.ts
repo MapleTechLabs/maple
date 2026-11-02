@@ -281,7 +281,9 @@ export class SharedDashboardService extends Context.Service<
 			})
 			const rows = yield* loadLive(orgId, scope)
 			const row = rows[0]
-			return row === undefined ? Option.none() : Option.some(yield* decodeShare(row))
+			if (row === undefined) return Option.none()
+			const share = yield* decodeShare(row)
+			return Option.some(share)
 		})
 
 		/** Every live share on a dashboard: the board's own, plus one per widget. */
@@ -582,10 +584,11 @@ export class SharedDashboardService extends Context.Service<
 			// `token` is the one the caller presented — it hashed to this row, so it
 			// is by definition the stored one, and decrypting to prove that again
 			// would only add a cipher round to the viewer hot path.
-			const mode =
-				row.widgetId === null
-					? row.mode
-					: capByBoard(row.mode, yield* boardMode(row.orgId, row.dashboardId))
+			let mode = row.mode
+			if (row.widgetId !== null) {
+				const board = yield* boardMode(row.orgId, row.dashboardId)
+				mode = capByBoard(row.mode, board)
+			}
 			if (row.widgetId !== null) yield* Effect.annotateCurrentSpan("maple.share.mode", mode)
 			return { share: toDashboardShare({ ...row, mode }, token), orgId: row.orgId }
 		})

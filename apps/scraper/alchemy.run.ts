@@ -55,8 +55,10 @@ export const createMapleScraper = ({
 		})
 
 		const secret = ecsSecrets(name("scraper"), tags)
-		const internalToken = yield* secret("internal-token", yield* requiredPlain("SD_INTERNAL_TOKEN"))
-		const otelIngestKey = yield* secret("otel-ingest-key", yield* requiredPlain("MAPLE_OTEL_INGEST_KEY"))
+		const internalTokenValue = yield* requiredPlain("SD_INTERNAL_TOKEN")
+		const internalToken = yield* secret("internal-token", internalTokenValue)
+		const otelIngestKeyValue = yield* requiredPlain("MAPLE_OTEL_INGEST_KEY")
+		const otelIngestKey = yield* secret("otel-ingest-key", otelIngestKeyValue)
 
 		const { COMMIT_SHA: commitSha, GITHUB_SHA: githubSha } = {
 			...(yield* optionalPlain("COMMIT_SHA")),

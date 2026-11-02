@@ -1,6 +1,9 @@
+import { Schema } from "effect"
 import { attributeFilterOperator, formatAttributeClause } from "../../../lib/traces/advanced-filter-sync"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export type Search = typeof TracesSearch.Type
 type AttributeParam = "attributeFilters" | "resourceAttributeFilters"
@@ -37,7 +40,7 @@ const sameEntry = (a: AttributeEntry, b: AttributeEntry): boolean =>
 	a.value === b.value &&
 	a.negated === b.negated &&
 	a.matchMode === b.matchMode &&
-	JSON.stringify(a.or ?? []) === JSON.stringify(b.or ?? [])
+	encodeJson(a.or ?? []) === encodeJson(b.or ?? [])
 
 const attributeChipText = (prefix: string, entry: AttributeEntry): { label: string; value: string } => {
 	if (entry.or !== undefined && entry.or.length > 0)
@@ -54,7 +57,7 @@ const attributeChips = (search: Search, param: AttributeParam): ReadonlyArray<Tr
 	const prefix = param === "resourceAttributeFilters" ? "resource." : ""
 	return (search[param] ?? []).map((entry) => {
 		const text = attributeChipText(prefix, entry)
-		const group = entry.or !== undefined && entry.or.length > 0 ? `:or:${JSON.stringify(entry.or)}` : ""
+		const group = entry.or !== undefined && entry.or.length > 0 ? `:or:${encodeJson(entry.or)}` : ""
 		const mode = entry.matchMode === undefined ? "" : `:${entry.matchMode}`
 		return {
 			id: `${param}:${entry.key}:${entry.value}:${entry.negated === true ? "not" : "is"}${mode}${group}`,

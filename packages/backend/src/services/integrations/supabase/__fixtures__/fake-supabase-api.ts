@@ -5,6 +5,7 @@
  * `FetchHttpClient.Fetch`; tests steer it by mutating `state` between steps.
  */
 import { createHash, randomUUID } from "node:crypto"
+import { Schema } from "effect"
 
 export const FAKE_CLIENT_ID = "6f1c1d1e-0b7a-4d8e-9a51-3c2b1a0f9e88"
 export const FAKE_CLIENT_SECRET = "sba_fake_client_secret"
@@ -136,8 +137,24 @@ export interface FakeSupabaseState {
 	readonly calls: Array<FakeCall>
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const decodeDrainCreate = Schema.decodeUnknownSync(
+	Schema.fromJsonString(
+		Schema.Struct({
+			data: Schema.Struct({
+				attributes: Schema.Struct({
+					name: Schema.String,
+					description: Schema.optionalKey(Schema.String),
+					backend_type: Schema.String,
+					config: Schema.Record(Schema.String, Schema.Unknown),
+				}),
+			}),
+		}),
+	),
+)
+
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-	new Response(JSON.stringify(body), {
+	new Response(encodeJson(body), {
 		status,
 		headers: { "content-type": "application/json", ...headers },
 	})
@@ -265,7 +282,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		if (id === undefined && method === "POST") {
 			if (state.drainCreateStatus === 402) return json(PAYMENT_REQUIRED_BODY, 402)
 			if (state.drainCreateStatus !== null) return json({ message: "Failed" }, state.drainCreateStatus)
-			const parsed: { data: { attributes: FakeLogDrain["attributes"] } } = JSON.parse(body)
+			const parsed = decodeDrainCreate(body)
 			const drain: FakeLogDrain = { id: randomUUID(), attributes: parsed.data.attributes }
 			state.drains.set(ref, [...drains, drain])
 			if (state.drainCreateFailsAfterStore) return json({ message: "Bad gateway" }, 502)

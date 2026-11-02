@@ -440,7 +440,6 @@ export class ConnectorSocket {
 		const connector = connectors.find((candidate) => candidate.id === connectorId)
 		if (connector === undefined || connector.ingress.kind !== "socket") return undefined
 		const config = await Effect.runPromise(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			resolveConnectorConfig(connector).pipe(Effect.provide(this.configLayer)),
 		)
 		if (config._tag === "missing") return undefined

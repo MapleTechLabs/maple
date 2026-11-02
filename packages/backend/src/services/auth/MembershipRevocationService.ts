@@ -114,6 +114,7 @@ const decodePinnedRoles = Schema.decodeUnknownOption(PinnedRoles)
 
 const decodePublicConfig = Schema.decodeUnknownOption(DestinationPublicConfigSchema)
 const decodeSecretConfig = Schema.decodeOption(SecretConfigFromJson)
+const encodeSecretConfig = Schema.encodeEffect(SecretConfigFromJson)
 
 const make = Effect.gen(function* () {
 	const database = yield* Database
@@ -169,8 +170,17 @@ const make = Effect.gen(function* () {
 					if (remaining.length === secret.value.members.length) return false
 
 					const nextSecret = { type: "email" as const, members: remaining }
+					const nextSecretJson = yield* encodeSecretConfig(nextSecret).pipe(
+						Effect.mapError(
+							() =>
+								new MembershipRevocationError({
+									message: `Could not encode alert destination ${row.id}`,
+									...(orgId === null ? undefined : { orgId }),
+								}),
+						),
+					)
 					const encrypted = yield* encryptAes256Gcm(
-						JSON.stringify(nextSecret),
+						nextSecretJson,
 						encryptionKey,
 						(message) =>
 							new MembershipRevocationError({

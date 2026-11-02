@@ -42,7 +42,8 @@ export const getServiceUsage = Effect.fn("QueryEngine.getServiceUsage")(function
 	data: GetServiceUsageInput
 }) {
 	const input = yield* decodeInput(GetServiceUsageInput, data ?? {}, "getServiceUsage")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 
 	const result = yield* runWarehouseQuery("serviceUsage", () =>
 		Effect.gen(function* () {

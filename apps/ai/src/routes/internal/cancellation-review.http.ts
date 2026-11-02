@@ -45,7 +45,8 @@ export const HttpCancellationReviewLive = HttpApiBuilder.group(MapleAiApi, "canc
 				})
 			}
 
-			return yield* readCancellation(payload, yield* AiModel.ModelName).pipe(
+			const modelName = yield* AiModel.ModelName
+			return yield* readCancellation(payload, modelName).pipe(
 				Effect.mapError((error) => new CancellationReadModelError({ message: error.message })),
 			)
 		}),

@@ -1,7 +1,7 @@
 import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "../../../lib/errors/hub-params"
 import type { IssueKind } from "@maple/domain/http"
 import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -58,6 +58,8 @@ import {
 import { SOURCES } from "../kit/source"
 import type { IssuePage, Model, PageSlot } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -161,7 +163,7 @@ const rankingStep =
 
 /** The ranking's filters without its window: a new window alone keeps the ranked rows usable. */
 const rankingFiltersOf = (search: Model["search"]): string =>
-	JSON.stringify([search.service ? search.service : null, search.env ? search.env : null])
+	encodeJson([search.service ? search.service : null, search.env ? search.env : null])
 
 /** The ranked hashes the list waits for: `Some(null)` when not ranking, `None` until ready. */
 const rankedHashes = (model: Model): Option.Option<ReadonlyArray<string> | null> => {
@@ -183,7 +185,7 @@ const listStep =
 				model.listKey === null ? NO_STEP : { patch: { listKey: null, pages: [] }, commands: [] },
 			onSome: (hashes) => {
 				const query = listQueryOf(model.search, hashes)
-				const listKey = JSON.stringify(query)
+				const listKey = encodeJson(query)
 				if (listKey === model.listKey) return NO_STEP
 				// A new query is a new page atom: Initial, so the rows give way to the skeleton.
 				const first = Keyed.idle<IssuePage, LoadFailure>()

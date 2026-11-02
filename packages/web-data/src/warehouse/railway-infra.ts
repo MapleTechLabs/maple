@@ -60,7 +60,8 @@ export const getRailwayServices = Effect.fn("QueryEngine.getRailwayServices")(fu
 	data: RailwayTimeRangeInput
 }) {
 	const input = yield* decodeInput(InfraWindowInput, data, "getRailwayServices")
-	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	const result = yield* runWarehouseQuery("railwayInfraServices", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -94,7 +95,8 @@ export const getRailwayServiceTimeseries = Effect.fn("QueryEngine.getRailwayServ
 	data: RailwayTimeseriesInput
 }) {
 	const input = yield* decodeInput(TimeseriesInputSchema, data, "getRailwayServiceTimeseries")
-	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	const result = yield* runWarehouseQuery("railwayInfraServiceTimeseries", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp

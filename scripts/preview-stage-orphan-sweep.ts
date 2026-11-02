@@ -31,12 +31,17 @@
 
 import { spawnSync } from "node:child_process"
 import { join } from "node:path"
+import { Option, Schema } from "effect"
 import { fetchPreviewState, hasActivePreviewRun, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
 const DRY_RUN = process.argv.includes("--dry-run")
 const REPO_ROOT = join(import.meta.dirname, "..")
 const DESTROY_TIMEOUT_MS = 30 * 60 * 1000
+
+// JSON.stringify printed "undefined" for an absent field; keep that in diagnostics.
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const showJson = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
 const fail = (message: string): never => {
 	console.error(`✗ ${message}`)
@@ -125,7 +130,7 @@ const addCandidate = (candidates: Candidates, prNumber: string, marker: string):
 const listPreviewWorkers = async (token: string, accountId: string, candidates: Candidates) => {
 	const listed = await cfRequest(token, `/accounts/${accountId}/workers/scripts`)
 	if (!listed.ok) {
-		fail(`Could not list Worker scripts (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`)
+		fail(`Could not list Worker scripts (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	// A success response whose `result` isn't an array means the API shape
 	// changed under us: fail loudly rather than green-no-op'ing the safety net.
@@ -149,7 +154,7 @@ const listReplayBuckets = async (token: string, accountId: string, candidates: C
 		`/accounts/${accountId}/r2/buckets?name_contains=maple-replay-blobs-pr-&per_page=1000`,
 	)
 	if (!listed.ok) {
-		fail(`Could not list R2 buckets (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`)
+		fail(`Could not list R2 buckets (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	const buckets = (listed.result as { buckets?: unknown } | undefined)?.buckets
 	if (!Array.isArray(buckets)) {
@@ -172,7 +177,7 @@ const listNeonBranches = async (
 ): Promise<Map<string, string>> => {
 	const listed = await neonRequest(apiKey, `/projects/${projectId}/branches`)
 	if (!listed.ok) {
-		fail(`Could not list Neon branches (HTTP ${listed.status}): ${JSON.stringify(listed.body)}`)
+		fail(`Could not list Neon branches (HTTP ${listed.status}): ${showJson(listed.body)}`)
 	}
 	const branches = (listed.body as { branches?: ReadonlyArray<NeonBranch> }).branches
 	if (!Array.isArray(branches)) {
@@ -219,7 +224,7 @@ const deleteNeonBranch = async (apiKey: string, projectId: string, branchId: str
 		method: "DELETE",
 	})
 	if (!removed.ok && removed.status !== 404) {
-		console.log(`✗ Neon branch delete failed (HTTP ${removed.status}): ${JSON.stringify(removed.body)}`)
+		console.log(`✗ Neon branch delete failed (HTTP ${removed.status}): ${showJson(removed.body)}`)
 		return false
 	}
 	return true
@@ -235,7 +240,7 @@ const emptyAndDeleteBucket = async (token: string, accountId: string, bucket: st
 		if (listed.status === 404) return true
 		if (!listed.ok || !Array.isArray(listed.result)) {
 			console.log(
-				`✗ could not list objects in ${bucket} (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`,
+				`✗ could not list objects in ${bucket} (HTTP ${listed.status}): ${showJson(listed.errors)}`,
 			)
 			return false
 		}
@@ -243,10 +248,10 @@ const emptyAndDeleteBucket = async (token: string, accountId: string, bucket: st
 			.map((object) => object.key ?? "")
 			.filter((key) => key.length > 0)
 		if (keys.length === 0) break
-		const removed = await cfRequest(token, objectsPath, { method: "DELETE", body: JSON.stringify(keys) })
+		const removed = await cfRequest(token, objectsPath, { method: "DELETE", body: showJson(keys) })
 		if (!removed.ok) {
 			console.log(
-				`✗ could not delete objects in ${bucket} (HTTP ${removed.status}): ${JSON.stringify(removed.errors)}`,
+				`✗ could not delete objects in ${bucket} (HTTP ${removed.status}): ${showJson(removed.errors)}`,
 			)
 			return false
 		}
@@ -257,7 +262,7 @@ const emptyAndDeleteBucket = async (token: string, accountId: string, bucket: st
 		method: "DELETE",
 	})
 	if (!removed.ok && removed.status !== 404) {
-		console.log(`✗ bucket delete failed (HTTP ${removed.status}): ${JSON.stringify(removed.errors)}`)
+		console.log(`✗ bucket delete failed (HTTP ${removed.status}): ${showJson(removed.errors)}`)
 		return false
 	}
 	return true

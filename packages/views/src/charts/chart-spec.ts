@@ -462,6 +462,7 @@ const encodeUncached = Schema.encodeSync(ChartSpecJson)
 
 /** Encodings by spec: a view that hands back the same spec object skips encoding its rows. */
 const encodedCache = new WeakMap<ChartSpec, string>()
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export const encodeChartSpec = (spec: ChartSpec): string => {
 	const cached = encodedCache.get(spec)
@@ -480,7 +481,7 @@ export const specCache = <Rows extends ReadonlyArray<unknown>, Rest extends obje
 ): ((data: Rows, rest: Rest) => S) => {
 	const cache = new WeakMap<Rows, Readonly<{ rest: string; spec: S }>>()
 	return (data, rest) => {
-		const key = JSON.stringify(rest)
+		const key = encodeJson(rest)
 		const cached = cache.get(data)
 		if (cached?.rest === key) return cached.spec
 		const spec = build(data, rest)

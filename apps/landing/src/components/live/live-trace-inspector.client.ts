@@ -18,6 +18,7 @@ export function wireInspector(traceId: string) {
 		const dur = row.dataset.duration ?? ""
 		let attrs: Record<string, string> = {}
 		try {
+			// oxlint-disable-next-line effecttsgo/global-json -- landing client island; keeps the effect runtime out of the marketing bundle
 			attrs = JSON.parse(row.dataset.attrs ?? "{}")
 		} catch {
 			attrs = {}

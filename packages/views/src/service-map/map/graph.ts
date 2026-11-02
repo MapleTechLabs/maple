@@ -9,6 +9,9 @@ import {
 } from "@maple/ui/components/service-map/service-map-utils"
 import { Schema } from "effect"
 
+/** The layout config in the graph signature: a config change re-lays every graph. */
+const LAYOUT_CONFIG_KEY = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(DEFAULT_LAYOUT_CONFIG)
+
 // The graph `ServiceMapCanvas` derives from warehouse rows (`buildFlowElements`) and the
 // declutter stage on top of it. Derived once per input change and cached on the Model.
 
@@ -60,7 +63,7 @@ export const declutterGraph = (
 		.flatMap((node) => (node.data.namespace ? [`${node.id}=${node.data.namespace}`] : []))
 		.sort()
 		.join(",")
-	const signature = `${topologyKey(declutter.nodes, declutter.edges)}|${nsKey}|${JSON.stringify(DEFAULT_LAYOUT_CONFIG)}|elk3`
+	const signature = `${topologyKey(declutter.nodes, declutter.edges)}|${nsKey}|${LAYOUT_CONFIG_KEY}|elk3`
 	return new EffectiveGraph(declutter, signature)
 }
 

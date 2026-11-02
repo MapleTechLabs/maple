@@ -127,6 +127,7 @@ export const loadSnapshot = (
 	}).pipe(Effect.map((lookup) => (lookup._tag === "found" ? Option.some(lookup.value) : Option.none())))
 
 const decodeOverlayJson = Schema.decodeUnknownOption(Schema.fromJsonString(StatusPageOverlay))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export interface ListedOverlay {
 	/** Every listed key, decodable or not: the entry cap counts these. */
@@ -200,7 +201,7 @@ export const rememberOverlay = (
 			const overlay: StatusPageOverlay = { entries: [...entries, ...recent] }
 			return env.storage
 				.cachePut(cacheKey("overlay", pageId), {
-					value: JSON.stringify(overlay),
+					value: encodeJson(overlay),
 					storedAt: env.nowMs,
 				})
 				.pipe(Effect.ignore, Effect.as(overlay))

@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import type { AlertComparator, AlertDestinationDocument, AlertQueryTiming } from "@maple/domain/http"
 import {
 	buildRuleCreateParamsV2,
@@ -12,6 +13,8 @@ import {
 import { destinationProvider } from "../shared/providers"
 import type { RuleForm } from "./form"
 import { intervalWindowIssue, queryTimingIssue } from "./interval"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The rule editor's pure helpers: form surface, condition bar, live chart hero, notifications.
 
@@ -125,7 +128,7 @@ export const previewIdentityKey = (form: RuleForm): string => {
 		...evaluated
 	} = buildRuleCreateParamsV2(form)
 	const tiers = thresholds?.map(({ destination_ids: _ids, ...tier }) => tier)
-	return JSON.stringify({ ...evaluated, tiers })
+	return encodeJson({ ...evaluated, tiers })
 }
 
 /** `makeSuggestedName`: signal and scope, offered while the name is empty. */

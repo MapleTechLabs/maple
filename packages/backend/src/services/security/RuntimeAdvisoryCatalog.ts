@@ -246,19 +246,18 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 				httpClient.execute,
 				Effect.flatMap(HttpClientResponse.schemaBodyJson(GithubAdvisoriesResponse)),
 				Effect.timeout(REQUEST_TIMEOUT),
-				Effect.map((advisories) =>
-					advisories
-						.filter((advisory) => advisory.withdrawn_at === null)
-						.map((advisory) => toGithubAdvisory(advisory, product, repo)),
-				),
-				Effect.mapError(
-					(cause) =>
+				Effect.mapBoth({
+					onSuccess: (advisories) =>
+						advisories
+							.filter((advisory) => advisory.withdrawn_at === null)
+							.map((advisory) => toGithubAdvisory(advisory, product, repo)),
+					onFailure: (cause) =>
 						new RuntimeAdvisoryCatalogError({
 							message: `GitHub advisory read failed for ${repo}`,
 							key: repo,
 							cause,
 						}),
-				),
+				}),
 				Effect.withSpan("github.security_advisories", {
 					kind: "client",
 					attributes: {
@@ -296,17 +295,16 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 				httpClient.execute,
 				Effect.flatMap(HttpClientResponse.schemaBodyJson(OsvQueryResponse)),
 				Effect.timeout(REQUEST_TIMEOUT),
-				Effect.map((body) =>
-					sortAdvisories((body.vulns ?? []).map((vuln) => toAdvisory(vuln, target.version))),
-				),
-				Effect.mapError(
-					(cause) =>
+				Effect.mapBoth({
+					onSuccess: (body) =>
+						sortAdvisories((body.vulns ?? []).map((vuln) => toAdvisory(vuln, target.version))),
+					onFailure: (cause) =>
 						new RuntimeAdvisoryCatalogError({
 							message: `OSV read failed for ${advisoryKey(target)}`,
 							key: advisoryKey(target),
 							cause,
 						}),
-				),
+				}),
 				Effect.withSpan("osv.query", {
 					kind: "client",
 					attributes: {
@@ -390,24 +388,21 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 			const consulted = distinct.slice(0, MAX_VERSIONS)
 			const budget = yield* Ref.make(MAX_READS)
 			// One read per repository however many of its runtime's versions are asked for.
-			const githubLists = new Map(
-				yield* Effect.forEach(
-					[
-						...new Map(
-							consulted.flatMap((target) => {
-								const source = ADVISORY_SOURCES[target.product]
-								return source._tag === "github"
-									? [[source.repo, target.product] as const]
-									: []
-							}),
-						),
-					],
-					([repo, product]) =>
-						Effect.cached(githubListFor(product, repo)).pipe(
-							Effect.map((list) => [repo, list] as const),
-						),
-				),
+			const githubEntries = yield* Effect.forEach(
+				[
+					...new Map(
+						consulted.flatMap((target) => {
+							const source = ADVISORY_SOURCES[target.product]
+							return source._tag === "github" ? [[source.repo, target.product] as const] : []
+						}),
+					),
+				],
+				([repo, product]) =>
+					Effect.cached(githubListFor(product, repo)).pipe(
+						Effect.map((list) => [repo, list] as const),
+					),
 			)
+			const githubLists = new Map(githubEntries)
 			const reads = yield* Effect.forEach(
 				consulted,
 				(target) => advisoriesFor(target, budget, githubLists),

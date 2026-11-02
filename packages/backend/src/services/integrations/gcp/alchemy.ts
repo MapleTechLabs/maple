@@ -4,13 +4,14 @@ import {
 	GCP_READER_SCOPE_ROLES,
 	type GcpSetupPlan,
 } from "@maple/domain/gcp"
+import { Schema } from "effect"
 import type { GcpExisting } from "./terraform"
 
 // The alchemy the stack is written for: version 2 is in beta, and resource props still change.
 const ALCHEMY_VERSION = "2.0.0-beta.83"
 
 /** A TypeScript string literal. */
-const ts = (value: string): string => JSON.stringify(value)
+const ts: (value: string) => string = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 // Alchemy creates a project sink, the topic and the subscription in the project it signs in to.
 const SINKS = { project: "Sink", folder: "FolderSink", organization: "OrganizationSink" } as const
@@ -223,7 +224,11 @@ export const renderGcpAlchemy = (plan: GcpSetupPlan, existing: GcpExisting): str
 					`const LOG_FILTER = ${ts(logs.logFilter)}`,
 				]),
 		...(reader === null ? [] : [`const MAPLE_SERVICE_ACCOUNT = ${ts(reader.mapleServiceAccountEmail)}`]),
-		...(scopeIam ? [`const SCOPE = ${ts(`${plan.scopeType === "folder" ? "folders" : "organizations"}/${plan.scopeId}`)}`] : []),
+		...(scopeIam
+			? [
+					`const SCOPE = ${ts(`${plan.scopeType === "folder" ? "folders" : "organizations"}/${plan.scopeId}`)}`,
+				]
+			: []),
 	]
 	return `// Maple connection for Google Cloud ${plan.scopeType} ${plan.scopeId}
 //   Log forwarding:        ${logs === null ? "off" : "on"}
@@ -265,7 +270,7 @@ ${scopeIam ? `${SCOPE_IAM_MEMBER}\n` : ""}export default Alchemy.Stack(
     state: Alchemy.localState(),
   }`
 			: "{ providers: GCP.providers(), state: Alchemy.localState() }"
-	},
+  },
   Effect.gen(function* () {${logs === null ? "" : logsSection(plan, logs)}${reader === null ? "" : readerSection(plan, reader)}  }),
 )
 `
