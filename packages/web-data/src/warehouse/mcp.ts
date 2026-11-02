@@ -13,7 +13,8 @@ import {
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
-const text = Schema.String.check(Schema.isMinLength(1))
+/** The API's own bounds, so an over-long value is a load error here instead of a throw in its request class. */
+const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
 
 const McpWindowInput = Schema.Struct({
 	startTime: WarehouseDateTimeString,
@@ -54,7 +55,7 @@ export type McpSessionsInput = typeof McpSessionsInput.Type
 const McpSessionInput = Schema.Struct({
 	...McpWindowInput.fields,
 	service: text,
-	sessionId: text,
+	sessionId: McpSessionRequest.fields.sessionId,
 })
 export type McpSessionInput = typeof McpSessionInput.Type
 
