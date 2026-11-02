@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { type GcpDraftEffect, gcpCollectLock } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { label } from "../../ui/label"
 import { labelIdOf } from "../../ui/choice"
 import { icon } from "../../ui/icon"
 import * as Switch from "../../ui/switch"
@@ -8,6 +9,7 @@ import { CAPABILITIES, CAPABILITY_IDS, LOCK_NOTES } from "./gcp-configure-copy"
 import type { Capability, GcpFlags } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
+import { vstack, vstackClass } from "../../ui/stack"
 
 // `CollectFields`: a switch per capability, with the log filter under Logs. Nothing is saved here.
 
@@ -30,7 +32,7 @@ export const collectFields = (
 		gcpCollectLock(flags, capability, options.metricsAvailable),
 	)
 	return h.fieldset(
-		[h.Class("flex flex-col gap-3")],
+		[h.Class(vstackClass({ gap: "3" }))],
 		[
 			h.legend([h.Class(cn(GCP_TITLE, "mb-3"))], ["What should Maple collect?"]),
 			h.div(
@@ -40,47 +42,41 @@ export const collectFields = (
 					const note = options.effect?.(capability) ?? null
 					const inputId = `${COLLECT_ID}-${capability}`
 					const lock = locks[index] ?? null
-					return h.div(
-						[h.Class("flex flex-col gap-3 p-4")],
-						[
-							h.div(
-								[h.Class("flex items-start gap-4")],
-								[
-									h.div(
-										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+					return vstack(h, { gap: "3", className: "p-4" }, [
+						h.div(
+							[h.Class("flex items-start gap-4")],
+							[
+								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+									label(
+										h,
+										{
+											className: "text-sm sm:text-sm",
+											attributes: [h.For(inputId), h.Id(labelIdOf(inputId))],
+										},
+										[title],
+									),
+									h.p(
+										[h.Class(SMALL)],
 										[
-											h.label(
-												[
-													h.For(inputId),
-													h.Id(labelIdOf(inputId)),
-													h.Class("text-sm font-medium"),
-												],
-												[title],
-											),
-											h.p(
-												[h.Class(SMALL)],
-												[
-													lock === "metrics-unavailable"
-														? LOCK_NOTES["metrics-unavailable"]
-														: description,
-												],
-											),
-											...(note === null ? [] : [effectNote(h, note, effects[note])]),
+											lock === "metrics-unavailable"
+												? LOCK_NOTES["metrics-unavailable"]
+												: description,
 										],
 									),
-									...Switch.switchControl(h, {
-										id: `${inputId}-switch`,
-										inputId,
-										isChecked: flags[flag],
-										isDisabled: lock !== null,
-										labelledBy: labelIdOf(inputId),
-										onToggle: Message.ToggledGcpCollect({ capability }),
-									}),
-								],
-							),
-							...(capability === "logs" && flags.logs_enabled ? [options.logFilter] : []),
-						],
-					)
+									...(note === null ? [] : [effectNote(h, note, effects[note])]),
+								]),
+								...Switch.switchControl(h, {
+									id: `${inputId}-switch`,
+									inputId,
+									isChecked: flags[flag],
+									isDisabled: lock !== null,
+									labelledBy: labelIdOf(inputId),
+									onToggle: Message.ToggledGcpCollect({ capability }),
+								}),
+							],
+						),
+						...(capability === "logs" && flags.logs_enabled ? [options.logFilter] : []),
+					])
 				}),
 			),
 			// A rule of the pair, so it stands under both and not under the one it happens to lock.

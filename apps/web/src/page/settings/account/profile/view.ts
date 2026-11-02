@@ -6,9 +6,10 @@ import { confirmDialog } from "../../../../ui/confirm-dialog"
 import { warmAvatarTone } from "../../../../ui/avatar-tone"
 import { avatarFallback } from "../../../../ui/display"
 import { field, fieldLabel } from "../../../../ui/field"
-import { panel } from "../../../../ui/panel"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
+import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { imageDropzone, typeToConfirmField } from "../../kit/image-dropzone"
+import { saveBar } from "../../kit/save-bar"
 import { settingsSection, settingsSections } from "../../kit/section"
 import { fieldIds, stateFor, textField } from "../fields"
 import type { AccountUser } from "../user"
@@ -89,68 +90,26 @@ const profileSection = (h: H, model: Model, user: AccountUser): Html => {
 							}),
 						],
 					),
-					h.div(
-						[h.Class("flex justify-end")],
-						[
-							button(
-								h,
-								{
-									size: "sm",
-									isLoading: model.isSavingName,
-									isDisabled: !isNameDirty(model, user),
-									attributes: [h.OnClick(Message.ClickedSaveName())],
-								},
-								["Save"],
-							),
-						],
-					),
 				],
 			),
 		],
 	)
 }
 
-const dangerZone = (h: H, user: AccountUser): ReadonlyArray<Html> =>
+const deleteSection = (h: H, user: AccountUser): ReadonlyArray<Html> =>
 	user.deleteSelfEnabled
 		? [
-				settingsSection(
-					h,
-					{
-						id: "account-danger",
-						title: "Danger zone",
-						description: [DANGER_DESCRIPTION],
-						framed: false,
-					},
-					[
-						panel(
+				dangerZone(h, { id: "account-danger", description: [DANGER_DESCRIPTION] }, [
+					dangerRow(h, {
+						title: "Delete account",
+						description: ["Delete ", user.primaryEmail ?? "your account", " and sign out everywhere."],
+						action: button(
 							h,
-							{
-								padded: true,
-								className:
-									"flex-row items-center justify-between gap-4 border-destructive-a4",
-							},
-							[
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
-									[
-										"Delete ",
-										user.primaryEmail ?? "your account",
-										" and sign out everywhere.",
-									],
-								),
-								button(
-									h,
-									{
-										variant: "destructive",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedDelete())],
-									},
-									["Delete account"],
-								),
-							],
+							{ variant: "destructive", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
+							["Delete account"],
 						),
-					],
-				),
+					}),
+				]),
 			]
 		: []
 
@@ -182,7 +141,13 @@ export const view = Submodel.defineView<Model, Message, Readonly<Record<never, n
 		if (!model.isLoaded || user === null) return accountSectionSkeleton(h)
 		return settingsSections(h, [
 			profileSection(h, model, user),
-			...dangerZone(h, user),
+			...deleteSection(h, user),
+			...saveBar(h, {
+				isDirty: isNameDirty(model, user),
+				isPending: model.isSavingName,
+				onDiscard: Message.ClickedDiscardName(),
+				onSave: Message.ClickedSaveName(),
+			}),
 			deleteDialog(h, model, user),
 		])
 	},

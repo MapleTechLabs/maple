@@ -8,10 +8,13 @@ import { inlineCode } from "../../ui/inline-code"
 import { keyValue, keyValueList } from "../../ui/key-value"
 import { panel } from "../../ui/panel"
 import { scrollArea } from "../../ui/scroll-area"
+import { textLinkClass } from "../../ui/text-link"
 import { docsLink } from "../kit/signal-empty-state"
 import { type RuntimeLink, runtimeLink, type ServiceRuntime, workloadLink } from "../kit/service-runtimes"
 import type { TimeSearch } from "../kit/time-controls"
 import type { Message } from "./message"
+import { typography } from "../../ui/typography"
+import { hstack, hstackClass } from "../../ui/stack"
 
 // The service panel's Infrastructure tab: the platform resources the service runs as, its
 // Kubernetes workloads, and how to link either when neither matched.
@@ -22,7 +25,7 @@ type KnownKind = "deployment" | "statefulset" | "daemonset"
 const knownKindOf = (kind: string): KnownKind | null =>
 	kind === "deployment" || kind === "statefulset" || kind === "daemonset" ? kind : null
 
-const LINK = "inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 active:text-primary/80"
+const LINK = textLinkClass("primary", false, "text-3xs")
 
 const podsHref = (workload: ServiceWorkload, kind: KnownKind | null, time: TimeSearch): string => {
 	const namespaces = workload.namespace ? [workload.namespace] : undefined
@@ -48,13 +51,12 @@ const utilization = (value: number | null): string => (value == null ? EMPTY_VAL
 const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html => {
 	const kind = knownKindOf(workload.workloadKind)
 	return panel(h, { padded: "sm", className: "space-y-2.5" }, [
-		h.div(
-			[h.Class("flex items-start justify-between gap-2")],
+		hstack(h, { gap: "2", align: "start", justify: "between" },
 			[
 				h.div(
 					[h.Class("min-w-0 flex-1")],
 					[
-						eyebrow(h, { as: "div", className: "flex items-center gap-1.5" }, [
+						eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
 							icon(h, "CubeIcon", { size: 12 }),
 							h.span([], [workload.workloadKind]),
 						]),
@@ -75,8 +77,7 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 					[h.Class("flex flex-col items-end gap-px shrink-0")],
 					[
 						eyebrow(h, {}, ["pods"]),
-						h.span(
-							[h.Class("text-sm font-semibold text-foreground tabular-nums font-mono")],
+						typography(h, { size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true },
 							[String(workload.podCount)],
 						),
 					],
@@ -99,12 +100,12 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 					: [
 							h.a(
 								[h.Class(LINK), h.Href(workloadLink(workload, time).href)],
-								["View workload ", icon(h, "ArrowRightIcon", { size: 10 })],
+								["View workload →"],
 							),
 						]),
 				h.a(
 					[h.Class(LINK), h.Href(podsHref(workload, kind, time))],
-					["View pods ", icon(h, "ArrowRightIcon", { size: 10 })],
+					["View pods →"],
 				),
 			],
 		),
@@ -123,12 +124,11 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 		],
 		[
 			panel(h, { padded: "sm", className: "space-y-1 transition-colors group-hover:bg-surface-sunken" }, [
-				eyebrow(h, { as: "div", className: "flex items-center gap-1.5" }, [
+				eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
 					icon(h, link.icon, { size: 12 }),
 					h.span([], [link.label]),
 				]),
-				h.div(
-					[h.Class("flex items-center justify-between gap-2")],
+				hstack(h, { gap: "2", justify: "between" },
 					[
 						h.p(
 							[h.Class("min-w-0 truncate font-mono text-xs font-medium text-foreground")],
@@ -157,26 +157,22 @@ const infraEmptyState = (h: H): Html =>
 	h.div(
 		[h.Class("rounded-md border border-dashed bg-surface-faint p-4 space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
+			hstack(h, { gap: "2" },
 				[
 					icon(h, "CubeIcon", { size: 14, className: "text-foreground-faint" }),
-					h.p(
-						[h.Class("text-xs font-medium text-foreground")],
+					typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "p" },
 						["Not linked to any infrastructure"],
 					),
 				],
 			),
-			h.p(
-				[h.Class("text-2xs text-muted-foreground leading-relaxed")],
+			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" },
 				[
 					"Set ",
 					inlineCode(h, {}, ["OTEL_SERVICE_NAME"]),
 					" to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform under Infrastructure.",
 				],
 			),
-			h.p(
-				[h.Class("text-2xs text-muted-foreground leading-relaxed")],
+			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" },
 				[
 					"On Kubernetes, install the maple-k8s-infra Helm chart and label the namespace so spans carry ",
 					inlineCode(h, {}, ["k8s.deployment.name"]),

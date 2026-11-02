@@ -349,7 +349,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		isLoading
 			? [loadingSkeleton(h)]
 			: empty
-				? [emptyMessage(h, {}, ["No settings are available for the current account."])]
+				? [emptyMessage(h, {}, ["No settings are available for the current account"])]
 				: activeTabOf(model) === "data-platform" && visibilityOf(model).isDataPlatformLocked === true
 					? [lockedDataPlatform(h)]
 					: [...pageNote(h, model), ...tabContent(h, model, inputs)],

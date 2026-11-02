@@ -1,11 +1,11 @@
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
-import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
+import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { errorRate, formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../ui/empty"
+import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { meter } from "../../ui/meter"
 import { selectableTile } from "../agent-sessions/tools-kit/metric-strip"
@@ -14,7 +14,7 @@ import {
 	errorTone,
 	shareCell,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
@@ -49,6 +49,10 @@ import {
 	toolColor,
 	volumeSpark,
 } from "./view-kit"
+import { typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
+import { columnClass } from "../../ui/column"
+import { swatch } from "../../ui/swatch"
 
 // `/mcp/:service`: the tools page's layout for one MCP server. Toolbar, scope, a metric strip that
 // picks the chart, the tools table, then who calls, why calls fail, the protocol and what is sent.
@@ -93,9 +97,11 @@ const subline = <M>(h: HtmlBuilder<M>, lead: string, rest: string): Html =>
 const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
 	const { totals } = data
 	const calls = data.series.map((point) => point.calls).slice(-SPARK_BUCKETS)
-	const topClient = data.clients[0]
+	// Clients that only connected have no calls to rank or share.
+	const callers = data.clients.filter((client) => client.calls > 0)
+	const topClient = callers[0]
 	// The share is of the listed clients' calls: a tool search can empty the totals.
-	const clientCalls = data.clients.reduce((sum, client) => sum + client.calls, 0)
+	const clientCalls = callers.reduce((sum, client) => sum + client.calls, 0)
 	const clientsPerBucket = data.series.map(
 		(point) =>
 			new Set(
@@ -109,7 +115,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 		[
 			selectableTile(h, {
 				eyebrow: "Tool calls",
-				value: formatToolCount(totals.calls),
+				value: formatNumber(totals.calls),
 				spark: calls,
 				// Spans that start inside the window have no earlier stretch to compare against.
 				subline:
@@ -122,7 +128,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 						: subline(
 								h,
 								`${data.tools.length} ${pluralize(data.tools.length, "tool")}`,
-								`· ${data.clients.length} ${pluralize(data.clients.length, "client")}`,
+								`· ${callers.length} ${pluralize(callers.length, "client")}`,
 							),
 				isSelected: options.metric === "calls",
 				onSelect: options.onSelectMetric("calls"),
@@ -165,7 +171,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			),
 			selectableTile(h, {
 				eyebrow: "Clients",
-				value: String(data.clients.length),
+				value: String(callers.length),
 				spark: clientsPerBucket.slice(-SPARK_BUCKETS),
 				subline:
 					topClient === undefined
@@ -245,44 +251,36 @@ const toolRow = <M>(
 	options: ServerBodyOptions<M>,
 ): Html => {
 	const rate = errorRate(row)
-	return h.button(
-		[h.Type("button"), h.Class(toolRowClass(false)), h.OnClick(options.onOpenTool(row.tool))],
-		[
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
-				[
-					h.span(
-						[
-							h.AriaHidden(true),
-							h.Class("size-2 shrink-0 rounded-xs"),
-							h.Style({ "background-color": toolColor(index) }),
-						],
-						[],
-					),
-					h.span([h.Class("block min-w-0 truncate font-mono text-xs text-foreground")], [row.tool]),
-				],
-			),
-			volumeSpark(h, options.env.spark, `mcp-tool-spark-${row.tool}`, row.spark),
-			numberCell(h, formatToolCount(row.calls), "w-20 text-foreground"),
-			duration(h, row.p50, options.percentile === "p50", "hidden @min-[900px]/panel:block"),
-			duration(h, row.p90, options.percentile === "p90"),
-			duration(h, row.p95, options.percentile === "p95", "hidden @min-[900px]/panel:block"),
-			shareCell(h, { ratio: rate, max: maxRate, label: formatErrorRate(rate), tone: errorTone(rate) }),
-			h.span(
-				[h.Class("hidden w-28 shrink-0 pl-4 @min-[640px]/panel:block")],
-				[
-					row.topError === null
-						? h.span([h.Class("font-mono text-xs text-foreground-subtle")], [EMPTY_VALUE])
-						: errorTypeChip(h, row.topError),
-				],
-			),
-			lastSeenCell(h, row.lastCallMs, options.nowMs, options.env.timeZone),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
-				[icon(h, "ChevronRightIcon", { size: 14 })],
-			),
-		],
-	)
+	return toolTableRow(h, { onClick: options.onOpenTool(row.tool) }, [
+		hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
+			swatch(h, { ariaHidden: true, color: toolColor(index) }),
+			h.span([h.Class("block min-w-0 truncate font-mono text-xs text-foreground")], [row.tool]),
+		]),
+		volumeSpark(h, options.env.spark, `mcp-tool-spark-${row.tool}`, row.spark),
+		numberCell(h, formatNumber(row.calls), "w-20 text-foreground"),
+		duration(h, row.p50, options.percentile === "p50", "hidden @min-[900px]/panel:block"),
+		duration(h, row.p90, options.percentile === "p90"),
+		duration(h, row.p95, options.percentile === "p95", "hidden @min-[900px]/panel:block"),
+		shareCell(h, { ratio: rate, max: maxRate, label: formatErrorRate(rate), tone: errorTone(rate) }),
+		h.span(
+			[h.Class("hidden w-28 shrink-0 pl-4 @min-[640px]/panel:block")],
+			[
+				row.topError === null
+					? h.span([h.Class("font-mono text-xs text-foreground-subtle")], [EMPTY_VALUE])
+					: errorTypeChip(h, row.topError),
+			],
+		),
+		lastSeenCell(h, row.lastCallMs, options.nowMs, options.env.timeZone),
+		hstack(
+			h,
+			{
+				justify: "end",
+				as: "span",
+				className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+			},
+			[icon(h, "ChevronRightIcon", { size: 14 })],
+		),
+	])
 }
 
 const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
@@ -293,7 +291,7 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 			sectionTitle(h, "Tools", String(data.tools.length)),
 			toolTable(h, [
 				toolTableHead(h, [
-					th(h, { label: "Tool", width: "w-0 flex-1 min-w-0" }),
+					th(h, { label: "Tool", width: columnClass({ min: "0" }) }),
 					th(h, {
 						label: "Volume",
 						width: "w-28 shrink-0",
@@ -313,7 +311,10 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 						align: "right",
 						hidden: "hidden @min-[900px]/panel:flex",
 					}),
-					th(h, { label: "Failed", width: "w-36 shrink-0 pl-6" }),
+					th(h, {
+						label: "Failed",
+						width: columnClass({ width: "36", shrink: false, inset: "6" }),
+					}),
 					th(h, {
 						label: "Top error",
 						width: "w-28 shrink-0 pl-4",
@@ -333,8 +334,8 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 						? [
 								emptyMessage(h, { className: "py-8 font-mono" }, [
 									options.isFiltered
-										? "No tools match the filters."
-										: "No tool calls in the selected window.",
+										? "No tools match these filters"
+										: "No tool calls in this window",
 								]),
 							]
 						: data.tools.map((row, index) => toolRow(h, row, index, maxRate, options)),
@@ -345,7 +346,7 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 				data.tools.length === options.toolCount
 					? `Showing all ${data.tools.length} ${pluralize(data.tools.length, "tool")}`
 					: `${data.tools.length} of ${options.toolCount} tools`,
-				`· ${formatToolCount(data.totals.calls)} calls · ${formatErrorRate(errorRate(data.totals))} failed`,
+				`· ${formatNumber(data.totals.calls)} calls · ${formatErrorRate(errorRate(data.totals))} failed`,
 			),
 		],
 	)
@@ -369,23 +370,73 @@ const half = <M>(
 const note = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
 	h.p([h.Class("mt-3 font-prose text-xs leading-relaxed text-muted-foreground")], children)
 
+/** Callers the panel lists before "N more": the rest are a long tail of one-off agents. */
+const CLIENT_ROWS = 8
+
+const clientsHead = <M>(h: HtmlBuilder<M>): Html => {
+	const label = (text: string, width: string, title?: string) =>
+		eyebrow(
+			h,
+			{ variant: "mono", className: width, attributes: title === undefined ? [] : [h.Title(title)] },
+			[text],
+		)
+	return h.div(
+		[h.Class("flex h-8 items-center gap-3 border-y border-border")],
+		[
+			label("Client", "w-0 flex-1"),
+			label("Calls", "w-14 text-right"),
+			label("Connects", "w-16 text-right", "initialize requests"),
+			label("Sources", "w-14 text-right", "distinct client.address values"),
+			label("Failed", "w-14 text-right"),
+		],
+	)
+}
+
 const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number): Html => {
 	const rate = errorRate(row)
+	const isQuiet = row.calls === 0
 	return h.div(
 		[h.Class("flex h-9 items-center gap-3 border-b border-border-subtle last:border-0")],
 		[
-			h.span(
-				[h.Class("flex w-48 shrink-0 items-center gap-2 font-mono text-xs")],
-				[clientIcon(h, row.name), h.span([h.Class("truncate")], [row.name]), ...kindTag(h, row.kind)],
+			h.div(
+				[h.Class("flex w-0 min-w-0 flex-1 flex-col justify-center gap-1")],
+				[
+					h.span(
+						[h.Class("flex min-w-0 items-center gap-2 font-mono text-xs")],
+						[
+							clientIcon(h, row.name),
+							h.span([h.Class(cn("truncate", isQuiet && "text-muted-foreground"))], [row.name]),
+							...kindTag(h, row.kind),
+						],
+					),
+					...(isQuiet
+						? []
+						: [
+								meter(h, {
+									value: row.calls,
+									max,
+									minVisible: 2,
+									fillClassName: "bg-primary/70",
+									className: "h-1 w-full rounded-xs bg-muted",
+								}),
+							]),
+				],
 			),
-			meter(h, {
-				value: row.calls,
-				max,
-				minVisible: 2,
-				fillClassName: "bg-primary/70",
-				className: "h-1.5 min-w-0 flex-1 rounded-xs bg-muted",
-			}),
-			numberCell(h, formatToolCount(row.calls), "w-14 text-foreground"),
+			numberCell(
+				h,
+				isQuiet ? EMPTY_VALUE : formatNumber(row.calls),
+				cn("w-14", isQuiet ? "text-foreground-subtle" : "text-foreground"),
+			),
+			numberCell(
+				h,
+				row.connects === 0 ? EMPTY_VALUE : formatNumber(row.connects),
+				"w-16 text-muted-foreground",
+			),
+			numberCell(
+				h,
+				row.sources === 0 ? EMPTY_VALUE : formatNumber(row.sources),
+				"w-14 text-muted-foreground",
+			),
 			numberCell(
 				h,
 				row.errors === 0 ? EMPTY_VALUE : formatErrorRate(rate),
@@ -394,6 +445,13 @@ const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number): Html =
 		],
 	)
 }
+
+/** A label row between the callers and the clients that only connected. */
+const clientGroupLabel = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	h.div(
+		[h.Class("flex h-8 items-end border-b border-border-subtle pb-1.5")],
+		[eyebrow(h, { variant: "mono" }, [text])],
+	)
 
 /** One `clientInfo.name` and how many initialize requests sent it. */
 const initializerRow = <M>(
@@ -415,7 +473,7 @@ const initializerRow = <M>(
 				fillClassName: "bg-primary/70",
 				className: "h-1.5 min-w-0 flex-1 rounded-xs bg-muted",
 			}),
-			numberCell(h, formatToolCount(row.count), "w-14 text-foreground"),
+			numberCell(h, formatNumber(row.count), "w-14 text-foreground"),
 		],
 	)
 
@@ -427,10 +485,10 @@ const failureRow = <M>(h: HtmlBuilder<M>, row: McpFailureKind, calls: number): H
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2 text-xs")],
-						[row.label, ...row.codes.map((code) => attr(h, code))],
-					),
+					hstack(h, { gap: "2", wrap: true, className: typographyClass({ size: "xs" }) }, [
+						row.label,
+						...row.codes.map((code) => attr(h, code)),
+					]),
 					h.div([h.Class("mt-0.5 font-prose text-xs text-muted-foreground")], [row.detail]),
 				],
 			),
@@ -452,7 +510,7 @@ const methodRow = <M>(h: HtmlBuilder<M>, row: McpMethodRow): Html =>
 		[h.Class("flex h-9 items-center gap-3 border-b border-border-subtle last:border-0")],
 		[
 			h.span([h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs")], [row.method]),
-			numberCell(h, formatToolCount(row.calls), "w-16 text-foreground"),
+			numberCell(h, formatNumber(row.calls), "w-16 text-foreground"),
 			numberCell(h, row.p50 === 0 ? "<1ms" : formatDurationNs(row.p50), "w-20 text-muted-foreground"),
 			numberCell(h, row.p95 === 0 ? "<1ms" : formatDurationNs(row.p95), "w-20 text-muted-foreground"),
 		],
@@ -493,8 +551,7 @@ const coverageRow = <M>(h: HtmlBuilder<M>, row: McpCoverageRow): Html =>
 	)
 
 const methodsHead = <M>(h: HtmlBuilder<M>): Html => {
-	const label = (text: string, width: string) =>
-		h.span([h.Class(cn(width, eyebrowVariants({ variant: "mono" })))], [text])
+	const label = (text: string, width: string) => eyebrow(h, { variant: "mono", className: width }, [text])
 	return h.div(
 		[h.Class("flex h-8 items-center gap-3 border-y border-border")],
 		[
@@ -544,18 +601,40 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			]),
 		])
 	}
-	const max = Math.max(...data.clients.map((client) => client.calls), 1)
+	const callers = data.clients.filter((client) => client.calls > 0)
+	const quiet = data.clients.filter((client) => client.calls === 0)
+	const max = Math.max(...callers.map((client) => client.calls), 1)
+	const shown = callers.slice(0, CLIENT_ROWS)
+	const hidden = callers.slice(CLIENT_ROWS)
 	const initializers = data.initializers
 		.slice(0, 3)
 		.map((entry) => `${entry.name} ${entry.count}`)
 		.join(" · ")
 	const rest = data.initializers.length - 3
 	return half(h, "Clients", options.clientToggle, [
-		...data.clients.map((client) => clientRow(h, client, max)),
+		clientsHead(h),
+		...shown.map((client) => clientRow(h, client, max)),
+		...(hidden.length === 0
+			? []
+			: [
+					note(h, [
+						`${hidden.length} more ${pluralize(hidden.length, "client")} · ${formatNumber(
+							hidden.reduce((sum, client) => sum + client.calls, 0),
+						)} calls`,
+					]),
+				]),
+		...(quiet.length === 0
+			? []
+			: [
+					clientGroupLabel(h, `Connected, no tool calls · ${quiet.length}`),
+					...quiet.map((client) => clientRow(h, client, max)),
+				]),
 		note(h, [
 			"Calls carry ",
 			attr(h, "user_agent.original"),
-			". ",
+			"; a connect is one ",
+			attr(h, "initialize"),
+			", and agents reconnect often. ",
 			attr(h, "clientInfo"),
 			initializers === ""
 				? " arrives on initialize only; none seen in this window."
@@ -599,16 +678,17 @@ export const serverBody = <M>(
 	h: HtmlBuilder<M>,
 	data: McpServerOverview,
 	options: ServerBodyOptions<M>,
-): Html =>
-	h.div(
+): Html => {
+	const callerCount = data.clients.filter((client) => client.calls > 0).length
+	return h.div(
 		[h.Class("flex flex-col")],
 		[
 			options.toolbar,
 			mcpScopeRow(
 				h,
 				options.scope,
-				formatToolCount(data.totals.calls),
-				`tool calls · ${data.clients.length} ${pluralize(data.clients.length, "client")}`,
+				formatNumber(data.totals.calls),
+				`tool calls · ${callerCount} ${pluralize(callerCount, "client")}`,
 			),
 			metricStrip(h, data, options),
 			mainChart(h, data, options),
@@ -616,3 +696,4 @@ export const serverBody = <M>(
 			h.div([h.Class("border-t border-border")], [detailGrid(h, data, options)]),
 		],
 	)
+}

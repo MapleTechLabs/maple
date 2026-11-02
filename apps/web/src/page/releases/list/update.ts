@@ -11,6 +11,7 @@ import * as FilterSections from "../../../ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
+import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReleasesReloadSpin,
@@ -18,6 +19,7 @@ import {
 	FetchReleaseIssues,
 	FetchReleaseRanges,
 	FetchReleases,
+	LoadReleasesSignalPresence,
 	ResolveReleasesWindow,
 	type ReleasesInput,
 } from "./command"
@@ -100,11 +102,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("releases-time-range"),
 		overlays: Overlays.init("releases-list"),
+		presence: SignalPresenceData.Loading(),
 	}
 	return {
 		model,
 		commands: [
 			resolveCommand(model, context, "Load"),
+			LoadReleasesSignalPresence({ orgId: context.orgId }),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) => Message.GotFilterSectionsMessage({ message })),
 		],
 	}
@@ -159,6 +163,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchIssues: ({ key, result }) => ({ model: { ...model, issues: Keyed.accept(model.issues, key, result) } }),
 		CompletedFetchCommits: ({ key, result }) => ({ model: { ...model, commits: Keyed.accept(model.commits, key, result) } }),
 		CompletedFetchRanges: ({ key, result }) => ({ model: { ...model, ranges: Keyed.accept(model.ranges, key, result) } }),
+		CompletedLoadSignalPresence: ({ result }) => ({
+			model: { ...model, presence: AsyncData.settle(model.presence, result) },
+		}),
 		PaintedTable: () => (model.hasPaintedTable ? { model } : followTable({ ...model, hasPaintedTable: true }, context, "Load")),
 		MeasuredTrack: ({ width }) => (width === model.trackWidth ? { model } : { model: { ...model, trackWidth: width } }),
 		ClickedReload: () => {

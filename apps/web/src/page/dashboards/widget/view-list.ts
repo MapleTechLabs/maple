@@ -22,6 +22,8 @@ import type { Model } from "./model"
 import { ProductEdit } from "./product-edit"
 import { product } from "./view-product"
 import { listColumnRow } from "./view-list-column"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `ListConfigPanel` and its Run preview row.
 
@@ -169,8 +171,7 @@ const listLimit = (h: H, state: EditorState): Html =>
 				h.OnInput((value) => product(ProductEdit.ChangedListLimit({ value }))),
 			],
 		}),
-		h.p(
-			[h.Class("text-3xs text-muted-foreground")],
+		typography(h, { size: "3xs", tone: "muted", as: "p" },
 			["Max 200. Recommended: 25-50 for dashboard widgets."],
 		),
 	])
@@ -259,8 +260,7 @@ export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray
 				]),
 			],
 		),
-		h.div(
-			[h.Class("flex items-center gap-3")],
+		hstack(h, { gap: "3" },
 			[
 				button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedRunPreview())] }, [
 					"Run preview",

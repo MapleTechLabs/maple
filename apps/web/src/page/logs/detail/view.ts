@@ -1,10 +1,7 @@
-import * as SheetStyles from "@maple/ui/styles/ui/sheet"
-import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import * as AttributesView from "../../../ui/attributes/attributes-view"
 import { copyButton } from "../../../ui/copy-button"
-import { titleId } from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { icon, type IconName } from "../../../ui/icon"
 import { cappedCode } from "../../../ui/logs/log-message"
@@ -19,6 +16,8 @@ import { copyStatusOf } from "./update"
 import { heroHeader } from "./view-hero"
 import { metaStrip } from "./view-meta"
 import { contextPanel, errorBanner, showsErrorBanner, traceTimeline } from "./view-panels"
+import { typography } from "../../../ui/typography"
+import { vstack, vstackClass } from "../../../ui/stack"
 
 // `LogDetailSheet`: hero, meta strip and the tabbed panels in a right-hand sheet.
 
@@ -43,7 +42,7 @@ const rawPanel = (h: H, model: Model, log: LogRecord): Html => {
 			h.div(
 				[h.Class("flex items-center justify-between mb-2")],
 				[
-					h.span([h.Class("text-xs font-medium text-muted-foreground")], ["JSON Payload"]),
+					typography(h, { size: "xs", tone: "muted", weight: "medium" }, ["JSON Payload"]),
 					copyButton(h, {
 						status: copyStatusOf(model, "raw-json"),
 						label: "Log JSON",
@@ -125,7 +124,7 @@ const tabs = (h: H, model: Model, log: LogRecord, timeZone: string): Html =>
 		viewInputs: {
 			variant: "underline",
 			labels: model.tabs.values.map((value) => TAB_LABELS.get(value) ?? value),
-			className: "flex-1 flex flex-col min-h-0",
+			className: vstackClass({ grow: true, className: "min-h-0" }),
 			listClassName: "shrink-0 px-4",
 			panelClassName: "flex-1 min-h-0 mt-0",
 			tabContent: (value, label) => [
@@ -146,14 +145,7 @@ const content = (
 	timeZone: string,
 	close: ReadonlyArray<ChildAttribute>,
 ) => [
-	h.h2(
-		[
-			h.Class(cn(SheetStyles.sheetTitleStyles, "sr-only")),
-			h.DataAttribute("slot", "sheet-title"),
-			h.Id(titleId(model.dialog.id)),
-		],
-		["Log: ", log.body.slice(0, 80)],
-	),
+	DialogView.dialogTitle(h, "sheet", model.dialog.id, ["Log: ", log.body.slice(0, 80)], "sr-only"),
 	heroHeader(h, model, log, close),
 	metaStrip(h, model, log, timeZone),
 	...(showsErrorBanner(log) ? [errorBanner(h, model, log)] : []),
@@ -217,16 +209,13 @@ export const pageView = Submodel.defineView<Model, Message, ViewInputs>((model, 
 							"p-3",
 						),
 					]),
-					h.div(
-						[h.Class("flex flex-col gap-3")],
-						[
-							...(trace === null ? [] : [panel(h, { padded: "sm" }, [trace])]),
-							panel(h, { padded: "sm" }, [
-								contextPanel(h, model, log, inputs.timeZone, "max-h-[420px] flex-none"),
-							]),
-							panel(h, { padded: "sm" }, [rawPanel(h, model, log)]),
-						],
-					),
+					vstack(h, { gap: "3" }, [
+						...(trace === null ? [] : [panel(h, { padded: "sm" }, [trace])]),
+						panel(h, { padded: "sm" }, [
+							contextPanel(h, model, log, inputs.timeZone, "max-h-[420px] flex-none"),
+						]),
+						panel(h, { padded: "sm" }, [rawPanel(h, model, log)]),
+					]),
 				],
 			),
 		],

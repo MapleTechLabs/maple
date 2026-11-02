@@ -232,5 +232,5 @@ export const lab = defineShellLab("Service map runtimes", {
 	view,
 	subscriptions,
 	currentPath: "/lab/service-map-runtimes",
-	breadcrumbs: [{ label: "Service Map" }],
+	breadcrumbs: [{ label: "Service map" }],
 })

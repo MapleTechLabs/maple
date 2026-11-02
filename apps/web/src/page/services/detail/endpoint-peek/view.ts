@@ -1,4 +1,3 @@
-import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import {
 	countLabel,
 	formatBytes,
@@ -10,13 +9,12 @@ import {
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { toEpochMs } from "@maple/ui/lib/time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type * as Chart from "../../../../charts/chart"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { linkButton } from "../../../../ui/button"
-import * as Dialog from "../../../../ui/dialog"
 import * as DialogView from "../../../../ui/dialog-view"
 import { kbd } from "../../../../ui/display"
 import { emptyMessage } from "../../../../ui/empty"
@@ -41,10 +39,13 @@ import type { LoadFailure } from "../../../../data/load-failure"
 import type { ApiBucket, EndpointDetail, StatusRow } from "../model-tabs"
 import { type ChartContext, latencyChart, STATUS_COLORS, statusChart } from "../view-api-charts"
 import { methodLabel } from "../view-api"
+import { sheetDetailHeader } from "../../../kit/sheet-detail-header"
 import { MountEndpointPeekKeys } from "./keys"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { Peek } from "./update"
+import { typography } from "../../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../../ui/stack"
 
 // The endpoint drawer: the endpoint's numbers, its requests and latency over the window, the status
 // codes, the latency distribution, the clients, the body sizes and the slowest requests.
@@ -82,15 +83,15 @@ const card = (
 	h.section(
 		[h.Key(label), h.Class(cn("flex min-w-0 flex-col gap-2.5 rounded-md border bg-card p-3", className))],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-2")],
-				[sectionLabel(h, label), ...(aside === null ? [] : [aside])],
-			),
+			hstack(h, { gap: "2", align: "baseline", justify: "between" }, [
+				sectionLabel(h, label),
+				...(aside === null ? [] : [aside]),
+			]),
 			...children,
 		],
 	)
 
-const hint = (h: H, text: string) => h.span([h.Class("text-3xs text-muted-foreground")], [text])
+const hint = (h: H, text: string) => typography(h, { size: "3xs", tone: "muted" }, [text])
 
 const stat = (h: H, label: string, value: string, sub: string, tone?: Tone): Html =>
 	statRailItem(h, { eyebrow: label, value, subline: sub, tone, size: "sm", className: "min-w-0" })
@@ -135,25 +136,19 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 }
 
 const legendSwatch = (h: H, label: string, color: string): Html =>
-	h.div(
-		[h.Key(label), h.Class("flex items-center gap-1")],
-		[h.span([h.Class("h-0.5 w-2"), h.Style({ background: color })]), h.span([], [label])],
-	)
+	hstack(h, { gap: "1", attributes: [h.Key(label)] }, [
+		h.span([h.Class("h-0.5 w-2"), h.Style({ background: color })]),
+		h.span([], [label]),
+	])
 
 const chartSection = (h: H, title: string, legend: ReadonlyArray<Html>, body: Html): Html =>
-	h.section(
-		[h.Key(title), h.Class("flex flex-col gap-2")],
-		[
-			h.div(
-				[h.Class("flex items-center justify-between")],
-				[
-					sectionLabel(h, title),
-					h.div([h.Class("flex items-center gap-3 text-3xs text-muted-foreground")], legend),
-				],
-			),
-			body,
-		],
-	)
+	vstack(h, { gap: "2", as: "section", attributes: [h.Key(title)] }, [
+		hstack(h, { justify: "between" }, [
+			sectionLabel(h, title),
+			h.div([h.Class("flex items-center gap-3 text-3xs text-muted-foreground")], legend),
+		]),
+		body,
+	])
 
 const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => {
 	if (AsyncData.isFailure(inputs.series))
@@ -223,42 +218,43 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 		.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)[0]
 	return card(h, "Status codes", null, [
 		...(codes.length === 0
-			? [h.p([h.Class("text-2xs text-muted-foreground")], ["No status codes recorded in this window."])]
+			? [
+					typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+						"No status codes recorded in this window",
+					]),
+				]
 			: codes.slice(0, 4).map((code) => {
 					const tone = code.name.startsWith("2")
 						? { text: TONE_TEXT.info, bar: TONE_FILL.ok }
 						: isServerError(code.name)
 							? { text: TONE_TEXT.crit, bar: TONE_FILL.crit }
 							: { text: TONE_TEXT.warn, bar: TONE_FILL.warn }
-					return h.div(
-						[h.Key(code.name), h.Class("flex flex-col gap-1")],
-						[
-							h.div(
-								[h.Class("flex justify-between gap-2 text-2xs tabular-nums")],
-								[
-									h.span(
-										[h.Class(cn("truncate", tone.text))],
-										[`${code.name} ${reasonPhrase(code.name)}`.trim()],
-									),
-									h.span(
-										[h.Class("shrink-0")],
-										[
-											`${formatNumber(Math.round(code.count))} · ${formatErrorRate(code.share)}`,
-										],
-									),
-								],
-							),
-							h.div(
-								[h.Class("h-1 rounded-full bg-muted")],
-								[
-									h.div([
-										h.Class(cn("h-1 rounded-full", tone.bar)),
-										h.Style({ width: `${Math.max(code.share * 100, 1)}%` }),
-									]),
-								],
-							),
-						],
-					)
+					return vstack(h, { gap: "1", attributes: [h.Key(code.name)] }, [
+						h.div(
+							[h.Class("flex justify-between gap-2 text-2xs tabular-nums")],
+							[
+								h.span(
+									[h.Class(cn("truncate", tone.text))],
+									[`${code.name} ${reasonPhrase(code.name)}`.trim()],
+								),
+								h.span(
+									[h.Class("shrink-0")],
+									[
+										`${formatNumber(Math.round(code.count))} · ${formatErrorRate(code.share)}`,
+									],
+								),
+							],
+						),
+						h.div(
+							[h.Class("h-1 rounded-full bg-muted")],
+							[
+								h.div([
+									h.Class(cn("h-1 rounded-full", tone.bar)),
+									h.Style({ width: `${Math.max(code.share * 100, 1)}%` }),
+								]),
+							],
+						),
+					])
 				})),
 		...(errorType === undefined
 			? []
@@ -288,37 +284,30 @@ const distributionCard = (h: H, detail: EndpointDetail): Html => {
 	const last = bins[bins.length - 1]
 	return card(h, "Distribution", hint(h, "log scale"), [
 		bins.length === 0 || first === undefined || last === undefined
-			? h.p(
-					[h.Class("text-2xs text-muted-foreground")],
-					["Not enough requests to draw a distribution."],
-				)
-			: h.div(
-					[h.Class("flex flex-col gap-1.5")],
-					[
-						h.div(
-							[h.Class("flex h-16 items-end gap-[3px]")],
-							bins.map((bin, index) =>
-								h.div([
-									h.Key(String(index)),
-									h.Class(cn("flex-1 rounded-t-xs", BAND_CLASS[bin.band])),
-									h.Style({
-										height: `${peak > 0 ? Math.max((bin.share / peak) * 100, 2) : 2}%`,
-									}),
-									h.Title(
-										`${formatLatency(bin.fromMs)} to ${formatLatency(bin.toMs)}: ${formatErrorRate(bin.share)} of requests`,
-									),
-								]),
-							),
+			? typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					"Not enough requests to draw a distribution.",
+				])
+			: vstack(h, { gap: "1.5" }, [
+					h.div(
+						[h.Class("flex h-16 items-end gap-[3px]")],
+						bins.map((bin, index) =>
+							h.div([
+								h.Key(String(index)),
+								h.Class(cn("flex-1 rounded-t-xs", BAND_CLASS[bin.band])),
+								h.Style({
+									height: `${peak > 0 ? Math.max((bin.share / peak) * 100, 2) : 2}%`,
+								}),
+								h.Title(
+									`${formatLatency(bin.fromMs)} to ${formatLatency(bin.toMs)}: ${formatErrorRate(bin.share)} of requests`,
+								),
+							]),
 						),
-						h.div(
-							[h.Class("flex justify-between text-3xs text-muted-foreground tabular-nums")],
-							[
-								h.span([], [formatLatency(first.fromMs)]),
-								h.span([], [formatLatency(last.toMs)]),
-							],
-						),
-					],
-				),
+					),
+					h.div(
+						[h.Class("flex justify-between text-3xs text-muted-foreground tabular-nums")],
+						[h.span([], [formatLatency(first.fromMs)]), h.span([], [formatLatency(last.toMs)])],
+					),
+				]),
 	])
 }
 
@@ -327,29 +316,31 @@ const clientsCard = (h: H, detail: EndpointDetail, spanCount: number): Html => {
 	const total = spanCount
 	return card(h, "Top clients", hint(h, "user_agent.original"), [
 		detail.userAgents.length === 0
-			? h.p([h.Class("text-2xs text-muted-foreground")], ["No requests carried a user agent."])
+			? typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No requests carried a user agent."])
 			: h.div(
 					[h.Class("flex flex-col gap-1.5 text-2xs tabular-nums")],
 					detail.userAgents
 						.slice(0, 5)
 						.map((agent) =>
-							h.div(
-								[h.Key(agent.value), h.Class("flex items-center gap-2")],
-								[
-									h.span(
-										[h.Class("min-w-0 flex-1 truncate"), h.Title(agent.value)],
-										[agent.value === "" ? "(no user agent)" : agent.value],
-									),
-									...(agent.count === null || total === 0
-										? []
-										: [
-												h.span(
-													[h.Class("shrink-0 text-muted-foreground")],
-													[formatErrorRate(agent.count / total)],
-												),
-											]),
-								],
-							),
+							hstack(h, { gap: "2", attributes: [h.Key(agent.value)] }, [
+								typography(
+									h,
+									{
+										truncate: true,
+										className: "min-w-0 flex-1",
+										attributes: [h.Title(agent.value)],
+									},
+									[agent.value === "" ? "(no user agent)" : agent.value],
+								),
+								...(agent.count === null || total === 0
+									? []
+									: [
+											h.span(
+												[h.Class("shrink-0 text-muted-foreground")],
+												[formatErrorRate(agent.count / total)],
+											),
+										]),
+							]),
 						),
 				),
 	])
@@ -358,48 +349,31 @@ const clientsCard = (h: H, detail: EndpointDetail, spanCount: number): Html => {
 const bodyCard = (h: H, detail: EndpointDetail): Html =>
 	card(h, "Request body", null, [
 		detail.body === null
-			? h.p(
-					[h.Class("text-2xs text-muted-foreground")],
-					[
-						"No request carried ",
-						h.span([h.Class("text-foreground-soft")], ["http.request.body.size"]),
-						".",
-					],
-				)
-			: h.div(
-					[h.Class("flex flex-col gap-2")],
-					[
-						h.div(
-							[h.Class("grid grid-cols-3 gap-2")],
-							[
-								{ label: "p50", bytes: detail.body.p50Bytes },
-								{ label: "p95", bytes: detail.body.p95Bytes },
-								{ label: "max", bytes: detail.body.maxBytes },
-							].map(({ label, bytes }) =>
-								h.div(
-									[h.Key(label), h.Class("flex flex-col")],
-									[
-										h.span([h.Class("text-3xs text-muted-foreground")], [label]),
-										h.span([h.Class("text-ui tabular-nums")], [formatBytes(bytes)]),
-									],
-								),
+			? typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					"No request carried ",
+					h.span([h.Class("text-foreground-soft")], ["http.request.body.size"]),
+					".",
+				])
+			: vstack(h, { gap: "2" }, [
+					h.div(
+						[h.Class("grid grid-cols-3 gap-2")],
+						[
+							{ label: "p50", bytes: detail.body.p50Bytes },
+							{ label: "p95", bytes: detail.body.p95Bytes },
+							{ label: "max", bytes: detail.body.maxBytes },
+						].map(({ label, bytes }) =>
+							h.div(
+								[h.Key(label), h.Class("flex flex-col")],
+								[
+									typography(h, { size: "3xs", tone: "muted" }, [label]),
+									h.span([h.Class("text-ui tabular-nums")], [formatBytes(bytes)]),
+								],
 							),
 						),
-						hint(h, `${formatNumber(detail.body.count)} requests reported a size`),
-					],
-				),
+					),
+					hint(h, `${formatNumber(detail.body.count)} requests reported a size`),
+				]),
 	])
-
-/** "Oct 24 13:40" in the page time zone, 24-hour like the rest of the page. */
-const formatSlowestTime = (timestamp: string, timeZone: string): string =>
-	new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		hourCycle: "h23",
-	}).format(toEpochMs(timestamp))
 
 const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 	h.section(
@@ -408,16 +382,13 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 			h.div(
 				[h.Class("flex h-9 items-center justify-between border-b px-3")],
 				[
-					h.div(
-						[h.Class("flex items-baseline gap-2")],
-						[
-							sectionLabel(h, "Slowest requests"),
-							h.span(
-								[h.Class("hidden text-3xs text-muted-foreground sm:inline")],
-								["slowest per hour and status"],
-							),
-						],
-					),
+					hstack(h, { gap: "2", align: "baseline" }, [
+						sectionLabel(h, "Slowest requests"),
+						h.span(
+							[h.Class("hidden text-3xs text-muted-foreground sm:inline")],
+							["slowest per hour and status"],
+						),
+					]),
 					h.a(
 						[
 							h.Class(
@@ -430,7 +401,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 				],
 			),
 			...(detail.slowest.length === 0
-				? [emptyMessage(h, {}, ["No requests in this window."])]
+				? [emptyMessage(h, {}, ["No requests in this window"])]
 				: detail.slowest.map((request) =>
 						h.a(
 							[
@@ -477,7 +448,12 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 								),
 								h.span(
 									[h.Class("ml-auto shrink-0 whitespace-nowrap text-muted-foreground")],
-									[formatSlowestTime(request.timestamp, inputs.timeZone)],
+									[
+										formatTimestampInTimezone(request.timestamp, {
+											timeZone: inputs.timeZone,
+											style: "range",
+										}),
+									],
 								),
 							],
 						),
@@ -506,10 +482,9 @@ const detailSections = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Rea
 			}),
 		],
 		onData: (detail) => [
-			h.p(
-				[h.Key("detail-grain"), h.Class("text-2xs text-muted-foreground")],
-				["The cards below count whole hours, so they can reach past the window's edges."],
-			),
+			typography(h, { size: "2xs", tone: "muted", as: "p", attributes: [h.Key("detail-grain")] }, [
+				"The cards below count whole hours, so they can reach past the window's edges.",
+			]),
 			h.div(
 				[
 					h.Key("detail-grid"),
@@ -551,45 +526,26 @@ const stepButton = (
 	)
 
 const header = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Html =>
-	DialogView.dialogHeader(
-		h,
-		"sheet",
-		[
+	sheetDetailHeader(h, {
+		dialogId: model.dialog.id,
+		kind: [methodLabel(h, peek.endpoint.method, "")],
+		title: [peek.endpoint.route],
+		description: inputs.scopeLabel,
+		meta: [
+			// The header's hidden description already reads the scope to screen readers.
+			typography(h, { size: "xs", tone: "muted", attributes: [h.AriaHidden(true)] }, [
+				inputs.scopeLabel,
+			]),
 			h.div(
-				[h.Class("flex items-center gap-2")],
+				[h.Class("ml-auto flex shrink-0 items-center gap-1")],
 				[
-					methodLabel(h, peek.endpoint.method, ""),
-					h.h2(
-						[
-							h.Class(
-								cn(SheetStyles.sheetTitleStyles, "min-w-0 truncate text-title font-medium"),
-							),
-							h.DataAttribute("slot", "sheet-title"),
-							h.Id(Dialog.titleId(model.dialog.id)),
-							h.Title(peek.endpoint.route),
-						],
-						[peek.endpoint.route],
-					),
-					h.div(
-						[h.Class("ml-auto flex shrink-0 items-center gap-1")],
-						[
-							stepButton(h, "Previous endpoint", "ChevronUpIcon", peek.index > 0, -1),
-							stepButton(h, "Next endpoint", "ChevronDownIcon", peek.index < peek.count - 1, 1),
-						],
-					),
+					stepButton(h, "Previous endpoint", "ChevronUpIcon", peek.index > 0, -1),
+					stepButton(h, "Next endpoint", "ChevronDownIcon", peek.index < peek.count - 1, 1),
 				],
-			),
-			h.p(
-				[
-					h.Class(cn(SheetStyles.sheetDescriptionStyles, "text-2xs text-muted-foreground")),
-					h.DataAttribute("slot", "sheet-description"),
-					h.Id(Dialog.descriptionId(model.dialog.id)),
-				],
-				[inputs.scopeLabel],
 			),
 		],
-		"gap-1.5 border-b pr-14 pb-4",
-	)
+		className: "border-b pb-4",
+	})
 
 const footer = (h: H, peek: Peek, inputs: ViewInputs): Html => {
 	const topError = endpointStatusCodes(inputs.statusRows, peek.endpoint.spanName).find(
@@ -599,36 +555,29 @@ const footer = (h: H, peek: Peek, inputs: ViewInputs): Html => {
 		h,
 		"sheet",
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					linkButton(h, { size: "sm", variant: "outline", href: inputs.tracesHref({}) }, [
-						"Traces",
-						icon(h, "ArrowRightIcon"),
-					]),
-					...(topError === undefined
-						? []
-						: [
-								linkButton(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										href: inputs.tracesHref({ statusCode: topError.name }),
-									},
-									[`${topError.name} traces`, icon(h, "ArrowRightIcon")],
-								),
-							]),
-					h.span(
-						[
-							h.Class(
-								"ml-1 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex",
+			hstack(h, { gap: "2" }, [
+				linkButton(h, { size: "sm", variant: "outline", href: inputs.tracesHref({}) }, [
+					"Traces",
+					icon(h, "ArrowRightIcon"),
+				]),
+				...(topError === undefined
+					? []
+					: [
+							linkButton(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									href: inputs.tracesHref({ statusCode: topError.name }),
+								},
+								[`${topError.name} traces`, icon(h, "ArrowRightIcon")],
 							),
-						],
-						[kbd(h, undefined, ["↑"]), kbd(h, undefined, ["↓"]), " walk the list"],
-					),
-				],
-			),
+						]),
+				h.span(
+					[h.Class("ml-1 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex")],
+					[kbd(h, undefined, ["↑"]), kbd(h, undefined, ["↓"]), " walk the list"],
+				),
+			]),
 			linkButton(
 				h,
 				{
@@ -656,7 +605,7 @@ const content = (h: H, model: Model, peek: Peek, inputs: ViewInputs): ReadonlyAr
 			...charts(h, model, inputs),
 			...detailSections(h, model, peek, inputs),
 		],
-		"flex flex-col gap-4",
+		vstackClass({ gap: "4" }),
 	),
 	footer(h, peek, inputs),
 ]

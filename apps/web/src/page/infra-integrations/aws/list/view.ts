@@ -36,6 +36,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { activeKind, DEFAULT_PRESET, searchHref } from "./update"
 import { awsTable, awsTableLoading, type TableContext } from "./view-table"
+import { hstack, vstackClass } from "../../../../ui/stack"
 
 // `/infra/aws`: every streamed resource of the connected accounts, problems first.
 
@@ -145,7 +146,7 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 			searchToolbar(h, {
 				id: "aws-search",
 				value: model.search.q ?? "",
-				placeholder: `Filter ${pluralize(2, noun)}`,
+				placeholder: `Filter ${pluralize(2, noun)}…`,
 				onInput: (value) => Message.ChangedSearch({ value }),
 				onClear: Message.ClickedClearSearch(),
 				children: regionButtons(h, model, regionsOf(views)),
@@ -331,24 +332,21 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			gap: "lg",
 			titleContent: hero.title,
 			tabs: headerTabs(h, model),
-			actions: h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					...heroActions,
-					pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-						isReloadHidden: AsyncData.isFailure(model.status.data),
-					}),
-				],
-			),
+			actions: hstack(h, { gap: "2", wrap: true }, [
+				...heroActions,
+				pageTime(h, {
+					search: model.search,
+					defaultPreset: DEFAULT_PRESET,
+					window: model.window,
+					picker: model.timePicker,
+					toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+					onReset: Message.ClickedResetTimeRange(),
+					onReload: Message.ClickedReload(),
+					isReloading: model.isReloading,
+					isReloadHidden: AsyncData.isFailure(model.status.data),
+				}),
+			]),
 		},
-		[hero.body, h.div([h.Class(cn("flex flex-col gap-4"))], [statusView(h, model)])],
+		[hero.body, h.div([h.Class(cn(vstackClass({ gap: "4" })))], [statusView(h, model)])],
 	)
 })

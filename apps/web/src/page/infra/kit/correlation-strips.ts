@@ -1,6 +1,5 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ChartEventMarker } from "../../../charts/event-marker-spec"
 import * as InfraMetricChart from "../../../charts/infra-metric-chart"
@@ -13,7 +12,10 @@ import {
 } from "../../../charts/infra-metric-series"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { LINKED_CURSOR_STYLE } from "../../../charts/linked-cursor"
+import { panel } from "../../../ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
+import { typography } from "../../../ui/typography"
+import { hstackClass, vstack } from "../../../ui/stack"
 
 // `CorrelationStrips`: signals stacked on one time axis under one linked cursor, each with its label, source
 // and window summary.
@@ -75,14 +77,16 @@ const lastValue = <M>(
 
 export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStripsOptions<M>): Html => {
 	const isWaiting = options.isWaiting === true
-	return h.section(
-		[
-			h.Class(cn(panelStyles, panelToneStyles.default, "block", refreshingClass(isWaiting))),
-			h.DataAttribute("slot", "panel"),
-			...(isWaiting ? [h.AriaBusy(true)] : []),
-			h.Style(LINKED_CURSOR_STYLE),
-			options.mountCursor,
-		],
+	return panel(
+		h,
+		{
+			className: cn("block", refreshingClass(isWaiting)),
+			attributes: [
+				...(isWaiting ? [h.AriaBusy(true)] : []),
+				h.Style(LINKED_CURSOR_STYLE),
+				options.mountCursor,
+			],
+		},
 		options.strips.map((strip, index) => {
 			const spec = InfraMetricChart.infraMetricSpec({
 				rows: strip.rows,
@@ -98,18 +102,18 @@ export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStri
 				markers: options.markers,
 			})
 			return h.div(
-				[h.Key(strip.id), h.Class(cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t"))],
 				[
-					h.div(
-						[h.Class("flex w-36 shrink-0 flex-col gap-0.5")],
-						[
-							h.span([h.Class("text-xs font-medium text-foreground")], [strip.label]),
-							h.span([h.Class("font-mono text-3xs text-muted-foreground")], [strip.source]),
-							...(strip.summary === undefined
-								? []
-								: [h.div([h.Class("mt-2 flex flex-col gap-0.5")], strip.summary)]),
-						],
-					),
+					h.Key(strip.id),
+					h.Class(cn(hstackClass({ gap: "4", className: "px-4 py-3" }), index > 0 && "border-t")),
+				],
+				[
+					vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
+						typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [strip.label]),
+						typography(h, { size: "3xs", tone: "muted", mono: true }, [strip.source]),
+						...(strip.summary === undefined
+							? []
+							: [h.div([h.Class("mt-2 flex flex-col gap-0.5")], strip.summary)]),
+					]),
 					h.div(
 						[h.Class("min-w-0 flex-1")],
 						[

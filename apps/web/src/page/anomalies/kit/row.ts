@@ -1,6 +1,5 @@
 import type { AnomalyIncidentDocument, AnomalyIncidentId, ErrorIssueId } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	deviation,
@@ -187,22 +186,19 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 
 /** The linked-issue `Badge render={<Link />}`. */
 const linkedIssueChip = <M>(h: HtmlBuilder<M>, issueId: ErrorIssueId): Html =>
-	h.a(
-		[
-			h.Class(
-				cn(
-					badgeVariants({
-						variant: "meta",
-						pill: true,
-						size: "sm",
-						mono: false,
-						className: cn(META_CHIP_CLASS, "z-10 hidden gap-1 sm:inline-flex hover:border-border active:border-border hover:text-foreground active:text-foreground"),
-					}),
-				),
+	badge(
+		h,
+		{
+			variant: "meta",
+			pill: true,
+			size: "sm",
+			mono: false,
+			className: cn(
+				META_CHIP_CLASS,
+				"z-10 hidden gap-1 sm:inline-flex hover:border-border active:border-border hover:text-foreground active:text-foreground",
 			),
-			h.DataAttribute("slot", "badge"),
-			h.Href(hrefOf(AppRoute.ErrorIssue({ issueId, search: {} }))),
-			h.Title("Open linked issue"),
-		],
+			href: hrefOf(AppRoute.ErrorIssue({ issueId, search: {} })),
+			attributes: [h.Title("Open linked issue")],
+		},
 		[icon(h, "LinkIcon", { size: 12 }), shortIssueId(issueId)],
 	)

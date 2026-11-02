@@ -26,28 +26,26 @@ import { filtersRail } from "./view-filters"
 import { emptyState, isNeverReceived } from "./view-empty"
 import { toolbar } from "./view-toolbar"
 import { VOLUME_THEME_TOKENS, volumeChart } from "./view-volume"
+import { vstack, vstackClass } from "../../../ui/stack"
 
 /** `LoadingState`: forty compact placeholder rows (a shorter row makes the list jump on load). */
 const loadingState = (h: HtmlBuilder<Message>): Html =>
-	h.div(
-		[h.Class("flex-1 min-h-0 flex flex-col")],
-		[
-			skeletonList(h, {
-				rows: 40,
-				className: "min-h-0 flex-1 gap-0 overflow-hidden rounded-md border",
-				renderRow: () =>
-					h.div(
-						[h.Class("flex h-9 shrink-0 items-center gap-2 border-b border-border px-3")],
-						[
-							skeleton(h, "size-1.5 shrink-0 rounded-full"),
-							skeleton(h, "h-3 w-16 shrink-0"),
-							skeleton(h, "h-3 w-20 shrink-0"),
-							skeleton(h, "h-3 flex-1"),
-						],
-					),
-			}),
-		],
-	)
+	vstack(h, { grow: true, className: "min-h-0" }, [
+		skeletonList(h, {
+			rows: 40,
+			className: "min-h-0 flex-1 gap-0 overflow-hidden rounded-md border",
+			renderRow: () =>
+				h.div(
+					[h.Class("flex h-9 shrink-0 items-center gap-2 border-b border-border px-3")],
+					[
+						skeleton(h, "size-1.5 shrink-0 rounded-full"),
+						skeleton(h, "h-3 w-16 shrink-0"),
+						skeleton(h, "h-3 w-20 shrink-0"),
+						skeleton(h, "h-3 flex-1"),
+					],
+				),
+		}),
+	])
 
 const toStream = (message: LogsStream.Message) => Message.GotStreamMessage({ message })
 
@@ -60,7 +58,7 @@ const streamArea = (
 ): Html =>
 	h.div(
 		[
-			h.Class(cn("flex min-h-0 flex-1 flex-col", refreshingClass(isWaiting))),
+			h.Class(cn(vstackClass({ grow: true, className: "min-h-0" }), refreshingClass(isWaiting))),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
 		[

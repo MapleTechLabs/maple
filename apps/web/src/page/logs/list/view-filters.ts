@@ -80,7 +80,7 @@ const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Mo
 			searchInput(h, {
 				id: "logs-search-input",
 				size: "sm",
-				placeholder: "Text or trace id",
+				placeholder: "Text or trace ID…",
 				value,
 				onInput: (text) => Message.ChangedSearchText({ text }),
 				onClear: Message.ChangedSearchText({ text: "" }),

@@ -134,6 +134,16 @@ describe("replay detail", () => {
 		)
 	})
 
+	test("Try again on a failed session asks for the session again, not the reads that answered", () => {
+		const start = entered().model
+		const failed = [
+			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
+			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(manifest) }),
+			Message.CompletedFetchTranscript({ key: start.transcript.key ?? "", result: Result.succeed([]) }),
+		].reduce((model, message) => pageUpdate(model, message).model, start)
+		expect(names(pageUpdate(failed, Message.ClickedRetryDetail()).commands)).toEqual([FetchDetail.name])
+	})
+
 	test("a loaded session subscribes to 0–0, then the planned opening range, and its traces", () => {
 		const start = entered().model
 		const detailed = pageUpdate(start, Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }))
@@ -255,7 +265,7 @@ describe("replay detail", () => {
 		const ready = pageUpdate(seeded, Message.ReadiedEngine({ seedVersion: seeded.loader.seedVersion, totalMs: 1000 })).model
 		expect(seedShiftMs(ready.loader)).toBe(0)
 
-		const seeking = pageUpdate(ready, Message.RequestedSeek({ displayMs: 302_000 })).model
+		const seeking = pageUpdate(ready, Message.RequestedSeek({ offsetMs: 302_000 })).model
 		const rebuilt = answer(seeking, [
 			{ chunk_seq: 2, events: [page(300), snapshot(300)] },
 			{ chunk_seq: 3, events: [click(305)] },
@@ -359,7 +369,7 @@ describe("replay detail", () => {
 		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
 		const ready = pageUpdate(seeded, Message.ReadiedEngine({ seedVersion: seeded.loader.seedVersion, totalMs: 1 })).model
 		// Chunk 1 is in flight when the seek lands on chunk 2; its answer is superseded.
-		const seeking = pageUpdate(ready, Message.RequestedSeek({ displayMs: 125_000 })).model
+		const seeking = pageUpdate(ready, Message.RequestedSeek({ offsetMs: 125_000 })).model
 		const rebuilt = answerWith(seeking, chunkRows(2, 120)).model
 		const ahead = answerWith(rebuilt, chunkRows(3, 180)).model
 		expect(ahead.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])

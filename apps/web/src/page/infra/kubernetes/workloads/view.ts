@@ -137,11 +137,11 @@ const emptyKindInWindow = (h: H, kind: WorkloadKind, kindLabel: string): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "GridIcon", { size: 16 })]),
-				emptyTitle(h, [`No ${kindLabel} in this window.`]),
+				emptyTitle(h, [`No ${kindLabel} in this window`]),
 				emptyDescription(h, [
 					"Your cluster is reporting, but no pod carried a ",
 					`k8s.${kind}.name`,
-					" attribute in this time range.",
+					" attribute in this window.",
 				]),
 			]),
 			emptyActions(h, otherKinds(h, kind)),

@@ -35,6 +35,8 @@ import {
 	tracedAs,
 } from "../derive"
 import type { Message } from "./message"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstack, vstack } from "../../../../ui/stack"
 
 // One kind's resource table and its loading state.
 
@@ -57,8 +59,8 @@ type Column = Readonly<{
 	cell: (h: H, view: ResourceView, context: TableContext) => Html
 }>
 
-const MUTED = "font-mono text-2xs text-muted-foreground"
-const NUMBER = "font-mono text-xs tabular-nums text-foreground-soft"
+const MUTED = typographyClass({ size: "2xs", tone: "muted", mono: true })
+const NUMBER = typographyClass({ size: "xs", tone: "soft", mono: true, numeric: true })
 
 const reading = (view: ResourceView, key: string) => view.readings[key]?.value ?? null
 
@@ -79,58 +81,54 @@ const numberCell = (h: H, text: string | null, tone?: "crit" | "warn"): Html =>
 /** A utilisation bar and its percent; a resource without the metric shows an empty track. */
 const usageCell = (h: H, label: string, fraction: number | null): Html => {
 	const tone: Tone = fraction !== null && fraction >= HOT ? "warn" : "ok"
-	return h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			meter(h, {
-				value: Math.min(fraction ?? 0, 1),
-				tone,
-				className: "h-1 w-20 shrink-0",
-				label: fraction === null ? undefined : `${label} ${formatPercent(fraction)}`,
-			}),
-			// A fixed right-aligned slot, so "20%" and "1.7%" line up down the column.
-			h.span(
-				[h.Class("w-10 shrink-0 text-right")],
-				[
-					numberCell(
-						h,
-						fraction === null ? null : formatUtilizationPercent(fraction),
-						tone === "warn" ? "warn" : undefined,
-					),
-				],
-			),
-		],
-	)
+	return hstack(h, { gap: "2" }, [
+		meter(h, {
+			value: Math.min(fraction ?? 0, 1),
+			tone,
+			className: "h-1 w-20 shrink-0",
+			label: fraction === null ? undefined : `${label} ${formatPercent(fraction)}`,
+		}),
+		// A fixed right-aligned slot, so "20%" and "1.7%" line up down the column.
+		h.span(
+			[h.Class("w-10 shrink-0 text-right")],
+			[
+				numberCell(
+					h,
+					fraction === null ? null : formatUtilizationPercent(fraction),
+					tone === "warn" ? "warn" : undefined,
+				),
+			],
+		),
+	])
 }
 
 // A trend-only column passes no text; `null` is a figure that did not report.
 const sparkCell = (h: H, view: ResourceView, context: TableContext, text?: string | null): Html =>
-	h.div(
-		[h.Class("flex w-full items-center gap-2")],
-		[
-			h.div(
-				[h.Class(cn("shrink-0 text-chart-2", text === undefined ? "w-full" : "w-16"))],
-				[
-					windowSparkline(h, {
-						points: sparkPoints(context.sparks, view),
-						window: context.window,
-						color: "currentColor",
-						className: "h-5",
-						// Every AWS sparkline metric is a share or a count.
-						floor: 0,
-					}),
-				],
-			),
-			...(text === undefined ? [] : [numberCell(h, text)]),
-		],
-	)
+	hstack(h, { gap: "2", className: "w-full" }, [
+		h.div(
+			[h.Class(cn("shrink-0 text-chart-2", text === undefined ? "w-full" : "w-16"))],
+			[
+				windowSparkline(h, {
+					points: sparkPoints(context.sparks, view),
+					window: context.window,
+					color: "currentColor",
+					className: "h-5",
+					// Every AWS sparkline metric is a share or a count.
+					floor: 0,
+				}),
+			],
+		),
+		...(text === undefined ? [] : [numberCell(h, text)]),
+	])
 
 const tracedCell = (h: H, view: ResourceView, context: TableContext): Html => {
 	if (context.traced === null) return h.span([h.Class(MUTED)], [EMPTY_VALUE])
 	const service = tracedAs(context.traced, view)
 	return service === null
 		? h.span([h.Class(MUTED)], ["not traced"])
-		: inlineCode(h, { className: "truncate text-2xs" }, [service.serviceName])
+		: inlineCode(h, { className: typographyClass({ size: "2xs", truncate: true }) }, [
+				service.serviceName,
+			])
 }
 
 const perMinuteText = (view: ResourceView, key: string, context: TableContext) => {
@@ -402,41 +400,40 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 								className: "mt-1.5 border border-foreground-subtle",
 							})
 						: statusDot(h, { tone: HEALTH_TONE[view.health], className: "mt-1.5" }),
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-0.5")],
-						[
-							h.span(
-								[
-									h.Class(
-										"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+					vstack(h, { gap: "0.5", shrink: true }, [
+						typography(
+							h,
+							{
+								size: "xs",
+								tone: "foreground",
+								weight: "medium",
+								mono: true,
+								truncate: true,
+								className: "transition-colors group-hover:text-primary",
+								attributes: [h.Title(view.name)],
+							},
+							[view.name],
+						),
+						h.span(
+							[
+								h.Class(
+									cn(
+										typographyClass({ size: "xs", mono: true, truncate: true }),
+										view.health === "crit"
+											? "text-severity-error"
+											: view.health === "warn"
+												? "text-severity-warn"
+												: "text-muted-foreground",
 									),
-									h.Title(view.name),
-								],
-								[view.name],
-							),
-							h.span(
-								[
-									h.Class(
-										cn(
-											"truncate font-mono text-xs",
-											view.health === "crit"
-												? "text-severity-error"
-												: view.health === "warn"
-													? "text-severity-warn"
-													: "text-muted-foreground",
-										),
-									),
-								],
-								[
-									view.reason === null
-										? subline(view)
-										: [subline(view), view.reason]
-												.filter((part) => part !== "")
-												.join(" · "),
-								],
-							),
-						],
-					),
+								),
+							],
+							[
+								view.reason === null
+									? subline(view)
+									: [subline(view), view.reason].filter((part) => part !== "").join(" · "),
+							],
+						),
+					]),
 				],
 			),
 			...columnsOf(view.kind, showTraced).map((column) =>

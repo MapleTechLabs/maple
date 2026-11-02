@@ -31,6 +31,8 @@ import type { FlowStage } from "./flow"
 import { cloudflarePhaseOf, cloudflareReach, cloudflareStatusOf, cloudflareUsageOf } from "./flow-cloudflare"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // Cloudflare in the connect flow: approve Maple on Cloudflare's consent screen, then watch the
 // poller find zones and Workers and fill in the first data.
@@ -106,15 +108,13 @@ const accountList = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Html
 						size: 14,
 						className: account.revoked ? "shrink-0 text-severity-error" : "shrink-0 text-severity-info",
 					}),
-					h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col")],
+					vstack(h, { shrink: true, grow: true },
 						[
 							truncatedText(h, {
 								text: account.accountName ?? account.accountId,
 								className: "text-sm",
 							}),
-							h.span(
-								[h.Class("text-xs text-muted-foreground")],
+							typography(h, { size: "xs", tone: "muted" },
 								[
 									account.revoked
 										? "Access revoked"
@@ -165,25 +165,21 @@ const connectStep = (h: H, model: Model): Html => {
 				},
 				isConnected
 					? [
-							h.p(
-								[h.Class("text-sm text-muted-foreground")],
+							typography(h, { size: "sm", tone: "muted", as: "p" },
 								["Maple can read these accounts. Zones and Workers are found on their own."],
 							),
 							accountList(h, connectedAccountsOf(status)),
-							h.div(
-								[h.Class("flex flex-wrap items-center gap-3")],
+							hstack(h, { gap: "3", wrap: true },
 								[
 									connectButton(h, model, "Authorize again", "outline"),
-									h.span(
-										[h.Class("text-xs text-muted-foreground")],
+									typography(h, { size: "xs", tone: "muted" },
 										["Missing an account? Authorize again and tick it in Cloudflare."],
 									),
 								],
 							),
 						]
 					: [
-							h.p(
-								[h.Class("text-sm text-muted-foreground")],
+							typography(h, { size: "sm", tone: "muted", as: "p" },
 								[
 									"Cloudflare opens in a new window. Sign in, pick the accounts Maple may read and approve.",
 								],

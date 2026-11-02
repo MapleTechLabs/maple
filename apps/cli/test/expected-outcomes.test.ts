@@ -6,25 +6,30 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-	chdbConfigPath,
 	dirtyStoreRecoveryAdvice,
 	needsInitialCheckpoint,
 	parseCheckpointInterval,
-	resolveChdbConfigFile,
 } from "../src/commands/server"
-import { CheckpointPreconditionError, parseCheckpointId } from "../src/server/checkpoints"
+import {
+	CheckpointPreconditionError,
+	chdbConfigPath,
+	parseCheckpointId,
+	resolveChdbConfigFile,
+} from "@maple/local-server/checkpoints"
 import { recoverExpected } from "../src/core/outcomes"
 import {
 	BackgroundServerSpawnError,
 	BackgroundServerTimeoutError,
 	CheckpointUnavailableError,
+	ServerOptionError,
+	ServerStopTimeoutError,
+} from "../src/commands/server-errors"
+import {
 	LocalStoreDirtyError,
 	LocalStoreIncompatibleError,
 	LocalStoreMigrationError,
 	LocalStoreSchemaStaleError,
-	ServerOptionError,
-	ServerStopTimeoutError,
-} from "../src/commands/server-errors"
+} from "@maple/local-server/store-errors"
 
 /** Run an effect, capturing anything written to stderr and restoring the real
  *  writer + exit code afterwards. */

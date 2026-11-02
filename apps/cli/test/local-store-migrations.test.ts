@@ -8,21 +8,12 @@ import {
 	LOCAL_SCHEMA_MANIFEST,
 	LOCAL_SCHEMA_V1,
 	LOCAL_SCHEMA_V2,
-	LOCAL_SCHEMA_V2_MANIFEST,
 	LOCAL_SCHEMA_V3,
-	LOCAL_SCHEMA_V3_MANIFEST,
 	LOCAL_SCHEMA_V4,
-	LOCAL_SCHEMA_V4_MANIFEST,
 	LOCAL_SCHEMA_V5,
-	LOCAL_SCHEMA_V5_MANIFEST,
-	LOCAL_SCHEMA_V7_MANIFEST,
 	LOCAL_SCHEMA_V6,
 	LOCAL_SCHEMA_V10,
-	LOCAL_SCHEMA_V10_MANIFEST,
 	LOCAL_SCHEMA_V11,
-	LOCAL_SCHEMA_V11_MANIFEST,
-	LOCAL_SCHEMA_V12_MANIFEST,
-	LOCAL_SCHEMA_V13_MANIFEST,
 	LOCAL_SCHEMA_V20,
 	LOCAL_SCHEMA_V21,
 	LOCAL_SCHEMA_V22,
@@ -44,9 +35,21 @@ import {
 	LOCAL_SCHEMA_V40,
 	LOCAL_SCHEMA_V41,
 	LOCAL_SCHEMA_V42,
+	LOCAL_SCHEMA_V43,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
-} from "../src/server/schema-identity"
+} from "@maple/local-server/schema-identity"
+import {
+	LOCAL_SCHEMA_V2_MANIFEST,
+	LOCAL_SCHEMA_V3_MANIFEST,
+	LOCAL_SCHEMA_V4_MANIFEST,
+	LOCAL_SCHEMA_V5_MANIFEST,
+	LOCAL_SCHEMA_V7_MANIFEST,
+	LOCAL_SCHEMA_V10_MANIFEST,
+	LOCAL_SCHEMA_V11_MANIFEST,
+	LOCAL_SCHEMA_V12_MANIFEST,
+	LOCAL_SCHEMA_V13_MANIFEST,
+} from "../src/server/schema-snapshots"
 import {
 	abandonLocalStoreMigration,
 	abandonLocalStoreMigrationPreservingSource,
@@ -56,26 +59,28 @@ import {
 	identityFromMarker,
 	legacyToCurrentModule,
 	localStoreMigrations,
-	migrationJournalPath,
-	migrationHistoryPath,
-	migrationRootPath,
 	planMigration,
 	readMigrationJournal,
-	readMigrationJournalStructure,
 	resolveMigrationChain,
 	runLocalStoreMigration,
 	promoteLocalStoreMigration,
 	validateMigrationRegistry,
 	type LocalStoreMigration,
 	type MigrationModuleContext,
-	type MigrationJournal,
 } from "../src/server/local-store-migrations"
+import {
+	type MigrationJournal,
+	migrationHistoryPath,
+	migrationJournalPath,
+	migrationRootPath,
+	readMigrationJournalStructure,
+} from "@maple/local-server/local-store-migration-journal"
 import type { MigrationDb } from "../src/server/local-store-migration-module"
 import {
 	comparePhysicalSchema,
 	type LocalSchemaManifest,
 	withRawTelemetryRetentionFloor,
-} from "../src/server/schema-manifest"
+} from "@maple/local-server/schema-manifest"
 import {
 	ensureStoreMarkerDurable,
 	isStoreDirty,
@@ -83,8 +88,8 @@ import {
 	serverPidPath,
 	storeMarkerPath,
 	storeOpenMarkerPath,
-} from "../src/server/store-version"
-import { durableJson } from "../src/server/durable-files"
+} from "@maple/local-server/store-version"
+import { durableJson } from "@maple/local-server/durable-files"
 import {
 	__testables as legacyTestables,
 	advanceDuplicateKeyProgress,
@@ -94,7 +99,7 @@ import {
 	type CopyProgress,
 	type RawReplayProgress,
 } from "../src/server/local-store-migrations/legacy-to-current"
-import { LOCAL_SCHEMA_HISTORY } from "../src/server/local-schema-history"
+import { LOCAL_SCHEMA_HISTORY } from "@maple/local-server/local-schema-history"
 import { LOCAL_STORE_STEPS } from "../src/server/local-store-migrations/steps"
 import { stepStatements } from "../src/server/local-store-migrations/step-executor"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -110,11 +115,11 @@ const [v10ToV11ProductEventsModule] = localStoreMigrations.filter(
 )
 
 describe("current local schema identity", () => {
-	it("matches the generated v42 revision and keeps the issue-297 identity frozen", () => {
+	it("matches the generated v43 revision and keeps the issue-297 identity frozen", () => {
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_FINGERPRINT).toBe("d03ed074b19ce990")
+		expect(SCHEMA_FINGERPRINT).toBe("3d5cda09b74a3cb2")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_DIGEST).toBe("d03ed074b19ce99042d1e8f867f80b0ad14a7cd14f167e6fa223c314cc15cebc")
+		expect(SCHEMA_DIGEST).toBe("3d5cda09b74a3cb2a5a2a79f3698906206a85094d29d27392b2b08b732b082b3")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- frozen identity that stores already on disk carry
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
@@ -122,8 +127,8 @@ describe("current local schema identity", () => {
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
 		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
-		expect(CURRENT_LOCAL_SCHEMA.version).toBe(42)
-		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V42)
+		expect(CURRENT_LOCAL_SCHEMA.version).toBe(43)
+		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V43)
 		const logs = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "logs")
 		expect(logs?.columns.some((column) => column.name.startsWith("idx_"))).toBe(false)
 		expect(logs?.indexes).toContain("idx_lower_body")
@@ -445,7 +450,7 @@ describe("local migration registry", () => {
 				// One past the current tip — bump alongside LOCAL_SCHEMA_VERSION, or this
 				// stops testing the future-store guard and starts testing the
 				// unknown-fingerprint one.
-				{ ...CURRENT_LOCAL_SCHEMA, version: 43, fingerprint: "future", digest: SCHEMA_DIGEST },
+				{ ...CURRENT_LOCAL_SCHEMA, version: 44, fingerprint: "future", digest: SCHEMA_DIGEST },
 				CURRENT_LOCAL_SCHEMA,
 			),
 		).toThrow(/newer than this build/)
@@ -607,6 +612,7 @@ describe("local migration registry", () => {
 			"local-0039-to-0040-service-map-spans-trace-key",
 			"local-0040-to-0041-service-map-db-edges-minutely",
 			"local-0041-to-0042-security-telemetry",
+			"local-0042-to-0043-error-fingerprint-fuzz-fixes",
 		]
 		const versions = (id: string) => {
 			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
@@ -1618,6 +1624,7 @@ describe("v10 -> v11 product events module", () => {
 			"local-0039-to-0040-service-map-spans-trace-key",
 			"local-0040-to-0041-service-map-db-edges-minutely",
 			"local-0041-to-0042-security-telemetry",
+			"local-0042-to-0043-error-fingerprint-fuzz-fixes",
 		])
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V11)
 		// The dropped table is declared, and the backfilled ones say what they
@@ -1828,13 +1835,13 @@ describe("migration journal creation is lock-serialized", () => {
 			await writeFile(
 				storeMarkerPath(dataDir),
 				`${JSON.stringify({
-					chdb: (await import("../src/version")).CHDB_VERSION,
+					chdb: (await import("@maple/local-server/version")).CHDB_VERSION,
 					maple: "test",
 					createdAt: "2026-08-30T00:00:00.000Z",
 					schema: LEGACY_LOCAL_SCHEMA.fingerprint,
 				})}\n`,
 			)
-			const { withMaintenanceLock } = await import("../src/server/checkpoints")
+			const { withMaintenanceLock } = await import("@maple/local-server/checkpoints")
 			const { randomUUID } = await import("node:crypto")
 			await withMaintenanceLock(dataDir, randomUUID(), async () => {
 				// A concurrent migrate must fail at the lock WITHOUT having written

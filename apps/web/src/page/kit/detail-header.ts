@@ -22,7 +22,9 @@ export const detailEyebrow = <M>(
 				h,
 				{ as: "div", className: cn("flex flex-wrap items-center gap-x-2 gap-y-1", className) },
 				shown.flatMap((segment, index) => [
-					...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])] : []),
+					...(index > 0
+						? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])]
+						: []),
 					h.span([h.Class("truncate")], [segment]),
 				]),
 			)
@@ -50,11 +52,18 @@ export const detailTitle = <M>(h: HtmlBuilder<M>, options: DetailTitleOptions): 
 				h,
 				{
 					title: tooltip,
-					className: options.adornment === undefined ? undefined : "flex items-center gap-2.5",
+					// Phones have no hover for the tooltip, so the title wraps there instead.
+					className: cn(
+						"max-sm:whitespace-normal",
+						options.adornment !== undefined && "flex items-center gap-2.5",
+					),
 				},
 				options.adornment === undefined
 					? options.title
-					: [h.span([h.Class("truncate")], options.title), options.adornment],
+					: [
+							h.span([h.Class("truncate max-sm:whitespace-normal")], options.title),
+							options.adornment,
+						],
 			),
 			...(options.meta === undefined || options.meta.length === 0
 				? []

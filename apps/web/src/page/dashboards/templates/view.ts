@@ -15,6 +15,8 @@ import { PANEL_SHEET_ID, selectedOf, templatesOf } from "./update"
 import * as DialogView from "../../../ui/dialog-view"
 import { templateList } from "./view-list"
 import { detailPanel, panelRestState } from "./view-panel"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // The templates page: below `lg` the detail panel is a
 // right sheet over the list (`panelIsSheet`), else the side pane.
@@ -27,7 +29,7 @@ const summary = (h: H, readyCount: number, catalogueCount: number): Html =>
 		[
 			h.span([h.Class("text-primary font-mono")], [String(readyCount), " ready for your data"]),
 			h.span([h.Class("text-muted-foreground")], ["·"]),
-			h.span([h.Class("text-muted-foreground font-mono")], [String(catalogueCount), " templates"]),
+			typography(h, { tone: "muted", mono: true }, [String(catalogueCount), " templates"]),
 		],
 	)
 
@@ -72,13 +74,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					titleContent: h.div(
-						[h.Class("flex flex-col gap-1")],
-						[
-							pageTitle(h, { className: "leading-8" }, ["Templates"]),
-							...(isLoaded && metrics !== null ? [summary(h, readyCount, listed.length)] : []),
-						],
-					),
+					titleContent: vstack(h, { gap: "1" }, [
+						pageTitle(h, { className: "leading-8" }, ["Templates"]),
+						...(isLoaded && metrics !== null ? [summary(h, readyCount, listed.length)] : []),
+					]),
 					fill: true,
 				},
 				[

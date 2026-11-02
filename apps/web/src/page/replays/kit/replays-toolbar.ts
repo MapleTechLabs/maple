@@ -6,6 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { filterChip } from "../../../ui/filter-chip"
 import { searchInput } from "../../../ui/search-input"
 import { listToolbar } from "../../kit/list-toolbar"
+import { hstackClass } from "../../../ui/stack"
 
 // The replays toolbar: the URL search and the triage chips.
 // TODO(tooltip): the chips' hover tooltips.
@@ -69,7 +70,7 @@ export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOpti
 					...(isWaiting ? [h.AriaBusy(true)] : []),
 					h.Role("group"),
 					h.AriaLabel("Quick filters"),
-					h.Class(cn("flex flex-wrap items-center gap-2", refreshingClass(isWaiting))),
+					h.Class(cn(hstackClass({ gap: "2", wrap: true }), refreshingClass(isWaiting))),
 				],
 				[
 					triageChip(h, {

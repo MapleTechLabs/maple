@@ -1,6 +1,6 @@
-import { pluralize } from "@maple/ui/lib/format"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { fillSeriesBuckets, formatToolCount, scopeSummary } from "@maple/web-data/lib/tool-analytics"
+import { fillSeriesBuckets, scopeSummary } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -45,7 +45,7 @@ const isPendingFirst = <A>(data: AsyncData.AsyncData<A, LoadFailure>): boolean =
 const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, controls: Html | undefined): Html => {
 	const { current } = totals
 	const subtitle = [
-		`${formatToolCount(current.calls)} ${pluralize(current.calls, "call")} in ${formatToolCount(current.sessions)} ${pluralize(current.sessions, "session")}`,
+		`${formatNumber(current.calls)} ${pluralize(current.calls, "call")} in ${formatNumber(current.sessions)} ${pluralize(current.sessions, "session")}`,
 		totals.firstSeen > 0
 			? `first seen ${formatTimestampInTimezone(totals.firstSeen, { timeZone })}`
 			: undefined,

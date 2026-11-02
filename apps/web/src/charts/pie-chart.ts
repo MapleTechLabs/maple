@@ -17,6 +17,8 @@ import { MeasureChartContainer } from "./chart-mounts"
 import { plotFrame } from "./plot-frame"
 import { legendRow, type PlotLegendSeries, statsLegend } from "./plot-legend"
 import { resolveColor, type ThemeColors } from "./theme-colors"
+import { typography } from "../ui/typography"
+import { chartNoData } from "../ui/chart-frame"
 
 // Port of `QueryBuilderPieChart` (packages/ui/src/components/charts/pie/query-builder-pie-chart.tsx),
 // view half. The definition half is `buildPie` in ./definitions/pie.ts.
@@ -110,8 +112,7 @@ const tooltipBody = (
 								h.span([], [slice.name]),
 								...(slice.collapsedCount
 									? [
-											h.span(
-												[h.Class("font-normal text-muted-foreground")],
+											typography(h, { tone: "muted", weight: "normal" },
 												[`(${slice.collapsedCount} categories)`],
 											),
 										]
@@ -196,13 +197,10 @@ export const view = Submodel.defineView<Model, Message, PieChartInputs>((model, 
 	}))
 
 	if (rows.length === 0 || total <= 0) {
-		return h.div(
-			[
-				h.Class(cn("relative grid h-full w-full place-items-center", inputs.className)),
-				h.OnMount(MeasureChartContainer()),
-			],
-			[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
-		)
+		return chartNoData(h, {
+			className: inputs.className,
+			attributes: [h.OnMount(MeasureChartContainer())],
+		})
 	}
 
 	const showLegend = inputs.legend !== "hidden"

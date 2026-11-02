@@ -17,6 +17,8 @@ import { skeleton } from "../../../ui/skeleton"
 import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
 import { linkTargetOf } from "./update"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -40,7 +42,7 @@ const orgAvatar = (h: H, name: string, imageUrl: string | null, className = "siz
 	)
 
 const prose = (h: H, children: ReadonlyArray<Html | string>, className?: string): Html =>
-	h.p([h.Class(cn("font-prose text-sm text-muted-foreground", className))], children)
+	h.p([h.Class(cn(typographyClass({ size: "sm", tone: "muted", className: "font-prose" }), className))], children)
 
 // MEMBER
 
@@ -52,10 +54,9 @@ export const memberSection = (h: H, model: Model, account: BillingAccount): Html
 			[h.Class("flex flex-wrap items-start gap-4 p-4")],
 			[
 				orgAvatar(h, payer, account.billingOrg.imageUrl, "size-10"),
-				h.div(
-					[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
+				vstack(h, { gap: "1", shrink: true, grow: true },
 					[
-						h.p([h.Class("text-sm font-medium")], [`Billed through ${payer}`]),
+						typography(h, { size: "sm", weight: "medium", as: "p" }, [`Billed through ${payer}`]),
 						prose(h, [
 							`This organization's usage counts toward ${payer}'s plan and appears on its invoice. Plan, payment and invoices are managed in ${payer}.`,
 						]),
@@ -93,11 +94,10 @@ const volumeCell = (h: H, model: Model, member: BillingAccountOrg): Html =>
 	AsyncData.matchDataSplitEmpty(model.accountUsage, {
 		onIdle: () => skeleton(h, "h-3.5 w-20"),
 		onLoading: () => skeleton(h, "h-3.5 w-20"),
-		onFailure: () => h.span([h.Class("text-sm text-muted-foreground")], [EMPTY_VALUE]),
+		onFailure: () => typography(h, { size: "sm", tone: "muted" }, [EMPTY_VALUE]),
 		onData: (usage) => {
 			const row = usage.orgs.find((org) => org.orgId === member.orgId)
-			return h.span(
-				[h.Class("font-mono text-sm tabular-nums")],
+			return typography(h, { size: "sm", mono: true, numeric: true },
 				[row === undefined ? EMPTY_VALUE : volumeLabel(row)],
 			)
 		},
@@ -111,16 +111,13 @@ const memberRow = (h: H, model: Model, member: BillingAccountOrg, timeZone: stri
 			h.Class("flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3"),
 		],
 		[
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-3")],
+			hstack(h, { gap: "3", shrink: true },
 				[
 					orgAvatar(h, name, member.imageUrl),
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-0.5")],
+					vstack(h, { gap: "0.5", shrink: true },
 						[
-							h.span([h.Class("truncate text-sm font-medium")], [name]),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
+							typography(h, { size: "sm", weight: "medium", truncate: true }, [name]),
+							typography(h, { size: "2xs", tone: "muted" },
 								[
 									member.linkedAt === undefined
 										? "Billed here"
@@ -131,8 +128,7 @@ const memberRow = (h: H, model: Model, member: BillingAccountOrg, timeZone: stri
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex items-center gap-4")],
+			hstack(h, { gap: "4" },
 				[
 					volumeCell(h, model, member),
 					...(model.isAdmin
@@ -206,8 +202,7 @@ export const linkSection = (h: H, model: Model): ReadonlyArray<Html> => {
 				],
 			},
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-3")],
+				hstack(h, { gap: "3", wrap: true },
 					[
 						nativeSelect(
 							h,
@@ -238,7 +233,7 @@ export const linkSection = (h: H, model: Model): ReadonlyArray<Html> => {
 					? []
 					: [
 							h.p(
-								[h.Class("mt-3 font-prose text-sm text-destructive"), h.Role("alert")],
+								[h.Class("mt-3 font-prose text-sm text-destructive-foreground"), h.Role("alert")],
 								[model.linkRejection],
 							),
 						]),
@@ -286,7 +281,7 @@ export const accountDialogs = (h: H, model: Model, account: BillingAccount | nul
 				: {
 						title: `Remove ${nameOf(removing)}?`,
 						description: `${nameOf(removing)} stops being billed through this organization. Its usage from now on leaves this invoice, and it will need its own plan.`,
-						confirmLabel: "Remove",
+						confirmLabel: "Remove organization",
 					}),
 			isPending: model.isUnlinking,
 			onConfirm: Message.ClickedConfirmUnlink(),

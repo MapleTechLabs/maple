@@ -2,12 +2,14 @@ import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-mod
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
+import { pressable } from "../../../../ui/pressable"
 import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
 import type * as Menu from "../../../../ui/menu"
 import * as MenuView from "../../../../ui/menu-view"
 import { statusDot } from "../../../../ui/status-dot"
 import { Message } from "./model"
 import type { H } from "./view-rows"
+import { hstack } from "../../../../ui/stack"
 
 // `GcpProjectMenu`: with two or more projects the title's chip picks one of them, or all.
 
@@ -25,25 +27,22 @@ const projectItem = (
 	counts: string,
 	health: GcpProjectHealth | undefined,
 ): ReadonlyArray<Html> => [
-	h.span(
-		[h.Class("flex items-start gap-2")],
-		[
-			h.span(
-				[h.Class("mt-1.5 flex w-1.5 shrink-0")],
-				health === undefined ? [] : [statusDot(h, { tone: health.tone })],
-			),
-			h.span(
-				[h.Class("flex flex-col")],
-				[
-					h.span([h.Class("font-mono")], [project]),
-					h.span(
-						[h.Class(cn("text-3xs", healthText(health)))],
-						health === undefined ? [counts] : [counts, ` · ${health.message}`],
-					),
-				],
-			),
-		],
-	),
+	hstack(h, { gap: "2", align: "start", as: "span" }, [
+		h.span(
+			[h.Class("mt-1.5 flex w-1.5 shrink-0")],
+			health === undefined ? [] : [statusDot(h, { tone: health.tone })],
+		),
+		h.span(
+			[h.Class("flex flex-col")],
+			[
+				h.span([h.Class("font-mono")], [project]),
+				h.span(
+					[h.Class(cn("text-3xs", healthText(health)))],
+					health === undefined ? [counts] : [counts, ` · ${health.message}`],
+				),
+			],
+		),
+	]),
 ]
 
 export const projectMenu = (
@@ -95,8 +94,9 @@ export const projectMenu = (
 				h.span(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[h.Type("button"), h.Tabindex(0), h.Class(heroFieldChipClass(true)), ...trigger],
+						pressable(
+							h,
+							{ className: heroFieldChipClass(true), attributes: [h.Tabindex(0), ...trigger] },
 							// "All 3 projects", or just the picked project's name.
 							heroFieldChipParts(
 								h,

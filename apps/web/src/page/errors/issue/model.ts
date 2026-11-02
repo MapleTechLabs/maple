@@ -10,6 +10,7 @@ import {
 } from "@maple/domain/http"
 import { V2AnomalyIncident, V2ErrorIssueDetail, V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
+import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { KeyedSchema } from "../../../data/keyed"
@@ -55,6 +56,9 @@ export const Model = Schema.Struct({
 	severitySelect: Select.Model,
 	fingerprintCopy: CopyButton.Model,
 	issueIdCopy: CopyButton.Model,
+	/** The agent handoff panel's "Copy prompt". */
+	promptCopy: CopyButton.Model,
+	chart: Chart.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */

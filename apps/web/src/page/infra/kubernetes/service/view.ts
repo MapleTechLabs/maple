@@ -32,6 +32,8 @@ import * as Chart from "../../../../charts/chart"
 import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
 import { MountLinkedCursor } from "../../../../charts/linked-cursor"
 import { correlationStrips, type StripSeries } from "../../kit/correlation-strips"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `ServiceLensPage` / `LensBody` in `ServiceLensShell`.
 
@@ -55,7 +57,7 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 							}),
 						),
 					),
-					h.Class("hover:text-foreground active:text-foreground"),
+					h.Class(typographyClass({ hoverTone: "foreground" })),
 				],
 				[workload.workloadKind, " ", workload.workloadName],
 			),
@@ -64,7 +66,7 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Service({ serviceName, search: model.search }))),
-					h.Class("text-primary hover:underline active:underline"),
+					h.Class(typographyClass({ tone: "primary", className: "hover:underline active:underline" })),
 				],
 				["Open the service"],
 			),
@@ -95,7 +97,7 @@ const podsSection = (h: H, model: Model, inputs: PageViewInputs, pods: ReadonlyA
 			sectionHeading(h, {
 				title: "The pods behind this service",
 				hint: "worst first, by peak saturation",
-				actions: h.span([h.Class("font-mono text-2xs tabular-nums text-muted-foreground")], [
+				actions: typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
 					totalPods > pods.length ? `Top ${pods.length} of ${formatNumber(totalPods)}` : countLabel(totalPods, "pod"),
 				]),
 			}),
@@ -105,7 +107,7 @@ const podsSection = (h: H, model: Model, inputs: PageViewInputs, pods: ReadonlyA
 				onData: (page) =>
 					page.data.length === 0
 						? emptyMessage(h, { dashed: true, className: "py-12" }, [
-								"No pods reported for this workload in the selected window.",
+								"No pods reported for this workload in this window",
 							])
 						: podTable(h, page.data, {
 								sortBy: "saturation",
@@ -246,8 +248,7 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 		[h.Class(cn("space-y-2.5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 		[
 			sectionHeading(h, { title: "Spread across nodes" }),
-			h.div(
-				[h.Class("flex flex-wrap gap-2")],
+			hstack(h, { gap: "2", align: "stretch", wrap: true },
 				byNode.map(([node, { count, worst }]) =>
 					h.a(
 						[
@@ -260,7 +261,7 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 						[
 							h.span([h.Class("text-foreground")], [node]),
 							h.span([h.Class("text-muted-foreground")], [countLabel(count, "pod")]),
-							h.span([h.Class("tabular-nums text-muted-foreground")], ["worst ", formatPercent(worst)]),
+							typography(h, { tone: "muted", numeric: true }, ["worst ", formatPercent(worst)]),
 						],
 					),
 				),

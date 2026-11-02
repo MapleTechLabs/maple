@@ -90,6 +90,17 @@ const settingsOf = (source: V2Source): SettingsForm => ({
 	isSaving: false,
 })
 
+/** The form differs from the source it was built from: the save bar shows. */
+export const isSettingsDirty = (form: SettingsForm): boolean => {
+	const base = form.rules.existing
+	if (base === null) return false
+	return (
+		form.name !== base.name ||
+		form.description !== (base.description ?? "") ||
+		(hasToken(base) && Rules.isRulesDirty(form.rules))
+	)
+}
+
 /** The open tab's state, built as its component mounts; Settings rebuilds when `updated_at` moves. */
 const withTabState = (model: Model): Model =>
 	Option.match(sourceOf(model), {
@@ -559,9 +570,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: withSettings(model, (form) => ({ ...form, description: value })),
 		}),
 		SubmittedSettings: () => save(model),
+		ClickedDiscardSettings: () =>
+			model.settings === null || model.settings.isSaving
+				? { model }
+				: Option.match(sourceOf(model), {
+						onNone: () => ({ model }),
+						onSome: (source) => ({ model: { ...model, settings: settingsOf(source) } }),
+					}),
 		CompletedSave: ({ result }) =>
 			settled(
-				withSettings(model, (form) => ({ ...form, isSaving: false })),
+				// Rebuilt from the saved source, so the form is clean before the list reload lands.
+				Result.match(result, {
+					onFailure: () => withSettings(model, (form) => ({ ...form, isSaving: false })),
+					onSuccess: (saved) =>
+						model.settings === null ? model : { ...model, settings: settingsOf(saved) },
+				}),
 				context,
 				result,
 				{

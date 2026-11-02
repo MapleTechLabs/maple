@@ -3,7 +3,7 @@ import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
-import { timeControls, type TimeSearch } from "../../kit/time-controls"
+import { type PresetValue, timeControls, type TimeSearch } from "../../kit/time-controls"
 import { INITIAL_LOCALE, readLocale } from "../../kit/locale"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
@@ -63,7 +63,7 @@ export const OutMessage = defineMessageUnion({
 export type OutMessage = typeof OutMessage.Type
 
 /** What a resolve needs from the page: its URL window, default preset and the viewer's zone. */
-export type Scope = Readonly<{ search: TimeSearch; defaultPreset: string; timeZone: string }>
+export type Scope = Readonly<{ search: TimeSearch; defaultPreset: PresetValue; timeZone: string }>
 
 export const ResolveWindow = Command.define("ResolveInfraWindow", {
 	args: {

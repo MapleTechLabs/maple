@@ -1,4 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../../ui/pressable"
 import { Message, type Model } from "./canvas"
 import type { PlacedNode } from "./geometry"
 import { measuredBounds } from "./viewport"
@@ -24,15 +25,15 @@ const controlButton = <M>(
 	onClick: M,
 	icon: Html,
 ) =>
-	h.button(
-		[
-			h.Type("button"),
-			h.Class(`react-flow__controls-button react-flow__controls-${kind}`),
-			h.Title(label),
-			h.AriaLabel(label),
-			h.Disabled(disabled),
-			h.OnClick(onClick),
-		],
+	pressable(
+		h,
+		{
+			onClick,
+			label,
+			isDisabled: disabled,
+			className: `react-flow__controls-button react-flow__controls-${kind}`,
+			attributes: [h.Title(label)],
+		},
 		[icon],
 	)
 

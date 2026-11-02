@@ -8,6 +8,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { msIso } from "../shared/time"
+import { typography, typographyClass } from "../../../ui/typography"
 
 // `IncidentTimeline`: the incident's events in order.
 
@@ -38,8 +39,7 @@ export const incidentTimeline = <M>(
 			),
 			...(options.isFailed
 				? [
-						h.p(
-							[h.Class("text-muted-foreground text-xs")],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
 							["Couldn't load delivery history, so notifications are missing."],
 						),
 					]
@@ -85,7 +85,7 @@ const entryRow = <M>(
 				[
 					h.p([h.Class(cn("text-sm", entry.pending && "text-muted-foreground"))], [entry.title]),
 					...(entry.detail
-						? [h.p([h.Class("text-muted-foreground text-xs")], [entry.detail])]
+						? [typography(h, { size: "xs", tone: "muted", as: "p" }, [entry.detail])]
 						: []),
 					...(entry.investigation
 						? [
@@ -110,7 +110,7 @@ const entryRow = <M>(
 														}),
 													),
 												),
-												h.Class("text-primary text-xs hover:underline active:underline"),
+												h.Class(typographyClass({ size: "xs", tone: "primary", className: "hover:underline active:underline" })),
 											],
 											["Open investigation"],
 										),

@@ -23,12 +23,13 @@ import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
 import { FetchAnalytics } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import type { PresetValue } from "../../kit/time-controls"
 
 type Return = PageReturn<Model, Message>
 type Search = typeof CodeReviewSearch.Type
 
 /** `CODE_REVIEW_DEFAULT_PRESET`: reviews are slow-moving, a month has something in it. */
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 const FRAME_ID = "code-review-analytics"
 
 

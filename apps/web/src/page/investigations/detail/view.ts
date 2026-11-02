@@ -1,6 +1,5 @@
 import type { IssueSeverity } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { pageScrollAreaStyles } from "@maple/ui/styles/ui/page-layout"
 import { investigationHeadline, investigationScope } from "@maple/web-data/investigations/display"
 import { Mount, Submodel } from "foldkit"
 import {
@@ -23,7 +22,7 @@ import { icon } from "../../../ui/icon"
 import * as MenuView from "../../../ui/menu-view"
 import * as Tooltip from "../../../ui/tooltip"
 import type { PageViewInputs } from "../../contract"
-import { dashboardPage } from "../../kit/dashboard-page"
+import { dashboardPage, pageScrollArea } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { linkTabStrip } from "../../kit/underline-tabs"
@@ -43,6 +42,7 @@ import {
 	type TipTrigger,
 } from "./view-sections"
 import { verdictCard } from "./view-verdict"
+import { hstack } from "../../../ui/stack"
 
 // The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
 
@@ -95,8 +95,7 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 			: [{ _tag: "Item" as const, value: "resolve", label: "Mark resolved", isDisabled: isBusy }]),
 	]
 	return detailActions(h, [
-		h.div(
-			[h.Class("flex items-center gap-2")],
+		hstack(h, { gap: "2" },
 			[
 				button(
 					h,
@@ -191,15 +190,9 @@ const documentTab = (
 					...(signals === null ? [] : [signals]),
 				]
 	return [
-		h.div(
-			[h.DataAttribute("slot", "page-scroll-area"), h.Class(pageScrollAreaStyles)],
-			[
-				h.div(
-					[h.Class("flex flex-col gap-7")],
-					[...sections, investigationMeta(h, model, investigation)],
-				),
-			],
-		),
+		pageScrollArea(h, {}, [
+			h.div([h.Class("flex flex-col gap-7")], [...sections, investigationMeta(h, model, investigation)]),
+		]),
 		...(isResolved ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
 	]
 }

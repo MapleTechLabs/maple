@@ -269,7 +269,7 @@ describe("integrations on the sources list", () => {
 			{ update: pageUpdate, view },
 			given(loaded([defaultSource, source(2, { name: "Checkout" })])),
 			click(role("button", { name: /^Integrations/ })),
-			expectView(text("No sources match these filters.")).toExist(),
+			expectView(text("No sources match these filters")).toExist(),
 		)
 	})
 })

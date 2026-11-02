@@ -3,6 +3,7 @@ import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import type { Message } from "./message"
 import type { FlowHost } from "./model"
+import { hstack } from "../../../ui/stack"
 
 // The connect flow's sticky footer: Back on the left, the step's hint and its actions on the right.
 // It sits on the page's bottom edge, stuck or not, so it never moves between steps or at the scroll end.
@@ -37,15 +38,9 @@ export const flowFooter = (h: H, options: FlowFooterOptions): Html =>
 						icon(h, "ArrowLeftIcon", { size: 14 }),
 						"Back",
 					]),
-			h.div(
-				[h.Class("flex items-center gap-4")],
-				[
-					h.span(
-						[h.Class("hidden text-xs text-muted-foreground @2xl/page:inline")],
-						[options.hint],
-					),
-					...options.actions,
-				],
-			),
+			hstack(h, { gap: "4" }, [
+				h.span([h.Class("hidden text-xs text-muted-foreground @2xl/page:inline")], [options.hint]),
+				...options.actions,
+			]),
 		],
 	)

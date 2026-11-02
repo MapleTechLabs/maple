@@ -153,6 +153,16 @@ const faqs = [
             "Users plus data. On Standard, the first full platform user is $10 a month and each additional one $99 a month, up to five. On Pro each full platform user is $349 a month with a 1-year commitment, or $418.80 a month without one. Core users are $49 a month on any paid plan, and every GB past the first 100 is $0.40. A 12-person team sending 800 GB pays about $979 a month with 4 full platform and 8 core users on Standard, or $4,468 with all 12 on Pro.",
     },
     {
+        question: "Why is New Relic expensive?",
+        answer:
+            "Mostly because of full platform users. Anyone who needs the APM, infrastructure or browser views, including whoever is on call, needs one: $99 a month on Standard and $349 on Pro with a 1-year commitment. Twelve full platform users on Pro cost $4,188 a month before any data.",
+    },
+    {
+        question: "Are there hidden costs in New Relic pricing?",
+        answer:
+            "Not hidden, but some sit outside the headline rates. Data Plus raises data from $0.40 to $0.60 per GB, storing data in the EU region adds $0.05 per GB, synthetic checks past your edition's allowance cost $0.005 each, and extended retention and Advanced Compute are paid add-ons.",
+    },
+    {
         question: "What happens past 100 GB on the New Relic free tier?",
         answer:
             "New Relic sends an email and an in-app alert at 85% of the 100 GB. Once a Free account passes 100 GB in a calendar month, data ingest stops and you lose access to the platform until you upgrade or the first day of the next month. On a paid plan the first 100 GB stays free and every GB after it is billed.",
@@ -248,13 +258,28 @@ const articleJsonLd = {
             </aside>
 
             <article class="nr-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        <strong>New Relic</strong> is an observability platform for application performance monitoring, infrastructure, logs and more. Its pricing has two parts: users, billed by user type, and data ingest, where the first 100 GB each month is free and each GB after that costs $0.40.
+                    </p>
+                    <p>
+                        This guide covers the four editions, the free tier, user types and data rates, a worked monthly bill for a 12-person team, and ways to lower a New Relic bill.
+                    </p>
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>The free tier includes 100 GB of data a month, one full platform user and unlimited basic users, with no time limit.</li>
+                            <li>Data past 100 GB costs $0.40 per GB ($0.60 with Data Plus); hosts, agents and containers are free.</li>
+                            <li>Full platform users cost $10 for the first and $99 for each after on Standard (5 at most), $349 on Pro with a 1-year commitment.</li>
+                            <li>Core users cost $49 a month and get logs and errors, but not the APM or infrastructure screens.</li>
+                            <li>On the free tier, passing 100 GB stops ingest and platform access until the next month.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="model" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · Pricing model</p>
                     <h2>The New Relic pricing model</h2>
-
-                    <div class="guide-answer">
-                        <p>New Relic charges for two things: the people who use it and the data you send it. The first 100 GB of data each month is free, and every GB after that costs $0.40.</p>
-                    </div>
 
                     <p>
                         People are billed by <strong>user type</strong>, and only two of the three types cost money. The plan, called an <strong>edition</strong> (Free, Standard, Pro or Enterprise), sets the price of a full platform user, how many you can add and the support level.
@@ -638,15 +663,16 @@ const articleJsonLd = {
     .nr-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .nr-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .nr-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .nr-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .nr-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .nr-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .nr-guide strong { font-weight: 600; color: var(--foreground); }
     .nr-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .nr-guide pre { margin: 1rem 0 1.25rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .nr-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .nr-guide a:not(.guide-button):hover { color: var(--foreground); }
     .nr-guide .guide-caption { margin: 0.7rem 0 1.5rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
-    .nr-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .nr-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .nr-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .nr-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .nr-guide .guide-takeaways li::marker { color: var(--primary); }
     .nr-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
 
     /* Code: keywords in the accent, names in teal; neither color is a billing meter. */

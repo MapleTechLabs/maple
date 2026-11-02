@@ -4,7 +4,7 @@ import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
@@ -12,6 +12,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { platformMeta, platformTile } from "../kit/platforms"
 import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/domain/primitives"
 import { AppRoute, hrefOf } from "../../../route"
@@ -22,6 +23,8 @@ import { signalCounts, type VolumeTotals, volumeSize } from "../kit/volume"
 import { countChipItem } from "../../integrations/kit/count-chip"
 import { Message } from "./message"
 import type { Model, SourceKind } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -70,11 +73,10 @@ const volumeCell = (h: H, source: V2Source, usage: UsageBySource, isUnavailable:
 	if (isUnavailable) return "-"
 	if (usage === null) return skeleton(h, "h-4 w-16")
 	const totals = usage.get(source.id) ?? NO_VOLUME
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-0.5")],
+	return vstack(h, { gap: "0.5", shrink: true },
 		[
-			h.span([h.Class("text-foreground tabular-nums")], [volumeSize(totals)]),
-			h.span([h.Class("text-muted-foreground truncate text-xs")], [signalCounts(totals)]),
+			typography(h, { tone: "foreground", numeric: true }, [volumeSize(totals)]),
+			typography(h, { size: "xs", tone: "muted", truncate: true }, [signalCounts(totals)]),
 		],
 	)
 }
@@ -91,12 +93,10 @@ const sourceRow = (
 		h,
 		[
 			tableCell(h, [
-				h.div(
-					[h.Class("flex min-w-0 items-center gap-3")],
+				hstack(h, { gap: "3", shrink: true },
 					[
 						platformTile(h, source.platform, "sm"),
-						h.div(
-							[h.Class("flex min-w-0 flex-col gap-0.5")],
+						vstack(h, { gap: "0.5", shrink: true },
 							[
 								h.a(
 									[
@@ -109,8 +109,7 @@ const sourceRow = (
 									],
 									[source.name],
 								),
-								h.span(
-									[h.Class("text-muted-foreground truncate text-xs")],
+								typography(h, { size: "xs", tone: "muted", truncate: true },
 									[
 										`${platformMeta(source.platform).label}${source.is_default ? " · Default" : ""}`,
 									],
@@ -259,13 +258,11 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 	const usage = usageBySource(model)
 	const isUnavailable = AsyncData.isFailure(model.usage.data)
 	const total = orgTotal(h, sources, usage, isUnavailable)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(h, { gap: "4" },
 		[
 			listToolbar(h, {
 				className: "pb-0",
-				leading: h.div(
-					[h.Class("flex flex-wrap items-center gap-3")],
+				leading: hstack(h, { gap: "3", wrap: true },
 					[kindFilter(h, model, sources), ...(attention === null ? [] : [attention])],
 				),
 				trailing: total === null ? [] : [total],
@@ -289,7 +286,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 			...(added.length === 0
 				? [emptyState(h)]
 				: shown.length === 0
-					? [emptyMessage(h, {}, ["No sources match these filters."])]
+					? [filteredEmpty(h, { noun: "sources", description: "", className: "py-10 md:py-12" })]
 					: []),
 			...(strip === null ? [] : [strip]),
 		],

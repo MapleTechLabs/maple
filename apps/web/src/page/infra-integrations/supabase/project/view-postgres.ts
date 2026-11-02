@@ -16,6 +16,8 @@ import { queryShares, rollbackShare } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, panelEmpty, panelMeta, sectionPanel } from "../panel"
+import { typography } from "../../../../ui/typography"
+import { vstack } from "../../../../ui/stack"
 
 // The Postgres row: connections against the limit, transactions per second, slowest statements.
 
@@ -74,7 +76,7 @@ const metricCard = (
 						onRetry: Message.ClickedRetry({ section: "timeseries" }),
 						render: (rows) =>
 							rows.length === 0
-								? chartCardMessage(h, "No metrics in this time range.")
+								? chartCardMessage(h, "No metrics in this window")
 								: options.theme === null || model.chartRuntime._tag !== "Ready"
 									? chartLoading(h, { variant: "line", height: CHART_HEIGHT })
 									: metricPlot(h, model, options.chart, rows, options.theme, timeZone),
@@ -146,24 +148,18 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 								),
 							],
 							[
-								h.div(
-									[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
-									[
-										h.code(
-											[
-												h.Class("line-clamp-1 font-mono text-2xs text-foreground"),
-												h.Title(query.query),
-											],
-											[query.query],
-										),
-										h.span(
-											[h.Class("font-mono text-2xs text-muted-foreground")],
-											[
-												`${formatNumber(query.calls)} calls · ${formatLatency(query.meanExecMs)} mean`,
-											],
-										),
-									],
-								),
+								vstack(h, { gap: "1", shrink: true, grow: true }, [
+									h.code(
+										[
+											h.Class("line-clamp-1 font-mono text-2xs text-foreground"),
+											h.Title(query.query),
+										],
+										[query.query],
+									),
+									typography(h, { size: "2xs", tone: "muted", mono: true }, [
+										`${formatNumber(query.calls)} calls · ${formatLatency(query.meanExecMs)} mean`,
+									]),
+								]),
 								h.span(
 									[h.Class("shrink-0 font-mono text-2xs tabular-nums text-foreground")],
 									[formatPercent(shares[index] ?? 0)],

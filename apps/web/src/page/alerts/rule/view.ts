@@ -22,6 +22,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { historyTab } from "./view-history"
 import { overviewTab } from "./view-overview"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The rule detail page through `ResultPage` and `DetailHeader`.
 
@@ -56,52 +58,46 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 					h.span([h.Class("truncate")], ["Alert rule"]),
 				]),
 				pageTitle(h, { title: rule.name }, [rule.name]),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[
-						...rule.thresholds.map((tier) => severityBadge(h, tier.severity)),
-						isFiring
-							? alertStatusBadge(
-									h,
-									openIncidents.every((i) => i.holdReason != null) ? "held" : "firing",
-								)
-							: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
-						h.span([h.Class("text-muted-foreground text-sm")], [ruleSubtitle(rule)]),
-					],
-				),
-			],
-		),
-		actions: h.div(
-			[h.Class("flex items-center gap-2")],
-			[
-				timeControls(h, {
-					search: model.search,
-					defaultPreset: DEFAULT_PRESET,
-					window: model.window,
-					onReset: Message.ClickedResetTimeRange(),
-					onReload: Message.ClickedReload(),
-					isReloading: model.isReloading,
-					trigger: (label) =>
-						h.submodel({
-							slotId: "alert-rule-time-picker",
-							model: model.timePicker,
-							view: TimeRangePicker.view,
-							toParentMessage: toTimePicker,
-							viewInputs: {
-								label,
-								selectedPreset:
-									model.search.timePreset ??
-									(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
-								presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
-							},
-						}),
-				}),
-				linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
-					icon(h, "PencilIcon"),
-					"Edit rule",
+				hstack(h, { gap: "2", wrap: true }, [
+					...rule.thresholds.map((tier) => severityBadge(h, tier.severity)),
+					isFiring
+						? alertStatusBadge(
+								h,
+								openIncidents.every((i) => i.holdReason != null) ? "held" : "firing",
+							)
+						: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
+					typography(h, { size: "sm", tone: "muted" }, [ruleSubtitle(rule)]),
 				]),
 			],
 		),
+		actions: hstack(h, { gap: "2" }, [
+			timeControls(h, {
+				search: model.search,
+				defaultPreset: DEFAULT_PRESET,
+				window: model.window,
+				onReset: Message.ClickedResetTimeRange(),
+				onReload: Message.ClickedReload(),
+				isReloading: model.isReloading,
+				trigger: (label) =>
+					h.submodel({
+						slotId: "alert-rule-time-picker",
+						model: model.timePicker,
+						view: TimeRangePicker.view,
+						toParentMessage: toTimePicker,
+						viewInputs: {
+							label,
+							selectedPreset:
+								model.search.timePreset ??
+								(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
+							presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+						},
+					}),
+			}),
+			linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
+				icon(h, "PencilIcon"),
+				"Edit rule",
+			]),
+		]),
 	}
 }
 

@@ -198,6 +198,8 @@ export type CopyButtonOptions<M> = Readonly<{
 	iconSize?: number
 	variant?: "default" | "secondary" | "outline" | "ghost"
 	size?: "xs" | "sm" | "default" | "icon-xs" | "icon-sm" | "icon"
+	/** Keep a filled (`default`) button's own ink; the copy button's muted ink is for ghost ones. */
+	keepsFillInk?: boolean
 	className?: string
 	/** `data-slot` when a wrapper renders through it (`tooltip-trigger`). */
 	slot?: string
@@ -216,14 +218,19 @@ export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>):
 			: [
 					["idle", options.idleLabel],
 					["copied", copiedLabel],
-					["error", options.errorLabel ?? "Failed"],
+					["error", options.errorLabel ?? "Couldn't copy"],
 				]
 	return button(
 		h,
 		{
 			variant: options.variant ?? "ghost",
 			size: options.size ?? (options.idleLabel === undefined ? "icon-xs" : "sm"),
-			className: cn(copyButtonStyles, options.className),
+			className: cn(
+				copyButtonStyles,
+				(options.keepsFillInk ?? false) &&
+					"text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
+				options.className,
+			),
 			slot: options.slot,
 			attributes: [
 				h.AriaLabel(`Copy ${options.label}`),

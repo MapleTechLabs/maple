@@ -5,6 +5,7 @@ import { icon } from "../../ui/icon"
 import { middleTruncate } from "../../ui/middle-truncate"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { type AuthorizationInfo, Message, type Model } from "./mcp-authorize"
+import { typography } from "../../ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -19,8 +20,7 @@ const failure = (h: H, message: string): Html =>
 				icon(h, "CircleWarningIcon", { size: 16 }),
 				alertDescription(h, [message], "text-destructive"),
 			]),
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
+			typography(h, { size: "sm", tone: "muted", as: "p" },
 				["Return to your MCP client and start the connection again."],
 			),
 		],

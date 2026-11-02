@@ -4,6 +4,7 @@ import { icon, iconColor } from "../../../ui/icon"
 import { type DetectedModel, modelTitle } from "./detected-models"
 import { modelVendorColor, modelVendorIcon } from "./vendor"
 import { moreChip } from "./more-chip"
+import { hstackClass } from "../../../ui/stack"
 
 /** The vendor's mark and the model's name. */
 export const modelLabel = <M>(
@@ -22,7 +23,7 @@ export const modelLabel = <M>(
 	const moreCount = options.moreCount ?? 0
 	return h.span(
 		[
-			h.Class(cn("flex min-w-0 items-center gap-1.5", options.className)),
+			h.Class(cn(hstackClass({ gap: "1.5", shrink: true }), options.className)),
 			...(title === null ? [] : [h.Title(title)]),
 		],
 		[

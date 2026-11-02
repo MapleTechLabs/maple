@@ -5,12 +5,12 @@
 # Pipeline:
 #   1. Build the workspace packages consumed through gitignored `dist/` paths.
 #   2. Build the lightweight SPA (`apps/local-ui` → its `dist/`).
-#   3. Inline that dist into apps/cli/src/server/ui-embed.gen.ts so
+#   3. Inline that dist into packages/local-server/src/ui-embed.gen.ts so
 #      `bun build --compile` bakes the SPA into the binary.
 #   4. Compile apps/cli (the CLI + the OTLP-ingest/query server) into a single
 #      executable with `bun build --compile`. The schema artifacts and SPA are
 #      embedded; the OTLP encoders run in-process; chDB is reached via bun:ffi.
-#   5. Download libchdb (v26.7.3, matching what we test against) for the host
+#   5. Download libchdb (pinned in packages/local-server/libchdb.json) for the host
 #      platform and place it beside the binary. At runtime `maple` dlopens the
 #      sibling libchdb (resolved relative to its own path) — no rpath tricks.
 #   6. Restore the committed ui-embed.gen.ts stub so the tree stays clean.
@@ -26,8 +26,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/dist}"
-LIBCHDB_VERSION="${LIBCHDB_VERSION:-v26.7.3}"
-UI_EMBED="$REPO_ROOT/apps/cli/src/server/ui-embed.gen.ts"
+# The chDB release this build pairs with, and each platform asset's sha256. The
+# @maple-dev/alchemy sidecar builds and downloads from the same manifest.
+LIBCHDB_MANIFEST="$REPO_ROOT/packages/local-server/libchdb.json"
+LIBCHDB_VERSION="${LIBCHDB_VERSION:-$(bun -p "require(process.argv[1]).version" "$LIBCHDB_MANIFEST")}"
+UI_EMBED="$REPO_ROOT/packages/local-server/src/ui-embed.gen.ts"
 
 # Version baked into the binary via `bun build --define`. The release workflow
 # passes the tag; a local build defaults to `git describe` (or "dev").
@@ -79,20 +82,17 @@ case "$MAPLE_TARGET" in
 	darwin-arm64) ASSET="macos-arm64-libchdb.tar.gz" ;;
 	*) echo "ERROR: unsupported MAPLE_TARGET $MAPLE_TARGET" >&2; exit 1 ;;
 esac
-# Expected sha256 per (LIBCHDB_VERSION, platform asset): release assets are
+# Expected sha256 per platform asset comes from the manifest: release assets are
 # mutable even for a fixed tag, so this is verified before extraction. Bumping
-# LIBCHDB_VERSION means adding each asset's hash here. A `case` rather than an
-# associative array because macOS still ships bash 3.2.
+# the release means updating its version and every asset hash there.
 # v26.1.0's macos-arm64 dylib put its LINKEDIT string pool at a non-8-byte-aligned
 # offset, which newer dyld rejects ("mis-aligned LINKEDIT string pool"). Check
 # `otool -l libchdb.so` (LC_SYMTAB stroff % 8 == 0) before pinning a new release.
-case "$LIBCHDB_VERSION/$ASSET" in
-	v26.7.3/linux-x86_64-libchdb.tar.gz)  EXPECTED_SHA256="bc33260c32acf78eade2ac41a9115f38e00404651fa42e3bb4c419e4f011c031" ;;
-	v26.7.3/linux-aarch64-libchdb.tar.gz) EXPECTED_SHA256="d153adad1ff39b2e3caf0417f09d8bd9edd41939c7c67a3c4978a61e73fb9227" ;;
-	v26.7.3/macos-x86_64-libchdb.tar.gz)  EXPECTED_SHA256="af5ded3ed3e84c31af1cd198dcf459f11d2b6aad4f6ddeccc04b8a519b0300fc" ;;
-	v26.7.3/macos-arm64-libchdb.tar.gz)   EXPECTED_SHA256="5640e50dccf711bf3dd5551333d08e43f433edf7bd94b2289f36c2539e627762" ;;
-	*) echo "ERROR: no pinned sha256 for $ASSET at LIBCHDB_VERSION=$LIBCHDB_VERSION" >&2; exit 1 ;;
-esac
+EXPECTED_SHA256="$(bun -p 'const m = require(process.argv[1]); m.version === process.argv[2] ? (m.sha256[process.argv[3]] ?? "") : ""' "$LIBCHDB_MANIFEST" "$LIBCHDB_VERSION" "$ASSET")"
+if [ -z "$EXPECTED_SHA256" ]; then
+	echo "ERROR: no pinned sha256 for $ASSET at LIBCHDB_VERSION=$LIBCHDB_VERSION (see $LIBCHDB_MANIFEST)" >&2
+	exit 1
+fi
 
 URL="https://github.com/chdb-io/chdb-core/releases/download/$LIBCHDB_VERSION/$ASSET"
 TMP="$(mktemp -d)"

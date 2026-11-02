@@ -6,6 +6,8 @@ import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
 import type { Message } from "./chart"
 import { labelOf, NODE_W, type PathLink, type PathNode, type PathsLayout, type PlacedNode } from "./paths-layout"
+import { typography } from "../ui/typography"
+import { swatch } from "../ui/swatch"
 
 // The hover card of `PathsChart`: who reached the node, and the top three flows into it.
 
@@ -80,16 +82,13 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 			h.div(
 				[h.Class("mb-1.5 flex min-w-0 items-center gap-1.5")],
 				[
-					h.span([
-						h.Class(
-							cn(
-								"size-2 shrink-0 rounded-xs",
-								node.kind === "event" && "bg-chart-2",
-								node.kind === "end" && "bg-foreground/20",
-								node.kind === "other" && "bg-foreground/35",
-							),
+					swatch(h, {
+						className: cn(
+							node.kind === "event" && "bg-chart-2",
+							node.kind === "end" && "bg-foreground/20",
+							node.kind === "other" && "bg-foreground/35",
 						),
-					]),
+					}),
 					h.span([h.Class("truncate font-medium text-foreground")], [labelOf(node)]),
 					badge(h, { variant: "muted", size: "xs" }, [
 						node.column === 0 ? "anchor" : reverse ? `${node.column} before` : `step ${node.column}`,
@@ -115,7 +114,7 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 					h.span(
 						[h.Class("flex items-baseline gap-1.5 whitespace-nowrap")],
 						[
-							h.span([h.Class("font-semibold text-foreground")], [node.count.toLocaleString("en-US")]),
+							typography(h, { tone: "foreground", weight: "semibold" }, [node.count.toLocaleString("en-US")]),
 							h.span(
 								[h.Class("text-3xs whitespace-nowrap text-muted-foreground")],
 								[`${formatPercent(node.count / anchor.count)} of anchor`],

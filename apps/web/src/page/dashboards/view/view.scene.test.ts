@@ -104,7 +104,10 @@ describe("dashboard view", () => {
 	test("an auto-refresh keeps each tile's data on screen and forgets the old window's request", () => {
 		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
 		const firstKey = Object.keys(revealed.requests)[0] ?? ""
-		const answered = pageUpdate(revealed, Message.CompletedFetchWidget({ key: firstKey, result: Result.succeed({ data: [] }) })).model
+		const answered = pageUpdate(
+			revealed,
+			Message.CompletedFetchWidget({ key: firstKey, result: Result.succeed({ data: [] }) }),
+		).model
 		const ticked = pageUpdate(answered, Message.TickedAutoRefresh()).model
 		const refreshed = pageUpdate(ticked, Message.CompletedReadClock({ nowMs: NOW + 60_000 }))
 		expect(names(refreshed.commands)).toContain(FetchWidget.name)
@@ -116,12 +119,23 @@ describe("dashboard view", () => {
 	test("a tile whose query changed loads afresh instead of showing the old query's data", () => {
 		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
 		const firstKey = Object.keys(revealed.requests)[0] ?? ""
-		const answered = pageUpdate(revealed, Message.CompletedFetchWidget({ key: firstKey, result: Result.succeed({ data: [] }) })).model
+		const answered = pageUpdate(
+			revealed,
+			Message.CompletedFetchWidget({ key: firstKey, result: Result.succeed({ data: [] }) }),
+		).model
 		const changed = Schema.decodeUnknownSync(DashboardDocument)({
 			...Schema.encodeSync(DashboardDocument)(document),
-			widgets: [{ ...stat("total-errors", "totalErrors"), dataSource: { kind: "route", endpoint: "errors_by_type" } }],
+			widgets: [
+				{
+					...stat("total-errors", "totalErrors"),
+					dataSource: { kind: "route", endpoint: "errors_by_type" },
+				},
+			],
 		})
-		const replanned = pageUpdate(answered, Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(changed) }))
+		const replanned = pageUpdate(
+			answered,
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(changed) }),
+		)
 		expect(names(replanned.commands)).toContain(FetchWidget.name)
 		expect(Object.values(replanned.model.requests).map((slot) => slot.data._tag)).toEqual(["Loading"])
 	})
@@ -130,13 +144,21 @@ describe("dashboard view", () => {
 		const sparkline = { enabled: true, dataSource: { kind: "route", endpoint: "errors_by_type" } }
 		const withSparkline = Schema.decodeUnknownSync(DashboardDocument)({
 			...Schema.encodeSync(DashboardDocument)(document),
-			widgets: [{ ...stat("total-errors", "totalErrors"), display: { title: "total-errors", sparkline } }],
+			widgets: [
+				{ ...stat("total-errors", "totalErrors"), display: { title: "total-errors", sparkline } },
+			],
 		})
-		const entered = pageUpdate(ready(), Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(withSparkline) })).model
+		const entered = pageUpdate(
+			ready(),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(withSparkline) }),
+		).model
 		const revealed = pageUpdate(entered, Message.RevealedWidget({ widgetId: "total-errors" })).model
 		const statKey = Object.keys(revealed.requests)[0] ?? ""
 		const answer = (model: Model, key: string) =>
-			pageUpdate(model, Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [{ totalErrors: 5 }] }) }))
+			pageUpdate(
+				model,
+				Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [{ totalErrors: 5 }] }) }),
+			)
 		const withStat = answer(revealed, statKey)
 		expect(names(withStat.commands)).toEqual([FetchWidget.name])
 		const sparkKey = Object.keys(withStat.model.requests).find((key) => key !== statKey) ?? ""
@@ -149,6 +171,28 @@ describe("dashboard view", () => {
 		expect(nextSparkKey).not.toBe(sparkKey)
 		expect(refreshed.model.requests[nextSparkKey]?.data._tag).toBe("Refreshing")
 		expect(Object.keys(refreshed.model.requests)).toHaveLength(2)
+	})
+
+	test("one tile's answer leaves every other tile's slot as it was, so only that tile redraws", () => {
+		const revealed = [
+			Message.RevealedWidget({ widgetId: "total-errors" }),
+			Message.RevealedWidget({ widgetId: "error-rate" }),
+		].reduce((model, message) => pageUpdate(model, message).model, ready())
+		const totalGate = revealed.widgets["total-errors"]?.gate
+		const key = totalGate?._tag === "Request" ? totalGate.request.key : ""
+		const answered = pageUpdate(
+			revealed,
+			Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [{ totalErrors: 5 }] }) }),
+		)
+		expect(names(answered.commands)).toEqual([])
+		expect(answered.model.requests[key]?.data._tag).toBe("Success")
+		expect(answered.model.widgets).toBe(revealed.widgets)
+		const refreshed = pageUpdate(
+			pageUpdate(answered.model, Message.TickedAutoRefresh()).model,
+			Message.CompletedReadClock({ nowMs: NOW }),
+		).model
+		// Same clock, same window: the re-plan lands on the same keys and keeps each slot.
+		expect(refreshed.widgets["error-rate"]).toBe(revealed.widgets["error-rate"])
 	})
 
 	test("picking a preset re-plans the tiles and saves the range to the board", () => {
@@ -193,10 +237,12 @@ describe("dashboard view", () => {
 		// The root runs the Undo, so it still restores after the user left the board.
 		const out = deleted.outMessage
 		const undo = out?._tag === "RequestedToast" ? out.rootAction?.action : undefined
-		expect(undo?._tag === "RestoreDashboardWidgets" && [undo.dashboardId, undo.widgets.map((widget) => widget.id)]).toEqual([
-			ROUTE.dashboardId,
-			["total-errors"],
-		])
+		expect(
+			undo?._tag === "RestoreDashboardWidgets" && [
+				undo.dashboardId,
+				undo.widgets.map((widget) => widget.id),
+			],
+		).toEqual([ROUTE.dashboardId, ["total-errors"]])
 	})
 
 	test("a grip dragged past the threshold writes the tiles that moved, once, on release", () => {

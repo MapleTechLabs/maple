@@ -403,7 +403,7 @@ export type Built =
 	| Readonly<{ _tag: "Telemetry"; step: TelemetryStep }>
 	| Readonly<{ _tag: "Dependencies"; step: DependenciesStep }>
 
-const overviewRoute = AppRoute.Security()
+const overviewRoute = AppRoute.SecurityCode()
 
 export const build = (scenario: Scenario, nowMs: number): Built => {
 	switch (scenario) {
@@ -484,14 +484,14 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 				step: fold(tabs(overviewRoute, nowMs), tabsUpdate, [() => M.ClickedSpendAndModels()]),
 			}
 		case "findings":
-			return { _tag: "Tabs", step: tabs(AppRoute.SecurityFindings({ search: {} }), nowMs) }
+			return { _tag: "Tabs", step: tabs(AppRoute.SecurityCodeFindings({ search: {} }), nowMs) }
 		case "findings-member":
 			return {
 				_tag: "Tabs",
-				step: tabs(AppRoute.SecurityFindings({ search: {} }), nowMs, { member: true }),
+				step: tabs(AppRoute.SecurityCodeFindings({ search: {} }), nowMs, { member: true }),
 			}
 		case "runs":
-			return { _tag: "Tabs", step: tabs(AppRoute.SecurityRuns({ search: {} }), nowMs) }
+			return { _tag: "Tabs", step: tabs(AppRoute.SecurityCodeRuns({ search: {} }), nowMs) }
 		case "run-live":
 			return { _tag: "Run", step: run(RUN_IDS.dashboard, nowMs) }
 		case "run-incomplete":

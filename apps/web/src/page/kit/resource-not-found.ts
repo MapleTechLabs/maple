@@ -25,7 +25,7 @@ export const resourceNotFound = <M>(
 					[
 						h.AriaHidden(true),
 						h.Class(
-							"mb-4 flex size-9 items-center justify-center rounded-md border bg-card/50 text-muted-foreground",
+							"mb-4 flex size-9 items-center justify-center rounded-md border bg-surface-faint text-muted-foreground",
 						),
 					],
 					[options.icon ?? icon(h, "CircleWarningIcon", { size: 18 })],

@@ -205,7 +205,7 @@ per-org atoms, the 3D renderer and the integration panels. Maple Local
 storage.
 
 In local mode the `maple start` server fills `service_map_edges_hourly` itself
-(`apps/cli/src/server/service-map-rollup.ts`). It shares the hour planning and
+(`packages/local-server/src/service-map-rollup.ts`). It shares the hour planning and
 per-hour queries with `ServiceMapRollupService` (`service-map-rollup.ts` in
 `@maple/query-engine`) and writes the same edge and address-resolution rows with
 `INSERT ... SELECT` into chDB. It ticks 60 seconds after start (so exporters

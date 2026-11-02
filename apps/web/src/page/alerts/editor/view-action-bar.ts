@@ -15,6 +15,8 @@ import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { RULE_FORM_MAX_WIDTH } from "./view-step"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `RuleActionBar`: the sticky bar with the rule in one
 // sentence, what is still missing, and Cancel / Save.
@@ -64,8 +66,13 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 /** `ValidationSummary`. */
 const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>): Html => {
 	if (issues.length === 0)
-		return h.span(
-			[h.Class("flex items-center gap-1.5 text-xs text-severity-info")],
+		return hstack(
+			h,
+			{
+				gap: "1.5",
+				as: "span",
+				className: typographyClass({ size: "xs", className: "text-severity-info" }),
+			},
 			[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
 		)
 	const visible = issues.slice(0, MAX_VISIBLE_ISSUES)
@@ -102,62 +109,60 @@ const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | nu
 			h.div(
 				[h.Class(cn("mx-auto flex items-center justify-between gap-4", RULE_FORM_MAX_WIDTH))],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-3")],
-						[
-							...(isEditing
-								? []
-								: [
-										button(
-											h,
-											{
-												variant: "ghost",
-												size: "sm",
-												className: "hidden sm:inline-flex",
-												attributes: [h.OnClick(Message.ClickedShowTemplates())],
-											},
-											[icon(h, "SquareTerminalIcon"), "Templates"],
-										),
-									]),
-							h.div(
-								[h.Class("flex min-w-0 flex-col gap-0.5")],
-								[
-									h.p(
-										[h.Class("truncate text-sm text-foreground"), h.Title(summary)],
-										[summary],
+					hstack(h, { gap: "3", shrink: true }, [
+						...(isEditing
+							? []
+							: [
+									button(
+										h,
+										{
+											variant: "ghost",
+											size: "sm",
+											className: "hidden sm:inline-flex",
+											attributes: [h.OnClick(Message.ClickedShowTemplates())],
+										},
+										[icon(h, "SquareTerminalIcon"), "Templates"],
 									),
-									validationSummary(h, model, issues),
-								],
-							),
-						],
-					),
-					h.div(
-						[h.Class("flex shrink-0 items-center gap-2")],
-						[
-							...(changeCount === null
-								? []
-								: [
-										h.span(
-											[h.Class("hidden text-xs text-muted-foreground sm:inline")],
-											[
-												changeCount === 0
-													? "No changes"
-													: `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
-											],
-										),
-									]),
-							linkButton(h, { variant: "outline", href: alertsHref({}) }, ["Cancel"]),
-							button(
+								]),
+						vstack(h, { gap: "0.5", shrink: true }, [
+							typography(
 								h,
 								{
-									isDisabled: issues.length > 0 || changeCount === 0,
-									isLoading: model.isSaving,
-									attributes: [h.OnClick(Message.ClickedSave())],
+									size: "sm",
+									tone: "foreground",
+									truncate: true,
+									as: "p",
+									attributes: [h.Title(summary)],
 								},
-								[icon(h, "FloppyDiskIcon"), isEditing ? "Save changes" : "Create rule"],
+								[summary],
 							),
-						],
-					),
+							validationSummary(h, model, issues),
+						]),
+					]),
+					hstack(h, { gap: "2", className: "shrink-0" }, [
+						...(changeCount === null
+							? []
+							: [
+									h.span(
+										[h.Class("hidden text-xs text-muted-foreground sm:inline")],
+										[
+											changeCount === 0
+												? "No changes"
+												: `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
+										],
+									),
+								]),
+						linkButton(h, { variant: "outline", href: alertsHref({}) }, ["Cancel"]),
+						button(
+							h,
+							{
+								isDisabled: issues.length > 0 || changeCount === 0,
+								isLoading: model.isSaving,
+								attributes: [h.OnClick(Message.ClickedSave())],
+							},
+							[icon(h, "FloppyDiskIcon"), isEditing ? "Save changes" : "Create rule"],
+						),
+					]),
 				],
 			),
 		],

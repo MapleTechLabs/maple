@@ -25,6 +25,10 @@ import type { Model } from "./model"
 import { githubStatusOf } from "./update-github"
 import { githubDeactivated, githubInstallationPicker, githubReconnectButton } from "./view-github"
 import { SYNC_PRESENTATION } from "./view-github-repos"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
+import { stripClass } from "../../ui/rule"
+import { columnClass } from "../../ui/column"
 
 // GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
 
@@ -74,7 +78,7 @@ const showsUpRail = (h: H): Html =>
 				detail: "Deploys to the tracked branch as markers",
 			},
 			{ icon: "LayersIcon", title: "Traces", detail: "Spans with a commit SHA link to GitHub" },
-			{ icon: "PullRequestIcon", title: "Code Review", detail: "Rules, models and analytics" },
+			{ icon: "PullRequestIcon", title: "Code review", detail: "Rules, models and analytics" },
 			{ icon: "GearIcon", title: "Source page", detail: "Edit data, tracked branches, Disconnect" },
 		],
 		trust: "Large repos can take a few minutes to backfill. Nothing here needs you to stay.",
@@ -104,60 +108,51 @@ const installButton = (
 /** The installation: where it lives, how much it can read, and the way to change it on GitHub. */
 const installation = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
 	const repos = activeRepos(status)
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-3 rounded-md border border-border p-3")],
-				[
-					icon(h, "GithubIcon", { size: 18, className: "shrink-0" }),
-					h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+	return vstack(h, { gap: "3" }, [
+		h.div(
+			[h.Class("flex flex-wrap items-center gap-3 rounded-md border border-border p-3")],
+			[
+				icon(h, "GithubIcon", { size: 18, className: "shrink-0" }),
+				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+					h.span(
+						[h.Class("flex items-center gap-2 text-sm font-medium")],
 						[
-							h.span(
-								[h.Class("flex items-center gap-2 text-sm font-medium")],
-								[
-									status.accountLogin ?? "GitHub App",
-									...(status.accountType === null
-										? []
-										: [
-												badge(h, { variant: "outline", size: "sm" }, [
-													ACCOUNT_TYPE[status.accountType],
-												]),
-											]),
-								],
-							),
-							h.span(
-								[h.Class("text-xs text-muted-foreground")],
-								[
-									status.repositorySelection === "selected"
-										? "Selected repositories"
-										: "All repositories",
-									", ",
-									`${repos.length} granted`,
-								],
-							),
+							status.accountLogin ?? "GitHub App",
+							...(status.accountType === null
+								? []
+								: [
+										badge(h, { variant: "outline", size: "sm" }, [
+											ACCOUNT_TYPE[status.accountType],
+										]),
+									]),
 						],
 					),
-					installButton(
-						h,
-						model,
-						"Change repos on GitHub",
-						"outline",
-						Message.ClickedOpenGithubInstallPage(),
-					),
-				],
-			),
-			...(repos.length === 0
-				? []
-				: [
-						foundChips(
-							h,
-							repos.map((repo) => ({ label: repo.fullName })),
-						),
+					typography(h, { size: "xs", tone: "muted" }, [
+						status.repositorySelection === "selected"
+							? "Selected repositories"
+							: "All repositories",
+						", ",
+						`${repos.length} granted`,
 					]),
-		],
-	)
+				]),
+				installButton(
+					h,
+					model,
+					"Change repos on GitHub",
+					"outline",
+					Message.ClickedOpenGithubInstallPage(),
+				),
+			],
+		),
+		...(repos.length === 0
+			? []
+			: [
+					foundChips(
+						h,
+						repos.map((repo) => ({ label: repo.fullName })),
+					),
+				]),
+	])
 }
 
 const connectStep = (h: H, model: Model): Html => {
@@ -180,29 +175,22 @@ const connectStep = (h: H, model: Model): Html => {
 							? githubInstallationPicker(h, model)
 							: isDiscovering
 								? [
-										h.p(
-											[h.Class("text-sm text-muted-foreground")],
-											[
-												"Maple is reading the repositories granted to this installation.",
-											],
-										),
+										typography(h, { size: "sm", tone: "muted", as: "p" }, [
+											"Maple is reading the repositories granted to this installation.",
+										]),
 									]
 								: isConnected
 									? [installation(h, model, status)]
 									: discovery?._tag === "Failed"
 										? [
-												h.p(
-													[h.Class("text-sm text-muted-foreground")],
-													["Reconnect to retry repository discovery."],
-												),
+												typography(h, { size: "sm", tone: "muted", as: "p" }, [
+													"Reconnect to retry repository discovery.",
+												]),
 											]
 										: [
-												h.p(
-													[h.Class("text-sm text-muted-foreground")],
-													[
-														"GitHub opens in a new window. Approve Maple, then pick an account where the app is installed, or install it and choose All repositories or Selected repositories. Maple reads code metadata, deployments and checks, and writes pull request comments.",
-													],
-												),
+												typography(h, { size: "sm", tone: "muted", as: "p" }, [
+													"GitHub opens in a new window. Approve Maple, then pick an account where the app is installed, or install it and choose All repositories or Selected repositories. Maple reads code metadata, deployments and checks, and writes pull request comments.",
+												]),
 												installButton(h, model, "Connect GitHub"),
 											],
 					),
@@ -299,20 +287,23 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 		h,
 		{ ariaLabel: "GitHub repositories" },
 		[
-			columnHead(h, { label: "Repository", width: "w-0 min-w-48 flex-1" }),
+			columnHead(h, { label: "Repository", width: columnClass({ min: "48" }) }),
 			columnHead(h, { label: "Tracked branch", width: "w-36" }),
 			columnHead(h, { label: "Status", width: "w-28", align: "right" }),
 		],
 		repos.length === 0
-			? [dataTableEmpty(h, ["No repositories granted yet."])]
+			? [dataTableEmpty(h, ["No repositories granted yet"])]
 			: repos.map((repo) => {
 					const presentation = SYNC_PRESENTATION[repo.syncStatus]
-					return h.div(
-						[
-							h.Class(
-								"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
-							),
-						],
+					return hstack(
+						h,
+						{
+							gap: "4",
+							className: typographyClass({
+								size: "sm",
+								className: stripClass("row"),
+							}),
+						},
 						[
 							h.span([h.Class("w-0 min-w-48 flex-1 truncate")], [repo.fullName]),
 							h.span(

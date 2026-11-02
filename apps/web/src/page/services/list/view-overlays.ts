@@ -10,6 +10,8 @@ import { deployInfo, isResolvableSha } from "./derive"
 import { Message, type RowTooltip } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { overlayTriggerId } from "./update-overlays"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // The row tooltips (rollout split, sampling estimate, `UnnamedServiceHint`) and `CommitShaHoverCard`.
 
@@ -61,8 +63,9 @@ const entriesOf = (services: ReadonlyArray<ServiceRow>) => {
 }
 
 const rolloutContent = (h: H, service: ServiceRow): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex flex-col gap-1")],
+	vstack(
+		h,
+		{ gap: "1" },
 		(deployInfo(service.commits)?.rollout?.others ?? []).map((commit) =>
 			h.div(
 				[
@@ -71,7 +74,7 @@ const rolloutContent = (h: H, service: ServiceRow): ReadonlyArray<Html> => [
 				],
 				[
 					h.span([], [shortId(commit.commitSha, "sha")]),
-					h.span([h.Class("tabular-nums text-muted-foreground")], [`${commit.percentage}%`]),
+					typography(h, { tone: "muted", numeric: true }, [`${commit.percentage}%`]),
 				],
 			),
 		),

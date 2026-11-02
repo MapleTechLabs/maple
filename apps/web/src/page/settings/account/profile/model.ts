@@ -30,6 +30,7 @@ export const Message = defineMessageUnion({
 	ChangedFirstName: { value: Schema.String },
 	ChangedLastName: { value: Schema.String },
 	ClickedSaveName: {},
+	ClickedDiscardName: {},
 	CompletedSaveName: done,
 	ClickedPickAvatar: {},
 	CompletedPickAvatar: {},

@@ -4,6 +4,7 @@ import { AsyncData, Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { fromString as urlFromString } from "foldkit/url"
+import { toLoadFailure } from "../../data/load-failure"
 import type { PageContext, PageReturn } from "../../page/contract"
 import { Message as PeekMessage } from "../../page/services/detail/endpoint-peek/message"
 import { Message as PageMessage } from "../../page/services/detail/message"
@@ -24,6 +25,7 @@ import { defineShellLab } from "../shell-lab"
 
 // `/lab/service-api[?endpoint=POST%20/v1/traces]`: the service page's API tab and endpoint drawer
 // over 12 hours of the ingest service, in the real shell. Reads are dropped, nothing leaves the tab.
+// `?failed=1` fails the first endpoints read, so the error card and its Try again can be checked.
 
 const CONTEXT: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab_service_api"),
@@ -31,7 +33,7 @@ const CONTEXT: PageContext = {
 	timeZone: "UTC",
 }
 
-const Flags = Schema.Struct({ endpoint: Schema.NullOr(Schema.String) })
+const Flags = Schema.Struct({ endpoint: Schema.NullOr(Schema.String), isFailed: Schema.Boolean })
 type Flags = typeof Flags.Type
 
 const Model = Schema.Struct({ page: PageModel })
@@ -50,7 +52,7 @@ const RELEASES = [
 const isPending = (data: AsyncData.AsyncData<unknown, unknown>) => AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
 
 /** The answers to every read still pending, as the Messages their fetches would have sent. */
-const answers = (model: PageModel): ReadonlyArray<PageMessage> => [
+const answers = (model: PageModel, isFailed: boolean): ReadonlyArray<PageMessage> => [
 	...(isPending(model.overview.data)
 		? [
 				PageMessage.CompletedFetchOverview({
@@ -60,7 +62,12 @@ const answers = (model: PageModel): ReadonlyArray<PageMessage> => [
 			]
 		: []),
 	...(isPending(model.endpoints.data)
-		? [PageMessage.CompletedFetchEndpoints({ key: model.endpoints.key ?? "", result: Result.succeed(LAB_ENDPOINTS) })]
+		? [
+				PageMessage.CompletedFetchEndpoints({
+					key: model.endpoints.key ?? "",
+					result: isFailed ? Result.fail(toLoadFailure("endpoints store down")) : Result.succeed(LAB_ENDPOINTS),
+				}),
+			]
 		: []),
 	...(isPending(model.apiOverview.data)
 		? [PageMessage.CompletedFetchApiOverview({ key: model.apiOverview.key ?? "", result: Result.succeed(LAB_API_OVERVIEW) })]
@@ -94,8 +101,12 @@ const answers = (model: PageModel): ReadonlyArray<PageMessage> => [
 ]
 
 /** Answers pending reads until none is left (an answer can start the next read). */
-const settle = (result: PageReturn<PageModel, PageMessage>, depth = 0): PageReturn<PageModel, PageMessage> => {
-	const pending = answers(result.model)
+const settle = (
+	result: PageReturn<PageModel, PageMessage>,
+	isFailed = false,
+	depth = 0,
+): PageReturn<PageModel, PageMessage> => {
+	const pending = answers(result.model, isFailed)
 	if (pending.length === 0 || depth > 6) return result
 	const next = pending.reduce<PageReturn<PageModel, PageMessage>>((acc, message) => {
 		const answered = DetailUpdate.update(acc.model, message, CONTEXT)
@@ -105,13 +116,13 @@ const settle = (result: PageReturn<PageModel, PageMessage>, depth = 0): PageRetu
 			outMessage: acc.outMessage ?? answered.outMessage,
 		}
 	}, result)
-	return settle(next, depth + 1)
+	return settle(next, isFailed, depth + 1)
 }
 
 const isRead = (name: string) => /^(Fetch|ResolveServiceDetailClock)/.test(name)
 
-const step = (result: PageReturn<PageModel, PageMessage>): Return => {
-	const settled = settle(result)
+const step = (result: PageReturn<PageModel, PageMessage>, isFailed = false): Return => {
+	const settled = settle(result, isFailed)
 	return {
 		model: { page: settled.model },
 		commands: Command.mapMessages(
@@ -141,7 +152,7 @@ const init = (flags: Flags): Return => {
 		PageMessage.CompletedResolveClock({ nowMs: LAB_NOW, mode: "Load" }),
 		CONTEXT,
 	)
-	return step({ ...clocked, commands: [...(started.commands ?? []), ...(clocked.commands ?? [])] })
+	return step({ ...clocked, commands: [...(started.commands ?? []), ...(clocked.commands ?? [])] }, flags.isFailed)
 }
 
 const update = (model: Model, message: Message): Return =>
@@ -168,7 +179,10 @@ export const lab = defineShellLab("Service API", {
 	Model,
 	Message,
 	Flags,
-	flags: Effect.sync(() => ({ endpoint: new URLSearchParams(window.location.search).get("endpoint") })),
+	flags: Effect.sync(() => {
+		const params = new URLSearchParams(window.location.search)
+		return { endpoint: params.get("endpoint"), isFailed: params.get("failed") === "1" }
+	}),
 	init,
 	update,
 	view,

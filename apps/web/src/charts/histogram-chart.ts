@@ -1,5 +1,4 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
-import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -8,6 +7,8 @@ import { type CategoricalBin, ChartSpec, ChartTooltip, type NumericBin } from ".
 import { formatBound } from "./histogram-format"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
+import { hstack } from "../ui/stack"
+import { chartNoData } from "../ui/chart-frame"
 
 // Port of `QueryBuilderHistogramChart` (packages/ui/src/components/charts/histogram/
 // query-builder-histogram-chart.tsx), view half. Definitions are in ./definitions/histogram.ts.
@@ -90,8 +91,7 @@ export const countTooltipBody = (
 				[h.Class("border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight")],
 				[heading],
 			),
-			h.div(
-				[h.Class("flex w-full items-center gap-2")],
+			hstack(h, { gap: "2", className: "w-full" },
 				[
 					h.span([h.Class("size-2.5 shrink-0 rounded-xs"), h.Style({ "background-color": color })]),
 					h.div(
@@ -166,8 +166,5 @@ export const view = Submodel.defineView<Model, Message, HistogramChartInputs>((m
 		)
 	}
 
-	return h.div(
-		[h.Class(cn("relative grid h-full w-full place-items-center", inputs.className))],
-		[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
-	)
+	return chartNoData(h, { className: inputs.className })
 })

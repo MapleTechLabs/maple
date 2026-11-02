@@ -5,9 +5,12 @@ import type { CrashContext } from "foldkit/runtime"
 import { writeClipboardText } from "@maple/ui/lib/clipboard"
 import { button, linkButton } from "../ui/button"
 import { eyebrow } from "../ui/eyebrow"
+import { heading } from "../ui/heading"
 import { icon } from "../ui/icon"
 import { MAPLE_MARK_PATH } from "../ui/icons.generated"
 import { mountMapleLeaves } from "./maple-leaves"
+import { typography } from "../ui/typography"
+import { hstack, vstack } from "../ui/stack"
 
 const MAX_DEPTH = 8
 
@@ -121,67 +124,55 @@ export const crashView = (context: CrashContext<unknown, unknown>, h: HtmlBuilde
 					[h.Class("flex w-full max-w-[560px] flex-col justify-center gap-8 px-6 py-16 md:px-16")],
 					[
 						mapleMark(h),
-						h.div(
-							[h.Class("flex flex-col gap-3")],
-							[
-								eyebrow(h, { variant: "label", className: "text-muted-foreground" }, [
-									"Unexpected error",
-								]),
-								h.h1(
-									[
-										h.Class(
-											"font-display text-3xl font-semibold tracking-tight text-balance md:text-4xl",
-										),
+						vstack(h, { gap: "3" }, [
+							eyebrow(h, { variant: "label", className: "text-muted-foreground" }, [
+								"Unexpected error",
+							]),
+							heading(h, { level: 1, variant: "display", className: "text-balance" }, [
+								"Something came loose",
+							]),
+							h.p(
+								[
+									h.Class(
+										"max-w-[44ch] font-prose text-base leading-relaxed text-muted-foreground",
+									),
+								],
+								[
+									"The dashboard hit an error it could not recover from. Your data and settings are untouched, and a reload usually puts everything back.",
+								],
+							),
+						]),
+						hstack(h, { gap: "2", align: "stretch", wrap: true }, [
+							button(
+								h,
+								{
+									attributes: [
+										h.DataAttribute("crash-gust", ""),
+										h.Attribute("onclick", "location.reload()"),
 									],
-									["Something came loose"],
-								),
-								h.p(
-									[
-										h.Class(
-											"max-w-[44ch] font-prose text-base leading-relaxed text-muted-foreground",
-										),
+								},
+								[icon(h, "ArrowRotateClockwiseIcon"), "Reload"],
+							),
+							// A plain navigation: Foldkit's link listener would hand the click to the stopped runtime.
+							linkButton(
+								h,
+								{
+									variant: "outline",
+									href: "/",
+									attributes: [
+										h.DataAttribute("crash-gust", ""),
+										h.Attribute("onclick", "event.stopPropagation()"),
 									],
-									[
-										"The dashboard hit an error it could not recover from. Your data and settings are untouched, and a reload usually puts everything back.",
-									],
-								),
-							],
-						),
-						h.div(
-							[h.Class("flex flex-wrap gap-2")],
-							[
-								button(
-									h,
-									{
-										attributes: [
-											h.DataAttribute("crash-gust", ""),
-											h.Attribute("onclick", "location.reload()"),
-										],
-									},
-									[icon(h, "ArrowRotateClockwiseIcon"), "Reload"],
-								),
-								// A plain navigation: Foldkit's link listener would hand the click to the stopped runtime.
-								linkButton(
-									h,
-									{
-										variant: "outline",
-										href: "/",
-										attributes: [
-											h.DataAttribute("crash-gust", ""),
-											h.Attribute("onclick", "event.stopPropagation()"),
-										],
-									},
-									[icon(h, "HouseIcon"), "Back to home"],
-								),
-							],
-						),
+								},
+								[icon(h, "HouseIcon"), "Back to home"],
+							),
+						]),
 						h.div(
 							[h.Class("flex max-w-full flex-col gap-1.5 border-t pt-5")],
 							[
-								h.p(
-									[h.Class("text-muted-foreground text-xs")],
-									["If it keeps happening, send us this reference:"],
-								),
+								typography(h, { size: "xs", tone: "muted", as: "p" }, [
+									"If it keeps happening, send us this reference:",
+								]),
 								h.div(
 									[h.Class("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1")],
 									[

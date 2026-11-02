@@ -82,7 +82,7 @@ describe("code review analytics", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			themeResolved(),
-			expectView(text("No reviews in this window")).toExist(),
+			expectView(text("No reviews match these filters")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toExist(),
 		)
 		const cleared = pageUpdate(model, Message.ClickedClearFilters())

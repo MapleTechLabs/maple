@@ -29,6 +29,7 @@ import { issuesPanel } from "./view-issues"
 import { postgresRow } from "./view-postgres"
 import { HEALTH_STRIP_GRID, healthStripView } from "./view-strip"
 import { trafficPanel } from "./view-traffic"
+import { typography } from "../../../../ui/typography"
 
 // `/infra/supabase/$projectRef`: the project's Overview.
 
@@ -104,7 +105,7 @@ const stripView = (h: H, model: Model, timeZone: string): Html => {
 const noMetrics = (h: H, project: DiscoveredProject | null): Html =>
 	integrationNotConnected(h, {
 		icon: icon(h, "SupabaseIcon", { size: 16 }),
-		title: "No metrics for this project in this time range",
+		title: "No metrics for this project in this window",
 		description:
 			project !== null && !project.metricsEnabled
 				? "Metrics collection is off for this project. Turn on Metrics to start scraping it."
@@ -133,8 +134,9 @@ const heroMeta = (
 	return parts.length === 0
 		? []
 		: [
-				h.p(
-					[h.Class("font-mono text-xs text-muted-foreground")],
+				typography(
+					h,
+					{ size: "xs", tone: "muted", mono: true, as: "p" },
 					parts.flatMap((part, index) => (index === 0 ? [part] : [" · ", part])),
 				),
 			]

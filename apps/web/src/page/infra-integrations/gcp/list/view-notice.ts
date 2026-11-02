@@ -66,7 +66,7 @@ export const gcpNotice = (h: H, notice: GcpInfraNotice): Html => {
 		case "quiet":
 			return alert(h, { variant: "info", role: "status" }, [
 				icon(h, "CircleInfoIcon", { size: 16 }),
-				alertTitle(h, ["No Google Cloud metrics in this time range"]),
+				alertTitle(h, ["No Google Cloud metrics in this window"]),
 				alertDescription(h, ["Widen the time range, or reload to include the latest read."]),
 			])
 	}

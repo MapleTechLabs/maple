@@ -46,6 +46,9 @@ import {
 	NO_NAMESPACE,
 	type ServiceNamespaces,
 } from "./uptime-groups"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // The hub's Uptime tab: the filters with the readout, and the monitor table.
 
@@ -169,7 +172,7 @@ const toolbar = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>): Ht
 				},
 				KIND_FILTERS.map((kind) => nativeOption(kind.value, kind.label)),
 			),
-			h.div([h.Class("flex items-center gap-3")], readout(h, monitors)),
+			hstack(h, { gap: "3" }, readout(h, monitors)),
 		],
 	})
 
@@ -212,7 +215,7 @@ const latencyCells = (h: H, monitor: UptimeMonitor): ReadonlyArray<Html> => {
 			[
 				h.Class(
 					cn(
-						"text-right font-mono text-xs tabular-nums",
+						typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" }),
 						column.key === "p50" ? "text-foreground" : "text-muted-foreground",
 					),
 				),
@@ -247,14 +250,13 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 							h.div(
 								[h.Class("min-w-0")],
 								[
-									h.div(
-										[h.Class("flex min-w-0 items-center gap-2")],
+									hstack(h, { gap: "2", shrink: true },
 										[
 											rowLink(
 												h,
 												{
 													href: monitorHref(monitor.id),
-													className: "truncate text-sm font-medium",
+													className: typographyClass({ size: "sm", weight: "medium", truncate: true }),
 												},
 												[monitor.name],
 											),
@@ -263,8 +265,7 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 												: [uptimeStatusChip(h, monitor, nowMs)]),
 										],
 									),
-									h.p(
-										[h.Class("truncate font-mono text-xs text-muted-foreground")],
+									typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
 										[subline(monitor, nowMs)],
 									),
 								],
@@ -272,8 +273,7 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 						],
 					),
 					recentChecksStrip(h, { recent, slots: RECENT_SLOTS, isMuted: isPaused }),
-					h.span(
-						[h.Class("text-right font-mono text-xs tabular-nums")],
+					typography(h, { size: "xs", mono: true, numeric: true, className: "text-right" },
 						[isPaused ? "–" : formatShare(uptimeShare(recent))],
 					),
 					...latencyCells(h, monitor),
@@ -294,13 +294,14 @@ const groupHeader = (h: H, [namespace, monitors]: MonitorGroup): Html =>
 		[h.Key(`ns-${namespace}`), h.Class("flex items-center gap-2 bg-surface-sunken py-2 pr-2 pl-4")],
 		[
 			namespaceLabel(h, namespace),
-			h.span([h.Class("text-xs text-muted-foreground")], [countLabel(monitors.length, "monitor")]),
+			typography(h, { size: "xs", tone: "muted" }, [countLabel(monitors.length, "monitor")]),
 		],
 	)
 
 const table = (h: H, model: Model, groups: ReadonlyArray<MonitorGroup>, nowMs: number): Html =>
-	h.div(
-		[h.Class("overflow-x-auto rounded-md border")],
+	borderedBox(
+		h,
+		{ overflow: "x-auto" },
 		[
 			h.div(
 				[h.Class("min-w-[860px]")],
@@ -374,14 +375,13 @@ const loaded = (
 			(model.uptimeKind === "all" || monitor.kind === model.uptimeKind) &&
 			matchesQuery(monitor, model.uptimeQuery, nowMs),
 	)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(h, { gap: "4" },
 		[
 			toolbar(h, model, monitors),
 			rows.length === 0
 				? filteredEmpty(h, {
 						noun: "monitors",
-						description: "No monitor matches the filter, status and type.",
+						description: "Nothing matches the search, status and type.",
 						onClear: Message.ClickedClearUptimeFilters(),
 						clearLabel: "Clear filters",
 					})
@@ -417,7 +417,7 @@ export const uptimeTab = (h: H, model: Model, nowMs: number, pinnedNamespace: st
 }
 
 const loadingState = (h: H): Html =>
-	h.div([h.Class("flex flex-col gap-4")], [skeleton(h, "h-9 w-2/3"), skeleton(h, "h-64 w-full")])
+	vstack(h, { gap: "4" }, [skeleton(h, "h-9 w-2/3"), skeleton(h, "h-64 w-full")])
 
 export const deleteMonitorDialog = (h: H, model: Model): Html => {
 	const monitors = AsyncData.getOrElse(model.monitors.data, () => [])

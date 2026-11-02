@@ -18,12 +18,13 @@ import {
 import { cachedStep, remember } from "../kit/page-steps"
 import type { Retained } from "../kit/retained"
 import { FetchTeam, Message, type Model } from "./model"
+import type { PresetValue } from "../../kit/time-controls"
 
 export type Search = typeof CodeReviewTeamSearch.Type
 type Return = PageReturn<Model, Message>
 
 /** A month: enough merged pull requests per person for a median to mean something. */
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 const FRAME_ID = "code-review-team"
 
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewTeam({ search }))

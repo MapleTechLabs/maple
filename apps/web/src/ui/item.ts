@@ -88,3 +88,10 @@ export const itemDescription = <M>(
 		],
 		children,
 	)
+
+/**
+ * A raised `Item` card whose media (a brand plate) sits top-aligned beside multi-line content,
+ * at the roomier gap and padding of the integration status cards.
+ */
+export const mediaCard = <M>(h: HtmlBuilder<M>, media: Html, children: Children): Html =>
+	item(h, { variant: "card", className: "items-start gap-4 p-4" }, [itemMedia(h, {}, [media]), ...children])

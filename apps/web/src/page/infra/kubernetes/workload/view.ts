@@ -6,7 +6,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
+import { label } from "../../../../ui/label"
 import { segmentedSelect } from "../../../../ui/segmented-select"
+import { switchControl } from "../../../../ui/switch"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import * as Frame from "../../kit/frame"
@@ -26,6 +28,7 @@ import { podTable, podTableLoading } from "../pod-table"
 import { Message } from "./message"
 import { type Model, seriesId, type WorkloadKind, type WorkloadMetric, type WorkloadSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { hstack } from "../../../../ui/stack"
 
 // `WorkloadDetailPage` and `WorkloadDetailChart`.
 
@@ -111,7 +114,7 @@ const podsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 		onData: (page) =>
 			page.data.length === 0
 				? emptyMessage(h, { dashed: true, className: "py-12" }, [
-						"No pods reporting for this workload in the selected window.",
+						"No pods reporting for this workload in this window",
 					])
 				: podTable(h, page.data, {
 						sortBy: "saturation",
@@ -132,8 +135,7 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return h.div(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-3")],
+			hstack(h, { gap: "3", justify: "between", wrap: true },
 				[
 					segmentedSelect(h, {
 						size: "xs",
@@ -142,15 +144,21 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						onChange: (value) => Message.ClickedMetric({ metric: value }),
 						ariaLabel: "Metric",
 					}),
-					h.label(
-						[h.Class("inline-flex items-center gap-2 text-2xs text-muted-foreground")],
+					// The label wraps the switch's hidden input, so a click on the text toggles too.
+					label(
+						h,
+						{
+							className: "cursor-pointer font-normal text-2xs text-muted-foreground sm:text-2xs",
+							attributes: [h.Id("workload-group-by-pod-label")],
+						},
 						[
-							h.input([
-								h.Type("checkbox"),
-								h.Checked(model.groupByPod),
-								h.Class("size-3 accent-primary"),
-								h.OnClick(Message.ToggledGroupByPod({ isChecked: !model.groupByPod })),
-							]),
+							...switchControl(h, {
+								id: "workload-group-by-pod",
+								inputId: "workload-group-by-pod-input",
+								isChecked: model.groupByPod,
+								labelledBy: "workload-group-by-pod-label",
+								onToggle: Message.ToggledGroupByPod({ isChecked: !model.groupByPod }),
+							}),
 							"Per-pod breakdown",
 						],
 					),

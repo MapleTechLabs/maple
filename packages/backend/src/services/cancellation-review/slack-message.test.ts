@@ -1,3 +1,4 @@
+import { CancellationModelRead } from "@maple/domain/http"
 import type { IntegrationEntry } from "@maple/domain/integration-inventory"
 import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
@@ -23,12 +24,16 @@ const report = (id: string, overrides: Partial<CancellationReport> = {}): Cancel
 				autumn: "https://autumn.test/customers/org_42",
 				stripe: "https://stripe.test/customers/cus_42",
 			},
+			sessionsUrl: "https://app.test/replays?group=Acme&timePreset=30d",
 			integrations: null,
 			otherOrgs: null,
 		},
 		snapshot: fixture.snapshot,
 		reason: ruleReason(fixture.snapshot),
 		signals: deriveSignals(fixture.snapshot),
+		modelRead: null,
+		stripeFeedback: null,
+		unreadEvidence: [],
 		...overrides,
 	}
 }
@@ -80,7 +85,148 @@ const otherOrg = (overrides: Partial<OtherOrg> = {}): OtherOrg => ({
 	...overrides,
 })
 
+const modelRead = (overrides: Partial<ConstructorParameters<typeof CancellationModelRead>[0]> = {}) =>
+	new CancellationModelRead({
+		company: null,
+		findings: [],
+		verdict: "agree",
+		category: null,
+		reason: null,
+		conclusion: "",
+		model: "test-model",
+		...overrides,
+	})
+
 describe("buildCancellationMessage", () => {
+	it("adds nothing when the model agrees and has nothing to say", () => {
+		const plain = buildCancellationMessage(report("pipeline-off"))
+		expect(buildCancellationMessage(report("pipeline-off", { modelRead: modelRead() }))).toEqual(plain)
+	})
+
+	it("names the likely company under the links, with what it rests on", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead({
+					company: {
+						name: "Acme <Robotics>",
+						oneLiner: "Warehouse robots",
+						location: "Berlin, DE",
+						confidence: "medium",
+						basis: "domain, homepage",
+					},
+				}),
+			}),
+		)
+		expect(message.blocks[3]).toEqual({
+			type: "context",
+			elements: [
+				{
+					type: "mrkdwn",
+					text: ":office: *Acme &lt;Robotics&gt;*, Berlin, DE: Warehouse robots  _(medium confidence: domain, homepage)_",
+					verbatim: true,
+				},
+			],
+		})
+	})
+
+	it("lists the findings as facts and then the model's opinion, after the rules' reason", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead({
+					findings: [
+						"Revoked both ingest keys on <Oct 6>.",
+						"Cloudflare failing since 12 days before.",
+					],
+					conclusion: "Moved off Maple after the integration broke.",
+				}),
+			}),
+		)
+		const all = text(message)
+		expect(all).toContain(
+			JSON.stringify(
+				"*What stands out*\n• Revoked both ingest keys on &lt;Oct 6&gt;.\n• Cloudflare failing since 12 days before.",
+			).slice(1, -1),
+		)
+		expect(all).toContain(":robot_face: *Model's read:* Moved off Maple after the integration broke.")
+		expect(all.indexOf("Likely reason")).toBeLessThan(all.indexOf("What stands out"))
+	})
+
+	it("leads with the model's reason when it overrides the rules, and keeps theirs beside it", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead({
+					verdict: "override",
+					category: "missing_features",
+					reason: "Needed SSO",
+				}),
+			}),
+		)
+		expect(message.text).toBe("Acme &lt;Labs&gt; &amp; Co cancelled the startup plan (Needed SSO)")
+		expect(text(message)).toContain(
+			"*Likely reason:* Needed SSO  _(model's read; rules said: Stopped sending telemetry)_",
+		)
+	})
+
+	it("never turns a URL in the customer's or the model's words into a link", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: null, comment: "see https://evil.test" },
+				modelRead: modelRead({
+					findings: ["Homepage says https://evil.test"],
+					conclusion: "Visit https://evil.test now.",
+				}),
+			}),
+		)
+		const withUrl = message.blocks
+			.flatMap((block) => [block.text, ...(Array.isArray(block.elements) ? block.elements : [])])
+			.filter(
+				(part: { text?: unknown } | undefined) =>
+					typeof part?.text === "string" && part.text.includes("evil.test"),
+			)
+		expect(withUrl).toHaveLength(3)
+		for (const part of withUrl) expect(part).toMatchObject({ verbatim: true })
+	})
+
+	it("names the evidence it could not read", () => {
+		const message = buildCancellationMessage(report("pipeline-off", { unreadEvidence: ["Stripe"] }))
+		expect(text(message)).toContain("Could not read: Stripe")
+	})
+
+	it("quotes what the customer told Stripe, and nothing when they skipped it", () => {
+		const told = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: "too_expensive", comment: "Too much for <us>" },
+			}),
+		)
+		expect(text(told)).toContain("*Told Stripe:* too expensive “Too much for &lt;us&gt;”")
+		const skipped = buildCancellationMessage(
+			report("pipeline-off", { stripeFeedback: { feedback: null, comment: null } }),
+		)
+		expect(text(skipped)).not.toContain("Told Stripe")
+	})
+
+	it("cuts free text short enough that Slack never refuses the report", () => {
+		const long = "x".repeat(5_000)
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: null, comment: long },
+				modelRead: modelRead({
+					verdict: "override",
+					reason: long,
+					findings: [long],
+					conclusion: long,
+					company: { name: long, oneLiner: long, location: long, confidence: "low", basis: long },
+				}),
+			}),
+		)
+		const texts = message.blocks.flatMap((block) =>
+			[block.text, ...(Array.isArray(block.elements) ? block.elements : [])].flatMap(
+				(part: { text?: unknown } | undefined) => (typeof part?.text === "string" ? [part.text] : []),
+			),
+		)
+		expect(Math.max(...texts.map((value) => value.length))).toBeLessThan(3_000)
+	})
+
 	it("leads with the org, the plan's remaining access and the rule's reason", () => {
 		const message = buildCancellationMessage(report("pipeline-off"))
 		// The fallback is mrkdwn, where a raw `<!channel>` in an org name would ping; the header is plain text.
@@ -146,7 +292,7 @@ describe("buildCancellationMessage", () => {
 		expect(text(message)).toContain("allowance on &lt;logs&gt;")
 	})
 
-	it("links the org in Clerk, Stripe and Autumn as buttons, leaving out Stripe when there is no customer", () => {
+	it("links the org in Clerk, Stripe, Autumn and its sessions as buttons, leaving out what it has no link for", () => {
 		const base = report("healthy-team")
 		const buttons = (message: Message) =>
 			message.blocks
@@ -157,8 +303,12 @@ describe("buildCancellationMessage", () => {
 			["Clerk", "https://clerk.test/organizations/org_42"],
 			["Stripe", "https://stripe.test/customers/cus_42"],
 			["Autumn", "https://autumn.test/customers/org_42"],
+			["Sessions", "https://app.test/replays?group=Acme&timePreset=30d"],
 		])
-		const noStripe = withSubject(base, { links: { ...base.subject.links, stripe: null } })
+		const noStripe = withSubject(base, {
+			links: { ...base.subject.links, stripe: null },
+			sessionsUrl: null,
+		})
 		expect(buttons(noStripe).map(([label]) => label)).toEqual(["Clerk", "Autumn"])
 	})
 

@@ -1,5 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../../ui/button"
@@ -11,7 +9,7 @@ import * as Menu from "../../../../ui/menu"
 import type { MenuEntry } from "../../../../ui/menu-view"
 import * as OtpField from "../../../../ui/otp-field"
 import { rowActionsMenu } from "../../../../ui/row-actions-menu"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../../ui/table"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "../../../../ui/table"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
@@ -20,6 +18,8 @@ import { textField } from "../fields"
 import type { AccountEmail, AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { canRemove } from "./update"
+import { typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -65,14 +65,13 @@ const emailRow = (h: H, model: Model, user: AccountUser, address: AccountEmail):
 	return tableRow(
 		h,
 		[
-			tableCell(
+			truncatedTableCell(
 				h,
 				[truncatedText(h, { text: address.email })],
-				cn(truncatedCellStyles, "font-medium text-xs"),
+				typographyClass({ size: "xs", weight: "medium" }),
 			),
 			tableCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-1.5")],
+				hstack(h, { gap: "1.5" },
 					[
 						...(isPrimary ? [badge(h, { variant: "secondary" }, ["Primary"])] : []),
 						address.isVerified
@@ -183,7 +182,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			toParentMessage: (message) => Message.GotRemoveDialogMessage({ message }),
 			title: "Remove email address?",
 			description: `${model.removing?.email ?? ""} can no longer be used to sign in or receive notifications from Maple.`,
-			confirmLabel: "Remove",
+			confirmLabel: "Remove email",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),

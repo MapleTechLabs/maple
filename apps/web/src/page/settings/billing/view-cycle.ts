@@ -1,8 +1,6 @@
 import { formatCurrency } from "@maple/domain/format"
 import type { DailySpendResponse } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import type { TrialStatus } from "../../../lib/billing/plan-gating"
 import { sentenceCasePlanName } from "../../../lib/billing/plans"
 import {
@@ -23,6 +21,7 @@ import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
 import { plotFrame } from "../../../charts/plot-frame"
 import { resolveColor, ResolveThemeColors, type ThemeColors } from "../../../charts/theme-colors"
 import { chartEmpty, chartLoading } from "../../../ui/chart-state"
+import { collapsible } from "../../../ui/collapsible"
 import { textLink } from "../../../ui/text-link"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
@@ -33,6 +32,8 @@ import { skeleton } from "../../../ui/skeleton"
 import { statFigure } from "../../../ui/stat-figure"
 import { seriesLegend } from "../../kit/series-legend"
 import { Message, type Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -146,8 +147,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 pt-3")],
 				[
-					h.span(
-						[h.Class("text-2xs font-medium text-muted-foreground")],
+					typography(h, { size: "2xs", tone: "muted", weight: "medium" },
 						["Cumulative spend by feature"],
 					),
 					// Colors only: the amounts live in the figures and the cost breakdown.
@@ -217,105 +217,61 @@ const chartSlot = (h: H, model: Model, spend: SpendModel): Html => {
 }
 
 /** What makes up "Spent so far": the plan, each add-on and one usage overage line. */
-const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
-	const isOpen = model.isBreakdownOpen
-	return h.div(
-		[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html =>
+	collapsible(
+		h,
+		{
+			isOpen: model.isBreakdownOpen,
+			onToggle: Message.ToggledBreakdown(),
+			panelId: "billing-cost-breakdown",
+			panelClassName: "px-4 pb-2",
+			triggerClassName:
+				"group flex w-full items-center gap-2 px-4 py-2.5 text-left outline-none focus-visible:bg-surface-sunken",
+			trigger: [
+				icon(h, "ChevronRightIcon", {
+					className:
+						"size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90 motion-reduce:transition-none",
+					attributes: [h.AriaHidden(true)],
+				}),
+				typography(h, { size: "xs", weight: "medium" }, ["Cost breakdown"]),
+				h.span(
+					[h.Class("truncate font-prose text-2xs text-muted-foreground")],
+					["What makes up the amount spent so far"],
+				),
+			],
+		},
 		[
-			h.button(
-				[
-					...(isOpen ? [h.AriaControls("billing-cost-breakdown")] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class(
-						"group flex w-full items-center gap-2 px-4 py-2.5 text-left outline-none focus-visible:bg-surface-sunken",
+			h.div(
+				[h.Class("divide-y divide-border-subtle")],
+				costBreakdown(spend).map((line) =>
+					h.div(
+						[h.Key(line.key), h.Class("flex items-baseline justify-between gap-4 py-2")],
+						[
+							h.div(
+								[h.Class("min-w-0")],
+								[
+									h.p([h.Class("text-sm")], [line.label]),
+									h.p([h.Class("font-prose text-2xs text-muted-foreground")], [line.detail]),
+								],
+							),
+							h.span(
+								[h.Class("shrink-0 font-mono text-sm tabular-nums")],
+								[line.cents === null ? "Not itemized" : dollars(line.cents, spend.currency)],
+							),
+						],
 					),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ToggledBreakdown()),
-				],
-				[
-					icon(h, "ChevronRightIcon", {
-						className:
-							"size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90 motion-reduce:transition-none",
-						attributes: [h.AriaHidden(true)],
-					}),
-					h.span([h.Class("text-xs font-medium")], ["Cost breakdown"]),
-					h.span(
-						[h.Class("truncate font-prose text-2xs text-muted-foreground")],
-						["What makes up the amount spent so far"],
-					),
-				],
+				),
 			),
-			...(isOpen
+			...(spend.partial
 				? [
-						h.div(
-							[
-								h.Class(cn(collapsiblePanelStyles, "px-4 pb-2")),
-								h.DataAttribute("open", ""),
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id("billing-cost-breakdown"),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-									"animation-name": "none",
-								}),
-							],
-							[
-								h.div(
-									[h.Class("divide-y divide-border-subtle")],
-									costBreakdown(spend).map((line) =>
-										h.div(
-											[
-												h.Key(line.key),
-												h.Class("flex items-baseline justify-between gap-4 py-2"),
-											],
-											[
-												h.div(
-													[h.Class("min-w-0")],
-													[
-														h.p([h.Class("text-sm")], [line.label]),
-														h.p(
-															[
-																h.Class(
-																	"font-prose text-2xs text-muted-foreground",
-																),
-															],
-															[line.detail],
-														),
-													],
-												),
-												h.span(
-													[h.Class("shrink-0 font-mono text-sm tabular-nums")],
-													[
-														line.cents === null
-															? "Not itemized"
-															: dollars(line.cents, spend.currency),
-													],
-												),
-											],
-										),
-									),
-								),
-								...(spend.partial
-									? [
-											h.p(
-												[h.Class("pt-1 text-2xs text-muted-foreground")],
-												[
-													"Some items are on pricing we can't itemize; your invoice has the exact amount.",
-												],
-											),
-										]
-									: []),
-							],
+						h.p(
+							[h.Class("pt-1 text-2xs text-muted-foreground")],
+							["Some items are on pricing we can't itemize; your invoice has the exact amount."],
 						),
 					]
 				: []),
 		],
 	)
-}
 
 export type CyclePanelInputs = Readonly<{
 	spend: SpendModel
@@ -336,11 +292,9 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 		h.div(
 			[h.Class("flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3")],
 			[
-				h.div(
-					[h.Class("flex items-center gap-2")],
+				hstack(h, { gap: "2" },
 					[
-						h.span(
-							[h.Class("text-sm font-medium")],
+						typography(h, { size: "sm", weight: "medium" },
 							[spend.planName === null ? "No plan" : sentenceCasePlanName(spend.planName)],
 						),
 						...(trial.planStatus === null

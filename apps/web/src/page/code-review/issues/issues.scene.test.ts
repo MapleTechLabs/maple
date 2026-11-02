@@ -63,7 +63,7 @@ describe("code review issues", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(answered),
-			expectView(text("No issues in this window")).toExist(),
+			expectView(text("No issues match these filters")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toExist(),
 		)
 	})

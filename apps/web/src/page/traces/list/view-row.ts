@@ -1,12 +1,10 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { Option } from "effect"
 import { traceHrefFrom } from "./peek"
-import { tableRowStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TracesSearch } from "../../../route/search"
 
@@ -15,32 +13,15 @@ import { httpSpanLabel } from "../../../ui/http-span-label"
 import { truncatedText } from "../../../ui/truncated-text"
 import { servicePills, traceStatusBadge } from "../../../ui/trace-badges"
 import { button } from "../../../ui/button"
-import { rowLink, tableCell } from "../../../ui/table"
+import { laneTableCell, rowLink, tableCell, tableRow } from "../../../ui/table"
+import { latencyValue } from "../../../ui/values"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // One row of the traces table.
-
-/** The row's timestamp formats in the page's time zone. */
-export interface TimeFormat {
-	readonly row: Intl.DateTimeFormat
-	readonly withYear: Intl.DateTimeFormat
-}
-
-export const timeFormat = (timeZone: string): TimeFormat => {
-	const options = {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	} as const
-	return {
-		row: new Intl.DateTimeFormat("en-US", options),
-		withYear: new Intl.DateTimeFormat("en-US", { ...options, year: "numeric" }),
-	}
-}
 
 const epochOf = (startTime: string): number => new Date(warehouseDateTimeToIso(startTime)).getTime()
 
@@ -63,18 +44,17 @@ const rootSpanCell = (
 	h: HtmlBuilder<Message>,
 	row: TraceRow,
 	index: number,
-	time: TimeFormat,
+	timeZone: string,
 	nowMs: number,
 	search: Search,
 ): Html => {
 	const epochMs = epochOf(row.startTime)
-	const stamp = time.row.format(epochMs)
+	const stamp = formatTimestampInTimezone(epochMs, { timeZone })
 	const duration = formatDuration(row.durationMs)
 	return tableCell(
 		h,
 		[
-			h.div(
-				[h.Class("flex flex-col min-w-0")],
+			vstack(h, { shrink: true },
 				[
 					// A plain click peeks (`MountPeekRows`); modified, middle and right clicks follow the link.
 					rowLink(h, {
@@ -88,20 +68,13 @@ const rootSpanCell = (
 						spanKind: row.rootKind,
 						textClassName: "text-xs",
 					}),
-					truncatedText(h, { text: stamp, className: "text-3xs text-muted-foreground" }, [
+					truncatedText(h, { text: stamp, className: typographyClass({ size: "3xs", tone: "muted" }) }, [
 						h.span([h.Class("hidden @min-[480px]/page:inline")], [stamp, " "]),
 						h.span(
 							[h.Class("text-foreground-subtle")],
 							[
 								"(",
-								h.time(
-									[
-										h.Attribute("class", ""),
-										h.Attribute("datetime", new Date(epochMs).toISOString()),
-										h.Title(time.withYear.format(epochMs)),
-									],
-									[formatRelativeTime(epochMs, nowMs)],
-								),
+								listRelativeTime(h, { value: epochMs, nowMs, timeZone }),
 								")",
 							],
 						),
@@ -120,39 +93,16 @@ export const traceRow = (
 	h: HtmlBuilder<Message>,
 	row: TraceRow,
 	index: number,
-	time: TimeFormat,
+	timeZone: string,
 	nowMs: number,
 	state: RowState,
 ): Html =>
-	h.tr(
+	tableRow(
+		h,
 		[
-			h.Attribute(
-				"class",
-				cn(
-					tableRowStyles,
-					state.isActive && "bg-surface-strong",
-					"hover:bg-surface-sunken active:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-				),
-			),
-			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
-			h.Key(`row-${index}`),
-			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
-			h.DataAttribute("index", String(index)),
-			h.DataAttribute("slot", "table-row"),
-			h.Tabindex(0),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " "
-					? Option.some(
-							state.isMobile
-								? Message.PressedOpenRow({ index })
-								: Message.ClickedPeekRow({ index }),
-						)
-					: Option.none(),
-			),
-		],
-		[
-			tableCell(
+			laneTableCell(
 				h,
+				state.isActive,
 				[
 					h.a(
 						[
@@ -165,9 +115,9 @@ export const traceRow = (
 						[shortId(row.traceId, "trace")],
 					),
 				],
-				cn(CELL, ROW_LANE, state.isActive ? "before:bg-primary" : "before:bg-transparent"),
+				CELL,
 			),
-			rootSpanCell(h, row, index, time, nowMs, state.search),
+			rootSpanCell(h, row, index, timeZone, nowMs, state.search),
 			tableCell(
 				h,
 				[servicePills(h, row.services) ?? ""],
@@ -175,18 +125,38 @@ export const traceRow = (
 			),
 			tableCell(
 				h,
-				[h.span([h.Class("font-mono text-xs text-muted-foreground")], [formatNumber(row.spanCount)])],
+				[typography(h, { size: "xs", tone: "muted", mono: true }, [formatNumber(row.spanCount)])],
 				cn(CELL, "hidden @min-[560px]/page:table-cell"),
 			),
 			tableCell(
 				h,
-				[h.span([h.Class("font-mono text-xs")], [formatDuration(row.durationMs)])],
+				[latencyValue(h, { ms: row.durationMs, className: "text-xs" })],
 				cn(CELL, "hidden @min-[480px]/page:table-cell"),
 			),
 			tableCell(
 				h,
 				[traceStatusBadge(h, { hasError: row.hasError, httpStatusCode: row.httpStatusCode })],
 				CELL,
+			),
+		],
+		cn(
+			state.isActive && "bg-surface-strong",
+			"hover:bg-surface-sunken active:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+		),
+		[
+			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
+			h.Key(`row-${index}`),
+			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
+			h.DataAttribute("index", String(index)),
+			h.Tabindex(0),
+			h.OnKeyDownPreventDefault((key) =>
+				key === "Enter" || key === " "
+					? Option.some(
+							state.isMobile
+								? Message.PressedOpenRow({ index })
+								: Message.ClickedPeekRow({ index }),
+						)
+					: Option.none(),
 			),
 		],
 	)

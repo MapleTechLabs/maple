@@ -35,7 +35,7 @@ const loadingState: WidgetDataState = { status: "loading" }
 
 const emptyState: WidgetDataState = {
 	status: "error",
-	message: "No query data found in selected time range",
+	message: "No data in this window",
 }
 
 const runtimeErrorState: WidgetDataState = {

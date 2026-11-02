@@ -23,7 +23,7 @@ import { randomUUID } from "node:crypto"
 import { realpathSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { amber, bold, dim, green } from "../lib/style"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 import { MapleConfig } from "./config"
 import { releaseChecksum, releaseVerificationFailure, type ReleaseSignatureStatus } from "./release-signature"
 

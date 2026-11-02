@@ -3,25 +3,19 @@ import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
 import { HttpClient, HttpClientResponse } from "effect/http"
-import { randomUUID } from "node:crypto"
-import {
-	closeSync,
-	linkSync,
-	mkdirSync,
-	openSync,
-	readFileSync,
-	renameSync,
-	statSync,
-	unlinkSync,
-	writeFileSync,
-} from "node:fs"
+import { closeSync, openSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import { ServerBindError, startServer } from "../server/serve"
+import { ensurePortFree, ServerBindError, startServer } from "@maple/local-server/serve"
+import { TelemetryLayer } from "../core/telemetry"
 import { loadProjectorModules, resolveProjectorModulePaths } from "../server/eventing/projector-modules"
-import { ACCESS_TOKEN_ENV, INGEST_KEY_ENV, type RemoteAuth, remoteAuthFromEnv } from "../server/remote-auth"
-import { CURRENT_LOCAL_SCHEMA } from "../server/schema-identity"
 import {
-	adoptLegacySidecars,
+	ACCESS_TOKEN_ENV,
+	INGEST_KEY_ENV,
+	type RemoteAuth,
+	remoteAuthFromEnv,
+} from "@maple/local-server/remote-auth"
+import { CURRENT_LOCAL_SCHEMA } from "@maple/local-server/schema-identity"
+import {
 	checkStoreCompatible,
 	dataDirSidecarPath,
 	isSchemaIdentityStale,
@@ -34,9 +28,35 @@ import {
 	serverPidPath,
 	storeMarkerPath,
 	UNVERSIONED_STORE,
-} from "../server/store-version"
-import { durableWrite } from "../server/durable-files"
+} from "@maple/local-server/store-version"
+import { durableWrite } from "@maple/local-server/durable-files"
 import { abandonLocalStoreMigration, localMigrationIsIncomplete } from "../server/local-store-migrations"
+import {
+	adoptLegacyStoreFiles,
+	claimPidFileExclusive,
+	ignoreFailure,
+	isProcessAlive,
+	locatePidFile,
+	pidOwner,
+	readPidSnapshot,
+	refuseIfRunning,
+	releasePidFile,
+	sameSnapshot,
+	STALE_PID,
+} from "@maple/local-server/store-claim"
+import { readDiscovery, removeDiscoveryFor, removeStaleDiscovery } from "@maple/local-server/server-discovery"
+import {
+	describeError,
+	DirtyStorePolicy as DirtyStorePolicySchema,
+	LocalStoreDirtyError,
+	LocalStoreFromNewerMapleError,
+	LocalStoreIncompatibleError,
+	LocalStoreMigrationError,
+	LocalStoreSchemaStaleError,
+	ServerStateError,
+	ServerStateFileError,
+	stateFileError,
+} from "@maple/local-server/store-errors"
 import {
 	type CheckpointAvailability,
 	checkpointAvailability,
@@ -46,11 +66,10 @@ import {
 	parseCheckpointId,
 	reconcileCheckpointRecovery,
 	resetLiveStorePreservingCheckpoints,
+	resolveChdbConfigFile,
 	restoreCheckpoint,
-	writeBackupConfig,
-} from "../server/checkpoints"
-import { writeIngestConfig } from "../server/chdb"
-import { resolveUiAssets } from "../server/ui-assets"
+} from "@maple/local-server/checkpoints"
+import { resolveUiAssets } from "@maple/local-server/ui-assets"
 import { clearStartFailures, guardStartFailures } from "./start-failures"
 import {
 	acquireInMemoryStore,
@@ -60,7 +79,7 @@ import {
 	inMemoryStartFailuresKey,
 } from "./in-memory-store"
 import { debugLog } from "../lib/debug"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 import { jsonFormatRequested, writeJson } from "./json-output"
 import {
 	BackgroundServerExitedError,
@@ -68,13 +87,7 @@ import {
 	BackgroundServerTimeoutError,
 	CheckpointChildError,
 	CheckpointUnavailableError,
-	LocalStoreDirtyError,
-	LocalStoreFromNewerMapleError,
-	LocalStoreIncompatibleError,
-	LocalStoreMigrationError,
-	LocalStoreSchemaStaleError,
 	ServerOptionError,
-	ServerStateFileError,
 	ServerStopTimeoutError,
 } from "./server-errors"
 import { amber, bold, cyan, dim, green, MARK_LINES, MARK_WIDTH, underline } from "../lib/style"
@@ -90,11 +103,8 @@ import {
 	hostedDashboardUrl,
 	hostedUiOrigin,
 	storeChangedSince,
-	isProcessAlive,
 	LocalStatus,
 	mapleCommand,
-	parseElapsedSeconds,
-	parseProcStartedAtMs,
 	PID_HANDOVER_ENV,
 	prettyPath,
 	resolveAdvertiseHost,
@@ -102,39 +112,13 @@ import {
 	ServerDiscovery,
 	serverProbeUrl,
 	serverUrl,
-	startedBeforeWrite,
 	validateHost,
 } from "./server-args"
-import { DEFAULT_LOCAL_PORT, isLoopbackHostname } from "../lib/local-address"
-
-/**
- * A refused command whose precondition simply wasn't met: the server is already
- * running, isn't running at all, or a destructive command was not confirmed.
- * The message and the non-zero exit are identical to a genuine failure; the
- * separate tag exists so `bin.ts` can close the root span `Ok` for these without
- * also swallowing real start failures (`ServerBindError`,
- * `BackgroundServerTimeoutError`, `LocalStoreDirtyError`). Same rule the ingest
- * gateway follows for expected 4xx.
- */
-export class ServerStateError extends Schema.TaggedError<ServerStateError>()("@maple/cli/ServerStateError", {
-	message: Schema.String,
-}) {}
-
-/** Public origin of the deployed local-mode dashboard SPA. Overridable
- *  (`MAPLE_LOCAL_UI_URL`) for testing against another build of it. */
-const DEFAULT_REMOTE_UI_URL = "https://local.maple.dev"
-
-const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error))
-
-const errnoCode = (error: unknown): string | undefined =>
-	typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
-		? error.code
-		: undefined
-
-const stateFileError =
-	(path: string, action: string) =>
-	(error: unknown): ServerStateFileError =>
-		new ServerStateFileError({ path, message: `could not ${action} ${path}: ${describeError(error)}` })
+import {
+	DEFAULT_LOCAL_PORT,
+	DEFAULT_REMOTE_UI_URL,
+	isLoopbackHostname,
+} from "@maple/local-server/local-address"
 
 /** An unset or empty env var reads as `undefined`; never fails. */
 const optionalEnvString = (key: string): Effect.Effect<string | undefined> =>
@@ -248,163 +232,6 @@ const startBanner = (
 	return `\n${lines.join("\n")}\n\n`
 }
 
-// ---------------------------------------------------------------------------
-// PID file: the one claim that serializes `start`, `reset` and `restore`.
-// ---------------------------------------------------------------------------
-
-interface PidFileSnapshot {
-	readonly raw: string
-	readonly pid: number | undefined
-	readonly ino: number
-	readonly mtimeMs: number
-}
-
-const readPidSnapshot = (path: string): Effect.Effect<Option.Option<PidFileSnapshot>> =>
-	Effect.try({
-		try: (): PidFileSnapshot => {
-			const raw = readFileSync(path, "utf8")
-			const info = statSync(path)
-			const pid = Number.parseInt(raw.trim(), 10)
-			return {
-				raw,
-				pid: Number.isInteger(pid) && pid > 0 ? pid : undefined,
-				ino: info.ino,
-				mtimeMs: info.mtimeMs,
-			}
-		},
-		catch: (error) => error,
-	}).pipe(Effect.option)
-
-const sameSnapshot = (a: PidFileSnapshot, b: PidFileSnapshot): boolean =>
-	a.raw === b.raw && a.ino === b.ino && a.mtimeMs === b.mtimeMs
-
-/** Wall-clock start of a live process from `/proc`, on Linux. */
-const procStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
-	Effect.try({
-		try: () =>
-			parseProcStartedAtMs(
-				readFileSync(`/proc/${pid}/stat`, "utf8"),
-				readFileSync("/proc/stat", "utf8"),
-			),
-		catch: (error) => error,
-	}).pipe(
-		Effect.map(Option.fromUndefinedOr),
-		Effect.orElseSucceed(() => Option.none<number>()),
-	)
-
-const psStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
-	Effect.try({
-		try: () =>
-			Bun.spawnSync(["ps", "-o", "etime=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" }),
-		catch: (error) => error,
-	}).pipe(
-		Effect.flatMap((result) => {
-			const seconds = result.success ? parseElapsedSeconds(result.stdout.toString()) : undefined
-			return seconds === undefined
-				? Effect.succeed(Option.none<number>())
-				: Effect.map(Clock.currentTimeMillis, (nowMs) => Option.some(nowMs - seconds * 1000))
-		}),
-		Effect.orElseSucceed(() => Option.none<number>()),
-	)
-
-/** Wall-clock start of a live process (`/proc`, else `ps -o etime=`), when it can be known.
- *  `/proc` first: slim and distroless container images ship no `ps`. */
-const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
-	procStartedAtMs(pid).pipe(
-		Effect.flatMap((startedAt) =>
-			Option.isSome(startedAt) ? Effect.succeed(startedAt) : psStartedAtMs(pid),
-		),
-	)
-
-type PidOwner =
-	| { readonly kind: "stale" }
-	/** `verified`: the process provably started before the file was written. */
-	| { readonly kind: "live"; readonly pid: number; readonly verified: boolean }
-
-const STALE_PID: PidOwner = { kind: "stale" }
-const livePid = (pid: number, verified: boolean): PidOwner => ({ kind: "live", pid, verified })
-
-/**
- * Does the process named by a PID file still own it? After a crash or reboot
- * the number may belong to an unrelated process, which necessarily started
- * after the file was written. Without `/proc` or `ps` the answer is "live, unverified",
- * the conservative reading for every caller.
- */
-const pidOwner = (snapshot: PidFileSnapshot): Effect.Effect<PidOwner> =>
-	Effect.gen(function* () {
-		const pid = snapshot.pid
-		if (pid === undefined || !isProcessAlive(pid)) return STALE_PID
-		const startedAt = yield* processStartedAtMs(pid)
-		if (Option.isNone(startedAt)) return livePid(pid, false)
-		return startedBeforeWrite(startedAt.value, snapshot.mtimeMs) ? livePid(pid, true) : STALE_PID
-	})
-
-/** O_EXCL create; `false` when the file already exists. */
-const createExclusive = (path: string, content: string): Effect.Effect<boolean, ServerStateFileError> =>
-	Effect.try({
-		try: () => {
-			writeFileSync(path, content, { mode: 0o600, flag: "wx" })
-			return true
-		},
-		catch: (error) => error,
-	}).pipe(
-		Effect.catch((error) =>
-			errnoCode(error) === "EEXIST"
-				? Effect.succeed(false)
-				: Effect.fail(stateFileError(path, "create")(error)),
-		),
-	)
-
-/** Atomically replace the file's content (write aside, rename over). */
-const replaceFile = (path: string, content: string): Effect.Effect<void, ServerStateFileError> =>
-	Effect.try({
-		try: () => {
-			const temporary = `${path}.${randomUUID()}.tmp`
-			writeFileSync(temporary, content, { mode: 0o600, flag: "wx" })
-			renameSync(temporary, path)
-		},
-		catch: stateFileError(path, "replace"),
-	})
-
-const ignoreFailure = (thunk: () => void): Effect.Effect<void> =>
-	Effect.try({ try: thunk, catch: (error) => error }).pipe(Effect.ignore)
-
-/**
- * Remove a stale PID file without ever deleting a claim that a concurrent
- * start published after we read it: move it aside, and only discard it if it
- * is byte-for-byte the file we judged stale; otherwise put it back and yield.
- */
-const takeOverStalePidFile = (
-	path: string,
-	observed: PidFileSnapshot,
-	busy: (pid: number | undefined) => ServerStateError,
-): Effect.Effect<void, ServerStateError | ServerStateFileError> =>
-	Effect.gen(function* () {
-		const moved = `${path}.stale-${randomUUID()}`
-		const renamed = yield* Effect.try({
-			try: () => {
-				renameSync(path, moved)
-				return true
-			},
-			catch: (error) => error,
-		}).pipe(
-			Effect.catch((error) =>
-				errnoCode(error) === "ENOENT"
-					? Effect.succeed(false)
-					: Effect.fail(stateFileError(path, "replace the stale PID file")(error)),
-			),
-		)
-		if (!renamed) return
-		const current = yield* readPidSnapshot(moved)
-		if (Option.isSome(current) && sameSnapshot(current.value, observed)) {
-			yield* ignoreFailure(() => unlinkSync(moved))
-			return
-		}
-		yield* ignoreFailure(() => linkSync(moved, path))
-		yield* ignoreFailure(() => unlinkSync(moved))
-		return yield* busy(Option.isSome(current) ? current.value.pid : undefined)
-	})
-
 const alreadyRunning =
 	(scope: CommandScope) =>
 	(pid: number | undefined): ServerStateError =>
@@ -423,124 +250,17 @@ const runningRefusal =
 				`stop it first with \`${mapleCommand("stop", scope)}\``,
 		})
 
-/**
- * Exclusively claim the PID file so exactly one `start`, `reset` or `restore`
- * touches the store. A stale file (dead or reused PID) is taken over safely.
- * `handoverFrom` lets a `start -d` child inherit its parent's claim.
- */
-export const claimPidFileExclusive = (
-	pidPath: string,
-	options: {
-		readonly handoverFrom?: number | undefined
-		readonly busy?: (pid: number | undefined) => ServerStateError
-	} = {},
-): Effect.Effect<void, ServerStateError | ServerStateFileError> =>
-	Effect.gen(function* () {
-		const busy = options.busy ?? alreadyRunning({})
-		yield* Effect.try({
-			try: () => mkdirSync(dirname(pidPath), { recursive: true }),
-			catch: stateFileError(dirname(pidPath), "create"),
-		})
-		const content = String(process.pid)
-		for (let attempt = 0; attempt < 4; attempt++) {
-			if (yield* createExclusive(pidPath, content)) return
-			const observed = yield* readPidSnapshot(pidPath)
-			if (Option.isNone(observed)) continue
-			const owner = yield* pidOwner(observed.value)
-			if (owner.kind === "live") {
-				if (owner.pid === options.handoverFrom) return yield* replaceFile(pidPath, content)
-				return yield* busy(owner.pid)
-			}
-			yield* takeOverStalePidFile(pidPath, observed.value, busy)
-		}
-		return yield* busy(undefined)
-	})
-
-/** Remove the PID file only while it still names this process. */
-const releasePidFile = (pidPath: string): Effect.Effect<void> =>
-	Effect.gen(function* () {
-		const current = yield* readPidSnapshot(pidPath)
-		if (Option.isSome(current) && current.value.pid === process.pid) {
-			yield* ignoreFailure(() => unlinkSync(pidPath))
-		}
-	})
-
-/** The PID file of the server that owns `dataDir`: the current-layout one, or
- *  the one an older maple wrote for a custom `--data-dir` before upgrading. */
-const locatePidFile = (
-	dataDir: string,
-): Effect.Effect<Option.Option<{ path: string; snapshot: PidFileSnapshot }>> =>
-	Effect.gen(function* () {
-		const candidates = [
-			serverPidPath(dataDir),
-			...(ownsLegacySidecars(dataDir) ? [legacySidecarPath(dataDir, SERVER_PID_NAME)] : []),
-		]
-		for (const path of candidates) {
-			const snapshot = yield* readPidSnapshot(path)
-			if (Option.isSome(snapshot)) return Option.some({ path, snapshot: snapshot.value })
-		}
-		return Option.none()
-	})
-
-/** Refuse when a live server owns `dataDir`, including one an older maple
- *  started from the legacy PID file. */
-const refuseIfRunning = (
-	dataDir: string,
-	refusal: (pid: number | undefined) => ServerStateError,
-): Effect.Effect<void, ServerStateError> =>
-	Effect.gen(function* () {
-		const located = yield* locatePidFile(dataDir)
-		if (Option.isNone(located)) return
-		const owner = yield* pidOwner(located.value.snapshot)
-		if (owner.kind === "live") return yield* refusal(owner.pid)
-	})
-
-/** Explicit adoption of pre-namespacing state files, surfaced when it fails. */
+/** Explicit adoption of pre-namespacing state files, logged under `--debug`. */
 const adoptSidecars = (dataDir: string): Effect.Effect<void, ServerStateFileError> =>
-	Effect.try({
-		try: () => {
-			const adopted = adoptLegacySidecars(dataDir)
+	Effect.flatMap(adoptLegacyStoreFiles(dataDir), (adopted) =>
+		Effect.sync(() => {
 			if (adopted.length > 0) debugLog("adopted legacy store files", adopted.join(", "))
-		},
-		catch: stateFileError(dataDir, "adopt the legacy state files beside"),
-	})
+		}),
+	)
 
 // ---------------------------------------------------------------------------
 // Discovery file and status probe.
 // ---------------------------------------------------------------------------
-
-const decodeDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerDiscovery))
-
-const readDiscovery = (path: string): Effect.Effect<Option.Option<ServerDiscovery>> =>
-	Effect.try({
-		try: () => readFileSync(path, "utf8"),
-		catch: (error) => error,
-	}).pipe(
-		Effect.map(decodeDiscovery),
-		Effect.orElseSucceed(() => Option.none<ServerDiscovery>()),
-	)
-
-/** Delete the discovery file when (and only when) it names `pid`. */
-const removeDiscoveryFor = (path: string, pid: number): Effect.Effect<void> =>
-	Effect.gen(function* () {
-		const current = yield* readDiscovery(path)
-		if (Option.isSome(current) && current.value.pid === pid) {
-			yield* ignoreFailure(() => unlinkSync(path))
-		}
-	})
-
-/** Delete a discovery file whose server is gone (crash, `kill -9`). */
-const removeStaleDiscovery = (path: string): Effect.Effect<void> =>
-	Effect.gen(function* () {
-		const current = yield* readDiscovery(path)
-		if (
-			Option.isSome(current) &&
-			current.value.pid !== process.pid &&
-			!isProcessAlive(current.value.pid)
-		) {
-			yield* ignoreFailure(() => unlinkSync(path))
-		}
-	})
 
 /**
  * `GET /local/status`, untraced: readiness polls hit ECONNREFUSED until the
@@ -656,7 +376,7 @@ const checkpointIntervalFlag = Flag.optional(
 )
 
 const onDirtyStoreFlag = Flag.optional(
-	Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
+	Flag.Literals("on-dirty-store", DirtyStorePolicySchema.literals).pipe(
 		Flag.withDescription(
 			"Recovery policy when the local chDB store was not cleanly closed (default: fail)",
 		),
@@ -694,45 +414,6 @@ const logFilePath = (dataDir: string): string => dataDirSidecarPath(dataDir, "ma
 
 /** `maple.log` is rotated to `maple.log.1` at a background start once it passes this. */
 const LOG_ROTATE_BYTES = 10 * 1024 * 1024
-
-// Generated chDB config, beside the PID and log files (e.g. ~/.maple/chdb-config.xml).
-export const chdbConfigPath = (dataDir: string): string => dataDirSidecarPath(dataDir, "chdb-config.xml")
-
-/**
- * Resolve the chDB config file, generating a backups-enabled default when the
- * user did not supply one.
- *
- * `BACKUP DATABASE default TO Disk('default', …)` (how every checkpoint is
- * taken) needs `<backups><allowed_disk>` in the config of the *running* chDB
- * connection. chDB allows one connection per process, acquired once at start and
- * held for the process lifetime, and `maple checkpoint` is a separate process
- * talking over HTTP: it cannot inject config into a live connection. So a server
- * started without a backups config can never checkpoint. A user-supplied
- * `--chdb-config-file` is honoured untouched. An in-memory store is never
- * checkpointed, so it gets only the MergeTree ingest defaults (`backups: false`).
- */
-export const resolveChdbConfigFile = (
-	dataDir: string,
-	supplied: string | undefined,
-	{ backups }: { readonly backups: boolean } = { backups: true },
-) =>
-	Effect.gen(function* () {
-		if (supplied !== undefined) return supplied
-		const fs = yield* FileSystem
-		const path = chdbConfigPath(dataDir)
-		// Regenerated every start: idempotent, and it self-heals a truncated or
-		// hand-edited file. Failing to write is not fatal: the server still starts,
-		// checkpoints just stay unavailable, which is the old behaviour.
-		yield* fs.makeDirectory(dirname(path), { recursive: true }).pipe(Effect.ignore)
-		return yield* Effect.try({
-			try: () => {
-				if (backups) writeBackupConfig(path)
-				else writeIngestConfig(path)
-				return path
-			},
-			catch: (error) => error,
-		}).pipe(Effect.orElseSucceed(() => undefined))
-	})
 
 /**
  * What to tell someone whose local store was left dirty, given whether a
@@ -1001,22 +682,6 @@ const checkpointRefreshLoop = (
 			const startedAt = yield* Clock.currentTimeMillis
 			if (yield* takeCheckpointQuietly(target, "refresh")) lastTakenAtMs = startedAt
 		}
-	})
-
-/** Fail fast when the port is taken. Not atomic (the real bind can still lose
- *  a race), but it keeps a busy port from costing a reset or a wipe. */
-const ensurePortFree = (hostname: string, port: number): Effect.Effect<void, ServerBindError> =>
-	Effect.try({
-		try: () => Bun.listen({ hostname, port, socket: { data() {} } }).stop(true),
-		catch: (error) =>
-			new ServerBindError({
-				hostname,
-				port,
-				message:
-					errnoCode(error) === "EADDRINUSE"
-						? `port ${port} on ${hostname} is already in use; choose another with --port, or stop whatever holds it`
-						: `cannot bind ${hostname}:${port}: ${describeError(error)}`,
-			}),
 	})
 
 const fileSize = (path: string): number =>
@@ -1594,6 +1259,7 @@ export const start = Command.make("start", {
 						assets,
 						auth,
 						projectors,
+						telemetryLayer: TelemetryLayer,
 					})
 					started = true
 					yield* clearStartFailures(startFailuresKey)

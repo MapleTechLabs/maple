@@ -1,18 +1,17 @@
 import type { AlertDestinationType } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { dialogTitleStyles } from "@maple/ui/styles/ui/dialog"
 import { suggestedDestinationName } from "@maple/web-data/alerts/form-utils"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { cardButton } from "../../../ui/card-button"
-import * as DialogView from "../../../ui/dialog-view"
-import { titleId } from "../../../ui/dialog"
+import { formDialog } from "../../../ui/form-dialog"
 import { eyebrow } from "../../../ui/eyebrow"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input } from "../../../ui/field"
 import type { FieldState } from "../../../ui/input"
 import { inlineCode } from "../../../ui/inline-code"
+import { listRow } from "../../../ui/list-row"
 import { panel } from "../../../ui/panel"
 import { settingRow } from "../../../ui/setting-row"
 import { switchControl } from "../../../ui/switch"
@@ -31,6 +30,9 @@ import { linearFields } from "./linear-fields-view"
 import { waitingFor } from "../shared/chat-connect"
 import { spinner } from "../../../ui/spinner"
 import { type TextField, toFormState } from "./form"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // The destination dialog. The Email, Linear and chat fields live in `*-fields-view.ts`.
 
@@ -141,7 +143,9 @@ const providerTile = (
 				[h.Class("relative flex w-full items-center gap-2.5")],
 				[
 					logo(h, model, options.type, 32, options.chatConnector),
-					h.span([h.Class("truncate text-sm font-semibold")], [options.label ?? provider.label]),
+					typography(h, { size: "sm", weight: "semibold", truncate: true }, [
+						options.label ?? provider.label,
+					]),
 					...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
 				],
 			),
@@ -157,58 +161,54 @@ const providerTile = (
 const providerPicker = (h: H, model: Model): Html => {
 	const connectors = model.connectors ?? []
 	const isDiscordLinked = connectors.some((c) => c.id === "discord" && c.workspaces.length > 0)
-	return h.div(
-		[h.Class("grid grid-cols-2 gap-2")],
-		[
-			...connectors.flatMap((connector) => {
-				if (connector.workspaces.length > 0)
-					return connector.workspaces.map((workspace) =>
-						providerTile(h, model, {
-							key: workspace.id,
-							type: "chat",
-							chatConnector: connector.id,
-							label:
-								connector.workspaces.length > 1
-									? `${connector.name} · ${workspace.name}`
-									: connector.name,
-							description: `Post to a channel in ${workspace.name}.`,
-							isSelected:
-								model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,
-							onSelect: Message.ClickedChatWorkspace({
-								connector: connector.id,
-								workspaceId: workspace.id,
-							}),
-						}),
-					)
-				if (!connector.available || connector.id === "discord") return []
-				// Not linked yet: the tile links a workspace in a popup, the form stays as it is.
-				const isWaiting = waitingFor(model.chatConnect) === connector.id
-				return [
+	return grid(h, { cols: 2, gap: "2" }, [
+		...connectors.flatMap((connector) => {
+			if (connector.workspaces.length > 0)
+				return connector.workspaces.map((workspace) =>
 					providerTile(h, model, {
-						key: connector.id,
+						key: workspace.id,
 						type: "chat",
 						chatConnector: connector.id,
-						label: connector.name,
-						description: isWaiting
-							? `Finish in the ${connector.name} window. This form stays as it is.`
-							: `Connect a ${connector.name} workspace, then pick a channel.`,
-						isSelected: false,
-						isBusy: isWaiting,
-						onSelect: Message.ClickedConnectChat({ connector: connector.id }),
+						label:
+							connector.workspaces.length > 1
+								? `${connector.name} · ${workspace.name}`
+								: connector.name,
+						description: `Post to a channel in ${workspace.name}.`,
+						isSelected: model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,
+						onSelect: Message.ClickedChatWorkspace({
+							connector: connector.id,
+							workspaceId: workspace.id,
+						}),
 					}),
-				]
-			}),
-			...destinationTypesFor(isDiscordLinked).map((type) =>
+				)
+			if (!connector.available || connector.id === "discord") return []
+			// Not linked yet: the tile links a workspace in a popup, the form stays as it is.
+			const isWaiting = waitingFor(model.chatConnect) === connector.id
+			return [
 				providerTile(h, model, {
-					key: type,
-					type,
-					label: type === "discord" && isDiscordLinked ? "Discord webhook" : undefined,
-					isSelected: model.form.type === type,
-					onSelect: Message.ClickedProvider({ type }),
+					key: connector.id,
+					type: "chat",
+					chatConnector: connector.id,
+					label: connector.name,
+					description: isWaiting
+						? `Finish in the ${connector.name} window. This form stays as it is.`
+						: `Connect a ${connector.name} workspace, then pick a channel.`,
+					isSelected: false,
+					isBusy: isWaiting,
+					onSelect: Message.ClickedConnectChat({ connector: connector.id }),
 				}),
-			),
-		],
-	)
+			]
+		}),
+		...destinationTypesFor(isDiscordLinked).map((type) =>
+			providerTile(h, model, {
+				key: type,
+				type,
+				label: type === "discord" && isDiscordLinked ? "Discord webhook" : undefined,
+				isSelected: model.form.type === type,
+				onSelect: Message.ClickedProvider({ type }),
+			}),
+		),
+	])
 }
 
 const fieldBlock = (h: H, children: ReadonlyArray<Html>, state: FieldState = IDLE) =>
@@ -234,7 +234,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current key"
 							: "e.g. R0XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 						hasDescription: true,
 					}),
 					...(isBadKey
@@ -291,7 +291,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current webhook"
 							: "https://discord.com/api/webhooks/...",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 						hasDescription: true,
 					}),
 					fieldDescription(
@@ -319,7 +319,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current webhook"
 							: "https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 						hasDescription: true,
 					}),
 					...(isBadUrl
@@ -355,7 +355,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current URL"
 							: "https://example.com/maple-alerts",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 					}),
 				]),
 				fieldBlock(h, [
@@ -370,7 +370,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current secret"
 							: "Optional HMAC secret",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 					}),
 				]),
 			]
@@ -384,12 +384,9 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						}),
 					]
 				: [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							[
-								"Email destinations target workspace members and require Clerk authentication, which is not enabled in this deployment.",
-							],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							"Email destinations target workspace members and require Clerk authentication, which is not enabled in this deployment.",
+						]),
 					]
 		case "linear":
 			return [
@@ -430,7 +427,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 				name: "telegram-token",
 				field: "telegramBotToken",
 				placeholder: isEditing ? "Leave blank to keep current token" : "123456789:ABC-DEF...",
-				className: "font-mono text-xs",
+				className: typographyClass({ size: "xs", mono: true }),
 				type: "password",
 				hasDescription: true,
 			}),
@@ -449,33 +446,30 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 			[h.Class("space-y-1.5")],
 			[
 				field(h, { className: "items-stretch gap-2", state: IDLE }, [
-					h.div(
-						[h.Class("flex items-center justify-between gap-2")],
-						[
-							fieldLabel(h, { ids: chatIds, className: "text-xs", state: IDLE }, "Chat ID"),
-							button(
-								h,
-								{
-									variant: "ghost",
-									size: "xs",
-									className: "px-2 text-2xs",
-									isDisabled: !isTokenReady,
-									isLoading: model.isDetectingChats,
-									attributes: [
-										h.OnClick(Message.ClickedDetectChats()),
-										...(isTokenReady
-											? []
-											: [
-													h.Title(
-														"Enter the bot token first. Detection reads the bot's chats.",
-													),
-												]),
-									],
-								},
-								["Detect chats"],
-							),
-						],
-					),
+					hstack(h, { gap: "2", justify: "between" }, [
+						fieldLabel(h, { ids: chatIds, className: "text-xs", state: IDLE }, "Chat ID"),
+						button(
+							h,
+							{
+								variant: "ghost",
+								size: "xs",
+								className: "px-2 text-2xs",
+								isDisabled: !isTokenReady,
+								isLoading: model.isDetectingChats,
+								attributes: [
+									h.OnClick(Message.ClickedDetectChats()),
+									...(isTokenReady
+										? []
+										: [
+												h.Title(
+													"Enter the bot token first. Detection reads the bot's chats.",
+												),
+											]),
+								],
+							},
+							["Detect chats"],
+						),
+					]),
 					...(model.telegramError !== null
 						? [
 								fieldError(
@@ -487,12 +481,9 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 						: []),
 					...(model.telegramChats !== null && model.telegramChats.length === 0
 						? [
-								h.p(
-									[h.Class("text-2xs text-muted-foreground")],
-									[
-										"No recent chats. Add the bot to the group or channel (or send it a message), then detect again. Telegram only keeps the last 24 hours.",
-									],
-								),
+								typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+									"No recent chats. Add the bot to the group or channel (or send it a message), then detect again. Telegram only keeps the last 24 hours.",
+								]),
 							]
 						: []),
 					...(model.telegramChats !== null && model.telegramChats.length > 0
@@ -500,22 +491,18 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 								h.div(
 									[h.Class("space-y-1 rounded-md border border-border-subtle p-1")],
 									model.telegramChats.map((chat) =>
-										h.button(
-											[
-												h.Key(chat.id),
-												h.Type("button"),
-												h.OnClick(Message.ClickedTelegramChat({ chatId: chat.id })),
-												h.Class(
-													"flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted active:bg-muted",
-												),
-											],
-											[
-												h.span([h.Class("truncate")], [chat.title]),
-												h.span(
-													[h.Class("shrink-0 text-3xs text-muted-foreground")],
-													[TELEGRAM_CHAT_TYPE_LABELS.get(chat.type) ?? chat.type],
-												),
-											],
+										listRow(
+											h,
+											{
+												density: "compact",
+												className: "gap-2 rounded-sm px-2",
+												title: chat.title,
+												trailing: typography(h, { size: "3xs", tone: "muted" }, [
+													TELEGRAM_CHAT_TYPE_LABELS.get(chat.type) ?? chat.type,
+												]),
+												onClick: Message.ClickedTelegramChat({ chatId: chat.id }),
+											},
+											[h.Key(chat.id)],
 										),
 									),
 								),
@@ -526,16 +513,13 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 					name: "telegram-chat",
 					field: "telegramChatId",
 					placeholder: "-1001234567890 or @mychannel",
-					className: "font-mono text-xs",
+					className: typographyClass({ size: "xs", mono: true }),
 				}),
-				h.p(
-					[h.Class("text-2xs text-muted-foreground")],
-					[
-						"Add the bot to the chat, then hit ",
-						h.strong([], ["Detect chats"]),
-						", or enter the id by hand. Maple checks the bot can reach it when you save.",
-					],
-				),
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					"Add the bot to the chat, then hit ",
+					h.strong([], ["Detect chats"]),
+					", or enter the id by hand. Maple checks the bot can reach it when you save.",
+				]),
 			],
 		),
 	]
@@ -564,199 +548,133 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 	const isEditing = model.editingId !== null
 	const provider = destinationProvider(model.form.type, model.form.chatConnector)
 	const nameIds = ids("name")
-	return h.submodel({
+	return formDialog(h, {
 		slotId: `${inputs.id}-dialog`,
 		model: model.dialog,
-		view: DialogView.view,
-		viewInputs: {
-			hasTrigger: false,
-			className: "sm:max-w-xl",
-			toView: ({ portal }) => portal ?? h.empty,
-			toContent: (close) => [
-				DialogView.dialogHeader(h, "dialog", [
-					h.h2(
-						[
-							h.Class(cn(dialogTitleStyles, "flex items-center gap-2.5")),
-							h.DataAttribute("slot", "dialog-title"),
-							h.Id(titleId(model.dialog.id)),
-						],
-						[
-							...(isEditing
-								? [logo(h, model, model.form.type, 28, model.form.chatConnector)]
-								: []),
-							isEditing ? `Edit ${provider.label} destination` : "Add destination",
-						],
-					),
-					DialogView.dialogDescription(
-						h,
-						"dialog",
-						model.dialog.id,
-						"Where Maple sends a rule's notifications. Any rule can reuse it.",
-					),
-				]),
-				h.div(
-					[h.Class("min-h-0 flex-1 space-y-5 overflow-y-auto px-6")],
-					[
-						...(isEditing
-							? []
-							: [
-									h.div(
-										[h.Class("space-y-2")],
-										[
-											eyebrow(h, { variant: "label", as: "div" }, ["Send to"]),
-											model.isProviderLocked
-												? panel(
-														h,
-														{
-															className:
-																"flex-row items-center justify-between gap-3 px-3 py-2",
-														},
-														[
-															h.span(
-																[
-																	h.Class(
-																		"flex min-w-0 items-center gap-2.5",
-																	),
-																],
-																[
-																	logo(
-																		h,
-																		model,
-																		model.form.type,
-																		28,
-																		model.form.chatConnector,
-																	),
-																	h.span(
-																		[
-																			h.Class(
-																				"truncate text-sm font-medium",
-																			),
-																		],
-																		[provider.label],
-																	),
-																],
-															),
-															button(
-																h,
-																{
-																	variant: "ghost",
-																	size: "xs",
-																	attributes: [
-																		h.OnClick(
-																			Message.ClickedUnlockProvider(),
-																		),
-																	],
-																},
-																["Change"],
-															),
-														],
-													)
-												: providerPicker(h, model),
-										],
-									),
-								]),
+		toParentMessage: (message) => Message.GotDialogMessage({ message }),
+		className: "sm:max-w-xl",
+		titleClassName: hstackClass({ gap: "2.5" }),
+		title: [
+			...(isEditing ? [logo(h, model, model.form.type, 28, model.form.chatConnector)] : []),
+			isEditing ? `Edit ${provider.label} destination` : "Add destination",
+		],
+		description: "Where Maple sends a rule's notifications. Any rule can reuse it.",
+		panelClassName: "space-y-5",
+		fields: [
+			...(isEditing
+				? []
+				: [
 						h.div(
 							[h.Class("space-y-2")],
 							[
-								h.div(
-									[h.Class("flex items-center justify-between")],
-									[
-										eyebrow(h, { variant: "label", as: "div" }, ["Connection"]),
-										...fieldHelper(h, model.form.type),
-									],
-								),
-								panel(h, { padded: true, className: "space-y-3" }, [
-									fieldBlock(h, [
-										fieldLabel(
+								eyebrow(h, { variant: "label", as: "div" }, ["Send to"]),
+								model.isProviderLocked
+									? panel(
 											h,
 											{
-												ids: nameIds,
-												className: "text-xs",
-												state: stateOf(model.form.name),
+												className:
+													"flex-row items-center justify-between gap-3 px-3 py-2",
 											},
 											[
-												"Name",
-												...(isEditing
-													? []
-													: [
-															h.span(
-																[
-																	h.Class(
-																		"font-normal text-muted-foreground",
-																	),
-																],
-																["optional"],
-															),
-														]),
+												hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+													logo(
+														h,
+														model,
+														model.form.type,
+														28,
+														model.form.chatConnector,
+													),
+													typography(
+														h,
+														{ size: "sm", weight: "medium", truncate: true },
+														[provider.label],
+													),
+												]),
+												button(
+													h,
+													{
+														variant: "ghost",
+														size: "xs",
+														attributes: [
+															h.OnClick(Message.ClickedUnlockProvider()),
+														],
+													},
+													["Change"],
+												),
 											],
-										),
-										textInput(h, model, {
-											name: "name",
-											field: "name",
-											placeholder:
-												suggestedDestinationName(toFormState(model.form)) ||
-												"Production paging",
-										}),
-									]),
-									...connectionFields(h, model, isEditing),
-								]),
+										)
+									: providerPicker(h, model),
 							],
 						),
-						...(isEditing
-							? [
-									h.div(
-										[h.Class("space-y-2")],
-										[
-											eyebrow(h, { variant: "label", as: "div" }, ["Delivery"]),
-											settingRow(h, {
-												ids: {
-													control: "destination-enabled-input",
-													label: "destination-enabled-label",
-													description: "destination-enabled-description",
-												},
-												framed: true,
-												className: "border-border-subtle bg-card px-4 py-3",
-												label: "Enabled",
-												description:
-													"Disabled destinations stay attached to rules but won't receive notifications.",
-												filled: model.form.enabled,
-												control: switchControl(h, {
-													id: "destination-enabled",
-													inputId: "destination-enabled-input",
-													isChecked: model.form.enabled,
-													labelledBy: "destination-enabled-label",
-													onToggle: Message.ToggledEnabled(),
-												}),
-											}),
-										],
-									),
-								]
-							: []),
-					],
-				),
-				DialogView.dialogFooter(h, "dialog", [
-					button(h, { variant: "outline", attributes: [...close] }, ["Cancel"]),
-					button(
-						h,
-						{
-							isLoading: model.isSaving,
-							isDisabled: !isFormReady(model.form, isEditing),
-							attributes: [
-								h.OnClick(Message.ClickedSave()),
-								h.Style({
-									background: providerOf(model.form.type).accent,
-									"border-color": providerOf(model.form.type).accent,
-									color: model.isSaving
-										? "transparent"
-										: providerOf(model.form.type).accentOn,
+					]),
+			h.div(
+				[h.Class("space-y-2")],
+				[
+					hstack(h, { justify: "between" }, [
+						eyebrow(h, { variant: "label", as: "div" }, ["Connection"]),
+						...fieldHelper(h, model.form.type),
+					]),
+					panel(h, { padded: true, className: "space-y-3" }, [
+						fieldBlock(h, [
+							fieldLabel(
+								h,
+								{
+									ids: nameIds,
+									className: "text-xs",
+									state: stateOf(model.form.name),
+								},
+								[
+									"Name",
+									...(isEditing
+										? []
+										: [typography(h, { tone: "muted", weight: "normal" }, ["optional"])]),
+								],
+							),
+							textInput(h, model, {
+								name: "name",
+								field: "name",
+								placeholder:
+									suggestedDestinationName(toFormState(model.form)) || "Production paging",
+							}),
+						]),
+						...connectionFields(h, model, isEditing),
+					]),
+				],
+			),
+			...(isEditing
+				? [
+						h.div(
+							[h.Class("space-y-2")],
+							[
+								eyebrow(h, { variant: "label", as: "div" }, ["Delivery"]),
+								settingRow(h, {
+									ids: {
+										control: "destination-enabled-input",
+										label: "destination-enabled-label",
+										description: "destination-enabled-description",
+									},
+									framed: true,
+									className: "border-border-subtle bg-card px-4 py-3",
+									label: "Enabled",
+									description:
+										"Disabled destinations stay attached to rules but won't receive notifications.",
+									filled: model.form.enabled,
+									control: switchControl(h, {
+										id: "destination-enabled",
+										inputId: "destination-enabled-input",
+										isChecked: model.form.enabled,
+										labelledBy: "destination-enabled-label",
+										onToggle: Message.ToggledEnabled(),
+									}),
 								}),
 							],
-						},
-						[isEditing ? "Save changes" : `Add ${provider.label} destination`],
-					),
-				]),
-			],
-		},
-		toParentMessage: (message) => Message.GotDialogMessage({ message }),
+						),
+					]
+				: []),
+		],
+		onSubmit: Message.ClickedSave(),
+		submitLabel: isEditing ? "Save changes" : `Add ${provider.label} destination`,
+		isPending: model.isSaving,
+		isSubmitDisabled: !isFormReady(model.form, isEditing),
 	})
 })

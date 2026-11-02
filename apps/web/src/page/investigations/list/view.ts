@@ -21,6 +21,7 @@ import { pageTitle } from "../../../ui/page-layout"
 import { icon } from "../../../ui/icon"
 import { listRow } from "../../../ui/list-row"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { searchInput } from "../../../ui/search-input"
 import * as SelectView from "../../../ui/select-view"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
@@ -30,7 +31,7 @@ import { truncatedText } from "../../../ui/truncated-text"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarCount, toolbarStat } from "../../kit/list-toolbar"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import { docsLink, filteredEmpty } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { severityBadge } from "../../errors/kit/severity"
@@ -52,6 +53,9 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../../ui/stack"
+import { spaced } from "../../../ui/spaced"
 
 // `InvestigationsHub` and `InvestigationTable`: the investigations list page.
 
@@ -183,7 +187,7 @@ const toolbar = (
 				id: "investigations-search",
 				size: "sm",
 				className: "w-auto min-w-56 max-w-sm flex-1",
-				placeholder: "Search subjects and findings",
+				placeholder: "Search subjects and findings…",
 				value: model.searchDraft,
 				onInput: (value) => Message.ChangedSearchDraft({ value }),
 				onClear: Message.ChangedSearchDraft({ value: "" }),
@@ -203,11 +207,17 @@ const toolbar = (
 const rowFinding = (h: H, investigation: V2Investigation): Html => {
 	const finding = investigationFinding(investigation)
 	if (finding.kind === "pending")
-		return h.span(
-			[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground")],
+		return hstack(
+			h,
+			{
+				gap: "1.5",
+				shrink: true,
+				as: "span",
+				className: typographyClass({ size: "xs", tone: "muted" }),
+			},
 			[statusDot(h, { tone: "live" }), truncatedText(h, { text: finding.text })],
 		)
-	if (finding.kind === "none") return h.span([h.Class("text-xs text-foreground-subtle")], [EMPTY_VALUE])
+	if (finding.kind === "none") return typography(h, { size: "xs", tone: "subtle" }, [EMPTY_VALUE])
 	return h.span(
 		[
 			h.Class(
@@ -236,27 +246,26 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 				[h.Class("flex w-5 items-center justify-center")],
 				[kindMarker(h, investigation.subject, investigation.seeded_by)],
 			),
-			title: h.span(
-				[h.Class("flex min-w-0 items-baseline gap-2")],
-				[
-					h.a(
-						[
-							h.Href(hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} }))),
-							h.Class("min-w-0 truncate font-medium text-sm text-foreground hover:underline active:underline"),
-							h.Title(headline),
-						],
-						[headline],
-					),
-					...(scope
-						? [
-								truncatedText(h, {
-									text: scope,
-									className: "max-w-[40%] shrink font-normal text-xs text-muted-foreground",
-								}),
-							]
-						: []),
-				],
-			),
+			title: hstack(h, { gap: "2", align: "baseline", shrink: true, as: "span" }, [
+				h.a(
+					[
+						h.Href(hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} }))),
+						h.Class(
+							"min-w-0 truncate font-medium text-sm text-foreground hover:underline active:underline",
+						),
+						h.Title(headline),
+					],
+					[headline],
+				),
+				...(scope
+					? [
+							truncatedText(h, {
+								text: scope,
+								className: "max-w-[40%] shrink font-normal text-xs text-muted-foreground",
+							}),
+						]
+					: []),
+			]),
 			meta: rowFinding(h, investigation),
 			trailing: h.span(
 				[h.Class("flex items-center gap-3.5")],
@@ -270,11 +279,10 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 						[severityBadge(h, investigationSeverity(investigation))],
 					),
 					h.span([h.Class("w-24 shrink-0 max-lg:hidden")], [statusBadge(h, investigation.status)]),
-					relativeTime(h, {
+					listRelativeTime(h, {
 						value: investigation.updated_at,
 						nowMs,
 						timeZone,
-						tooltip: "title",
 						className: "w-13 shrink-0 text-right text-xs text-muted-foreground",
 					}),
 				],
@@ -350,25 +358,22 @@ const hubHero = (h: H, model: Model): Html => {
 			h.header(
 				[h.Class("flex flex-wrap items-start gap-x-6 gap-y-3")],
 				[
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-1")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-baseline gap-3")],
-								[
-									pageTitle(h, { className: "min-w-0 whitespace-normal text-foreground" }, [
-										HUB_TITLE,
-									]),
-								],
-							),
-							h.p(
-								[h.Class("max-w-2xl text-sm text-muted-foreground")],
-								[
-									"One agent reads the traces, logs and metrics around it, tests the likely explanations (deploys, dependencies, saturation, traffic) and comes back with a cause, the evidence for it, and what it ruled out.",
-								],
-							),
-						],
-					),
+					spaced(h, { space: "1", fill: true }, [
+						h.div(
+							[h.Class("flex flex-wrap items-baseline gap-3")],
+							[
+								pageTitle(h, { className: "min-w-0 whitespace-normal text-foreground" }, [
+									HUB_TITLE,
+								]),
+							],
+						),
+						h.p(
+							[h.Class("max-w-2xl text-sm text-muted-foreground")],
+							[
+								"One agent reads the traces, logs and metrics around it, tests the likely explanations (deploys, dependencies, saturation, traffic) and comes back with a cause, the evidence for it, and what it ruled out.",
+							],
+						),
+					]),
 				],
 			),
 			...(presence.status === "absent"
@@ -396,21 +401,21 @@ const hubHero = (h: H, model: Model): Html => {
 					]
 				: []),
 			bar(h, model, true, "A service, a symptom, a question…"),
-			h.ul(
-				[h.Class("flex flex-col gap-2")],
+			vstack(
+				h,
+				{ gap: "2", as: "ul" },
 				HERO_SUGGESTIONS.map((suggestion) =>
 					h.li(
 						[h.Key(suggestion)],
 						[
-							h.button(
-								[
-									h.Type("button"),
-									...(model.isCreating ? [h.Disabled(true)] : []),
-									h.OnClick(Message.ClickedSuggestion({ title: suggestion })),
-									h.Class(
+							pressable(
+								h,
+								{
+									onClick: Message.ClickedSuggestion({ title: suggestion }),
+									isDisabled: model.isCreating,
+									className:
 										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground hover:border-ring active:border-ring hover:bg-surface-sunken active:bg-surface-sunken disabled:opacity-60",
-									),
-								],
+								},
 								[
 									h.span(
 										[h.AriaHidden(true), h.Class("shrink-0 text-muted-foreground")],
@@ -427,7 +432,7 @@ const hubHero = (h: H, model: Model): Html => {
 				[h.Class("flex flex-wrap items-baseline gap-x-4 gap-y-2 text-sm text-muted-foreground")],
 				[
 					h.p(
-						[h.Class("flex items-baseline gap-2")],
+						[h.Class(hstackClass({ gap: "2", align: "baseline" }))],
 						[
 							statusDot(h, { tone: "custom", className: "translate-y-[-2px] bg-primary" }),
 							"When an alert rule fires, Maple opens an investigation on its own. Those land here too.",
@@ -436,7 +441,7 @@ const hubHero = (h: H, model: Model): Html => {
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.AlertsCreate({ search: {} }))),
-							h.Class("text-foreground underline-offset-4 hover:underline active:underline"),
+							h.Class(typographyClass({ tone: "foreground", hoverUnderline: true })),
 						],
 						["Create an alert rule"],
 					),

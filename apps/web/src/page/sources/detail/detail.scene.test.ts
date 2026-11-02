@@ -29,7 +29,7 @@ import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/domain/p
 import { Message as IntegrationMessage } from "../../integrations/message"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, routeChanged, sourceOf, update } from "./update"
+import { init, isSettingsDirty, routeChanged, sourceOf, update } from "./update"
 import { breadcrumbsOf, view as pageView } from "./view"
 import { focusIdOf } from "../kit/shared"
 
@@ -244,6 +244,34 @@ describe("source detail tabs", () => {
 		const saved = pageUpdate(saving.model, Message.CompletedSave({ result: Result.succeed(source()) }))
 		expect(names(saved.commands)).toEqual(["FetchSourceDetailList"])
 		expect(saved.model.settings?.isSaving).toBe(false)
+	})
+
+	test("a successful save leaves the form clean before the list reload lands", () => {
+		const edited = pageUpdate(
+			loaded(source(), "settings"),
+			Message.ChangedSettingsName({ value: "Renamed" }),
+		).model
+		expect(edited.settings !== null && isSettingsDirty(edited.settings)).toBe(true)
+		const saving = pageUpdate(edited, Message.SubmittedSettings()).model
+		const saved = pageUpdate(
+			saving,
+			Message.CompletedSave({
+				result: Result.succeed(source({ name: "Renamed", updated_at: "2026-10-01T12:00:00.000Z" })),
+			}),
+		).model
+		expect(saved.settings?.name).toBe("Renamed")
+		expect(saved.settings !== null && isSettingsDirty(saved.settings)).toBe(false)
+	})
+
+	test("discard restores the saved name, so the save bar has nothing to save", () => {
+		const edited = pageUpdate(
+			loaded(source(), "settings"),
+			Message.ChangedSettingsName({ value: "Renamed" }),
+		).model
+		expect(edited.settings !== null && isSettingsDirty(edited.settings)).toBe(true)
+		const discarded = pageUpdate(edited, Message.ClickedDiscardSettings()).model
+		expect(discarded.settings?.name).toBe("Checkout API")
+		expect(discarded.settings !== null && isSettingsDirty(discarded.settings)).toBe(false)
 	})
 
 	test("an empty name blocks the save", () => {
@@ -763,7 +791,7 @@ describe("integration focus", () => {
 				}),
 			}),
 		).model
-		const name = "Disconnect AWS account 123456789012"
+		const name = "Disconnect AWS account 123456789012?"
 		const mountDialog = Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
 		scene(
 			{ update: pageUpdate, view },

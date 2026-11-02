@@ -38,11 +38,12 @@ import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
 import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
 import { msIso } from "../shared/time"
-import { groupPreviewOf, type IncidentView, incidentViewOf } from "./derive"
+import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { incidentRail } from "./view-rail"
 import { incidentTimeline } from "./view-timeline"
+import { typography } from "../../../ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -91,11 +92,11 @@ export const headerTitle = <M>(
 				[h.Class("flex flex-wrap items-center gap-2.5")],
 				[
 					severityBadge(h, incident.severity),
-					h.span([h.Class("text-muted-foreground text-xs")], [statusLine(incident, now, timeZone)]),
+					typography(h, { size: "xs", tone: "muted" }, [statusLine(incident, now, timeZone)]),
 				],
 			),
 			pageTitle(h, { title }, [title]),
-			h.p([h.Class("truncate text-muted-foreground text-xs")], [subline]),
+			typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subline]),
 		],
 	)
 }
@@ -164,19 +165,13 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 								...(group != null ? [` · ${group}`] : []),
 							]),
 							incident.signalType === "uptime"
-								? h.p(
-										[h.Class("text-muted-foreground text-sm")],
-										[
-											"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
-										],
-									)
+								? typography(h, { size: "sm", tone: "muted", as: "p" }, [
+										"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
+									])
 								: rule === null
-									? h.p(
-											[h.Class("text-muted-foreground text-sm")],
-											[
-												"The rule behind this incident was deleted, so its signal cannot be replayed.",
-											],
-										)
+									? typography(h, { size: "sm", tone: "muted", as: "p" }, [
+											"The rule behind this incident was deleted, so its signal cannot be replayed.",
+										])
 									: ruleChart(h, {
 											chartId: inputs.chartId,
 											chart: inputs.chart,
@@ -230,7 +225,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		ruleIncidents: view.ruleIncidents,
-		states: (model.states ?? []).filter((row) => row.rule_id === incident.ruleId),
+		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),
 		isPreviewLoading: previewState.isLoading || !isChartReady,
 		previewError: previewState.error,

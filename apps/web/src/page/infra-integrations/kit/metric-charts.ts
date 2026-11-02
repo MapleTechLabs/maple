@@ -5,6 +5,7 @@ import type { ChartUnit, LongRow } from "../../../charts/infra-metric-series"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { chartLoading } from "../../../ui/chart-state"
 import { chartCard } from "./chart-card"
+import { gridClass } from "../../../ui/grid"
 
 // A detail page's grid of bucketed metric charts, one card per chart, two columns from `lg`.
 
@@ -20,7 +21,7 @@ export interface MetricChart<Row> {
 	readonly series: ReadonlyArray<MetricSeries<Row>>
 }
 
-const GRID = "grid grid-cols-1 gap-4 lg:grid-cols-2"
+const GRID = gridClass({ cols: 1, lg: 2, gap: "4" })
 
 /** One long row per (bucket, series), leaving out the gaps. */
 export const metricChartRows = <Row extends Bucketed>(

@@ -9,10 +9,13 @@ import {
 	generationManifestPath,
 	generationsRoot,
 	rangeRoot,
-} from "../src/server/archives/paths"
-import { parseArchiveActivePointer, parseArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/paths"
+import {
+	parseArchiveActivePointer,
+	parseArchiveGenerationManifest,
+} from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 import { randomUUID } from "node:crypto"
 
 const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
@@ -169,7 +172,7 @@ describe("archive generation manifest parser", () => {
 
 	it("reads a manifest from disk bound to its location", async () => {
 		await withArchive(async (archiveDir) => {
-			const { readArchiveGenerationManifest } = await import("../src/server/archives/manifest")
+			const { readArchiveGenerationManifest } = await import("@maple/local-server/archives/manifest")
 			const generationId = randomUUID()
 			const manifestPath = generationManifestPath(archiveDir, "traces", "2026-06-01", generationId)
 			mkdirSync(dirname(manifestPath), { recursive: true })

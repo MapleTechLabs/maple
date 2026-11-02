@@ -544,12 +544,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (integration !== null && chatConnectorOf(integration) !== null)
 				return Chat.confirmedDisconnect(model)
 			if (integration === null || model.disconnect.isPending) return { model }
-			const closed = withDisconnectDialog(model, Dialog.close(model.disconnect.dialog))
+			// The dialog stays open, its confirm pending, until `CompletedDisconnect` closes it.
 			return {
-				...closed,
-				model: { ...closed.model, disconnect: { ...closed.model.disconnect, isPending: true } },
+				model: { ...model, disconnect: { ...model.disconnect, isPending: true } },
 				commands: [
-					...(closed.commands ?? []),
 					Disconnect({
 						integration:
 							integration === "cloudflare" && isMultiAccount(model)
@@ -561,15 +559,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedDisconnect: ({ integration, failure }) => {
 			const spec = DISCONNECTS.get(integration)
-			const settled = { ...model, disconnect: { ...model.disconnect, isPending: false } }
-			if (spec === undefined) return { model: settled }
+			const closed = withDisconnectDialog(
+				{ ...model, disconnect: { ...model.disconnect, isPending: false } },
+				Dialog.close(model.disconnect.dialog),
+			)
+			const settled = closed.model
+			if (spec === undefined) return closed
 			const toast = PageOutMessage.RequestedToast(
 				failure === null
 					? { type: "success", title: spec.success, description: "" }
 					: { type: "error", title: spec.error, description: failure.message },
 			)
 			return chain(settled, [
-				(next) => ({ model: next, outMessage: toast }),
+				(next) => ({ model: next, commands: closed.commands, outMessage: toast }),
 				...(failure === null ? spec.refresh : []).map(
 					(name) => (next: Model) => requestStatus(next, context, name, "Supersede"),
 				),

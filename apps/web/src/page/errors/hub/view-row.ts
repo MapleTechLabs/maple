@@ -1,7 +1,6 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { ErrorSignal } from "../../../lib/models/error-signal"
-import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -21,19 +20,21 @@ import {
 import * as QuickPick from "../kit/quick-pick"
 import type * as ContextMenu from "../../../ui/context-menu"
 import * as ContextMenuView from "../../../ui/context-menu-view"
-import { contextMenuTriggerStyles } from "@maple/ui/styles/ui/context-menu"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
+import { formatExactCount } from "../../kit/locale"
 import { rowMenuEntries } from "./row-menu"
 import { Message } from "./message"
 import {
 	formatLastSeen,
-	formatTimestamp,
 	GENERIC_TYPES,
 	signalActivity,
 	signalSpark,
 	type SparkWindow,
 	sparkOf,
 } from "./view-signal"
+import { typographyClass } from "../../../ui/typography"
+import { hstackClass } from "../../../ui/stack"
 
 // The error signal header and row skeleton.
 
@@ -106,11 +107,7 @@ export const signalRowSkeleton = (h: H, index: number): Html =>
 			h.span(
 				[h.Class(LANE.identity)],
 				[
-					h.div([
-						h.Class(cn(skeletonStyles, "h-3.5")),
-						h.DataAttribute("slot", "skeleton"),
-						h.Style({ width: SKELETON_WIDTHS[index % 6] ?? "72%" }),
-					]),
+					skeleton(h, "h-3.5", { width: SKELETON_WIDTHS[index % 6] ?? "72%" }),
 				],
 			),
 			h.span(
@@ -195,7 +192,7 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 					[severityPicker(h, signal, state)],
 				),
 				h.span(
-					[h.Class(cn(LANE.identity, "flex items-baseline gap-2"))],
+					[h.Class(cn(LANE.identity, hstackClass({ gap: "2", align: "baseline" })))],
 					[
 						truncatedText(
 							h,
@@ -234,17 +231,19 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 /** `IssueContextMenu`'s trigger around the row; the row last pressed carries the menu itself. */
 const rowMenuTrigger = (h: H, signal: ErrorSignal, state: RowState, children: ReadonlyArray<Html>): Html =>
 	state.rowMenu === null
-		? h.div(
-				[
-					h.Class(cn(contextMenuTriggerStyles, "select-none")),
-					h.DataAttribute("slot", "context-menu-trigger"),
-					h.OnPointerDown((_type, _button, _sx, _sy, _t, clientX, clientY) =>
-						Option.some(
-							Message.PressedRowPointer({ id: signal.id, point: { x: clientX, y: clientY } }),
+		? ContextMenuView.idleTrigger(
+				h,
+				{
+					className: "select-none",
+					attributes: [
+						h.OnPointerDown((_type, _button, _sx, _sy, _t, clientX, clientY) =>
+							Option.some(
+								Message.PressedRowPointer({ id: signal.id, point: { x: clientX, y: clientY } }),
+							),
 						),
-					),
-					h.OnContextMenu(Message.OpenedRowMenu({ id: signal.id })),
-				],
+						h.OnContextMenu(Message.OpenedRowMenu({ id: signal.id })),
+					],
+				},
 				children,
 			)
 		: h.submodel({
@@ -274,11 +273,11 @@ const volumeLane = (
 			h.span([h.Class(LANE.spark)], [signalSpark(h, dense, signal, isSurging, label)]),
 			h.span(
 				[
-					h.Class(cn(LANE.count, "text-xs tabular-nums")),
+					h.Class(cn(LANE.count, typographyClass({ size: "xs", numeric: true }))),
 					h.Title(
 						signal.windowCount === null
-							? `None in the last 24 hours · ${signal.totalCount.toLocaleString("en-US")} all time`
-							: `${signal.windowCount.toLocaleString("en-US")} in the last 24 hours${isSurging ? ", surging" : ""} · ${signal.totalCount.toLocaleString("en-US")} all time`,
+							? `None in the last 24 hours · ${formatExactCount(signal.totalCount)} all time`
+							: `${formatExactCount(signal.windowCount)} in the last 24 hours${isSurging ? ", surging" : ""} · ${formatExactCount(signal.totalCount)} all time`,
 					),
 				],
 				[
@@ -315,7 +314,7 @@ const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArra
 	h.span(
 		[
 			h.Class(cn(LANE.lastSeen, "text-right text-xs tabular-nums text-muted-foreground")),
-			h.Title(`Last seen ${formatTimestamp(signal.lastSeenAt, state.timeZone, true)}`),
+			h.Title(`Last seen ${formatTimestampInTimezone(signal.lastSeenAt, { timeZone: state.timeZone, withYear: true })}`),
 		],
 		[formatLastSeen(signal.lastSeenAt, state.timeZone, state.nowMs)],
 	),

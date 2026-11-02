@@ -1,3 +1,4 @@
+import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
@@ -6,6 +7,7 @@ import * as DialogView from "../../../ui/dialog-view"
 import { emptyMessage } from "../../../ui/empty"
 import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
 import * as Field from "../../../ui/field"
+import { formDialogForm } from "../../../ui/form-dialog"
 import { inlineCode } from "../../../ui/inline-code"
 import { searchInput } from "../../../ui/search-input"
 import { segmentedSelect } from "../../../ui/segmented-select"
@@ -22,6 +24,8 @@ import {
 	selectedFamilyCount,
 } from "./create-dialog"
 import { secretReveal } from "./secret-reveal"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -56,7 +60,6 @@ const textField = (
 		placeholder: string
 		model: Field.Model
 		toMessage: (message: Field.Message) => Message
-		onKeyDown?: (key: string) => Message
 	}>,
 ): Html => {
 	const state = Field.stateOf(options.model, false)
@@ -69,7 +72,6 @@ const textField = (
 			attributes: [
 				h.Placeholder(options.placeholder),
 				...Field.controlAttributes(h, options.model, options.toMessage),
-				...(options.onKeyDown === undefined ? [] : [h.OnKeyDown(options.onKeyDown)]),
 			],
 		}),
 	])
@@ -111,10 +113,9 @@ const scopeRows = (h: H, model: Model): ReadonlyArray<Html> => {
 				]
 			: []),
 		...visible.map((family) =>
-			h.div(
-				[h.Key(family.id), h.Class("flex items-center justify-between gap-3")],
+			hstack(h, { gap: "3", justify: "between", attributes: [h.Key(family.id)] },
 				[
-					h.span([h.Class("text-foreground text-sm")], [family.label]),
+					typography(h, { size: "sm", tone: "foreground" }, [family.label]),
 					segmentedSelect(h, {
 						ariaLabel: `${family.label} access`,
 						value: model.scopeLevels[family.id] ?? "none",
@@ -148,8 +149,7 @@ const accessField = (h: H, model: Model): Html => {
 			? h.div(
 					[h.Class("space-y-2 pt-1")],
 					[
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
+						hstack(h, { gap: "2", wrap: true },
 							[
 								button(
 									h,
@@ -179,8 +179,7 @@ const accessField = (h: H, model: Model): Html => {
 									},
 									["Clear"],
 								),
-								h.span(
-									[h.Class("text-muted-foreground text-xs")],
+								typography(h, { size: "xs", tone: "muted" },
 									[String(count), " of ", String(SCOPE_FAMILIES.length), " selected"],
 								),
 							],
@@ -190,7 +189,15 @@ const accessField = (h: H, model: Model): Html => {
 							value: model.scopeFilter,
 							onInput: (value) => Message.ChangedScopeFilter({ value }),
 							onClear: Message.ClickedClearScopeFilter(),
-							placeholder: "Filter resource families",
+							placeholder: "Filter resource families…",
+							// Enter in the filter stays a filter, not a submit of the create form.
+							attributes: [
+								h.OnKeyDownPreventDefault((key) =>
+									key === "Enter"
+										? Option.some(Message.ChangedScopeFilter({ value: model.scopeFilter }))
+										: Option.none(),
+								),
+							],
 						}),
 						...scopeRows(h, model),
 						fieldDescription(
@@ -230,14 +237,13 @@ const formContent = (h: H, model: Model): ReadonlyArray<Html> => {
 					placeholder: "e.g. CI/CD Pipeline",
 					model: model.name,
 					toMessage: (message) => Message.GotNameMessage({ message }),
-					onKeyDown: (key) => Message.PressedNameKey({ key }),
 				}),
 				textField(h, {
 					name: "description",
 					label: [
 						"Description",
 						" ",
-						h.span([h.Class("text-muted-foreground font-normal")], ["(optional)"]),
+						typography(h, { tone: "muted", weight: "normal" }, ["(optional)"]),
 					],
 					placeholder: "What is this key used for?",
 					model: model.description,
@@ -250,15 +256,15 @@ const formContent = (h: H, model: Model): ReadonlyArray<Html> => {
 		),
 		DialogView.dialogFooter(h, "dialog", [
 			...(reason === null ? [] : [DialogView.dialogFooterHint(h, reason)]),
-			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, ["Cancel"]),
 			button(
 				h,
-				{
-					isLoading: model.isCreating,
-					isDisabled: !canCreate(model),
-					attributes: [h.OnClick(Message.ClickedCreate())],
-				},
-				["Create"],
+				{ variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] },
+				["Cancel"],
+			),
+			button(
+				h,
+				{ type: "submit", isLoading: model.isCreating, isDisabled: !canCreate(model) },
+				["Create key"],
 			),
 		]),
 	]
@@ -287,10 +293,9 @@ const createdContent = (h: H, model: Model): ReadonlyArray<Html> => {
 			"dialog",
 			model.dialog.id,
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-1.5")],
+				hstack(h, { gap: "1.5", wrap: true },
 					[
-						h.span([h.Class("text-foreground text-sm font-medium")], [created.name]),
+						typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [created.name]),
 						inlineCode(h, { variant: "plain", className: "text-2xs tracking-tight" }, [
 							created.key_prefix,
 							"…",
@@ -326,7 +331,11 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 		viewInputs: {
 			hasTrigger: false,
 			toView: ({ portal }) => portal ?? h.empty,
-			toContent: () => (model.created === null ? formContent(h, model) : createdContent(h, model)),
+			// One dialog across both steps (a remount replays the open animation); only the create step is a form.
+			toContent: () =>
+				model.created === null
+					? [formDialogForm(h, Message.ClickedCreate(), formContent(h, model))]
+					: createdContent(h, model),
 		},
 	}),
 )

@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Select from "../../../ui/select"
 import { type SelectEntry, type SelectOption, view as selectView } from "../../../ui/select-view"
-import { timeControls } from "../../kit/time-controls"
+import { type PresetValue, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "./author"
 import { ALL, type Frame, FrameMessage, type WindowSearch } from "./frame"
@@ -19,7 +19,7 @@ export type FiltersOptions<M> = Readonly<{
 	kind: "author" | "workflow"
 	options: ReadonlyArray<string>
 	selected: string | undefined
-	defaultPreset: string
+	defaultPreset: PresetValue
 	presets: ReadonlyArray<string>
 	toMessage: (message: FrameMessage) => M
 	/** True while the tab's failure card shows, so its Try again is the only retry. */

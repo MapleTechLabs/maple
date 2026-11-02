@@ -32,6 +32,7 @@ import { segmentedBar } from "../../../../ui/meter"
 import { panel, panelHeader } from "../../../../ui/panel"
 import { skeleton } from "../../../../ui/skeleton"
 import { statusDot } from "../../../../ui/status-dot"
+import { textLinkClass } from "../../../../ui/text-link"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
@@ -44,6 +45,8 @@ import { MountLinkedCursor } from "./command"
 import { type PageData, pageOf, type Traced } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `WorkerDetailPage` and its parts.
 
@@ -57,15 +60,12 @@ const header = (h: H, model: Model, data: PageData) => {
 	const { row, accountName, traced, currentVersion } = data
 	const tracedService = traced?.service ?? null
 	return pageHeroParts(h, {
-		title: h.span(
-			[h.Class("flex items-center gap-3")],
-			[
-				...(row === null
-					? []
-					: [statusDot(h, { tone: WORKER_HEALTH_TONE[workerHealth(row)], size: "lg" })]),
-				model.scriptName,
-			],
-		),
+		title: hstack(h, { gap: "3", as: "span" }, [
+			...(row === null
+				? []
+				: [statusDot(h, { tone: WORKER_HEALTH_TONE[workerHealth(row)], size: "lg" })]),
+			model.scriptName,
+		]),
 		meta: [
 			heroChip(h, "worker"),
 			...(accountName === null ? [] : [heroChip(h, ["account ", accountName])]),
@@ -85,10 +85,23 @@ const figure = (h: H, value: string, caption: string, className?: string): Html 
 		[h.Class("flex flex-col items-start @2xl:items-end")],
 		[
 			h.span(
-				[h.Class(cn("font-mono text-sm font-semibold tabular-nums text-foreground", className))],
+				[
+					h.Class(
+						cn(
+							typographyClass({
+								size: "sm",
+								tone: "foreground",
+								weight: "semibold",
+								mono: true,
+								numeric: true,
+							}),
+							className,
+						),
+					),
+				],
 				[value],
 			),
-			h.span([h.Class("font-mono text-3xs text-muted-foreground")], [caption]),
+			typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
 		],
 	)
 
@@ -103,16 +116,13 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 					h.div(
 						[h.Class("flex-1 space-y-1 px-4 py-3")],
 						[
-							h.p(
-								[h.Class("text-sm font-medium text-foreground")],
-								[
-									formatNumber(exceptions),
-									" exceptions in Cloudflare,",
-									" ",
-									tracedErrors === 0 ? "none" : formatNumber(tracedErrors),
-									" in traces",
-								],
-							),
+							typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [
+								formatNumber(exceptions),
+								" exceptions in Cloudflare,",
+								" ",
+								tracedErrors === 0 ? "none" : formatNumber(tracedErrors),
+								" in traces",
+							]),
 							h.p(
 								[h.Class("max-w-prose text-xs text-muted-foreground")],
 								[
@@ -134,9 +144,7 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 							figure(h, formatNumber(tracedErrors), "traces"),
 							h.a(
 								[
-									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
-									),
+									h.Class(textLinkClass("primary", true, "ml-auto text-xs @2xl:ml-0")),
 									h.Href(hrefOf(AppRoute.Logs({ search: { services: [tracedService] } }))),
 								],
 								["Logs in this window"],
@@ -156,12 +164,34 @@ const summary = (
 	captionClassName?: string,
 ): ReadonlyArray<Html> => [
 	h.span(
-		[h.Class(cn("font-mono text-sm font-semibold tabular-nums text-foreground", valueClassName))],
+		[
+			h.Class(
+				cn(
+					typographyClass({
+						size: "sm",
+						tone: "foreground",
+						weight: "semibold",
+						mono: true,
+						numeric: true,
+					}),
+					valueClassName,
+				),
+			),
+		],
 		[value],
 	),
 	...(caption === undefined
 		? []
-		: [h.span([h.Class(cn("font-mono text-3xs text-muted-foreground", captionClassName))], [caption])]),
+		: [
+				h.span(
+					[
+						h.Class(
+							cn(typographyClass({ size: "3xs", tone: "muted", mono: true }), captionClassName),
+						),
+					],
+					[caption],
+				),
+			]),
 ]
 
 /** `buildStrips`: invocations, failures, CPU and duration, then Durable Objects when bound. */
@@ -313,12 +343,9 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 								...(label.toLowerCase() === status.toLowerCase()
 									? []
 									: [
-											h.span(
-												[
-													h.Class(
-														"truncate font-mono text-3xs text-muted-foreground",
-													),
-												],
+											typography(
+												h,
+												{ size: "3xs", tone: "muted", mono: true, truncate: true },
 												[status],
 											),
 										]),
@@ -392,7 +419,11 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 				h,
 				"Deploys in window",
 				deploys.length === 0
-					? [h.p([h.Class("text-2xs text-muted-foreground")], ["No new version in this window."])]
+					? [
+							typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+								"No new version in this window.",
+							]),
+						]
 					: present(
 							deploys.map((deploy) =>
 								detailRailMetaRow(h, {
@@ -411,10 +442,9 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 	traced === null
 		? [
-				h.p(
-					[h.Class("text-2xs leading-relaxed text-muted-foreground")],
-					["No service with this name sends spans, so Cloudflare's counts are all there is."],
-				),
+				typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+					"No service with this name sends spans, so Cloudflare's counts are all there is.",
+				]),
 			]
 		: [
 				...[
@@ -431,7 +461,7 @@ const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 				].filter((node): node is Html => node !== null),
 				h.a(
 					[
-						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80"),
+						h.Class(textLinkClass("primary", true, "pt-1 text-xs")),
 						h.Href(hrefOf(AppRoute.Service({ serviceName: traced.service, search: {} }))),
 					],
 					["Open ", traced.service],

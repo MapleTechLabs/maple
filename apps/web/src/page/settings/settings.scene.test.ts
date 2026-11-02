@@ -71,7 +71,7 @@ const connection = Schema.decodeUnknownSync(V2McpConnection)({
 	expires_at: "2026-12-29T12:00:00.000Z",
 })
 
-const mcpLoaded = (): Model =>
+const mcpLoaded = (catalog: typeof tools = tools): Model =>
 	[
 		Message.CompletedFetchSession({
 			result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
@@ -80,7 +80,7 @@ const mcpLoaded = (): Model =>
 			result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })),
 		}),
 		mcp(McpMessage.Message.CompletedFetchConnections({ result: Result.succeed([connection]) })),
-		mcp(McpMessage.Message.CompletedFetchTools({ result: Result.succeed(tools) })),
+		mcp(McpMessage.Message.CompletedFetchTools({ result: Result.succeed(catalog) })),
 	].reduce((model, message) => pageUpdate(model, message).model, entered({ tab: "mcp" }).model)
 
 /** Scene lifts a Mount's result through every `toParentMessage`, so it takes the Tabs message. */
@@ -188,11 +188,21 @@ describe("settings page", () => {
 			{ update: pageUpdate, view },
 			given(searched),
 			indicatorMeasured(),
-			expectView(text("No tools match “zzz”.")).toExist(),
+			expectView(text("No tools match these filters")).toExist(),
 			click(role("button", { name: "Audit log" })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({ url: "/settings?tab=audit-log", isReplace: false }),
 			),
+		)
+	})
+
+	test("an empty tool catalog says no tools are registered, not that a search missed", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(mcpLoaded([])),
+			indicatorMeasured(),
+			expectView(text("No tools are registered yet")).toExist(),
+			expectView(text("No tools match these filters")).toBeAbsent(),
 		)
 	})
 

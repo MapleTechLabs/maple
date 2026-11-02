@@ -77,7 +77,10 @@ export const RunTeamOperation = Command.define("RunOnboardingTeamOperation", {
 		Effect.gen(function* () {
 			const maybeOrganization = yield* clerkTeamOrganization
 			if (Option.isNone(maybeOrganization))
-				return TeamMessage.FailedTeamOperation({ message: "Something went wrong. Please try again." })
+				return TeamMessage.FailedTeamOperation({
+					message:
+						operation === "rename" ? "Couldn't rename the organization" : "Couldn't send the invitation",
+				})
 			const actions = makeOnboardingTeamActions(maybeOrganization.value)
 			yield* operation === "rename" ? actions.rename(value) : actions.invite(value)
 			return TeamMessage.SucceededTeamOperation({ operation, value })
