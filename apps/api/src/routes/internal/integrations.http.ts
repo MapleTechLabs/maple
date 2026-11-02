@@ -21,6 +21,7 @@ import {
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	GithubSelectInstallationResponse,
+	InfraSurfaceLiteral,
 	IntegrationsForbiddenError,
 	IntegrationsUpstreamError,
 	LinearDisconnectResponse,
@@ -56,7 +57,12 @@ import {
 	topTrafficQuery,
 	type TopTrafficGroupDefinition,
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
+import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { makeQueryRunners } from "@maple/backend/queries/query-runner"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
@@ -77,6 +83,8 @@ import {
 } from "@/routes/integrations-callback.http"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
 import { makeOAuthCompleter } from "@/routes/oauth-complete"
+import { Queries } from "@/routes/queries"
+import { settleInfraSurfaces } from "./infra-surfaces"
 
 /**
  * How long `cloudflarePrime` spends on the post-connect poll. Long enough for zone discovery plus
@@ -108,6 +116,12 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const supabaseLogs = yield* SupabaseLogsService
 		const supabaseInsights = yield* SupabaseInsightsService
 		const gcp = yield* GcpConnectorService
+		const planetscale = yield* PlanetScaleConnectionService
+		const aws = yield* AwsConnectionService
+		const { runQuery } = makeQueryRunners({
+			warehouse: yield* WarehouseQueryService,
+			queryEngine: yield* QueryEngineService,
+		})
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
 		const completeOAuth = yield* makeOAuthCompleter
@@ -179,6 +193,34 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requireAdmin(tenant.roles)
 						const disconnected = yield* linear.disconnect(tenant.orgId)
 						return new LinearDisconnectResponse(disconnected)
+					}),
+				)
+				// The sidebar's boot read: one request instead of the probe plus six statuses.
+				.handle("infraSurfaces", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const connected = <E, R>(
+							status: Effect.Effect<{ readonly connected: boolean }, E, R>,
+						) => Effect.map(status, (value) => value.connected)
+						return yield* settleInfraSurfaces({
+							surfaces: Effect.map(runQuery(Queries.infraPresence, tenant, payload), (rows) =>
+								rows.flatMap((row) =>
+									Schema.is(InfraSurfaceLiteral)(row.surface) ? [row.surface] : [],
+								),
+							),
+							cloudflare: connected(cloudflareAnalytics.getIntegrationStatus(tenant.orgId)),
+							railway: connected(railway.getStatus(tenant.orgId)),
+							planetscale: connected(planetscale.getStatus(tenant.orgId)),
+							// Google Cloud counts only with metrics on: the page reads metrics, not logs.
+							gcp: Effect.map(gcp.status(tenant.orgId), (status) =>
+								status.connectors.some((connector) => connector.metricsEnabled),
+							),
+							supabase: connected(supabase.getStatus(tenant.orgId)),
+							aws: Effect.map(
+								aws.status(tenant.orgId),
+								(status) => status.connections.length > 0,
+							),
+						})
 					}),
 				)
 				.handle("cloudflareStatus", () =>

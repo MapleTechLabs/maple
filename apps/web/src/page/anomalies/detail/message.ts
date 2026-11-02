@@ -2,11 +2,11 @@ import { ErrorIssueId } from "@maple/domain/http"
 import { V2AnomalyIncident, V2AnomalyIncidentTimeseries, V2ErrorIssue } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../charts/chart"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Combobox from "../../../ui/combobox"
-import * as Dialog from "../../../ui/dialog"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },

@@ -16,7 +16,7 @@ import type { Model as RailwayModel } from "../../page/infra-integrations/railwa
 import { servicesList } from "../../page/infra-integrations/railway/list/view"
 import { sectionHeading } from "../../page/kit/section-heading"
 import { sortRowsBy } from "../../page/kit/table-sort"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { Message, type Model } from "./update"
 
 type H = HtmlBuilder<Message>

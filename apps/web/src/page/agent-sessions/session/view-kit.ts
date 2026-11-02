@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
 
 // Small pieces the session views share: the eyebrow section heading, the disclosure chevron and
 // the failed badge.

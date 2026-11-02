@@ -2,14 +2,14 @@ import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import { Option } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import * as Sparkline from "../../../charts/sparkline"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import { cardButton } from "../../../ui/card-button"
-import { badge } from "../../../ui/display"
-import { listFooter } from "../../../ui/list-footer"
-import { skeletonList } from "../../../ui/skeleton"
-import { truncatedText } from "../../../ui/truncated-text"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { cardButton } from "@maple/views/ui/card-button"
+import { badge } from "@maple/views/ui/display"
+import { listFooter } from "@maple/views/ui/list-footer"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { METRIC_TYPE_COLORS, metricTypeBadge, SPARKLINE_METRIC_TYPES } from "../shared"
 import {
 	entryKey,
@@ -23,6 +23,8 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model, SparklinePoint } from "./model"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The metric preview grid and its cards.
 
@@ -137,7 +139,7 @@ const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: 
 					truncatedText(h, {
 						text: entry.metricName,
 						mono: true,
-						className: "text-xs font-medium",
+						className: typographyClass({ size: "xs", weight: "medium" }),
 					}),
 					metricTypeBadge(h, entry.metricType),
 				],
@@ -164,26 +166,23 @@ const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: 
 								: `${entry.serviceNames.length} services`,
 						],
 					),
-					h.span(
-						[h.Class("flex shrink-0 items-center gap-1.5")],
-						[
-							...(entry.metricUnit === ""
-								? []
-								: [
-										badge(
-											h,
-											{
-												variant: "outline",
-												size: "xs",
-												mono: true,
-												className: "text-4xs",
-											},
-											[entry.metricUnit],
-										),
-									]),
-							entry.metricType === "sum" ? "datapoints/interval" : "avg",
-						],
-					),
+					hstack(h, { gap: "1.5", as: "span", className: "shrink-0" }, [
+						...(entry.metricUnit === ""
+							? []
+							: [
+									badge(
+										h,
+										{
+											variant: "outline",
+											size: "xs",
+											mono: true,
+											className: "text-4xs",
+										},
+										[entry.metricUnit],
+									),
+								]),
+						entry.metricType === "sum" ? "datapoints/interval" : "avg",
+					]),
 				],
 			),
 		],

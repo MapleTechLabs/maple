@@ -131,11 +131,11 @@ export const needsRegion = (organization: Option.Option<ClerkOrganization>): boo
 /** The signed-in, org-holding branch of `ClerkReverseRedirects`, plus `/quick-start`'s bail-out. */
 export const planGate = ({ route, organization, customer, isKnownToRenderApp }: GateInput): Gate => {
 	if (isOrgIndependent(route)) return app
-	const quickStart = hrefOf(AppRoute.QuickStart({ search: { redirect_url: hrefOf(route) } }))
+	const quickStart = () => hrefOf(AppRoute.QuickStart({ search: { redirect_url: hrefOf(route) } }))
 	if (Option.exists(organization, (org) => !org.isServedHere)) {
 		// A new org with no region yet has not picked one: onboarding asks.
 		const isOpen = Option.exists(organization, (org) => org.isRegionOpen)
-		if (isOpen) return route._tag !== "QuickStart" ? redirectTo(quickStart) : app
+		if (isOpen) return route._tag !== "QuickStart" ? redirectTo(quickStart()) : app
 		return Option.match(wrongRegionOf(organization), {
 			onNone: () => app,
 			onSome: (region) => ({ ...app, wrongRegion: region }),
@@ -146,7 +146,7 @@ export const planGate = ({ route, organization, customer, isKnownToRenderApp }: 
 	if (route._tag === "QuickStart") return app
 	if (access === "unknown") return app
 	if (access === "loading") return isAllowedWithoutPlan(route) || isKnownToRenderApp ? app : splash
-	if (access !== "app" && !isAllowedWithoutPlan(route)) return redirectTo(quickStart)
+	if (access !== "app" && !isAllowedWithoutPlan(route)) return redirectTo(quickStart())
 	if (route._tag === "SelectPlan" && hasSelectedPlan(customerOf(customer)))
 		return redirectTo(validateInternalRedirect(route.search.redirect_url) ?? "/")
 	return app

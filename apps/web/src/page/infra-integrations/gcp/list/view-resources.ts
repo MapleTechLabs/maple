@@ -4,12 +4,12 @@ import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../../../../c
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../../ui/alert"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import type * as Select from "../../../../ui/select"
-import { type SelectEntry, view as selectView } from "../../../../ui/select-view"
-import { skeleton } from "../../../../ui/skeleton"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	columnHead,
 	dataTable,
@@ -24,6 +24,10 @@ import { gcpMessage } from "../gcp-message"
 import { Message, type Model } from "./model"
 import type { H, TimeSearch } from "./view-rows"
 import { workloadHref } from "./view-rows"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // `GcpResources`: the inventory filtered by type and project.
 // TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
@@ -32,7 +36,7 @@ const ALL = "all"
 const CELL = "truncate font-mono text-xs text-foreground-soft"
 
 const columns = (h: H): ReadonlyArray<Html> => [
-	columnHead(h, { label: "Resource", width: "w-0 flex-1 min-w-56" }),
+	columnHead(h, { label: "Resource", width: columnClass({ min: "56" }) }),
 	columnHead(h, { label: "Type", width: "w-44" }),
 	columnHead(h, { label: "Project", width: "w-52" }),
 	columnHead(h, { label: "Location", width: "w-32" }),
@@ -84,7 +88,7 @@ const filterSelect = (
 	})
 
 const metaChip = (h: H, text: string): Html =>
-	h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])
+	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
 
 const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch: TimeSearch): Html => {
 	const labels = Object.entries(resource.labels).map(([key, value]) => `${key}: ${value}`)
@@ -104,10 +108,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div([h.Class("w-44 truncate text-xs text-foreground-soft"), h.Title(type)], [type]),
 		h.div([h.Class(`w-52 ${CELL}`), h.Title(resource.projectId)], [resource.projectId]),
 		h.div(
-			[
-				h.Class(`w-32 ${CELL}`),
-				...(resource.location === null ? [] : [h.Title(resource.location)]),
-			],
+			[h.Class(`w-32 ${CELL}`), ...(resource.location === null ? [] : [h.Title(resource.location)])],
 			[resource.location ?? EMPTY_VALUE],
 		),
 		h.div(
@@ -118,10 +119,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 			[state ?? EMPTY_VALUE],
 		),
 		h.div(
-			[
-				h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"),
-				h.Title(labels.join("\n")),
-			],
+			[h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"), h.Title(labels.join("\n"))],
 			[
 				...(labels.length === 0
 					? []
@@ -131,12 +129,12 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		),
 	]
 	return workload === undefined
-		? h.div(
-				[
-					h.Class(
-						"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
-					),
-				],
+		? hstack(
+				h,
+				{
+					gap: "4",
+					className: stripClass("hoverRow"),
+				},
 				cells,
 			)
 		: h.a(
@@ -187,10 +185,7 @@ const resourcesList = (
 				(projectParts) =>
 					listToolbar(h, {
 						className: "pb-0",
-						leading: h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
-							[...typeParts, ...projectParts],
-						),
+						leading: hstack(h, { gap: "2", wrap: true }, [...typeParts, ...projectParts]),
 						trailing: [
 							toolbarCount(h, [
 								summary,

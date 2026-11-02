@@ -7,9 +7,10 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { intervalBeforeSlowdown } from "@maple/web-data/alerts/diagnosis"
 import { formatQuerySeconds as seconds } from "@maple/web-data/alerts/query-time"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { card } from "../../../ui/card"
-import { eyebrow } from "../../../ui/eyebrow"
+import { card } from "@maple/views/ui/card"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import type { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
 
 // A raw SQL rule's query time per check against its limit, so a slow query shows before it times out.
 
@@ -70,8 +71,7 @@ export const queryTimeCard = (
 				[h.Class("flex flex-wrap items-baseline justify-between gap-2")],
 				[
 					eyebrow(h, { as: "h2", className: "mb-0" }, ["Query time per check"]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground tabular-nums")],
+					typography(h, { size: "xs", tone: "muted", numeric: true },
 						[
 							`Slowest ${seconds(slowest)} · limit ${seconds(limitMs)} at every ${interval === 1 ? "minute" : `${interval} min`}${earlierLimitMs === null ? "" : `, ${seconds(earlierLimitMs)} before the slowdown`}`,
 						],
@@ -130,8 +130,7 @@ export const queryTimeCard = (
 			...(rule.slowedIntervalMinutes === null
 				? []
 				: [
-						h.p(
-							[h.Class("text-xs text-severity-warn")],
+						typography(h, { size: "xs", tone: "warning", as: "p" },
 							[
 								`Slowed to every ${rule.slowedIntervalMinutes} min after 3 checks in a row hit their limit. Editing the rule resets this.`,
 							],

@@ -337,15 +337,26 @@ const scanString = (text: string, ctx: RedactContext): string => {
 		ctx.method === "hash" ? hashText(ctx.salt, matched) : label === null ? MASK : `[REDACTED:${label}]`
 	const cut = scanCut(text)
 	const tail = text.slice(cut)
-	const afterDetectors = ctx.detectors.reduce(
-		(head, detector) => {
-			const { regex, accept } = DETECTORS[detector]
-			const spans = findAll(regex, head, accept)
-			ctx.count += spans.length
-			return replaceSpans(head, spans, replacement(detector))
-		},
-		text.slice(0, cut),
-	)
+	const detectorPass = (head: string): { head: string; found: number } =>
+		ctx.detectors.reduce(
+			(acc, detector) => {
+				const { regex, accept } = DETECTORS[detector]
+				const spans = findAll(regex, acc.head, accept)
+				return {
+					head: replaceSpans(acc.head, spans, replacement(detector)),
+					found: acc.found + spans.length,
+				}
+			},
+			{ head, found: 0 },
+		)
+	// A mask is a fresh boundary, so it can complete a match an earlier pass rejected: masking repeats
+	// until a pass finds nothing. Masks never match a detector; a hash can, so hashing runs once.
+	const detectorsToFixpoint = (head: string): string => {
+		const pass = detectorPass(head)
+		ctx.count += pass.found
+		return pass.found > 0 && ctx.method !== "hash" ? detectorsToFixpoint(pass.head) : pass.head
+	}
+	const afterDetectors = detectorsToFixpoint(text.slice(0, cut))
 	const afterPatterns = ctx.rule.patterns.reduce((head, regex) => {
 		const spans = findAll(regex, head, () => true)
 		ctx.count += spans.length

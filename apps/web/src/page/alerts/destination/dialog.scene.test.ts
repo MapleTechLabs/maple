@@ -21,13 +21,13 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../../../ui/dialog"
-import { MountDialog } from "../../../ui/dialog"
-import * as Combobox from "../../../ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as ChatConnect from "../shared/chat-connect"
 import * as ChatFields from "./chat-fields"
 import * as LinearFields from "./linear-fields"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import {
 	chatConnectDependencies,
 	CreateDestination,

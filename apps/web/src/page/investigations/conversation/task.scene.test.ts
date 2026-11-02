@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { formatElapsed } from "./kit/view-tool"
 import { Message } from "./message"
 import { init, update } from "./update"

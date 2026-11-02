@@ -1,7 +1,7 @@
 import { getWorkloadFacets, listWorkloads } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Message, WorkloadKindSchema } from "./message"
 
 const StringList = Schema.optional(Schema.Array(Schema.String))

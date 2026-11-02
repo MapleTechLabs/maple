@@ -7,7 +7,7 @@ import {
 } from "@maple/web-data/warehouse/infra"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { Message } from "./message"
 

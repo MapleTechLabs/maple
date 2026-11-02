@@ -7,10 +7,10 @@ import { TraceId } from "@maple/domain"
 import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import type { Resources } from "../../../platform/resources"
-import { LogRecord } from "../../../ui/logs/log-row-view"
+import { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import { Message, type Model } from "./model"
 
 // The reads behind `LogTraceTimeline` and `LogContextPanel`, sent while their panel is on show.

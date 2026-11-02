@@ -3,9 +3,9 @@ import { FileSystem } from "effect/FileSystem"
 import { dirname } from "node:path"
 import { annotateOutcome, EXIT_START_REFUSED, markFailedExit } from "../core/outcomes"
 import { describeFailure, formatFailure } from "../lib/failure"
-import { encodeJsonEffect } from "../lib/json"
+import { encodeJsonEffect } from "@maple/local-server/json"
 import { dim } from "../lib/style"
-import { dataDirSidecarPath } from "../server/store-version"
+import { dataDirSidecarPath } from "@maple/local-server/store-version"
 
 /**
  * Deterministic `maple start` refusals under a supervisor (launchd KeepAlive,

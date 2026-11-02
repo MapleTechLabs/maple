@@ -221,19 +221,31 @@ const articleJsonLd = {
             </aside>
 
             <article class="ir-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        <strong>Incident response</strong> is the process a team follows from the moment a production problem is detected until service is restored and the cause is fixed. It runs as a cycle, so what you learn from each incident makes the next one less likely or shorter.
+                    </p>
+                    <p>
+                        This guide is written for small teams with one or two engineers on call. It covers how to prepare, the response steps, a worked incident timeline with the metrics that measure it, and how to run a postmortem.
+                    </p>
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Prepare in an afternoon: alerts on symptoms users feel, who gets alerted when, and runbooks for your top three failure modes.</li>
+                            <li>Stop the user impact before you know the cause; a deploy in the last hour is the first suspect, so roll it back.</li>
+                            <li>Declare early in one channel, such as #incidents, and post updates at a fixed interval while customers are affected.</li>
+                            <li>Write a blameless one-page postmortem for incidents customers noticed, with an owner and a due date on every action item.</li>
+                            <li>Once a quarter, count incidents per month, median time to detect and mitigate, and repeat causes.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="how-it-works" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · The process</p>
                     <h2>How incident response works</h2>
 
-                    <div class="guide-answer">
-                        <p><strong>Incident response</strong> is what a team does from the moment something breaks in production until users are fine again and the cause is fixed. It runs as a loop: what the team learns from one incident changes the alerts, runbooks and code the next incident meets.</p>
-                    </div>
-
                     <p>
-                        An incident is an unplanned event that hurts users or puts data at risk: an outage, a slow checkout, a leaked credential.
-                    </p>
-                    <p>
-                        This guide is written for startups and small companies. Often one or two engineers are on call, and the engineer who gets paged is the one who fixes the problem, so every step is sized for that. For the formal versions, written for larger security teams, see <a href="https://csrc.nist.gov/pubs/sp/800/61/r2/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61</a> and the <a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Incident Handler's Handbook</a>.
+                        An incident is an unplanned event that hurts users or puts data at risk: an outage, a slow checkout, a leaked credential. For the formal process, written for larger security teams, see <a href="https://csrc.nist.gov/pubs/sp/800/61/r2/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61</a> and the <a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Incident Handler's Handbook</a>.
                     </p>
                     <p>
                         The process has four phases. You <span class="phase-badge" style={`--phase: ${phases.prepare.color}`}>Prepare</span> on a quiet day. When an alert fires, you <span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect and triage</span>, then <span class="phase-badge" style={`--phase: ${phases.mitigate.color}`}>Mitigate and resolve</span> until users are no longer affected and the system is clean. Afterwards you <span class="phase-badge" style={`--phase: ${phases.learn.color}`}>Learn</span> in a postmortem whose action items go back into preparation: a load test that would have caught the bug, an alert that fires two minutes sooner, a rollback that takes one command.
@@ -569,15 +581,16 @@ const articleJsonLd = {
     .ir-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .ir-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .ir-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .ir-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .ir-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .ir-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .ir-guide strong { font-weight: 600; color: var(--foreground); }
     .ir-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .ir-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .ir-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .ir-guide a:not(.guide-button):hover { color: var(--foreground); }
     .ir-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
-    .ir-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .ir-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .ir-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .ir-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .ir-guide .guide-takeaways li::marker { color: var(--primary); }
     .ir-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
 
     /* One color per NIST phase: set --phase on the element. */

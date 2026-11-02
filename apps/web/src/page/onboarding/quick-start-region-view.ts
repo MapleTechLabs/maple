@@ -2,8 +2,9 @@ import { MapleRegion, type MapleRegion as Region } from "@maple/domain/organizat
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
 import { optionCard } from "./option-card"
 import { Message, type RegionChoice } from "./quick-start"
 import { regionFlag } from "./region-flag"
@@ -74,10 +75,7 @@ export const regionStep = (h: H, choice: RegionChoice): Html =>
 					h.div(
 						[h.Class("flex flex-col items-center gap-2.5 text-center")],
 						[
-							h.h1(
-								[h.Class("font-display text-3xl font-semibold tracking-tight")],
-								["Where should your data live?"],
-							),
+							heading(h, { level: 1, variant: "display" }, ["Where should your data live?"]),
 							h.p(
 								[h.Class("max-w-md text-title leading-relaxed text-muted-foreground")],
 								[

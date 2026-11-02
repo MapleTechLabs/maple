@@ -343,6 +343,12 @@ export const V2SessionReplaySearchParams = Schema.Struct({
 	group_name: Schema.optionalKey(
 		Schema.String.annotate({ description: "Filter by identified group (company / team) name." }),
 	),
+	group_id: Schema.optionalKey(
+		Schema.String.annotate({
+			description:
+				"Filter by identified group id. Unlike `group_name` it is unique, so it selects exactly one group.",
+		}),
+	),
 	visitor_id: Schema.optionalKey(
 		Schema.String.annotate({
 			description:

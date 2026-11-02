@@ -6,19 +6,19 @@ import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { panelPaddingStyles, panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as AreaChart from "../../../../charts/area-chart"
-import * as BarChart from "../../../../charts/bar-chart"
-import * as ChartModel from "../../../../charts/chart"
-import type { ThemeColors } from "../../../../charts/theme-colors"
-import { chartSkeleton } from "../../../../ui/chart-skeleton"
-import { panel } from "../../../../ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../../ui/table"
+import * as AreaChart from "@maple/views/charts/area-chart"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import * as ChartModel from "@maple/views/charts/chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
+import { panel } from "@maple/views/ui/panel"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import type { ViewOverrides } from "../../../kit/message-response"
-import * as HbarChart from "../../../../charts/hbar-chart"
+import * as HbarChart from "@maple/views/charts/hbar-chart"
 import { type CodeHost, codeBlock } from "./view-code"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The chat's own markdown elements over Streamdown's: tables on Maple's `Table` with recognised
 // cells, and ```chart fences as the query builder's plots.
@@ -70,7 +70,7 @@ const cellValue = <M>(h: HtmlBuilder<M>, value: Exclude<CellValue, { kind: "plai
 				h,
 				`/traces/${encodeURIComponent(value.traceId)}`,
 				value.traceId,
-				"font-mono text-foreground",
+				typographyClass({ tone: "foreground", mono: true }),
 			)
 		case "service":
 			return entityRef(h, `/services/${encodeURIComponent(value.name)}`, value.name, "text-foreground")
@@ -164,27 +164,26 @@ const tableView =
 
 const PLOT_HEIGHT = "h-[160px] w-full"
 
-/** `<Panel render={<figure />} padded="sm">` and `<Panel render={<pre />} tone="muted" padded="sm">`. */
-const panelClass = (tone: "default" | "muted", className: string): string =>
-	cn(panelStyles, panelToneStyles[tone], panelPaddingStyles.sm, className)
-
+/** `<Panel render={<figure />} padded="sm">`. */
 const chartFrame = <M>(h: HtmlBuilder<M>, title: string | null, children: ReadonlyArray<Html>): Html =>
-	h.figure(
-		[
+	panel(
+		h,
+		{
+			as: "figure",
+			padded: "sm",
 			// Mono like every other chart; the prose around it is sans. The min width keeps ranked
 			// labels readable when the surrounding message is short.
-			h.Class(
-				panelClass(
-					"default",
-					"my-3 block min-w-[min(100%,21rem)] space-y-2 overflow-visible font-mono",
-				),
-			),
-			h.DataAttribute("slot", "panel"),
-		],
+			className: "my-3 block min-w-[min(100%,21rem)] space-y-2 overflow-visible font-mono",
+		},
 		[
 			...(title === null
 				? []
-				: [h.figcaption([h.Class("text-2xs font-medium text-muted-foreground")], [title])]),
+				: [
+						h.figcaption(
+							[h.Class(typographyClass({ size: "2xs", tone: "muted", weight: "medium" }))],
+							[title],
+						),
+					]),
 			...children,
 		],
 	)
@@ -254,11 +253,14 @@ const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartS
 const chartView = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, code: string): Html =>
 	Option.match(Option.fromNullishOr(parseChartSpec(code)), {
 		onNone: () =>
-			h.pre(
-				[
-					h.Class(panelClass("muted", "my-3 block overflow-auto text-xs text-muted-foreground")),
-					h.DataAttribute("slot", "panel"),
-				],
+			panel(
+				h,
+				{
+					as: "pre",
+					tone: "muted",
+					padded: "sm",
+					className: "my-3 block overflow-auto text-xs text-muted-foreground",
+				},
 				[h.code([], [code])],
 			),
 		onSome: (spec) => chartFrame(h, spec.title ?? null, [plot(h, host, code, spec)]),

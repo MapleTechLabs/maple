@@ -18,6 +18,12 @@ import { runConfirmed } from "./gcp-configure-derive"
 import { configureConnector } from "./update-gcp-configure"
 import { backoffPollTicks, pollTicks, whenPresent } from "../../data/poll"
 
+/** The popup's document could not be written: it is already on the provider's cross-origin page. */
+export class PopupDocumentError extends Schema.TaggedError<PopupDocumentError>()(
+	"@maple/web/integrations/PopupDocumentError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
 const POPUP_TICK_MS = 500
@@ -34,15 +40,30 @@ const interimDocument = (label: string) => `<!doctype html>
   @media (prefers-color-scheme: dark) { body { background:#1c1917; color:#d6d3d1; } }
 </style></head><body>Connecting to ${label}…</body></html>`
 
+/**
+ * A popup still open from an earlier click is reused by name; once it is on the provider's page it
+ * is cross-origin and its document throws, so it keeps that page until it is sent to the new URL.
+ */
 const openPopup = (name: string, features: string, label: string) =>
-	Effect.sync(() => {
-		const popup = window.open("", name, features)
-		if (popup !== null) {
-			popup.document.write(interimDocument(label))
-			popup.document.close()
-		}
-		return popup
-	})
+	Effect.sync(() => window.open("", name, features)).pipe(
+		Effect.tap((popup) =>
+			popup === null
+				? Effect.void
+				: Effect.ignore(
+						Effect.try({
+							try: () => {
+								popup.document.write(interimDocument(label))
+								popup.document.close()
+							},
+							catch: (cause) =>
+								new PopupDocumentError({
+									message: "could not write the popup's placeholder",
+									cause,
+								}),
+						}),
+					),
+		),
+	)
 
 /** Polls the popup until it closes: `PolledConnect` every 3 s (polling providers), then `Closed`. */
 

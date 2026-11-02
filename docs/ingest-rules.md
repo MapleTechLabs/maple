@@ -104,6 +104,10 @@ keys such as `maple_ai.*` carry customer text and are redacted like any other.
     - Matches are leftmost-first and do not overlap. Empty matches are ignored, and the validator
       rejects a pattern that matches the empty string. Detectors run in the order listed, then
       patterns, each on the output of the previous one.
+    - Under `mask` and `remove`, the detector list repeats until a pass replaces nothing: a mask is
+      a new boundary, so `2001:db8::1:GB82WEST12345698765432` becomes
+      `[REDACTED:ipv6][REDACTED:iban]` and a second application changes nothing. `hash` runs the
+      list once, since a hash can itself match a detector.
 - **Methods**:
 
 | Method   | Key match                                             | Detector or pattern match                            |
@@ -176,10 +180,10 @@ character but `\n`", before compiling.
 
 ## Gateway configuration
 
-| Variable                      | Default | Meaning                                                                                                                |
-| ----------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `INGEST_RULES_ENABLED`        | `true`  | Apply rules at all. Off never queries Postgres and costs nothing. A kill switch; the managed deploy leaves it on.       |
-| `INGEST_RULES_CACHE_TTL_SECS` | `30`    | How long an org's compiled rules are reused before a reload (min 1).                                                   |
+| Variable                      | Default | Meaning                                                                                                           |
+| ----------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------- |
+| `INGEST_RULES_ENABLED`        | `true`  | Apply rules at all. Off never queries Postgres and costs nothing. A kill switch; the managed deploy leaves it on. |
+| `INGEST_RULES_CACHE_TTL_SECS` | `30`    | How long an org's compiled rules are reused before a reload (min 1).                                              |
 
 - Concurrent requests that miss the cache for one org share a single lookup.
 - If a reload fails, the gateway keeps applying the last rules it loaded for that org (kept up to

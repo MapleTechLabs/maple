@@ -1,18 +1,19 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
-import { resolveLang } from "../../../lib/highlight"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import * as CopyButton from "../../../ui/copy-button"
-import { copyableField } from "../../../ui/copyable-field"
-import { eyebrow } from "../../../ui/eyebrow"
-import { panel } from "../../../ui/panel"
-import * as Tabs from "../../../ui/tabs"
-import * as TabsView from "../../../ui/tabs-view"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { panel } from "@maple/views/ui/panel"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../../settings/kit/code-block"
 import { maskedToken, sourceSnippets } from "./snippets"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // `SourceSetup`: endpoint, header and the platform's setup snippets. The parent embeds it and passes the
 // token only right after a create or roll.
@@ -92,12 +93,10 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 	const shown = token ?? maskedToken(config.keyPrefix)
 	const snippets = sourceSnippets(config.platform, shown, config.name)
 	const snippet = snippets.find((entry) => entry.id === model.tabs.selected) ?? snippets[0]
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(h, { gap: "4" },
 		[
 			panel(h, { padded: true, className: "gap-3" }, [
-				h.div(
-					[h.Class("flex flex-col gap-1.5")],
+				vstack(h, { gap: "1.5" },
 					[
 						eyebrow(h, {}, ["OTLP endpoint"]),
 						copyableField(h, {
@@ -109,8 +108,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 						}),
 					],
 				),
-				h.div(
-					[h.Class("flex flex-col gap-1.5")],
+				vstack(h, { gap: "1.5" },
 					[
 						eyebrow(h, {}, ["Header"]),
 						token === null
@@ -131,8 +129,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 			...(snippet === undefined
 				? []
 				: [
-						h.div(
-							[h.Class("flex flex-col gap-2")],
+						vstack(h, { gap: "2" },
 							[
 								...(snippets.length > 1
 									? [
@@ -152,7 +149,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 								codeBlock(h, {
 									code: snippet.code,
 									language: snippets.length > 1 ? snippet.language : snippet.label,
-									lang: resolveLang(snippet.language),
+									lang: snippet.language,
 									copy: model.codeCopy,
 									toCopyMessage: (message) => toParentMessage(Message.GotCodeCopyMessage({ message })),
 								}),
@@ -161,8 +158,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 					]),
 			...(token === null
 				? [
-						h.p(
-							[h.Class("text-muted-foreground text-xs")],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
 							["The token is only shown when the source is created or rolled. Roll it to get a new one."],
 						),
 					]

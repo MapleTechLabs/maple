@@ -5,9 +5,9 @@ import {
 } from "@maple/domain/http"
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../../data/keyed"
-import { LoadFailure } from "../../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraContainersSearch } from "../../../../route/search"
-import * as FilterSections from "../../../../ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 

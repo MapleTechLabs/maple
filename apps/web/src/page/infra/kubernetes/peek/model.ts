@@ -1,9 +1,9 @@
 import { Schema } from "effect"
-import { ChartRuntime } from "../../../../charts/chart-runtime"
-import { ThemeColors } from "../../../../charts/theme-colors"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "../../../../data/keyed"
-import { LoadFailure } from "../../../../data/load-failure"
-import * as Dialog from "../../../../ui/dialog"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { ChartModels, SeriesSlots } from "../../kit/series"
 import { PodMetric, PodSummary } from "../pod-data"
 

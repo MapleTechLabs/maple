@@ -35,6 +35,10 @@ import { IntegrationInventoryService } from "@maple/backend/services/integration
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
+import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
+import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { withoutInvocationContext } from "@maple/backend/platform/invocation-context"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 
@@ -262,6 +266,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	AlertsService.layer,
 	AuditLogService.layer,
 	DashboardPersistenceService.layer,
+	DependencyScanReader.layer,
 	ErrorActorsService.layer,
 	ErrorIssueReadModelsService.layer,
 	ErrorIssueWorkflowService.layer,
@@ -274,7 +279,10 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	RailwayMetricsService.layer,
 	RecommendationIssueService.layer,
 	RepoSandboxService.layer,
+	RuntimeAdvisoryCatalog.layer,
+	RuntimeReleaseCatalog.layer,
 	ScrapeTargetsService.layer,
+	SecurityAuditStore.layer,
 	SetupAuditService.layer,
 	StatusPageSnapshotBuilder.layer,
 	StatusPagesService.layer,

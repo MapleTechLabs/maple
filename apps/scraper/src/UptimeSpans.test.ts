@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer, Redacted } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { ScraperEnv } from "./Env"
@@ -205,9 +205,10 @@ describe("UptimeSpanExporter", () => {
 		}).pipe(Effect.provide(exporterLayer)),
 	)
 
-	it.effect("drops spans an org cannot accept without failing the loop", () =>
+	it.effect("drops spans an org cannot accept without failing the loop or erroring its span", () =>
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
+			const tracer = makeCapturingTracer()
 			const fetch = stubFetch(recorded, () => new Response("over limit", { status: 402 }))
 			yield* Effect.gen(function* () {
 				const exporter = yield* UptimeSpanExporter
@@ -220,8 +221,11 @@ describe("UptimeSpanExporter", () => {
 				yield* exporter.record(check())
 				yield* TestClock.adjust(SPAN_FLUSH_INTERVAL)
 				assert.lengthOf(recorded, 2)
+				// A billing block is expected: the post span closes Ok, not as an error.
+				const spans = endedSpansNamed(tracer.ended, "UptimeSpanExporter.post")
+				assert.isTrue(spans.length > 0 && spans.every((span) => Exit.isSuccess(span.exit)))
 				yield* Fiber.interrupt(fiber)
-			}).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch))
+			}).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch), Effect.provide(tracer.layer))
 		}).pipe(Effect.provide(exporterLayer)),
 	)
 })

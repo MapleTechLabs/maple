@@ -4,7 +4,7 @@ Observability for any MCP server that sends OpenTelemetry to Maple: which tools 
 which clients, how they fail, how slow they are and what they cost the agent in tokens. Maple's own
 MCP server (`maple-ai`) is the first server in the hub.
 
-Status: plan, nothing built. Mockup built from real `maple-ai` data (Oct 25 to Nov 1, 2026).
+Status: phases 1 and 2 built. The hub is live at `/mcp-servers` (the in-app `/mcp` stays the connect page).
 
 ## The spec
 
@@ -71,7 +71,11 @@ Original plan:
   as an agent tool call. Exclude SERVER spans with `mcp.method.name`, or every MCP server tool call
   shows up as an agent tool call.
 
-## Phase 2: queries and pages
+## Phase 2: queries and pages (built)
+
+Built as `/mcp-servers`, `/mcp-servers/:service` and `/mcp-servers/:service/tools/:tool`, served by
+`/internal/mcp-servers/*` (`/internal/mcp/*` forwards to maple-ai). Clients are grouped into families
+in SQL from `@maple/domain/mcp-clients`. The sessions page waits on `mcp.session.id`.
 
 Queries in `packages/query-engine/src/ch/queries/mcp.ts`, each with one coalesced expression:
 

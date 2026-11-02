@@ -255,16 +255,31 @@ const articleJsonLd = {
             </aside>
 
             <article class="dt-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        <strong>Dynatrace</strong> is a full-stack observability platform that monitors applications, infrastructure and user experience through an agent on each host. It is sold through the Dynatrace Platform Subscription (DPS): usage such as host-hours, gigabytes of logs and traces, and user sessions is metered against a published rate card and drawn down from an annual commitment.
+                    </p>
+                    <p>
+                        This guide covers how DPS billing works, the rate card, a worked monthly bill for a small fleet, what OpenTelemetry data costs on Dynatrace, and how Dynatrace pricing compares with New Relic.
+                    </p>
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Full-Stack Monitoring is $0.01 per memory-GiB-hour with a 4 GiB minimum: $58.40 a month for an 8 GiB host.</li>
+                            <li>Infrastructure Monitoring is $0.04 per host-hour for any size host, $29.20 a month.</li>
+                            <li>Logs and traces cost $0.20 per GiB to ingest, plus separate charges to retain and query them.</li>
+                            <li>No per-seat fees: every user gets the full platform.</li>
+                            <li>Everything draws from an annual commitment whose minimum Dynatrace doesn't publish.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="how-it-works" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · The model</p>
                     <h2>How Dynatrace pricing works</h2>
 
-                    <div class="guide-answer">
-                        <p><strong>Dynatrace pricing</strong> is pay-as-you-use against a yearly minimum. You agree to spend at least a set amount each year, and everything you monitor is metered by the hour or by the gigabyte and taken out of that amount.</p>
-                    </div>
-
                     <p>
-                        The contract is the <strong>Dynatrace Platform Subscription</strong> (DPS). It includes every generally available capability, so there are no modules to buy, and it has no per-seat fees: every user gets the full platform. What you pay depends on three kinds of meter, and this guide colors each one the same way throughout:
+                        The DPS contract includes every generally available capability, so there are no modules to buy, and it has no per-seat fees: every user gets the full platform. What you pay depends on three kinds of meter, and this guide colors each one the same way throughout:
                     </p>
 
                     <div class="meter-strip">
@@ -571,14 +586,15 @@ const articleJsonLd = {
     .dt-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .dt-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .dt-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .dt-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .dt-guide .guide-answer p, .dt-guide .guide-list li { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .dt-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .dt-guide .guide-list li { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .dt-guide strong { font-weight: 600; color: var(--foreground); }
     .dt-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .dt-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .dt-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .dt-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .dt-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .dt-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .dt-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .dt-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .dt-guide .guide-takeaways li::marker { color: var(--primary); }
     .dt-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
     .dt-guide .guide-list { margin: 0 0 1.5rem; padding-left: 1.2rem; list-style: disc; }
     .dt-guide .guide-list li::marker { color: var(--chart-1); }

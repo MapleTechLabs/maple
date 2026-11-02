@@ -3,9 +3,9 @@ import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../../ui/error-state"
-import { activeFilterChips } from "../../../../ui/filters/active-filter-chips"
-import { icon } from "../../../../ui/icon"
+import { errorState } from "@maple/views/ui/error-state"
+import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
+import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { facetChips } from "../../kit/facets"
@@ -14,7 +14,7 @@ import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { offsetPager, pageRangeLabel } from "../../kit/offset-pager"
-import { countLabel, pageHeroParts, searchToolbar, setupEmpty } from "../../kit/page-parts"
+import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "../../../kit/signal-empty-state"
 import { hostsViewTabs } from "../../kit/view-tabs"
 import { PAGE_SIZE } from "./command"
@@ -189,11 +189,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					titleContent: pageHeroParts(h, {
-						title: "Containers",
-						description:
-							"Sorted worst-first by peak utilization against each container's own limits.",
-					}).title,
+					title: "Containers",
+					description: "Sorted worst-first by peak utilization against each container's own limits.",
 					actions: Frame.controls(
 						h,
 						model.frame,

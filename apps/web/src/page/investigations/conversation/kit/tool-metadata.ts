@@ -1,5 +1,5 @@
 import { humanize } from "../../../../lib/humanize"
-import type { IconName } from "../../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 
 // A tool's label, icon and live activity.
 

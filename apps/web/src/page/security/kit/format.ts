@@ -14,7 +14,7 @@ import {
 import type { Tone } from "@maple/ui/lib/tone"
 import { shortId as shortDisplayId } from "@maple/ui/lib/ids"
 import { DateTime } from "effect"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 
 // Labels, tones and small derivations every Security Center view shares.
 
@@ -47,7 +47,7 @@ export const isCancelled = (run: Pick<SecurityAuditRun, "status" | "incompleteRe
 	run.status === "incomplete" && run.incompleteReason === CANCELLED_REASON
 
 const RUN_STATUS_TONE = {
-	in_progress: "done",
+	in_progress: "live",
 	complete: "ok",
 	incomplete: "warn",
 	failed: "crit",

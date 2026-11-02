@@ -3,8 +3,8 @@ import { behindToast } from "../kit/store"
 import { Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardsSearch } from "../../../route/search"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { isDashboardSortOption } from "../kit/summary"
 import {
@@ -25,8 +25,8 @@ import {
 import { countLabel } from "@maple/ui/lib/format"
 import * as TagEditor from "../kit/tag-editor"
 import { displayName, queryOf, tagsOf } from "./derive"
-import * as Combobox from "../../../ui/combobox"
-import { INITIAL_LOCALE } from "../../kit/locale"
+import * as Combobox from "@maple/views/ui/combobox"
+import { INITIAL_LOCALE } from "@maple/views/lib/locale"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
 
@@ -54,6 +54,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		rowMenu: Menu.init(rowMenuIdOf("none")),
 		pendingDelete: null,
 		deleteDialog: Dialog.init("dashboard-delete-dialog", "alert-dialog"),
+		isDeleting: false,
 		pendingTags: null,
 		tagEditor: TagEditor.init("dashboard-tags-dialog"),
 		tagFilter: Combobox.init(TAG_FILTER_ID, "multiple", { selected: tagsOf(route.search) }),
@@ -372,29 +373,39 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					navigateWithToast(model, dashboardHref(created.id), `Duplicated as "${created.name}"`),
 			}),
 		GotDeleteDialogMessage: ({ message: inner }) =>
-			dialogStep(model, model.deleteDialog, inner, (deleteDialog) => ({ deleteDialog }), wrapDelete),
+			model.isDeleting
+				? { model }
+				: dialogStep(model, model.deleteDialog, inner, (deleteDialog) => ({ deleteDialog }), wrapDelete),
 		ClickedConfirmDelete: () => {
 			const pending = model.pendingDelete
-			const closed = closeDialog(model.deleteDialog, wrapDelete)
-			const next = { ...model, deleteDialog: closed.dialog, pendingDelete: null }
-			return pending === null || isReadOnly(model)
-				? { model: next, commands: closed.commands }
-				: {
-						model: next,
-						commands: [
-							...closed.commands,
-							DeleteDashboard({ orgId: context.orgId, id: pending.id }),
-						],
-					}
+			if (pending === null || model.isDeleting) return { model }
+			if (isReadOnly(model)) {
+				const closed = closeDialog(model.deleteDialog, wrapDelete)
+				return {
+					model: { ...model, deleteDialog: closed.dialog },
+					commands: closed.commands,
+				}
+			}
+			return {
+				model: { ...model, isDeleting: true },
+				commands: [DeleteDashboard({ orgId: context.orgId, id: pending.id })],
+			}
 		},
-		CompletedDeleteDashboard: ({ result }) =>
-			Result.match(result, {
-				onFailure: (error) => failedWrite(model, error, context.orgId),
+		CompletedDeleteDashboard: ({ result }) => {
+			const closed = closeDialog(model.deleteDialog, wrapDelete)
+			// `pendingDelete` stays: the closing dialog still names the dashboard.
+			const settled = { ...model, deleteDialog: closed.dialog, isDeleting: false }
+			return Result.match(result, {
+				onFailure: (error) => {
+					const failed = failedWrite(settled, error, context.orgId)
+					return { ...failed, commands: [...closed.commands, ...(failed.commands ?? [])] }
+				},
 				onSuccess: (sync) =>
 					sync === "Behind"
-						? { model, outMessage: behindToast() }
-						: { model: { ...model, persistenceError: null } },
-			}),
+						? { model: settled, commands: closed.commands, outMessage: behindToast() }
+						: { model: { ...settled, persistenceError: null }, commands: closed.commands },
+			})
+		},
 		GotTagEditorMessage: ({ message: inner }) => {
 			const next = TagEditor.update(model.tagEditor, inner)
 			const commands = Command.mapMessages(next.commands ?? [], wrapTags)

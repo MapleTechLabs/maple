@@ -5,9 +5,9 @@ import {
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
-import { button } from "../../../../ui/button"
-import { textLink } from "../../../../ui/text-link"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { button } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
 import {
 	empty,
 	emptyContent,
@@ -15,11 +15,11 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { type SelectEntry, view as selectView } from "../../../../ui/select-view"
-import * as Tooltip from "../../../../ui/tooltip"
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../../infra/kit/hero-chip"
@@ -59,6 +59,9 @@ import { activitySection, eventTriggerId, insightTriggerId, topQueries } from ".
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
+import { removableChip } from "@maple/views/ui/removable-chip"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
@@ -206,7 +209,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: true,
-								emptyMessage: "No branches match these filters.",
+								emptyMessage: "No branches match these filters",
 							}),
 						onSuccess: () =>
 							breakdownPanel(h, {
@@ -215,7 +218,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: false,
-								emptyMessage: "No branches match these filters.",
+								emptyMessage: "No branches match these filters",
 							}),
 					}),
 				],
@@ -239,8 +242,7 @@ const dataSections = (
 									}),
 								],
 							),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
+							typography(h, { size: "2xs", tone: "muted" },
 								["PlanetScale Query Insights"],
 							),
 						],
@@ -255,34 +257,14 @@ const dataSections = (
 const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model))
 	if (chips.length === 0) return []
-	const chipClass =
-		"inline-flex items-center gap-1 rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
 	return [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],
+		hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] },
 			[
 				...chips.slice(0, 6).map((chip) =>
-					h.span(
-						[h.Class(chipClass)],
-						[
-							h.span([h.Class("max-w-[22ch] truncate text-foreground-soft")], [chip.label]),
-							button(
-								h,
-								{
-									variant: "ghost",
-									size: "icon-2xs",
-									className: "text-muted-foreground hover:text-foreground active:text-foreground",
-									attributes: [
-										h.AriaLabel(`Remove ${chip.label}`),
-										h.OnClick(
-											Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
-										),
-									],
-								},
-								[icon(h, "XmarkIcon")],
-							),
-						],
-					),
+					removableChip(h, {
+						label: chip.label,
+						onRemove: Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
+					}),
 				),
 				textLink(
 					h,
@@ -301,7 +283,7 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 
 const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 	const candidates = candidatesOf(model)
-	if (candidates.length === 0) return h.div([h.Class("flex flex-wrap items-center gap-2")], [timeControls])
+	if (candidates.length === 0) return hstack(h, { gap: "2", wrap: true }, [timeControls])
 	const selected = selectedBranchOf(model)
 	return h.submodel({
 		slotId: "planetscale-branch-select",
@@ -323,7 +305,7 @@ const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 					: []),
 			],
 			toView: (parts) =>
-				h.div([h.Class("flex flex-wrap items-center gap-2")], [...parts, timeControls]),
+				hstack(h, { gap: "2", wrap: true }, [...parts, timeControls]),
 		},
 	})
 }
@@ -424,8 +406,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								actions:
 									heroActions.length === 0
 										? branchSelect(h, model, timeControls)
-										: h.div(
-												[h.Class("flex flex-wrap items-center gap-2")],
+										: hstack(h, { gap: "2", wrap: true },
 												[...heroActions, branchSelect(h, model, timeControls)],
 											),
 								// TODO(alert-menu): see the note at the top of this file.

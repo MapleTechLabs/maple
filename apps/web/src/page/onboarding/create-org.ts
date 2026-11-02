@@ -13,7 +13,7 @@ import {
 } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
 import { createdTargetOf, createOrganization, openOrganization } from "../../shell/clerk-org-switcher"
-import { startDitherField } from "../../ui/dither-field"
+import { startDitherField } from "@maple/views/ui/dither-field"
 
 // `/org-required`: a signed-in user with no organization names their first one (the name guessed from
 // their email), picks its region, or joins an organization that already invited them.

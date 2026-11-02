@@ -2,7 +2,7 @@
 // resource with the usual service attributes and records carrying a handful of
 // semconv attributes. Timestamps are "now" so the raw-table TTL keeps every row.
 
-import { encodeJson } from "../src/lib/json"
+import { encodeJson } from "@maple/local-server/json"
 
 export type Signal = "traces" | "logs" | "metrics"
 

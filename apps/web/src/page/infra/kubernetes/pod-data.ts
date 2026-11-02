@@ -8,7 +8,7 @@ import {
 	type PodRestartsInput,
 } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 
 // The pod list and its restarts as every Kubernetes page reads them (`listPodsResultAtom`,
 // `podRestartsResultAtom`). Pages wrap these Effects in their own Commands.

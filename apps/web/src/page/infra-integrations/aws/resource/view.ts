@@ -12,15 +12,15 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { linkButton } from "../../../../ui/button"
-import { chartError, chartLoading } from "../../../../ui/chart-state"
-import { badge } from "../../../../ui/display"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { panel, panelHeader } from "../../../../ui/panel"
+import { linkButton } from "@maple/views/ui/button"
+import { chartError, chartLoading } from "@maple/views/ui/chart-state"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelHeader } from "@maple/views/ui/panel"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
@@ -35,6 +35,7 @@ import { type BucketRow, bucketRows, CHARTS, type Figure, figureOf } from "./cha
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { hstack } from "@maple/views/ui/stack"
 
 // `/infra/aws/$kind/$name`: one resource's CloudWatch metrics, and the service it runs as.
 
@@ -268,7 +269,7 @@ const body = (
 	if (rows.length === 0)
 		return integrationNotConnected(h, {
 			icon: icon(h, "AwsIcon", { size: 16 }),
-			title: "No metrics in this time range",
+			title: "No metrics in this window",
 			description: `CloudWatch sent nothing for this ${AWS_INFRA_KINDS[kind].noun} in the window. Widen the time range, or check that its region is streamed.`,
 			integration: "aws",
 			actionLabel: "Check the connection",
@@ -393,22 +394,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					gap: "md",
 					titleContent: hero.title,
-					actions: h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
-						[
-							...heroActions,
-							pageTime(h, {
-								search: model.search,
-								defaultPreset: DEFAULT_PRESET,
-								window: model.window,
-								picker: model.timePicker,
-								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-								onReset: Message.ClickedResetTimeRange(),
-								onReload: Message.ClickedReload(),
-								isReloading: model.isReloading,
-							}),
-						],
-					),
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						...heroActions,
+						pageTime(h, {
+							search: model.search,
+							defaultPreset: DEFAULT_PRESET,
+							window: model.window,
+							picker: model.timePicker,
+							toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+							onReset: Message.ClickedResetTimeRange(),
+							onReload: Message.ClickedReload(),
+							isReloading: model.isReloading,
+						}),
+					]),
 				},
 				[
 					hero.body,

@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { titleId } from "../../ui/dialog"
-import * as DialogView from "../../ui/dialog-view"
+import { titleId } from "@maple/views/ui/dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
 import * as SourcesFlow from "../sources/new/embed"
 import { type ConnectDrawer, DRAWER_ID, DrawerMessage } from "./quick-start-drawer"
 

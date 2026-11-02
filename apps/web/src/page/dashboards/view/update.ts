@@ -1,20 +1,23 @@
-import { pickDashboardControlParams, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
+import {
+	pickDashboardControlParams,
+	variableValuesFromSearch,
+} from "../../../lib/dashboard-controls/search-params"
 import { behindToast } from "../kit/store"
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardSearch } from "../../../route/search"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Combobox from "../../../ui/combobox"
-import * as Popover from "../../../ui/popover"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Tabs from "../../../ui/tabs"
-import { popupId } from "../../../ui/overlay/popup-state"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Popover from "@maple/views/ui/popover"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Tabs from "@maple/views/ui/tabs"
+import { popupId } from "@maple/views/ui/overlay/popup-state"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -35,7 +38,7 @@ import {
 import { gestureStep } from "./gesture"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { replan, slotOf, withCharts } from "./plan"
+import { awaitsRefresh, replan, slotOf, withCharts } from "./plan"
 import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
@@ -119,7 +122,8 @@ export const init = (route: Route, _context: PageContext): Return => ({
 })
 
 const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean =>
-	Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value)
+	Object.keys(a).length === Object.keys(b).length &&
+	Object.entries(a).every(([key, value]) => b[key] === value)
 
 /** A `var-*` change re-plans the tiles that read the variable (their request keys move). */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
@@ -165,7 +169,9 @@ const closePicker = (model: Model): Return => {
 	const closed = Dialog.close(model.pickerDialog)
 	return {
 		model: { ...model, pickerDialog: closed.model, pickerTarget: null },
-		commands: Command.mapMessages(closed.commands ?? [], (dialog) => Message.GotPickerDialogMessage({ message: dialog })),
+		commands: Command.mapMessages(closed.commands ?? [], (dialog) =>
+			Message.GotPickerDialogMessage({ message: dialog }),
+		),
 	}
 }
 
@@ -196,7 +202,12 @@ const addPicked = (
 		...Command.mapMessages(closed.commands ?? [], (dialog) =>
 			Message.GotPickerDialogMessage({ message: dialog }),
 		),
-		AddWidget({ orgId: context.orgId, dashboardId: model.dashboardId, ...pick, target: model.pickerTarget }),
+		AddWidget({
+			orgId: context.orgId,
+			dashboardId: model.dashboardId,
+			...pick,
+			target: model.pickerTarget,
+		}),
 	]
 	const updated = { ...model, pickerDialog: closed.model, pickerTarget: null }
 	return isEditing(model)
@@ -307,7 +318,9 @@ const receiveDocument = (
 			const shares = isFirstRead ? [FetchShares({ dashboardId: model.dashboardId, seq })] : []
 			return {
 				...planned,
-				model: isFirstRead ? { ...planned.model, sharing: { ...planned.model.sharing, fetchSeq: seq } } : planned.model,
+				model: isFirstRead
+					? { ...planned.model, sharing: { ...planned.model.sharing, fetchSeq: seq } }
+					: planned.model,
 				commands: [...(planned.commands ?? []), ...shares, ...refocus],
 			}
 		},
@@ -496,27 +509,51 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const slot = slotOf(model, widgetId)
 			return slot.isNarrowed === true
 				? { model }
-				: withReplan({ ...model, widgets: { ...model.widgets, [widgetId]: { ...slot, isNarrowed: true } } }, context, "Load")
-		},
-		RevealedWidget: ({ widgetId }) => {
-			const slot = slotOf(model, widgetId)
-			return slot.isRevealed
-				? { model }
 				: withReplan(
 						{
 							...model,
-							widgets: { ...model.widgets, [widgetId]: { ...slot, isRevealed: true } },
+							widgets: { ...model.widgets, [widgetId]: { ...slot, isNarrowed: true } },
 						},
 						context,
 						"Load",
 					)
+		},
+		RevealedWidget: ({ widgetId }) => {
+			const slot = slotOf(model, widgetId)
+			return slot.isRevealed && slot.isOffscreen !== true
+				? { model }
+				: withReplan(
+						{
+							...model,
+							widgets: {
+								...model.widgets,
+								[widgetId]: { ...slot, isRevealed: true, isOffscreen: false },
+							},
+						},
+						context,
+						"Load",
+					)
+		},
+		HidWidget: ({ widgetId }) => {
+			const slot = slotOf(model, widgetId)
+			return !slot.isRevealed || slot.isOffscreen === true
+				? { model }
+				: {
+						model: {
+							...model,
+							widgets: { ...model.widgets, [widgetId]: { ...slot, isOffscreen: true } },
+						},
+					}
 		},
 		CompletedFetchVariableOptions: ({ name, key, result }) => {
 			const slot = model.variableOptions[name]
 			if (slot === undefined) return { model }
 			// The options settle the variables, which may unblock tiles waiting on them.
 			return withReplan(
-				{ ...model, variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) } },
+				{
+					...model,
+					variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) },
+				},
 				context,
 				"Load",
 			)
@@ -524,12 +561,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchWidget: ({ key, result }) => {
 			const slot = model.requests[key]
 			if (slot === undefined) return { model }
-			// A stat that just got its value asks for its sparkline series next.
-			return withReplan(
-				{ ...model, requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) } },
-				context,
-				"Load",
-			)
+			const accepted = {
+				...model,
+				requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) },
+			}
+			// Sparklines are planned with their stat; only a refresh deferred on this answer re-plans.
+			return awaitsRefresh(model, key) ? withReplan(accepted, context, "Load") : { model: accepted }
 		},
 		GotShareMessage: ({ message: inner }) => shareStep(model, context, inner),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
@@ -613,7 +650,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotPickerDialogMessage: ({ message: inner }) => {
 			const next = Dialog.update(model.pickerDialog, inner)
 			return {
-				model: { ...model, pickerDialog: next.model, pickerTarget: next.model.isOpen ? model.pickerTarget : null },
+				model: {
+					...model,
+					pickerDialog: next.model,
+					pickerTarget: next.model.isOpen ? model.pickerTarget : null,
+				},
 				commands: Command.mapMessages(next.commands ?? [], (dialog) =>
 					Message.GotPickerDialogMessage({ message: dialog }),
 				),
@@ -661,11 +702,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Result.match(result, {
 				onFailure: (error) => closePicker({ ...model, persistenceError: error }),
 				onSuccess: (sync) =>
-					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
+					sync === "Behind"
+						? { model, outMessage: behindToast() }
+						: { model: { ...model, persistenceError: null } },
 			}),
 		CompletedExport: () => ({ model }),
 		GotErrorDetailsMessage: ({ widgetId, message: inner }) => {
-			const next = Popover.update(model.errorDetails[widgetId] ?? Popover.init(errorDetailsIdOf(widgetId)), inner)
+			const next = Popover.update(
+				model.errorDetails[widgetId] ?? Popover.init(errorDetailsIdOf(widgetId)),
+				inner,
+			)
 			return {
 				model: { ...model, errorDetails: { ...model.errorDetails, [widgetId]: next.model } },
 				commands: Command.mapMessages(next.commands ?? [], (popover) =>

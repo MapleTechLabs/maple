@@ -1,8 +1,8 @@
 import { toQueryBuilderMetricType } from "@maple/query-model"
 import { Command, type Update } from "foldkit"
-import * as Dialog from "../../../../ui/dialog"
-import * as Field from "../../../../ui/field"
-import * as Select from "../../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 import {
 	draftError,
 	newVariable,

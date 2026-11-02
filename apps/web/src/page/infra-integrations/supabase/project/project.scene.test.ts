@@ -9,8 +9,8 @@ import {
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../../charts/theme-colors"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -137,9 +137,9 @@ describe("supabase project", () => {
 			{ update: pageUpdate, view },
 			given(quiet(true)),
 			themeResolved(),
-			expectView(text("Nothing needs attention.")).toExist(),
-			expectView(text("No API requests in this time range.")).toExist(),
-			expectView(text("No warnings or errors in this time range.")).toExist(),
+			expectView(text("Nothing needs attention")).toExist(),
+			expectView(text("No API requests in this window")).toExist(),
+			expectView(text("No warnings or errors in this window")).toExist(),
 			expectView(role("link", { name: "Instrument a service" })).toExist(),
 			expectView(role("link", { name: "View logs" })).toExist(),
 		)
@@ -150,7 +150,7 @@ describe("supabase project", () => {
 			{ update: pageUpdate, view },
 			given(quiet(false)),
 			themeResolved(),
-			expectView(text("No API requests in this time range.")).toBeAbsent(),
+			expectView(text("No API requests in this window")).toBeAbsent(),
 			expectView(role("link", { name: "View logs" })).toBeAbsent(),
 			expectView(role("link", { name: "Open in Supabase" })).toExist(),
 		)
@@ -170,7 +170,7 @@ describe("supabase project", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themeResolved(),
-			expectView(text("Nothing needs attention.")).toBeAbsent(),
+			expectView(text("Nothing needs attention")).toBeAbsent(),
 		)
 	})
 

@@ -1,4 +1,4 @@
-import * as Select from "../../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import {
 	collectAllCollapsibleIds,
 	collectDescendantParentIds,
@@ -42,9 +42,39 @@ export type UpdateReturn = Readonly<{
 
 export const colorByOf = (id: string): ColorByField => colorByFromId(id) ?? DEFAULT_COLOR_BY
 
-/** The visible rows of the current tree, expansion and color scheme. */
-export const barsOf = (model: Model): ReadonlyArray<Bar> =>
-	layoutSpans(model.rootSpans, new Set(model.expandedSpanIds), colorByOf(model.colorBy), model.traceStartMs)
+type BarsEntry = Readonly<{
+	expandedSpanIds: Model["expandedSpanIds"]
+	colorBy: string
+	traceStartMs: number
+	bars: ReadonlyArray<Bar>
+}>
+
+const barsCache = new WeakMap<Model["rootSpans"], BarsEntry>()
+
+/** The visible rows of the current tree, expansion and color scheme, laid out once per change. */
+export const barsOf = (model: Model): ReadonlyArray<Bar> => {
+	const cached = barsCache.get(model.rootSpans)
+	if (
+		cached !== undefined &&
+		cached.expandedSpanIds === model.expandedSpanIds &&
+		cached.colorBy === model.colorBy &&
+		cached.traceStartMs === model.traceStartMs
+	)
+		return cached.bars
+	const bars = layoutSpans(
+		model.rootSpans,
+		new Set(model.expandedSpanIds),
+		colorByOf(model.colorBy),
+		model.traceStartMs,
+	)
+	barsCache.set(model.rootSpans, {
+		expandedSpanIds: model.expandedSpanIds,
+		colorBy: model.colorBy,
+		traceStartMs: model.traceStartMs,
+		bars,
+	})
+	return bars
+}
 
 const legacyTree = (rootSpans: ReadonlyArray<SpanNodeData>) => rootSpans.map(toSpanNode)
 

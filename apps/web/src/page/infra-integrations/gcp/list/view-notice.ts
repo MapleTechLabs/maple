@@ -1,10 +1,10 @@
 import type { GcpInfraNotice } from "../../../../components/infra/gcp/tabs"
 import type { Html } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { alert, alertAction, alertDescription, alertTitle } from "../../../../ui/alert"
-import { linkButton } from "../../../../ui/button"
-import { icon } from "../../../../ui/icon"
-import { spinner } from "../../../../ui/spinner"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { linkButton } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { spinner } from "@maple/views/ui/spinner"
 import { gcpMessage } from "../gcp-message"
 import type { H } from "./view-rows"
 
@@ -66,7 +66,7 @@ export const gcpNotice = (h: H, notice: GcpInfraNotice): Html => {
 		case "quiet":
 			return alert(h, { variant: "info", role: "status" }, [
 				icon(h, "CircleInfoIcon", { size: 16 }),
-				alertTitle(h, ["No Google Cloud metrics in this time range"]),
+				alertTitle(h, ["No Google Cloud metrics in this window"]),
 				alertDescription(h, ["Widen the time range, or reload to include the latest read."]),
 			])
 	}

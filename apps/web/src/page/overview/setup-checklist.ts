@@ -1,10 +1,10 @@
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
-import * as CopyButton from "../../ui/copy-button"
-import * as Tabs from "../../ui/tabs"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Tabs from "@maple/views/ui/tabs"
 import { QuickStartState } from "../onboarding/quick-start-state"
 
 // The setup checklist: Clerk mode's

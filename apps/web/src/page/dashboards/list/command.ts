@@ -18,7 +18,7 @@ import {
 	toPortable,
 } from "../kit/portable"
 import { awaitTxid, deleteDashboard, errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
-import { readLocale } from "../../kit/locale"
+import { readLocale } from "@maple/views/lib/locale"
 import type { V2Dashboard } from "@maple/domain/http/v2"
 import { documentOf } from "../view/command-history"
 import { toListDashboard } from "./derive"

@@ -6,8 +6,8 @@ import { currentWindow, TimeWindow } from "../data/time-range"
 import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
 import { readEffectiveTimeZone } from "../platform/time-zone"
-import * as CopyButton from "../ui/copy-button"
-import * as Popover from "../ui/popover"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Popover from "@maple/views/ui/popover"
 
 // The Connect button: the top bar's popover with
 // the ingest endpoint and keys, the live connection pill and the MCP card.

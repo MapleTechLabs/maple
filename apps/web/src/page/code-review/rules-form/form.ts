@@ -2,7 +2,7 @@ import { PrReviewCategory, PrReviewRepositoryConfig } from "@maple/domain/http"
 import { Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { ALL_CATEGORIES, configFromState, FormState, Mode, sameState, stateFromConfig } from "./state"
 
 // `ReviewRulesForm` as a Submodel: the edited state,

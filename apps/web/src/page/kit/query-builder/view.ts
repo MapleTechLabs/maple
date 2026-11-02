@@ -10,12 +10,12 @@ import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../../ui/alert"
-import { button } from "../../../ui/button"
-import * as Checkbox from "../../../ui/checkbox"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import type { SelectOption } from "../../../ui/select-view"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import type { SelectOption } from "@maple/views/ui/select-view"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import { type MetricOption, metricsBody } from "./metrics-body"
@@ -124,8 +124,8 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 }
 
 const SPAN_OPTIONS = [
-	{ value: "all", label: "All Spans" },
-	{ value: "root", label: "Root Spans" },
+	{ value: "all", label: "All spans" },
+	{ value: "root", label: "Root spans" },
 ]
 
 /** `TracesLogsBody`, or `MetricsBody` for a metrics query. */

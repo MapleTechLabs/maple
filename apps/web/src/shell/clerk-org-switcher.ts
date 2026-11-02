@@ -9,9 +9,9 @@ import { modifyFields } from "foldkit/struct"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import { activateOrganization, type ClerkActionError, setActiveOrganization } from "../platform/clerk"
 import type { Resources } from "../platform/resources"
-import * as Dialog from "../ui/dialog"
-import * as Menu from "../ui/menu"
-import * as RadioGroup from "../ui/radio-group"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as RadioGroup from "@maple/views/ui/radio-group"
 import { containSearchKeys } from "./namespace-search"
 
 /**

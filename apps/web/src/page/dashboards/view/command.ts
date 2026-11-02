@@ -25,7 +25,7 @@ import { fetchVariableOptions } from "../kit/variables"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
 import { ShareMessage } from "./share"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { presetById } from "./picker-catalog"
 import { applySectionEdit, SectionEdit } from "./section-edit"
 
@@ -343,13 +343,17 @@ const quantizeWidthPx = (widthPx: number): number | undefined =>
 
 /**
  * `useInViewportSticky` + `useMeasuredWidthPx` on a tile's root: its quantized width now and on
- * every resize, and (once) that it came within 200 px of the viewport for 200 ms.
+ * every resize, that it came within 200 px of the viewport for 200 ms, and that it left again.
  */
 export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 	args: { widgetId: Schema.String },
-	messages: [Message.MeasuredWidget, Message.RevealedWidget],
+	messages: [Message.MeasuredWidget, Message.RevealedWidget, Message.HidWidget],
 	execute: ({ element, widgetId }) =>
-		Stream.callback<typeof Message.MeasuredWidget.Type | typeof Message.RevealedWidget.Type>((queue) =>
+		Stream.callback<
+			| typeof Message.MeasuredWidget.Type
+			| typeof Message.RevealedWidget.Type
+			| typeof Message.HidWidget.Type
+		>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					const measure = (width: number) => {
@@ -362,20 +366,21 @@ export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 						entries.forEach((entry) => measure(entry.contentRect.width)),
 					)
 					resizes.observe(element)
-					const reveal = { timer: 0, isDone: false }
+					const reveal = { timer: 0, isShown: false }
 					const intersections = new IntersectionObserver(
 						(entries) => {
-							if (reveal.isDone) return
 							const isIntersecting = entries.some((entry) => entry.isIntersecting)
-							if (isIntersecting && reveal.timer === 0) {
+							if (isIntersecting && !reveal.isShown && reveal.timer === 0) {
 								reveal.timer = window.setTimeout(() => {
-									reveal.isDone = true
-									intersections.disconnect()
+									reveal.timer = 0
+									reveal.isShown = true
 									Queue.offerUnsafe(queue, Message.RevealedWidget({ widgetId }))
 								}, 200)
-							} else if (!isIntersecting && reveal.timer !== 0) {
+							} else if (!isIntersecting) {
 								window.clearTimeout(reveal.timer)
 								reveal.timer = 0
+								if (reveal.isShown) Queue.offerUnsafe(queue, Message.HidWidget({ widgetId }))
+								reveal.isShown = false
 							}
 						},
 						{ rootMargin: "200px" },
@@ -442,9 +447,9 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 			const picked = pickedWidget({ presetId, chartId })
 			if (picked === null)
 				return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
-			const nowMs = yield* Clock.currentTimeMillis
+			const now = yield* Clock.currentTimeMillis
 			const random = yield* Random.next
-			const id = generateWidgetId(nowMs, random)
+			const id = generateWidgetId(now, random)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
 					withAddedWidget(

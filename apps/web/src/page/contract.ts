@@ -10,7 +10,7 @@ import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import type { NavSurface } from "../shell/nav"
 import type { PageSourceRef } from "../shell/source-link"
-import { ToastType } from "../ui/toast"
+import { ToastType } from "@maple/views/ui/toast"
 
 /** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
 
@@ -294,10 +294,20 @@ export const definePage = <
 		instance: number,
 		context: PageContext,
 		result: PageReturn<Model, Message>,
+		/** The slot stepped; kept as is when the step changed nothing, so the root skips the render. */
+		previous?: SlotType,
 	): PageStep<SlotType, WrappedType> => {
 		const wrap = wrapFor(key, context.orgId, instance)
+		const isUnchanged =
+			previous !== undefined &&
+			previous.model === result.model &&
+			previous.key === key &&
+			previous.orgId === context.orgId &&
+			previous.instance === instance
 		return {
-			slot: { _tag: id, key, orgId: context.orgId, instance, model: result.model },
+			slot: isUnchanged
+				? previous
+				: { _tag: id, key, orgId: context.orgId, instance, model: result.model },
 			commands: Command.mapMessages(result.commands ?? [], wrap),
 			outMessage: Option.map(Option.fromNullishOr(result.outMessage), wrapOut(wrap)),
 		}
@@ -380,13 +390,20 @@ export const definePage = <
 							slot.instance,
 							context,
 							spec.update(slot.model, message.message, context),
+							slot,
 						),
 					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		routeChanged: (slot: PageSlotBase, route: AppRoute, context: PageContext) =>
 			isOwnSlot(slot) && ownsRoute(route) && spec.routeChanged
 				? Option.some(
-						step(slot.key, slot.instance, context, spec.routeChanged(slot.model, route, context)),
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.routeChanged(slot.model, route, context),
+							slot,
+						),
 					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		isRevivable: spec.revive !== undefined,
@@ -411,13 +428,20 @@ export const definePage = <
 							slot.instance,
 							context,
 							spec.blockedNavigation(slot.model, url, context),
+							slot,
 						),
 					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		contextChanged: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.contextChanged
 				? Option.some(
-						step(slot.key, slot.instance, context, spec.contextChanged(slot.model, context)),
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.contextChanged(slot.model, context),
+							slot,
+						),
 					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		infraSurfacesSettled: (slot: PageSlotBase, context: PageContext) =>
@@ -428,6 +452,7 @@ export const definePage = <
 							slot.instance,
 							context,
 							spec.infraSurfacesSettled(slot.model, context),
+							slot,
 						),
 					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),

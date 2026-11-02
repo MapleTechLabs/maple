@@ -1,11 +1,11 @@
 import { TimeRangeSchema } from "@maple/domain/http"
 import { DashboardSectionSchema, WidgetDisplayConfigV3, WidgetLayoutSchema } from "@maple/widgets/dashboard"
 import { Schema } from "effect"
-import * as Chart from "../../charts/chart"
-import { ChartRuntime } from "../../charts/chart-runtime"
-import { ThemeColors } from "../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { ShareSearch } from "../../route/search"
-import * as Menu from "../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import { TableSort } from "../dashboards/kit/tiles"
 
 // `/share/$token`.

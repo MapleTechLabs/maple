@@ -23,7 +23,7 @@ export const ResolveWindow = Command.define("ResolveRailwayWindow", {
 		),
 })
 
-/** `railwayStatusAtom`, shared with the sidebar through `IntegrationStatuses`. */
+/** `railwayStatusAtom`, shared with the other Railway pages through `IntegrationStatuses`. */
 export const LoadStatus = Command.define("LoadRailwayStatus", {
 	args: { key: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.CompletedLoadStatus],

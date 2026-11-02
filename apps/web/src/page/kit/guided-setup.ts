@@ -6,18 +6,18 @@ import {
 } from "../../components/ingest/onboard-skill"
 import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
 import { type DocsPage, docsUrl } from "../../lib/docs"
-import { type Lang, resolveLang } from "../../lib/highlight"
+import type { Lang } from "@maple/views/lib/highlight"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import * as CopyButton from "../../ui/copy-button"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon, type IconName } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
-import { panel } from "../../ui/panel"
-import type * as Tabs from "../../ui/tabs"
-import * as TabsView from "../../ui/tabs-view"
+import { button } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel } from "@maple/views/ui/panel"
+import type * as Tabs from "@maple/views/ui/tabs"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../settings/kit/code-block"
 
 // `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
@@ -108,7 +108,7 @@ export const frameworkPicker = <M>(
 export type InstructionsDocs = Readonly<{ label: string; page: DocsPage }>
 
 const AGENT_MARKS = [
-	{ name: "ClaudeIcon", className: "text-[#D97757]" },
+	{ name: "ClaudeIcon", className: "text-brand-claude" },
 	{ name: "OpenAiIcon", className: "text-foreground" },
 	{ name: "CursorIcon", className: "text-foreground" },
 ] as const satisfies ReadonlyArray<Readonly<{ name: IconName; className: string }>>
@@ -226,7 +226,7 @@ const block = <M>(
 	language: string,
 	className?: string,
 	isPlain = false,
-	lang: Lang = resolveLang(language),
+	lang: Lang = language,
 ): Html =>
 	codeBlock(h, {
 		code,

@@ -14,9 +14,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Chart from "../../../charts/chart"
-import { MountChart } from "../../../charts/chart-mounts"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { MountChart } from "@maple/views/charts/chart-mounts"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
 import type { UptimeMonitor } from "../shared/uptime-derive"

@@ -1,7 +1,7 @@
 import { getRailwayServices, getRailwayServiceTimeseries } from "@maple/web-data/warehouse/railway-infra"
 import { Effect } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import type { RailwayServiceRow, RailwayServiceTimeseriesRow } from "./model"
 

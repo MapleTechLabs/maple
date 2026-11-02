@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../../data/keyed"
-import { LoadFailure } from "../../../../data/load-failure"
-import * as Tabs from "../../../../ui/tabs"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Tabs from "@maple/views/ui/tabs"
 import * as InfraCorrelation from "../../../kit/infra-correlation"
 import { SpanNodeData } from "../trace-data"
 

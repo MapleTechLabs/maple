@@ -3,9 +3,9 @@ import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { meter, segmentedBar } from "../../../ui/meter"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { meter, segmentedBar } from "@maple/views/ui/meter"
 import type { DetectedModel } from "../kit/detected-models"
 import { modelLabel } from "../kit/model-label"
 import { TOKEN_BUCKETS } from "../kit/token-buckets"
@@ -18,6 +18,8 @@ import {
 	type TimeBandKind,
 } from "./span-visuals"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The overview rail and its time composition: where the time, cost and tokens went.
 
@@ -35,13 +37,10 @@ const railSection = (h: H, title: string, aside: Html | undefined, children: Rea
 const sharePercent = (value: number, total: number): number => (total <= 0 ? 0 : (value / total) * 100)
 
 const clock = (h: H, label: string, value: string, className?: string): Html =>
-	h.span(
-		[h.Class("flex items-baseline gap-1.5")],
-		[
-			eyebrow(h, {}, [label]),
-			h.span([h.Class(cn("font-mono font-semibold text-xs tabular-nums", className))], [value]),
-		],
-	)
+	hstack(h, { gap: "1.5", align: "baseline", as: "span" }, [
+		eyebrow(h, {}, [label]),
+		h.span([h.Class(cn("font-mono font-semibold text-xs tabular-nums", className))], [value]),
+	])
 
 const timeComposition = (h: H, summary: SessionSummary): Html => {
 	const { segments, totalMs } = summary.agentTime
@@ -57,13 +56,10 @@ const timeComposition = (h: H, summary: SessionSummary): Html => {
 		.map((band) => ({ ...band, percent: sharePercent(band.ms, total) }))
 		.filter((band) => band.percent >= 0.5)
 	return railSection(h, "Where the time went", undefined, [
-		h.div(
-			[h.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1")],
-			[
-				clock(h, "Agent time", formatSessionDuration(totalMs), "text-chart-ai-inference"),
-				clock(h, "Wall clock", formatSessionDuration(summary.wallClockMs)),
-			],
-		),
+		hstack(h, { align: "baseline", wrap: true, className: "gap-x-4 gap-y-1" }, [
+			clock(h, "Agent time", formatSessionDuration(totalMs), "text-chart-ai-inference"),
+			clock(h, "Wall clock", formatSessionDuration(summary.wallClockMs)),
+		]),
 		segmentedBar(h, {
 			segments: bands.map((band) => ({
 				key: band.kind,
@@ -74,21 +70,19 @@ const timeComposition = (h: H, summary: SessionSummary): Html => {
 			className: "h-2 w-full gap-px rounded-xs bg-muted",
 		}),
 		...legend.map((band) =>
-			h.div(
-				[h.Key(band.kind), h.Class("flex items-center gap-2.5")],
-				[
-					icon(h, AGENT_TIME_ICON[band.kind], {
-						size: 14,
-						className: cn("shrink-0", AGENT_TIME_TEXT[band.kind]),
-						attributes: [h.AriaHidden(true)],
-					}),
-					h.span([h.Class("min-w-0 flex-1 truncate text-xs")], [AGENT_TIME_LABEL[band.kind]]),
-					h.span(
-						[h.Class("font-mono text-muted-foreground text-xs tabular-nums")],
-						[formatSessionDuration(band.ms), " · ", formatPercent(band.percent / 100)],
-					),
-				],
-			),
+			hstack(h, { gap: "2.5", attributes: [h.Key(band.kind)] }, [
+				icon(h, AGENT_TIME_ICON[band.kind], {
+					size: 14,
+					className: cn("shrink-0", AGENT_TIME_TEXT[band.kind]),
+					attributes: [h.AriaHidden(true)],
+				}),
+				h.span([h.Class("min-w-0 flex-1 truncate text-xs")], [AGENT_TIME_LABEL[band.kind]]),
+				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+					formatSessionDuration(band.ms),
+					" · ",
+					formatPercent(band.percent / 100),
+				]),
+			]),
 		),
 	])
 }
@@ -103,32 +97,29 @@ const costSection = (h: H, summary: SessionSummary, detect: (model: string) => D
 			: h.span([h.Class("font-mono text-primary text-xs")], [formatCost(summary.cost)]),
 		[
 			...(summary.models.length === 0
-				? [h.p([h.Class("text-muted-foreground text-xs")], ["no model calls"])]
+				? [typography(h, { size: "xs", tone: "muted", as: "p" }, ["no model calls"])]
 				: summary.models.map((model) =>
 						h.div(
 							[h.Key(model.model), h.Class("space-y-1.5")],
 							[
-								h.div(
-									[h.Class("flex items-baseline justify-between gap-2")],
-									[
-										modelLabel(h, {
-											detected: detect(model.model),
-											size: 12,
-											className: "text-xs",
-										}),
-										h.span(
-											[h.Class("shrink-0 font-mono text-muted-foreground text-xs")],
-											[
-												model.cost === undefined ? "no cost" : formatCost(model.cost),
-												" ·",
-												" ",
-												String(model.llmCalls),
-												" ",
-												pluralize(model.llmCalls, "call"),
-											],
-										),
-									],
-								),
+								hstack(h, { gap: "2", align: "baseline", justify: "between" }, [
+									modelLabel(h, {
+										detected: detect(model.model),
+										size: 12,
+										className: "text-xs",
+									}),
+									h.span(
+										[h.Class("shrink-0 font-mono text-muted-foreground text-xs")],
+										[
+											model.cost === undefined ? "no cost" : formatCost(model.cost),
+											" ·",
+											" ",
+											String(model.llmCalls),
+											" ",
+											pluralize(model.llmCalls, "call"),
+										],
+									),
+								]),
 								...(model.cost !== undefined && topModelCost > 0
 									? [
 											meter(h, {
@@ -161,10 +152,10 @@ const tokensSection = (h: H, summary: SessionSummary): Html => {
 		h,
 		"Tokens",
 		summary.tokens.total > 0
-			? h.span([h.Class("font-mono text-xs")], [formatNumber(summary.tokens.total)])
+			? typography(h, { size: "xs", mono: true }, [formatNumber(summary.tokens.total)])
 			: undefined,
 		summary.tokens.total === 0
-			? [h.p([h.Class("text-muted-foreground text-xs")], ["no token usage reported"])]
+			? [typography(h, { size: "xs", tone: "muted", as: "p" }, ["no token usage reported"])]
 			: [
 					segmentedBar(h, {
 						segments: buckets.map((bucket) => ({
@@ -176,28 +167,23 @@ const tokensSection = (h: H, summary: SessionSummary): Html => {
 						className: "h-2 w-full gap-px rounded-xs bg-muted",
 					}),
 					...buckets.map((bucket) =>
-						h.div(
-							[h.Key(bucket.key), h.Class("flex items-center gap-2.5")],
-							[
-								icon(h, bucket.icon, {
-									size: 14,
-									className: cn("shrink-0", bucket.text),
-									attributes: [h.AriaHidden(true)],
-								}),
-								h.span([h.Class("min-w-0 flex-1 truncate text-xs")], [bucket.label]),
-								h.span(
-									[h.Class("font-mono text-muted-foreground text-xs tabular-nums")],
-									[formatNumber(summary.tokens[bucket.key])],
-								),
-							],
-						),
+						hstack(h, { gap: "2.5", attributes: [h.Key(bucket.key)] }, [
+							icon(h, bucket.icon, {
+								size: 14,
+								className: cn("shrink-0", bucket.text),
+								attributes: [h.AriaHidden(true)],
+							}),
+							h.span([h.Class("min-w-0 flex-1 truncate text-xs")], [bucket.label]),
+							typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+								formatNumber(summary.tokens[bucket.key]),
+							]),
+						]),
 					),
 					...(summary.tokenReporting === "session-level"
 						? [
-								h.p(
-									[h.Class("text-2xs text-muted-foreground")],
-									["Reported once for the whole session"],
-								),
+								typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+									"Reported once for the whole session",
+								]),
 							]
 						: []),
 				],
@@ -206,8 +192,9 @@ const tokensSection = (h: H, summary: SessionSummary): Html => {
 
 const agentsSection = (h: H, summary: SessionSummary): Html =>
 	railSection(h, "Agents", undefined, [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-2")],
+		hstack(
+			h,
+			{ gap: "2", wrap: true },
 			summary.agentNames.map((name, index) =>
 				h.span(
 					[h.Key(name), h.Class("flex min-w-0 max-w-full items-center gap-2")],

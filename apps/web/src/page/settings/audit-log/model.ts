@@ -2,10 +2,10 @@ import { AuditActorType, AuditOutcome } from "@maple/domain/http"
 import { V2AuditLogEntry } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Popover from "../../../ui/popover"
-import * as Select from "../../../ui/select"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Popover from "@maple/views/ui/popover"
+import * as Select from "@maple/views/ui/select"
 
 // `AuditLogSection`. Filters live in the `/settings` search; the page passes them in and a change comes back
 // as a navigation.

@@ -7,7 +7,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { MapleConfig } from "../core/config"
 import { deleteNativeCredential } from "../core/credential-store"
 import { Mode } from "../core/mode"
-import { encodeJsonEffect } from "../lib/json"
+import { encodeJsonEffect } from "@maple/local-server/json"
 import { printJson } from "../lib/output"
 
 class CliAuthError extends Schema.TaggedError<CliAuthError>()("@maple/cli/CliAuthError", {

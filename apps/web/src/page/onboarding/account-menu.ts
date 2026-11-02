@@ -4,11 +4,13 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ClerkUser } from "../../platform/clerk"
 import { orgAvatar } from "../../shell/clerk-org-switcher-view"
-import { warmAvatarTone } from "../../ui/avatar-tone"
-import { avatarFallback } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import type { MenuEntry } from "../../ui/menu-view"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { avatarFallback } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
 import type { Message } from "./index"
+import { typography } from "@maple/views/ui/typography"
+import { identityLabel } from "@maple/views/ui/identity-label"
 
 // `OnboardingOrgSwitcher` and `OnboardingUserMenu`: the account actions in the onboarding header.
 
@@ -67,23 +69,25 @@ export const userMenuEntries = (
 					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
 					[
 						userAvatar(h, name),
-						h.div(
-							[h.Class("grid flex-1 text-left text-sm leading-tight")],
-							[
-								h.span([h.Class("truncate font-medium"), h.Title(name)], [name]),
-								...(email === ""
-									? []
-									: [
-											h.span(
-												[
-													h.Class("truncate text-xs text-muted-foreground"),
-													h.Title(email),
-												],
-												[email],
-											),
-										]),
-							],
-						),
+						identityLabel(h, [
+							typography(h, { weight: "medium", truncate: true, attributes: [h.Title(name)] }, [
+								name,
+							]),
+							...(email === ""
+								? []
+								: [
+										typography(
+											h,
+											{
+												size: "xs",
+												tone: "muted",
+												truncate: true,
+												attributes: [h.Title(email)],
+											},
+											[email],
+										),
+									]),
+						]),
 					],
 				),
 			],

@@ -1,5 +1,5 @@
-import type { PlotLegendSeries } from "../../charts/plot-legend"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
+import type { PlotLegendSeries } from "@maple/views/charts/plot-legend"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { type ChartsLabArm, SECTIONS } from "./arms"
 import { FLOW_BANDS, FLOW_TOKENS } from "./spike-sankey-data"
 import { serviceToken, TILE_TOKENS, TREEMAP_SERVICES } from "./spike-treemap-data"

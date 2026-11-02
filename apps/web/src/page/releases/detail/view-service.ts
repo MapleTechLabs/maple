@@ -10,17 +10,18 @@ import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { MountLinkedCursor } from "../../../charts/linked-cursor"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { linkButton } from "../../../ui/button"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { panel } from "../../../ui/panel"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
-import { serviceDot } from "../../../ui/values"
+import { linkButton } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { panel } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
+import { textLinkClass } from "@maple/views/ui/text-link"
+import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { CHART_TOKENS, metricsGridOf } from "../../services/detail/view-charts"
 import { commitRangesKey, isResolvableSha, releaseHealthFigure, withQueryOrder } from "../kit"
@@ -37,6 +38,9 @@ import {
 } from "./service"
 import { releaseComparison, releaseVersionsRail } from "./view-comparison"
 import { type ChangesetState, type Clock, issueList, releaseChangeset, sectionCard } from "./view-sections"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // The release body for one service (`?service=`) and its issues panel.
 
@@ -89,17 +93,11 @@ export const serviceButton = (h: H, model: Model, serviceName: string): Html =>
 	)
 
 const bodySkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			skeleton(h, "h-4 w-80"),
-			h.div(
-				[h.Class("grid gap-3 lg:grid-cols-2")],
-				[skeleton(h, "h-56 rounded-md"), skeleton(h, "h-56 rounded-md")],
-			),
-			skeleton(h, "h-72 rounded-md"),
-		],
-	)
+	vstack(h, { gap: "3" }, [
+		skeleton(h, "h-4 w-80"),
+		grid(h, { lg: 2, gap: "3" }, [skeleton(h, "h-56 rounded-md"), skeleton(h, "h-56 rounded-md")]),
+		skeleton(h, "h-72 rounded-md"),
+	])
 
 /** The release pages' overlays as this page's view passes them on. */
 export const overlaysOf = (model: Model, clock: Clock): Overlays<Message> => ({
@@ -119,13 +117,13 @@ const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 		],
 		onSome: (commit) => [
 			h.span([h.Class("truncate")], [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
-			h.span([h.Class("truncate text-foreground-subtle")], [commit.repoFullName]),
+			typography(h, { tone: "subtle", truncate: true }, [commit.repoFullName]),
 			h.a(
 				[
 					h.Href(commit.htmlUrl),
 					h.Target("_blank"),
 					h.Rel("noreferrer"),
-					h.Class("font-mono text-primary hover:underline active:underline"),
+					h.Class(textLinkClass("primary", true)),
 				],
 				[shortReleaseLabel(model.commitSha), " ↗"],
 			),
@@ -167,7 +165,15 @@ const metaLine = (
 				: [h.span([], [formatPercent(impact.share), " of the latest traffic"])]),
 			...(impact.health === "healthy"
 				? []
-				: [releaseHealthPill(h, overlaysOf(model, clock), "release-meta-pill", impact.health, releaseHealthFigure(impact))]),
+				: [
+						releaseHealthPill(
+							h,
+							overlaysOf(model, clock),
+							"release-meta-pill",
+							impact.health,
+							releaseHealthFigure(impact),
+						),
+					]),
 		],
 	)
 
@@ -279,8 +285,7 @@ const issuesPanel = (
 	return AsyncData.match(model.serviceIssues.data, {
 		onIdle: loading,
 		onLoading: loading,
-		onFailure: (failure) =>
-			errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
 		onStale: ({ error }) =>
 			errorState(h, { failure: error, title: "Couldn't load issues", variant: "row" }),
 		onSuccess: loaded,
@@ -296,25 +301,22 @@ const seriesBar = (h: H, model: Model, serviceName: string): Html => {
 			: baseline === undefined
 				? `Every other version of ${serviceName} in the window`
 				: `Only spans that carried ${shortReleaseLabel(baseline)}, the version it replaced`
-	return h.div(
-		[h.Class("flex items-center justify-between gap-3")],
-		[
-			segmentedSelect(h, {
-				size: "sm",
-				ariaLabel: "Chart series",
-				value: model.series,
-				onChange: (series) => Message.ClickedSeries({ series }),
-				options: [
-					{ value: "version", label: "This version" },
-					{
-						value: "others",
-						label: baseline === undefined ? "Other versions" : "Previous version",
-					},
-				],
-			}),
-			h.span([h.Class("text-2xs text-foreground-subtle")], [caption]),
-		],
-	)
+	return hstack(h, { gap: "3", justify: "between" }, [
+		segmentedSelect(h, {
+			size: "sm",
+			ariaLabel: "Chart series",
+			value: model.series,
+			onChange: (series) => Message.ClickedSeries({ series }),
+			options: [
+				{ value: "version", label: "This version" },
+				{
+					value: "others",
+					label: baseline === undefined ? "Other versions" : "Previous version",
+				},
+			],
+		}),
+		typography(h, { size: "2xs", tone: "subtle" }, [caption]),
+	])
 }
 
 const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: string, clock: Clock): Html => {
@@ -330,48 +332,42 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 	})
 	const { impact } = derived
 	if (impact === undefined)
-		return h.div(
-			[h.Class("flex flex-col gap-3")],
-			[
-				panel(h, {}, [
-					emptyMessage(h, { className: "text-sm" }, [
-						h.span([h.Class("font-mono")], [shortReleaseLabel(model.commitSha)]),
-						` served no traffic on ${serviceName} in this window. Widen the time range to include its deploy.`,
-					]),
+		return vstack(h, { gap: "3" }, [
+			panel(h, {}, [
+				emptyMessage(h, { className: "text-sm" }, [
+					h.span([h.Class("font-mono")], [shortReleaseLabel(model.commitSha)]),
+					` served no traffic on ${serviceName} in this window. Widen the time range to include its deploy.`,
 				]),
-				rail,
-			],
-		)
+			]),
+			rail,
+		])
 	const isChartReady =
 		model.themeColors !== null && model.chartRuntime !== null && isChartRuntimeReady(model.chartRuntime)
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			metaLine(h, model, impact, serviceName, clock),
-			h.div([h.Class("grid gap-3 lg:grid-cols-2")], [releaseComparison(h, impact, overlaysOf(model, clock)), rail]),
-			releaseChangeset(h, changesetState(model, impact.baseline?.commitSha), clock),
-			seriesBar(h, model, serviceName),
-			metricsGridOf(
-				h,
-				{
-					charts: model.charts,
-					rows: seriesPoints(model, derived).map((point) => ({ ...point })),
-					markers: markersOf(model, derived),
-					toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
-					linkedCursorMount: MountLinkedCursor(),
-				},
-				{
-					isLoading: !isChartReady,
-					isWaiting: AsyncData.isRefreshing(model.detail.data),
-					context:
-						model.themeColors === null
-							? null
-							: { theme: model.themeColors, timeZone: clock.timeZone, nowMs: clock.nowMs },
-				},
-			),
-			issuesPanel(h, model, derived, impact, clock),
-		],
-	)
+	return vstack(h, { gap: "3" }, [
+		metaLine(h, model, impact, serviceName, clock),
+		grid(h, { lg: 2, gap: "3" }, [releaseComparison(h, impact, overlaysOf(model, clock)), rail]),
+		releaseChangeset(h, changesetState(model, impact.baseline?.commitSha), clock),
+		seriesBar(h, model, serviceName),
+		metricsGridOf(
+			h,
+			{
+				charts: model.charts,
+				rows: seriesPoints(model, derived).map((point) => ({ ...point })),
+				markers: markersOf(model, derived),
+				toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
+				linkedCursorMount: MountLinkedCursor(),
+			},
+			{
+				isLoading: !isChartReady,
+				isWaiting: AsyncData.isRefreshing(model.detail.data),
+				context:
+					model.themeColors === null
+						? null
+						: { theme: model.themeColors, timeZone: clock.timeZone, nowMs: clock.nowMs },
+			},
+		),
+		issuesPanel(h, model, derived, impact, clock),
+	])
 }
 
 const detailState = (h: H, model: Model, serviceName: string, clock: Clock): Html => {

@@ -14,12 +14,12 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Chart from "../../../charts/chart"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
-import { toLoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "../../../data/request-key"
-import * as LogsStream from "../../../ui/logs/logs-stream"
-import { VirtualizeLogStream } from "../../../ui/logs/virtualize"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import { VirtualizeLogStream } from "@maple/views/ui/logs/virtualize"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchAttributeKeys,
@@ -263,7 +263,7 @@ describe("logs list", () => {
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			Mount.resolve(VirtualizeLogStream, streamWindow(0, 20)),
 			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
-			type(placeholder("Text or trace id"), traceId),
+			type(placeholder("Text or trace ID…"), traceId),
 			Command.resolve(WaitSearchDebounce, Message.ElapsedSearchDebounce({ generation: 1 })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({ url: `/logs?traceId=${traceId}`, isReplace: false }),

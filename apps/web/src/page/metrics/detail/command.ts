@@ -8,7 +8,7 @@ import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builde
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
 import { Clock, Duration, Effect, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import { Message, RequestMode } from "./message"

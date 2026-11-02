@@ -4,8 +4,8 @@ import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../comp
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { type FilterOption, filterSection, singleCheckboxFilter } from "../../ui/filters/filter-section"
-import * as FilterSections from "../../ui/filters/filter-sections"
+import { type FilterOption, filterSection, singleCheckboxFilter } from "@maple/views/ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -15,8 +15,8 @@ import {
 	filterSidebarLoading,
 	filterSidebarDivider,
 	filterSidebarGroupLabel,
-} from "../../ui/filters/filter-sidebar"
-import { icon, type IconName } from "../../ui/icon"
+} from "@maple/views/ui/filters/filter-sidebar"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { type FilterKey, Message } from "./message"
 import type { Breakdowns, Model } from "./model"

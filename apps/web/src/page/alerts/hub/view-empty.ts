@@ -1,13 +1,15 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../../ui/button"
-import { cardButtonClass } from "../../../ui/card-button"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
+import { button, linkButton } from "@maple/views/ui/button"
+import { cardButtonClass } from "@maple/views/ui/card-button"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 import { alertsHref, createHref } from "../shared/links"
 import { ALERT_TEMPLATES, type AlertTemplate, type AlertTemplateId } from "../shared/templates"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `AlertsEmptyState`: zero rules.
 
@@ -82,9 +84,8 @@ const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined):
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.p([h.Class("text-sm font-medium")], ["Add a destination"]),
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
+					typography(h, { size: "sm", weight: "medium", as: "p" }, ["Add a destination"]),
+					typography(h, { size: "xs", tone: "muted", as: "p" },
 						["Slack, Discord, PagerDuty, Telegram, email or a webhook. Rules notify these."],
 					),
 					docsLink(h, "destinations", "Destination setup"),
@@ -107,8 +108,8 @@ const ruleStepHeader = <M>(h: HtmlBuilder<M>): Html =>
 		[h.Class("flex w-full items-center gap-3 px-1 text-left")],
 		[
 			stepBadge(h, 2),
-			h.p([h.Class("text-sm font-medium")], ["Create a rule"]),
-			h.span([h.Class("text-xs text-muted-foreground")], ["Start from a common one:"]),
+			typography(h, { size: "sm", weight: "medium", as: "p" }, ["Create a rule"]),
+			typography(h, { size: "xs", tone: "muted" }, ["Start from a common one:"]),
 		],
 	)
 
@@ -131,14 +132,13 @@ const templateTile = <M>(h: HtmlBuilder<M>, template: AlertTemplate, serviceName
 			h.Class(cardButtonClass(false, cn("flex flex-col gap-1.5 p-3", tone?.hoverBorder))),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
+			hstack(h, { gap: "2" },
 				[
 					h.span(
 						[h.Class(cn("flex size-6 shrink-0 items-center justify-center rounded-md", tone?.glyph))],
 						[icon(h, template.icon, { size: 14 })],
 					),
-					h.span([h.Class("font-medium text-sm")], [template.title]),
+					typography(h, { size: "sm", weight: "medium" }, [template.title]),
 				],
 			),
 			inlineCode(h, { className: "self-start text-2xs text-muted-foreground" }, [template.summary]),

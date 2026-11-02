@@ -3,15 +3,19 @@ import { viewportBounds } from "@maple/ui/components/traces/clamp-viewport"
 import { MINIMAP_HEIGHT, TIME_AXIS_HEIGHT } from "@maple/ui/components/traces/trace-timeline-types"
 import { countLabel, formatDurationAtStep } from "@maple/ui/lib/format"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { icon } from "../../../../ui/icon"
-import * as SelectView from "../../../../ui/select-view"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
+import { bareInput } from "@maple/views/ui/bare-input"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import * as SelectView from "@maple/views/ui/select-view"
 import type { SpanNodeData } from "../trace-data"
 import { depthControls } from "../depth-controls"
 import { collectMinimapSpans } from "./layout"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { layer } from "@maple/views/ui/layer"
 
 // The Timeline's chrome: `TraceTimelineSearch`, the toolbar with `TraceDepthControls`, the fit
 // button and `ColorByPicker`, `TraceTimelineMinimap` and `TraceTimelineTimeAxis`.
@@ -23,40 +27,40 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 		[h.Class("flex items-center gap-2 border-b border-border bg-surface-faint px-3 py-1.5")],
 		[
 			icon(h, "MagnifierIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
-			h.input([
-				h.Class(
-					"min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-foreground-faint pointer-coarse:text-base",
-				),
-				h.Placeholder("Search spans…"),
-				h.Type("text"),
-				h.Value(model.searchQuery),
-				h.OnInput((query) => Message.ChangedSearch({ query })),
-				h.OnKeyDownPreventDefault((key, modifiers) =>
-					(key === "Enter" && matchCount > 0) || key === "Escape"
-						? Option.some(Message.PressedSearchKey({ key, isShift: modifiers.shiftKey }))
-						: Option.none(),
-				),
-			]),
+			bareInput(h, {
+				className:
+					"flex-1 font-mono text-xs text-foreground placeholder:text-foreground-faint pointer-coarse:text-base",
+				attributes: [
+					h.Placeholder("Search spans…"),
+					h.Type("text"),
+					h.Value(model.searchQuery),
+					h.OnInput((query) => Message.ChangedSearch({ query })),
+					h.OnKeyDownPreventDefault((key, modifiers) =>
+						(key === "Enter" && matchCount > 0) || key === "Escape"
+							? Option.some(Message.PressedSearchKey({ key, isShift: modifiers.shiftKey }))
+							: Option.none(),
+					),
+				],
+			}),
 			...(model.searchQuery === ""
 				? []
 				: [
-						h.span(
-							[h.Class("text-3xs font-mono text-muted-foreground shrink-0 tabular-nums")],
+						typography(h, { size: "3xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
 							[
 								model.matchCursor > 0
 									? `${model.matchCursor}/${matchCount}`
 									: `${matchCount} of ${totalCount}`,
 							],
 						),
-						h.button(
-							[
-								h.AriaLabel("Clear search"),
-								h.Class(
-									"-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-								h.Type("button"),
-								h.OnClick(Message.ClickedClearSearch()),
-							],
+						iconButton(
+							h,
+							{
+								label: "Clear search",
+								size: "icon-2xs",
+								hasTooltip: false,
+								className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
+								attributes: [h.OnClick(Message.ClickedClearSearch())],
+							},
 							[icon(h, "XmarkIcon", { size: 12 })],
 						),
 					]),
@@ -238,20 +242,52 @@ export const toolbar = (h: H, model: Model, visibleSpanCount: number, ids: Toolb
 		],
 	)
 
+/** One div per span: built only when the tree, bounds or colour scheme change, not per viewport. */
+const silhouetteSlot = createLazy()
+
+const silhouette = (
+	h: H,
+	rootSpans: Model["rootSpans"],
+	traceStartMs: number,
+	traceEndMs: number,
+	colorBy: string,
+): Html => {
+	const { loMs: domainStartMs, durationMs: domainDuration } = viewportBounds(traceStartMs, traceEndMs)
+	const { spans, maxDepth } = collectMinimapSpans(
+		rootSpans,
+		domainStartMs,
+		domainDuration,
+		colorByFromId(colorBy) ?? DEFAULT_COLOR_BY,
+	)
+	const pitch = Math.max(1, Math.min(4, Math.floor((MINIMAP_HEIGHT - 4) / (maxDepth + 1))))
+	const rowH = Math.max(1, pitch - 1)
+	return layer(
+		h,
+		{ attributes: [h.Style({ "padding-top": "2px", "padding-bottom": "2px" })] },
+		spans.map((span) =>
+			h.div(
+				[
+					h.Attribute("class", "absolute"),
+					h.Style({
+						top: `${Math.min(2 + span.depth * pitch, MINIMAP_HEIGHT - rowH - 2)}px`,
+						left: `${span.leftPercent}%`,
+						width: `${Math.max(span.widthPercent, 0.2)}%`,
+						height: `${rowH}px`,
+						"background-color": span.bgColor,
+					}),
+				],
+				[],
+			),
+		),
+	)
+}
+
 /** `TraceTimelineMinimap` at rest: the span silhouette, masks and the viewport rect. */
 export const minimap = (h: H, model: Model): Html => {
 	const { loMs: domainStartMs, durationMs: domainDuration } = viewportBounds(
 		model.traceStartMs,
 		model.traceEndMs,
 	)
-	const { spans, maxDepth } = collectMinimapSpans(
-		model.rootSpans,
-		domainStartMs,
-		domainDuration,
-		colorByFromId(model.colorBy) ?? DEFAULT_COLOR_BY,
-	)
-	const pitch = Math.max(1, Math.min(4, Math.floor((MINIMAP_HEIGHT - 4) / (maxDepth + 1))))
-	const rowH = Math.max(1, pitch - 1)
 	const clampFrac = (value: number) => Math.max(0, Math.min(1, value))
 	const start = clampFrac((model.viewport.startMs - domainStartMs) / domainDuration)
 	const end = clampFrac((model.viewport.endMs - domainStartMs) / domainDuration)
@@ -269,27 +305,13 @@ export const minimap = (h: H, model: Model): Html => {
 			h.OnDoubleClick(Message.ClickedFit()),
 		],
 		[
-			h.div(
-				[
-					h.Class("pointer-events-none absolute inset-0"),
-					h.Style({ "padding-top": "2px", "padding-bottom": "2px" }),
-				],
-				spans.map((span) =>
-					h.div(
-						[
-							h.Attribute("class", "absolute"),
-							h.Style({
-								top: `${Math.min(2 + span.depth * pitch, MINIMAP_HEIGHT - rowH - 2)}px`,
-								left: `${span.leftPercent}%`,
-								width: `${Math.max(span.widthPercent, 0.2)}%`,
-								height: `${rowH}px`,
-								"background-color": span.bgColor,
-							}),
-						],
-						[],
-					),
-				),
-			),
+			silhouetteSlot(silhouette, [
+				h,
+				model.rootSpans,
+				model.traceStartMs,
+				model.traceEndMs,
+				model.colorBy,
+			]),
 			h.div(
 				[
 					h.Class("pointer-events-none absolute inset-y-0 left-0 bg-background/60"),

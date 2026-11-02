@@ -18,7 +18,7 @@ import {
 	sweepStaleDiscoveryFiles,
 } from "../src/commands/in-memory-store"
 import { guardStartFailures, readStartFailureRecord } from "../src/commands/start-failures"
-import { ChdbError } from "../src/server/chdb"
+import { ChdbError } from "@maple/local-server/chdb"
 
 const NO_FLAGS = {
 	background: false,

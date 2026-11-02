@@ -1,6 +1,6 @@
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import * as CopyButton from "@maple/web/ui/copy-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../../route"

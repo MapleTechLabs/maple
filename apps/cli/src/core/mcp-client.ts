@@ -17,7 +17,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { McpToolOutputs, type McpToolName } from "@maple/domain/mcp-outputs"
 import { WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { debugLog } from "../lib/debug"
-import { encodeJsonEffect } from "../lib/json"
+import { encodeJsonEffect } from "@maple/local-server/json"
 import { CliUsageError } from "../lib/errors"
 
 /** The workspace refused the stored key (401/403). `lib/failure.ts` reads the tag. */

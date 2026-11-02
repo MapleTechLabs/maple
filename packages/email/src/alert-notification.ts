@@ -1,9 +1,9 @@
 /**
  * Runtime renderer for the alert notification email.
  *
- * The markup lives in `emails/alert-notification.html` and is compiled to
- * `src/generated/alert-notification.ts` by Maizzle (`bun run --cwd
- * packages/email build`). This module only splices those strings together.
+ * The markup lives in `templates/` and is compiled to
+ * `src/generated/alert-notification.ts` (`bun run --cwd packages/email build`).
+ * This module only splices those strings together.
  */
 import { FRAGMENTS, PAGE } from "./generated/alert-notification"
 import { escapeHtml, fill, preheaderPadding, truncate } from "./template"

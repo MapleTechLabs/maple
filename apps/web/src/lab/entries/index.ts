@@ -1,7 +1,7 @@
 import { LAB_ENTRIES, type LabEntry as RegistryEntry } from "../registry"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { defineStaticShellLab } from "../static-shell-lab"
 
 // `/lab`: every lab and bench surface, read from the registry.

@@ -720,24 +720,27 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 
-	const [facetsResponse, statsResponse] = yield* Effect.all([
-		executeQueryEngine(
-			"queryEngine.getTracesFacets",
-			new QueryEngineExecuteRequest({
-				startTime,
-				endTime,
-				query: { kind: "facets" as const, source: "traces" as const, filters },
-			}),
-		),
-		executeQueryEngine(
-			"queryEngine.getTracesDurationStats",
-			new QueryEngineExecuteRequest({
-				startTime,
-				endTime,
-				query: { kind: "stats" as const, source: "traces" as const, filters },
-			}),
-		),
-	])
+	const [facetsResponse, statsResponse] = yield* Effect.all(
+		[
+			executeQueryEngine(
+				"queryEngine.getTracesFacets",
+				new QueryEngineExecuteRequest({
+					startTime,
+					endTime,
+					query: { kind: "facets" as const, source: "traces" as const, filters },
+				}),
+			),
+			executeQueryEngine(
+				"queryEngine.getTracesDurationStats",
+				new QueryEngineExecuteRequest({
+					startTime,
+					endTime,
+					query: { kind: "stats" as const, source: "traces" as const, filters },
+				}),
+			),
+		],
+		{ concurrency: "unbounded" },
+	)
 
 	const facetsData = extractFacets(facetsResponse)
 	const statsData = extractStats(statsResponse)

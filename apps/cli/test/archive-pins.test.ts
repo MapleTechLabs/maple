@@ -25,9 +25,9 @@ import {
 	readCheckpointState,
 	withMaintenanceLock,
 	type CheckpointId,
-} from "../src/server/checkpoints"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
+} from "@maple/local-server/checkpoints"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 
 // Pin and maintenance-lock API for the dependent archive branch. These tests
 // mirror the checkpoint suite's conventions: a throwaway parent/data dir,

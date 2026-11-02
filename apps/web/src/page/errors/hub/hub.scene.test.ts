@@ -13,9 +13,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
-import { toLoadFailure } from "../../../data/load-failure"
-import { failureSentence } from "../../../ui/error-state"
+import { MeasureTabIndicator, Message as TabsMessage } from "@maple/views/ui/tabs"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import { failureSentence } from "@maple/views/ui/error-state"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchInvestigations, FetchPage, MountFilterRail, MountRowSelect } from "./command"
 import { Message } from "./message"

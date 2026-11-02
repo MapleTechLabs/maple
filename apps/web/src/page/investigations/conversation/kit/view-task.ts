@@ -1,19 +1,20 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { sheetDescriptionStyles } from "@maple/ui/styles/ui/sheet"
-import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../../../ui/alert"
-import * as Dialog from "../../../../ui/dialog"
-import * as DialogView from "../../../../ui/dialog-view"
-import { icon } from "../../../../ui/icon"
-import { trace, traceDescription, traceIcon, traceLine } from "../../../../ui/trace"
-import { detailEyebrow } from "../../../kit/detail-header"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { icon } from "@maple/views/ui/icon"
+import { trace, traceDescription, traceIcon, traceLine } from "@maple/views/ui/trace"
+import { pressable } from "@maple/views/ui/pressable"
+import { sheetDetailHeader } from "../../../kit/sheet-detail-header"
 import { sectionHeading } from "../../../kit/section-heading"
 import { dotLoader } from "./dot-loader"
 import type { TaskPart, ToolPart } from "./ui-message"
 import { agentPresentation } from "./view-cards"
 import { type PanelHost, runningClock } from "./view-tool"
+import { typography } from "@maple/views/ui/typography"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `TaskCard`: one sub-agent run as a line that opens its
 // sheet: the question in full, the answer, and whatever of the child's own steps reached the parent.
@@ -101,7 +102,9 @@ const answer = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html =
 			[part.errorText],
 		)
 	if (part.answer !== undefined) return h.div([h.Class("text-sm")], [host.richText(part.answer)])
-	return h.p([h.Class("text-sm text-muted-foreground")], ["The run ended without returning an answer."])
+	return typography(h, { size: "sm", tone: "muted", as: "p" }, [
+		"The run ended without returning an answer.",
+	])
 }
 
 /** `SheetDetailHeader` (not mono) over the `SheetPanel` of answer and steps. */
@@ -123,29 +126,13 @@ const sheetContent = <M>(
 		],
 	)
 	return [
-		DialogView.dialogHeader(
-			h,
-			"sheet",
-			[
-				...Option.toArray(Option.fromNullishOr(detailEyebrow(h, [kind]))),
-				DialogView.dialogTitle(
-					h,
-					"sheet",
-					id,
-					[h.span([h.Class("min-w-0 break-words")], [part.prompt])],
-					"flex flex-wrap items-center gap-2 text-title leading-tight",
-				),
-				h.p(
-					[
-						h.Class(cn(sheetDescriptionStyles, "sr-only")),
-						h.DataAttribute("slot", "sheet-description"),
-						h.Id(Dialog.descriptionId(id)),
-					],
-					["What this sub-agent was asked, and what it came back with."],
-				),
-			],
-			"gap-1.5 pr-14",
-		),
+		sheetDetailHeader(h, {
+			dialogId: id,
+			kind: [kind],
+			title: [part.prompt],
+			description: "What this sub-agent was asked, and what it came back with.",
+			mono: false,
+		}),
 		DialogView.dialogPanel(
 			h,
 			"sheet",
@@ -160,21 +147,18 @@ const sheetContent = <M>(
 							]),
 						]
 					: []),
-				h.section(
-					[h.Class("flex flex-col gap-2")],
-					[
-						sectionHeading(h, {
-							variant: "eyebrow",
-							as: "h3",
-							title: "Answer",
-							className: "mb-0",
-						}),
-						answer(h, host, part),
-					],
-				),
+				vstack(h, { gap: "2", as: "section" }, [
+					sectionHeading(h, {
+						variant: "eyebrow",
+						as: "h3",
+						title: "Answer",
+						className: "mb-0",
+					}),
+					answer(h, host, part),
+				]),
 				...steps(h, host, part),
 			],
-			"flex flex-col gap-6",
+			vstackClass({ gap: "6" }),
 		),
 	]
 }
@@ -192,7 +176,7 @@ export const taskCard = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart
 			className: "sm:max-w-xl",
 			hasDescription: true,
 			toView: ({ trigger, portal }) =>
-				trace(h, [h.button([...trigger, h.Type("button")], [taskLine(h, host, part)]), portal]),
+				trace(h, [pressable(h, { attributes: trigger }, [taskLine(h, host, part)]), portal]),
 			toContent: () => sheetContent(h, host, part, id),
 		},
 	})
@@ -203,28 +187,25 @@ const steps = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Readonl
 	part.messages.length === 0
 		? []
 		: [
-				h.section(
-					[h.Class("flex flex-col gap-2")],
-					[
-						sectionHeading(h, {
-							variant: "eyebrow",
-							as: "h3",
-							title: "Its own steps",
-							className: "mb-0",
-						}),
-						...part.messages.map((message) =>
-							h.keyed("div")(
-								message.id,
-								[h.Class("flex flex-col gap-1.5")],
-								message.parts.flatMap((leaf) =>
-									leaf._tag === "text"
-										? [host.richText(leaf.text)]
-										: leaf._tag === "dynamic-tool"
-											? [host.tool(leaf)]
-											: [],
-								),
+				vstack(h, { gap: "2", as: "section" }, [
+					sectionHeading(h, {
+						variant: "eyebrow",
+						as: "h3",
+						title: "Its own steps",
+						className: "mb-0",
+					}),
+					...part.messages.map((message) =>
+						h.keyed("div")(
+							message.id,
+							[h.Class(vstackClass({ gap: "1.5" }))],
+							message.parts.flatMap((leaf) =>
+								leaf._tag === "text"
+									? [host.richText(leaf.text)]
+									: leaf._tag === "dynamic-tool"
+										? [host.tool(leaf)]
+										: [],
 							),
 						),
-					],
-				),
+					),
+				]),
 			]

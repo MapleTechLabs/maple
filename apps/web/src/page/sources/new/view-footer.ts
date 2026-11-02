@@ -1,8 +1,9 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import type { Message } from "./message"
 import type { FlowHost } from "./model"
+import { hstack } from "@maple/views/ui/stack"
 
 // The connect flow's sticky footer: Back on the left, the step's hint and its actions on the right.
 // It sits on the page's bottom edge, stuck or not, so it never moves between steps or at the scroll end.
@@ -19,8 +20,8 @@ export type FlowFooterOptions = Readonly<{
 }>
 
 const FOOTER_CLASS = {
-	page: "sticky -bottom-4 -mx-1 mt-auto -mb-4 bg-background px-1",
-	drawer: "sticky bottom-0 -mx-6 mt-auto -mb-6 bg-popover px-6",
+	page: "sticky -bottom-4 z-10 -mx-1 mt-auto -mb-4 bg-background px-1",
+	drawer: "sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 bg-popover px-6",
 } satisfies Record<FlowHost, string>
 
 export const flowFooter = (h: H, options: FlowFooterOptions): Html =>
@@ -37,15 +38,9 @@ export const flowFooter = (h: H, options: FlowFooterOptions): Html =>
 						icon(h, "ArrowLeftIcon", { size: 14 }),
 						"Back",
 					]),
-			h.div(
-				[h.Class("flex items-center gap-4")],
-				[
-					h.span(
-						[h.Class("hidden text-xs text-muted-foreground @2xl/page:inline")],
-						[options.hint],
-					),
-					...options.actions,
-				],
-			),
+			hstack(h, { gap: "4" }, [
+				h.span([h.Class("hidden text-xs text-muted-foreground @2xl/page:inline")], [options.hint]),
+				...options.actions,
+			]),
 		],
 	)

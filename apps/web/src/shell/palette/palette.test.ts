@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import * as Combobox from "../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import { browseEntries, paletteEntries } from "./entries"
 import { Message, type Model, OutMessage } from "./model"
 import { type Context, open, shownEntries, update } from "./update"
@@ -36,7 +36,7 @@ describe("command palette", () => {
 			shownEntries(typed(loadedWith([]), query).model, context, ALL_FLAGGED).entries.map(
 				(entry) => entry.title,
 			)
-		expect(titles("serv")).toEqual(expect.arrayContaining(["Services", "Service Map"]))
+		expect(titles("serv")).toEqual(expect.arrayContaining(["Services", "Service map"]))
 		expect(titles("serv")).not.toContain("Overview")
 		expect(titles("srevices")).toContain("Services")
 	})
@@ -55,6 +55,29 @@ describe("command palette", () => {
 			)
 		expect(tracesFor("traces").map((entry) => entry.title)).toEqual(["Traces"])
 		expect(tracesFor("explore")).toHaveLength(1)
+	})
+
+	test("a re-render with the same inputs reuses the ranked entries; a new query ranks again", () => {
+		const model = typed(loadedWith(["storefront"]), "store").model
+		const first = shownEntries(model, { ...context }, [...ALL_FLAGGED])
+		expect(shownEntries(model, { ...context }, [...ALL_FLAGGED])).toBe(first)
+		const retyped = typed(model, "logs").model
+		expect(shownEntries(retyped, context, ALL_FLAGGED).entries.map((entry) => entry.title)).toContain(
+			"Logs",
+		)
+	})
+
+	test("hovering the row that is already highlighted keeps the palette model", () => {
+		const model = typed(loadedWith([]), "logs").model
+		const hover = (from: Model) =>
+			update(
+				from,
+				Message.GotListMessage({ message: Combobox.Message.HighlightedItem({ index: 1 }) }),
+				context,
+			).model
+		const hovered = hover(model)
+		expect(hovered.list.highlighted).toBe(1)
+		expect(hover(hovered)).toBe(hovered)
 	})
 
 	test("opening reads the services; typing sends nothing", () => {

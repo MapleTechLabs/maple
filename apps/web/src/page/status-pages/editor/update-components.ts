@@ -2,8 +2,8 @@ import type { StatusPageComponentId } from "@maple/domain"
 import type { V2StatusPageComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import {
 	type ComponentTextField,

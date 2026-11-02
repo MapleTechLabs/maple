@@ -2,18 +2,19 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import type { ChartEventMarker } from "../../../../charts/event-marker-spec"
-import { CHART_EMPTY_MESSAGE } from "../../../../charts/infra-metric-chart"
-import * as PlotBoxChart from "../../../../charts/plot-box-chart"
-import { METRIC_LABELS, type PlanetScaleMetric } from "../../../../charts/planetscale-metric-series"
-import { resolveColor, type ThemeColors } from "../../../../charts/theme-colors"
-import { chartLoading } from "../../../../ui/chart-state"
-import { errorState } from "../../../../ui/error-state"
+import * as Chart from "@maple/views/charts/chart"
+import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
+import { CHART_EMPTY_MESSAGE } from "@maple/views/charts/infra-metric-chart"
+import * as PlotBoxChart from "@maple/views/charts/plot-box-chart"
+import { METRIC_LABELS, type PlanetScaleMetric } from "@maple/views/charts/planetscale-metric-series"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartLoading } from "@maple/views/ui/chart-state"
+import { errorState } from "@maple/views/ui/error-state"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
 import { scopeChip } from "../../kit/scope-chip"
 import type { TimeseriesRow } from "../data"
 import { Message, type Model } from "./model"
+import { grid as gridLayout } from "@maple/views/ui/grid"
 
 // `PlanetScaleChart` cards and the chart section of `PlanetScaleDatabaseData`.
 
@@ -159,10 +160,7 @@ const metricCard = (
 const grid = (h: H, children: ReadonlyArray<Html>): Html =>
 	h.div(
 		[h.Class("space-y-4")],
-		[
-			children[0] ?? h.empty,
-			h.div([h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")], children.slice(1)),
-		],
+		[children[0] ?? h.empty, gridLayout(h, { cols: 1, lg: 2, gap: "4" }, children.slice(1))],
 	)
 
 const loadingCharts = (h: H): Html =>

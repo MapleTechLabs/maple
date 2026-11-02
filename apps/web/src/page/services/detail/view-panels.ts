@@ -2,14 +2,15 @@ import { formatThroughput } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import * as Sparkline from "../../../charts/sparkline"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import { backdropBar } from "../../../ui/meter"
-import { textLink } from "../../../ui/text-link"
-import { panel, panelBody, panelHeader } from "../../../ui/panel"
-import { truncatedText } from "../../../ui/truncated-text"
-import { errorRateValue, latencyValue } from "../../../ui/values"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { backdropBar } from "@maple/views/ui/meter"
+import { pressable } from "@maple/views/ui/pressable"
+import { textLink } from "@maple/views/ui/text-link"
+import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { errorRateValue, latencyValue } from "@maple/views/ui/values"
 import { callsPerSecond, windowSeconds } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -62,14 +63,13 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 					h.li(
 						[h.Key(op.spanName)],
 						[
-							h.button(
-								[
-									h.Type("button"),
-									h.OnClick(onViewAll),
-									h.Class(
+							pressable(
+								h,
+								{
+									onClick: onViewAll,
+									className:
 										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-									),
-								],
+								},
 								[
 									backdropBar(h, {
 										value: op.estimatedSpanCount,

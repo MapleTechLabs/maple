@@ -6,15 +6,15 @@ import { cn } from "@maple/ui/lib/utils"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHeader, tableRow } from "../../../ui/table"
-import { errorRateValue, latencyValue, serviceDot } from "../../../ui/values"
+import { badge } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHeader, tableRow } from "@maple/views/ui/table"
+import { errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
 import {
 	type DependencyRow,
 	dependencyRows,
@@ -36,6 +36,9 @@ import {
 	tableSkeletonHead,
 	tableTitle,
 } from "./view-table-cells"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge` (components/services/).
 // TODO(sampled-tooltip): an estimated rate's "Estimated ×N" tooltip is not ported (trigger only).
@@ -72,38 +75,30 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center gap-2.5 min-w-0")],
-						[
-							typeBadge(h, row.kind),
-							h.div(
-								[h.Class("flex min-w-0 flex-col leading-tight")],
-								[
-									h.span(
-										[
-											h.Class(
-												"flex min-w-0 items-center gap-1.5 text-xs text-foreground",
-											),
-										],
-										[
-											...(row.kind === "service"
-												? [serviceDot(h, { serviceName: row.name, size: "sm" })]
-												: []),
-											h.span([h.Class("truncate"), h.Title(row.name)], [row.name]),
-										],
-									),
-									...(row.subtitle === undefined
-										? []
-										: [
-												h.span(
-													[h.Class("truncate text-3xs text-foreground-subtle")],
-													[row.subtitle],
-												),
+					hstack(h, { gap: "2.5", shrink: true }, [
+						typeBadge(h, row.kind),
+						h.div(
+							[h.Class("flex min-w-0 flex-col leading-tight")],
+							[
+								h.span(
+									[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-foreground")],
+									[
+										...(row.kind === "service"
+											? [serviceDot(h, { serviceName: row.name, size: "sm" })]
+											: []),
+										h.span([h.Class("truncate"), h.Title(row.name)], [row.name]),
+									],
+								),
+								...(row.subtitle === undefined
+									? []
+									: [
+											typography(h, { size: "3xs", tone: "subtle", truncate: true }, [
+												row.subtitle,
 											]),
-								],
-							),
-						],
-					),
+										]),
+							],
+						),
+					]),
 				],
 				"max-w-0 py-0 pl-4 align-middle",
 			),
@@ -266,11 +261,13 @@ const loadingState = (h: H): Html =>
 		h.div(
 			[h.AriaBusy(true), h.Class("flex flex-col")],
 			Array.from({ length: 6 }, (_, index) =>
-				h.div(
-					[
-						h.Key(String(index)),
-						h.Class("flex h-11 items-center gap-3 border-b px-4 last:border-b-0"),
-					],
+				hstack(
+					h,
+					{
+						gap: "3",
+						className: stripClass("skeletonRow"),
+						attributes: [h.Key(String(index))],
+					},
 					[
 						skeleton(h, "h-4 w-16"),
 						skeleton(h, "h-3 flex-1"),
@@ -288,7 +285,12 @@ export const dependenciesTab = (h: H, model: Model): Html =>
 	AsyncData.match(model.dependencies.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load dependencies" }),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load dependencies",
+				onRetry: Message.ClickedRetry({ target: "Dependencies" }),
+			}),
 		// A failed reload keeps the last rows on screen, as before.
 		onStale: ({ data }) => dependenciesBody(h, model, data, false),
 		onRefreshing: (bundle) => dependenciesBody(h, model, bundle, true),
@@ -304,7 +306,7 @@ const dependenciesBody = (h: H, model: Model, bundle: DependencyBundle, isWaitin
 	const summary = dependencySummary(rows)
 	return h.div(
 		[
-			h.Class(cn("flex flex-col gap-3", refreshingClass(isWaiting))),
+			h.Class(cn(vstackClass({ gap: "3" }), refreshingClass(isWaiting))),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
 		[

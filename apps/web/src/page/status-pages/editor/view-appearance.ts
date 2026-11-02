@@ -9,9 +9,10 @@ import {
 import { previewSnapshot } from "@maple/status-page"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { heading } from "@maple/views/ui/heading"
 import { settingsSection } from "../../settings/kit/section"
 import { selectField, textField } from "../shared/fields"
 import {
@@ -36,6 +37,8 @@ import {
 	toSnapshotIncident,
 } from "../shared/preview"
 import { componentsOf, incidentsOf, monitorsOf, statusReadsReady } from "./reads"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The Settings view's Appearance section and the live preview of the public page.
 
@@ -131,89 +134,77 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 			description: ["Colors, corners and type of the public page."],
 		},
 		[
-			h.div(
-				[h.Class("flex flex-col gap-5")],
-				[
-					h.div(
-						[h.Class("flex flex-col gap-1.5")],
-						[
-							h.span([h.Class("text-xs text-muted-foreground")], ["Preset"]),
-							presetCards(h, {
-								selected: theme.preset,
-								isDisabled: isReadOnly,
-								onPick: (preset) => Message.PickedThemePreset({ preset }),
-							}),
-						],
-					),
-					h.div(
-						[h.Class("flex flex-col gap-1.5")],
-						[
-							h.span([h.Class("text-xs text-muted-foreground")], ["Mode"]),
-							segmentedSelect(h, {
-								size: "sm",
-								ariaLabel: "Mode",
-								className: "self-start",
-								value: theme.appearance,
-								onChange: (appearance) => Message.PickedThemeAppearance({ appearance }),
-								options: APPEARANCES.map((option) => ({ ...option, isDisabled: isReadOnly })),
-							}),
-							h.p(
-								[h.Class("text-xs text-muted-foreground")],
-								[
-									isAuto
-										? "Follows each visitor's light or dark setting. Pick Light or Dark to set your own colors."
-										: `Every visitor sees the ${theme.appearance} page.`,
-								],
-							),
-						],
-					),
-					h.div(
-						[h.Class("grid gap-4 sm:grid-cols-2")],
-						COLOR_FIELDS.map((entry) =>
-							colorField(
-								h,
-								theme,
-								entry,
-								issues[entry.field],
-								isReadOnly || (isAuto && isOverride(entry.field)),
-							),
+			vstack(h, { gap: "5" }, [
+				vstack(h, { gap: "1.5" }, [
+					typography(h, { size: "xs", tone: "muted" }, ["Preset"]),
+					presetCards(h, {
+						selected: theme.preset,
+						isDisabled: isReadOnly,
+						onPick: (preset) => Message.PickedThemePreset({ preset }),
+					}),
+				]),
+				vstack(h, { gap: "1.5" }, [
+					typography(h, { size: "xs", tone: "muted" }, ["Mode"]),
+					segmentedSelect(h, {
+						size: "sm",
+						ariaLabel: "Mode",
+						className: "self-start",
+						value: theme.appearance,
+						onChange: (appearance) => Message.PickedThemeAppearance({ appearance }),
+						options: APPEARANCES.map((option) => ({ ...option, isDisabled: isReadOnly })),
+					}),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						isAuto
+							? "Follows each visitor's light or dark setting. Pick Light or Dark to set your own colors."
+							: `Every visitor sees the ${theme.appearance} page.`,
+					]),
+				]),
+				h.div(
+					[h.Class("grid gap-4 sm:grid-cols-2")],
+					COLOR_FIELDS.map((entry) =>
+						colorField(
+							h,
+							theme,
+							entry,
+							issues[entry.field],
+							isReadOnly || (isAuto && isOverride(entry.field)),
 						),
 					),
-					...(contrast === null
-						? []
-						: [
-								alert(h, { variant: "warn", size: "sm" }, [
-									alertTitle(h, ["Text is hard to read"]),
-									alertDescription(h, [contrast]),
-								]),
+				),
+				...(contrast === null
+					? []
+					: [
+							alert(h, { variant: "warn", size: "sm" }, [
+								alertTitle(h, ["Text is hard to read"]),
+								alertDescription(h, [contrast]),
 							]),
-					h.div(
-						[h.Class("grid gap-4 sm:grid-cols-2")],
-						[
-							selectField(h, {
-								id: "status-page-theme-radius",
-								label: "Corners",
-								value: theme.radius,
-								entries: RADII,
-								isDisabled: isReadOnly,
-								onInput: (value) =>
-									Message.PickedThemeRadius({
-										radius: isRadius(value) ? value : theme.radius,
-									}),
-							}),
-							selectField(h, {
-								id: "status-page-theme-font",
-								label: "Font",
-								value: theme.font,
-								entries: FONTS,
-								isDisabled: isReadOnly,
-								onInput: (value) =>
-									Message.PickedThemeFont({ font: isFont(value) ? value : theme.font }),
-							}),
-						],
-					),
-				],
-			),
+						]),
+				h.div(
+					[h.Class("grid gap-4 sm:grid-cols-2")],
+					[
+						selectField(h, {
+							id: "status-page-theme-radius",
+							label: "Corners",
+							value: theme.radius,
+							entries: RADII,
+							isDisabled: isReadOnly,
+							onInput: (value) =>
+								Message.PickedThemeRadius({
+									radius: isRadius(value) ? value : theme.radius,
+								}),
+						}),
+						selectField(h, {
+							id: "status-page-theme-font",
+							label: "Font",
+							value: theme.font,
+							entries: FONTS,
+							isDisabled: isReadOnly,
+							onInput: (value) =>
+								Message.PickedThemeFont({ font: isFont(value) ? value : theme.font }),
+						}),
+					],
+				),
+			]),
 		],
 	)
 }
@@ -266,29 +257,23 @@ export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: Setti
 			h.Class("flex min-w-0 flex-col gap-3 xl:sticky xl:top-6"),
 		],
 		[
-			h.div(
-				[h.Class("flex min-h-7 items-center justify-between gap-3")],
-				[
-					h.h2(
-						[h.Id("status-page-preview-title"), h.Class("text-sm font-medium text-foreground")],
-						["Preview"],
-					),
-					...(form.theme.appearance === "auto"
-						? [
-								segmentedSelect(h, {
-									size: "xs",
-									ariaLabel: "Preview mode",
-									value: model.previewScheme,
-									onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
-									options: [
-										{ value: "light", label: "Light" },
-										{ value: "dark", label: "Dark" },
-									],
-								}),
-							]
-						: []),
-				],
-			),
+			hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
+				heading(h, { level: 2, variant: "subsection", id: "status-page-preview-title" }, ["Preview"]),
+				...(form.theme.appearance === "auto"
+					? [
+							segmentedSelect(h, {
+								size: "xs",
+								ariaLabel: "Preview mode",
+								value: model.previewScheme,
+								onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
+								options: [
+									{ value: "light", label: "Light" },
+									{ value: "dark", label: "Dark" },
+								],
+							}),
+						]
+					: []),
+			]),
 			statusReadsReady(model)
 				? previewFrame(h, {
 						title: "Status page preview",
@@ -296,6 +281,6 @@ export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: Setti
 						className: "h-[640px]",
 					})
 				: skeleton(h, "h-[640px] w-full"),
-			h.p([h.Class("text-xs text-muted-foreground")], ["Unsaved changes show here first."]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Unsaved changes show here first."]),
 		],
 	)

@@ -11,6 +11,7 @@
 
 @source "../../../packages/ui/src";
 @source "../../../packages/web-data/src";
+@source "../../../packages/views/src";
 
 /* Syntax highlighting palette (`lib/highlight.ts`); `--sh-foreground` colours unstyled tokens. */
 :root {

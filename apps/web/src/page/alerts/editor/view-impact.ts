@@ -5,8 +5,8 @@ import { displaySignalType, formatSignalValue } from "@maple/web-data/alerts/for
 import { diffRuleForms, incidentsClearedByDraft } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { skeleton } from "../../../ui/skeleton"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { isoMs } from "../shared/time"
 import { draftPreviewOf, openIncidentsOf, windowMsOf } from "./derive-rows"
@@ -14,6 +14,7 @@ import type { RuleForm } from "./form"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { isEvaluationChanged } from "./plan"
+import { typography } from "@maple/views/ui/typography"
 
 // `RuleEditImpact`: the saved rule and the draft replayed
 // over one window, every changed field, and the open incidents the draft would clear.
@@ -47,7 +48,7 @@ const figure = (
 					),
 				],
 			),
-			h.p([h.Class("text-xs text-muted-foreground")], [caption]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [caption]),
 		],
 	)
 

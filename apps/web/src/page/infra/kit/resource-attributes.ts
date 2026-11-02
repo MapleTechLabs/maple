@@ -1,9 +1,10 @@
 import { Schema } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../../ui/copy-button"
-import { detailRailGroup, detailRailMetaRow } from "../../../ui/detail-rail"
-import { skeleton } from "../../../ui/skeleton"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { detailRailGroup, detailRailMetaRow } from "@maple/views/ui/detail-rail"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { typography } from "@maple/views/ui/typography"
 
 // `ResourceAttributesCard` / `ResourceAttributesCardSkeleton` and `DetailRail.MetaRow` with its copy buttons.
 // TODO(tooltip): a row's `tooltip` renders its trigger; the hover popup is not wired yet.
@@ -59,7 +60,10 @@ export const resourceAttributesCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 export const attributeSection = <M>(h: HtmlBuilder<M>, title: string, rows: ReadonlyArray<Html>): Html =>
 	h.div(
 		[h.Class("space-y-0.5 py-2 first:pt-0 last:pb-0")],
-		[h.div([h.Class("text-2xs font-medium text-muted-foreground")], [title]), h.div([], rows)],
+		[
+			typography(h, { size: "2xs", tone: "muted", weight: "medium", as: "div" }, [title]),
+			h.div([], rows),
+		],
 	)
 
 export type MetaRowOptions<M> = Readonly<{

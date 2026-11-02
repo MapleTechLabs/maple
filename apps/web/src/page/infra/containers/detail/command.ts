@@ -1,7 +1,7 @@
 import { containerDetailSummary, containerInfraTimeseries } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Message } from "./message"
 import { ContainerMetric } from "./model"
 

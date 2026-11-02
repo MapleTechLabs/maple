@@ -20,7 +20,7 @@ import {
 import { getReleases } from "@maple/web-data/warehouse/releases"
 import { Effect, Schema } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
 // Row schemas and loaders shared by the Cloudflare pages: `@maple/web-data/warehouse/cloudflare-infra`.

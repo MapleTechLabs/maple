@@ -20,13 +20,20 @@ const makeMcpToolExecutorStubLayer = (
 	execute: McpToolExecutorApi["execute"] = () =>
 		Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
 ) =>
-	Layer.succeed(McpToolExecutorLoader, {
-		load: Effect.succeed({
-			execute,
-			prepareRepository: () => Effect.void,
-			prepareConnectedRepositories: () => Effect.void,
+	Layer.effect(
+		McpToolExecutorLoader,
+		Effect.sync(() => {
+			const executor = {
+				execute,
+				prepareRepository: () => Effect.void,
+				prepareConnectedRepositories: () => Effect.void,
+			}
+			return {
+				load: Effect.succeed(executor),
+				loadReportingBuild: Effect.succeed({ executor, built: false }),
+			}
 		}),
-	})
+	)
 
 // Loose shape of the MCP responses the tests read; unknown fields are ignored.
 const McpResponseBody = Schema.Struct({
@@ -724,6 +731,7 @@ describe("MCP server spans", () => {
 				errorType: span.attributes.get("error.type"),
 				requestId: span.attributes.get("jsonrpc.request.id"),
 				userAgent: span.attributes.get("user_agent.original"),
+				user: span.attributes.get("user.id"),
 			})),
 		).toEqual([
 			{
@@ -736,6 +744,7 @@ describe("MCP server spans", () => {
 				errorType: undefined,
 				requestId: "1",
 				userAgent: "claude-code/2.1.312 (cli)",
+				user: "user_test",
 			},
 			{
 				name: "tools/call inspect_trace",
@@ -747,6 +756,7 @@ describe("MCP server spans", () => {
 				errorType: "tool_error",
 				requestId: "2",
 				userAgent: "claude-code/2.1.312 (cli)",
+				user: "user_test",
 			},
 		])
 

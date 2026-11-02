@@ -17,20 +17,23 @@ import {
 	gcpSetupRunning,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import * as Menu from "../../ui/menu"
-import type { MenuEntry } from "../../ui/menu-view"
-import { panel } from "../../ui/panel"
-import { rowActionsMenu } from "../../ui/row-actions-menu"
-import { statusDot } from "../../ui/status-dot"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
+import { panel } from "@maple/views/ui/panel"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { relativeTime } from "../kit/relative-time"
 import { gcpMessage } from "../infra-integrations/gcp/gcp-message"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { gcpInfraHref, gcpLogsHref } from "./update-gcp"
 import { gcpCommand } from "./view-gcp-parts"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 // `GcpConnection`, `connectionIssues`, `signalText`, `Signal` and `Fact`.
 
@@ -80,8 +83,7 @@ const issueNote = (h: H, issue: Issue, hasDot: boolean): Html =>
 				[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
 				hasDot ? [statusDot(h, { tone: dotTone(issue.tone), size: "lg" })] : [],
 			),
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-1.5")],
+			vstack(h, { gap: "1.5", shrink: true },
 				[
 					h.p([h.Class("text-sm font-medium text-pretty")], [issue.title]),
 					...(issue.body === undefined
@@ -297,24 +299,23 @@ const signalText = (
 	}
 }
 
-const SIGNAL_LINK = "inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground"
+const SIGNAL_LINK = hstackClass({ gap: "1", inline: true, className: typographyClass({ size: "xs", tone: "muted", hoverTone: "foreground" }) })
 
 const signalView = (h: H, name: string, signal: Signal, link: Html | undefined): Html =>
 	h.div(
 		[h.Class("flex min-w-0 flex-1 flex-col gap-1 px-4 py-3")],
 		[
-			h.span([h.Class("text-xs font-medium")], [name]),
+			typography(h, { size: "xs", weight: "medium" }, [name]),
 			h.span([h.Class(cn("text-xs/[18px]", TONE_TEXT[signal.tone]))], [signal.text]),
 			...(link === undefined ? [] : [h.div([h.Class("pt-1")], [link])]),
 		],
 	)
 
 const fact = (h: H, label: string, value: Html | string): Html =>
-	h.div(
-		[h.Class("flex w-36 shrink-0 flex-col gap-0.5")],
+	vstack(h, { gap: "0.5", className: "w-36 shrink-0" },
 		[
-			h.span([h.Class("text-2xs text-muted-foreground")], [label]),
-			h.span([h.Class("truncate text-xs")], [value]),
+			typography(h, { size: "2xs", tone: "muted" }, [label]),
+			typography(h, { size: "xs", truncate: true }, [value]),
 		],
 	)
 
@@ -328,7 +329,13 @@ const menuEntries: ReadonlyArray<MenuEntry> = [
 	...(IS_ADMIN
 		? [
 				{ _tag: "Separator" } as const,
-				{ _tag: "Item", value: "disconnect", label: "Disconnect", variant: "destructive" } as const,
+				{
+					_tag: "Item",
+					value: "disconnect",
+					label: "Disconnect",
+					icon: "TrashIcon",
+					variant: "destructive",
+				} as const,
 			]
 		: []),
 ]
@@ -347,10 +354,13 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 	const collects = [connector.logs_enabled ? "Logs" : null, connector.metrics_enabled ? "metrics" : null]
 		.filter((part) => part !== null)
 		.join(" and ")
-	const name = h.div(
-		[h.Class("flex min-w-0 items-center gap-2.5")],
+	const name = hstack(h, { gap: "2.5", shrink: true },
 		[
-			h.h3([h.Class("truncate font-mono text-sm font-medium"), h.Title(label)], [connector.scope_id]),
+			heading(
+				h,
+				{ level: 3, variant: "subsection", className: typographyClass({ mono: true, truncate: true }), attributes: [h.Title(label)] },
+				[connector.scope_id],
+			),
 			badge(h, { variant: "meta", size: "xs" }, [GCP_SCOPE_NAMES[connector.scope_type]]),
 		],
 	)
@@ -379,9 +389,8 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 					[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
 					[statusDot(h, { tone: dotTone(tone), size: "lg" })],
 				),
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-0.5")],
-					[name, h.p([h.Class("truncate text-xs text-muted-foreground")], [subtitle])],
+				vstack(h, { gap: "0.5", shrink: true },
+					[name, typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subtitle])],
 				),
 			],
 		)
@@ -410,8 +419,7 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		h.div(
 			[h.Class("flex flex-col gap-3 pt-3 pr-2 pb-4 pl-4")],
 			[
-				h.div(
-					[h.Class("flex items-center justify-between gap-3")],
+				hstack(h, { gap: "3", justify: "between" },
 					[nameRow(issues[0]?.tone ?? "info"), h.div([h.Class("shrink-0")], [menu])],
 				),
 				h.div(

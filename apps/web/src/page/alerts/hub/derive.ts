@@ -2,7 +2,7 @@ import type { AlertDestinationDocument } from "@maple/domain/http"
 import { type AlertsOverviewReady, deriveOverview } from "@maple/web-data/alerts/overview"
 import {
 	buildRuleStatesByRuleId,
-	rowToAlertDestinationDocument,
+	rowsToAlertDestinationDocuments,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
@@ -32,7 +32,7 @@ export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> => 
 
 /** `useAlertDestinationsList()`, `orElse(() => [])`. */
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
-	(model.destinations ?? []).map(rowToAlertDestinationDocument)
+	rowsToAlertDestinationDocuments(model.destinations ?? [])
 
 export type AlertsTab = "inbox" | "rules" | "uptime" | "routing"
 

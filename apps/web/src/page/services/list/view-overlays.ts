@@ -2,14 +2,16 @@ import { formatPercent } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import * as HoverCard from "../../../ui/hover-card"
-import * as Tooltip from "../../../ui/tooltip"
+import { badge } from "@maple/views/ui/display"
+import * as HoverCard from "@maple/views/ui/hover-card"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { commitDetailBody } from "../../kit/commit-card"
 import { deployInfo, isResolvableSha } from "./derive"
 import { Message, type RowTooltip } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { overlayTriggerId } from "./update-overlays"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // The row tooltips (rollout split, sampling estimate, `UnnamedServiceHint`) and `CommitShaHoverCard`.
 
@@ -61,8 +63,9 @@ const entriesOf = (services: ReadonlyArray<ServiceRow>) => {
 }
 
 const rolloutContent = (h: H, service: ServiceRow): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex flex-col gap-1")],
+	vstack(
+		h,
+		{ gap: "1" },
 		(deployInfo(service.commits)?.rollout?.others ?? []).map((commit) =>
 			h.div(
 				[
@@ -71,7 +74,7 @@ const rolloutContent = (h: H, service: ServiceRow): ReadonlyArray<Html> => [
 				],
 				[
 					h.span([], [shortId(commit.commitSha, "sha")]),
-					h.span([h.Class("tabular-nums text-muted-foreground")], [`${commit.percentage}%`]),
+					typography(h, { tone: "muted", numeric: true }, [`${commit.percentage}%`]),
 				],
 			),
 		),

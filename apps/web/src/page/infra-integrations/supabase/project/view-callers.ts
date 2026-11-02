@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { docsUrl } from "../../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../../route"
-import { statusDot } from "../../../../ui/status-dot"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { columnHead, dataTable } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import { ERROR_RATE_LIMIT } from "../health"
@@ -12,6 +12,7 @@ import { callerMixText } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, panelEmpty, panelLink, sectionPanel } from "../panel"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // "Services calling this project": the org's client spans to the project's API and pooler.
 
@@ -37,7 +38,7 @@ const trend = (h: H, caller: SupabaseProjectCaller, window: SparkWindow | null):
 				],
 			)
 
-const NUMBER = "font-mono text-xs tabular-nums"
+const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true })
 
 const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: SparkWindow | null): Html =>
 	h.div(
@@ -64,8 +65,7 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 				],
 				[
 					statusDot(h, { tone: "custom", className: "bg-chart-1" }),
-					h.span(
-						[h.Class("truncate font-mono"), h.Title(caller.serviceName)],
+					typography(h, { mono: true, truncate: true, attributes: [h.Title(caller.serviceName)] },
 						[caller.serviceName],
 					),
 				],

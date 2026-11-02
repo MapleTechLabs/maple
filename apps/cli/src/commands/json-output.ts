@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { encodeJsonPrettyEffect } from "../lib/json"
+import { encodeJsonPrettyEffect } from "@maple/local-server/json"
 
 /**
  * Whether the global `--format json` was given explicitly. That flag defaults

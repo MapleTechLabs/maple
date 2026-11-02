@@ -3,14 +3,14 @@ import { getListPerformanceHints } from "../../../lib/query-builder/performance-
 import { AsyncData } from "foldkit"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../../ui/alert"
-import { button } from "../../../ui/button"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { input } from "../../../ui/input"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { settingRow } from "../../../ui/setting-row"
-import { switchControl } from "../../../ui/switch"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { settingRow } from "@maple/views/ui/setting-row"
+import { switchControl } from "@maple/views/ui/switch"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { whereEditor } from "../../kit/query-builder/where-editor"
 import { autocompleteFor, listField } from "./where-fields"
@@ -22,6 +22,8 @@ import type { Model } from "./model"
 import { ProductEdit } from "./product-edit"
 import { product } from "./view-product"
 import { listColumnRow } from "./view-list-column"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ListConfigPanel` and its Run preview row.
 
@@ -169,8 +171,7 @@ const listLimit = (h: H, state: EditorState): Html =>
 				h.OnInput((value) => product(ProductEdit.ChangedListLimit({ value }))),
 			],
 		}),
-		h.p(
-			[h.Class("text-3xs text-muted-foreground")],
+		typography(h, { size: "3xs", tone: "muted", as: "p" },
 			["Max 200. Recommended: 25-50 for dashboard widgets."],
 		),
 	])
@@ -259,8 +260,7 @@ export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray
 				]),
 			],
 		),
-		h.div(
-			[h.Class("flex items-center gap-3")],
+		hstack(h, { gap: "3" },
 			[
 				button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedRunPreview())] }, [
 					"Run preview",

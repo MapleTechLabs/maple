@@ -36,6 +36,9 @@ import {
 	type RequestEncoded,
 } from "effect/rpc/RpcMessage"
 import type { McpToolsUnavailableError } from "../executor-loader"
+import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
+import { INTERNAL_SERVICE_USER_ID } from "../lib/resolve-tenant"
+import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
 
 /**
@@ -86,6 +89,18 @@ const isInitializeMessage = (message: FromClientEncoded): boolean =>
 
 const isToolMessage = (message: FromClientEncoded): boolean =>
 	message._tag === "Request" && message.tag.startsWith("tools/")
+
+const isToolCallMessage = (message: FromClientEncoded): boolean =>
+	message._tag === "Request" && message.tag === "tools/call"
+
+const toolsUnavailable = () =>
+	HttpServerResponse.jsonUnsafe(
+		{
+			error: "service_unavailable",
+			message: "MCP tools are temporarily unavailable; retry with backoff.",
+		},
+		{ status: 503, headers: { "cache-control": "no-store" } },
+	)
 
 /**
  * The server advertises `tools` in its `initialize` reply only once a tool is registered.
@@ -139,8 +154,11 @@ export const layerStatelessMcpHttp = (options: {
 	readonly protocol: McpProtocol.ProtocolAdapter
 	readonly allowedOrigins?: ReadonlyArray<string> | undefined
 	/** Registers the server's tools. Runs before any `tools/*` request, not up front: most
-	 * requests never touch a tool, and building the catalog dominates a cold request's CPU. */
+	 * requests never touch a tool. */
 	readonly registerTools: Effect.Effect<void, McpToolsUnavailableError>
+	/** Builds the tool executor before a `tools/call`; it dominates a cold call's CPU.
+	 * `built` is true on the one request that paid for it, which the response then says. */
+	readonly loadToolExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
 }): Layer.Layer<RpcServer.Protocol, never, RpcSerialization.RpcSerialization | HttpRouter.HttpRouter> =>
 	Layer.effect(RpcServer.Protocol)(
 		Effect.gen(function* () {
@@ -177,7 +195,14 @@ export const layerStatelessMcpHttp = (options: {
 				Effect.gen(function* () {
 					const scope = yield* Scope.Scope
 					const tracer = yield* Effect.tracer
-					const caller = mcpCaller(request)
+					const tenant = yield* CurrentMcpRequestTenant
+					// Internal services share one user id, so it names no one and is left off.
+					const caller = mcpCaller(
+						request,
+						tenant === undefined || tenant.userId === INTERNAL_SERVICE_USER_ID
+							? undefined
+							: tenant.userId,
+					)
 					// No session id is ever issued, so a client's leftover one is dropped: the server
 					// would look the session up by that id instead of by this request's client.
 					const requestHeaders = Object.entries(request.headers).filter(
@@ -251,19 +276,21 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
-					if (messages.some(isToolMessage)) {
-						const registered = yield* Effect.exit(options.registerTools)
-						if (Exit.isFailure(registered)) {
-							yield* Effect.logError("MCP tool registration failed", registered.cause)
-							return HttpServerResponse.jsonUnsafe(
-								{
-									error: "service_unavailable",
-									message: "MCP tools are temporarily unavailable; retry with backoff.",
-								},
-								{ status: 503, headers: { "cache-control": "no-store" } },
-							)
-						}
+					const registered = messages.some(isToolMessage)
+						? yield* Effect.exit(options.registerTools)
+						: Exit.void
+					if (Exit.isFailure(registered)) {
+						yield* Effect.logError("MCP tool registration failed", registered.cause)
+						return toolsUnavailable()
 					}
+					const loaded = messages.some(isToolCallMessage)
+						? yield* Effect.exit(options.loadToolExecutor)
+						: Exit.succeed({ built: false })
+					if (Exit.isFailure(loaded)) {
+						yield* Effect.logError("MCP tool executor failed to load", loaded.cause)
+						return toolsUnavailable()
+					}
+					if (loaded.value.built) yield* Effect.annotateCurrentSpan("maple.mcp.tools_built", true)
 
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.
@@ -314,6 +341,8 @@ export const layerStatelessMcpHttp = (options: {
 						.map(withToolsCapability(initializeIds))
 					return HttpServerResponse.text(parser.encode(visible) as string, {
 						contentType: serialization.contentType,
+						// api moves it onto its own span and strips it: this request's CPU shows only there.
+						...(loaded.value.built ? { headers: { [MCP_TOOLS_BUILT_HEADER]: "1" } } : undefined),
 					})
 				})
 

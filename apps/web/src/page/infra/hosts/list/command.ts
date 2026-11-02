@@ -1,7 +1,7 @@
 import { listHosts } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { Message } from "./message"
 

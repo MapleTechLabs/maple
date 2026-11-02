@@ -1,16 +1,16 @@
 import { DashboardDocument, TimeRangeSchema } from "@maple/domain/http"
 import { Schema } from "effect"
-import * as Chart from "../../../charts/chart"
-import { ChartRuntime } from "../../../charts/chart-runtime"
-import { ThemeColors } from "../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "../../../data/keyed"
 import { DashboardSearch } from "../../../route/search"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Combobox from "../../../ui/combobox"
-import * as Popover from "../../../ui/popover"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Tabs from "../../../ui/tabs"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Popover from "@maple/views/ui/popover"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Tabs from "@maple/views/ui/tabs"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
 import * as VariablesManager from "../kit/variables-manager/model"
@@ -27,10 +27,14 @@ export type Status = typeof Status.Type
 /** One tile: lazily revealed (`useInViewportSticky`), measured, and what it asked for. */
 export const WidgetSlot = Schema.Struct({
 	isRevealed: Schema.Boolean,
+	/** Revealed once but scrolled out of view since: refreshes skip it. */
+	isOffscreen: Schema.optionalKey(Schema.Boolean),
+	/** An off-screen tile missed a refresh or re-plan; it asks again when it is back in view. */
+	isStale: Schema.optionalKey(Schema.Boolean),
 	/** `useWidgetMaxDataPoints`' quantized width; `null` before the first measurement. */
 	widthPx: Schema.NullOr(Schema.Number),
 	gate: Schema.NullOr(WidgetGate),
-	/** A stat's sparkline series (`StatSparklineLoader`), planned once the stat itself has data. */
+	/** A stat's sparkline series (`StatSparklineLoader`), planned with the stat. */
 	sparkGate: Schema.optionalKey(Schema.NullOr(WidgetGate)),
 	/** `narrowedToCap`: the viewer pulled this list back to the list cap. */
 	isNarrowed: Schema.optionalKey(Schema.Boolean),
@@ -150,7 +154,11 @@ export const Model = Schema.Struct({
 	sectionMenu: Menu.Model,
 	/** `InlineEditableText`: the group (or tab) title being renamed, and its draft. */
 	rename: Schema.NullOr(
-		Schema.Struct({ sectionId: Schema.String, tabId: Schema.NullOr(Schema.String), draft: Schema.String }),
+		Schema.Struct({
+			sectionId: Schema.String,
+			tabId: Schema.NullOr(Schema.String),
+			draft: Schema.String,
+		}),
 	),
 	/** `DeleteSectionDialog` and `DeleteTabDialog`, and what they would delete. */
 	sectionDialog: Dialog.Model,

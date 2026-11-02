@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { icon, type IconName } from "../../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { icon, type IconName } from "@maple/views/ui/icon"
 
 // `TraceDepthControls` (packages/ui/src/components/traces/trace-depth-controls.tsx), shared by the
 // Timeline and the Waterfall. TODO(tooltip): the trigger markup is ported; the label popup is not.

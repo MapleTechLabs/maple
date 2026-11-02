@@ -2,7 +2,7 @@ import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Resources } from "../../../platform/resources"
 import { PageOutMessage } from "../../contract"
-import { timeControls, type TimeSearch } from "../../kit/time-controls"
+import { type PresetValue, timeControls, type TimeSearch } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The header time cluster every infra integration page shares: `DashboardPage`'s `time` prop.
@@ -48,7 +48,7 @@ export const withPreset = <S extends TimeSearch>(
 
 export type PageTimeOptions<M> = Readonly<{
 	search: TimeSearch
-	defaultPreset: string
+	defaultPreset: PresetValue
 	window: Readonly<{ startTime: string; endTime: string }> | null
 	picker: TimeRangePicker.Model
 	toPickerMessage: (message: TimeRangePicker.Message) => M

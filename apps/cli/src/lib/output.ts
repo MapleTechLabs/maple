@@ -1,7 +1,7 @@
 import { Config, Effect, Option, Predicate, Schema } from "effect"
 import * as Flag from "effect/cli/Flag"
 import * as GlobalFlag from "effect/cli/GlobalFlag"
-import { encodeJson, encodeJsonPrettyEffect } from "./json"
+import { encodeJson, encodeJsonPrettyEffect } from "@maple/local-server/json"
 import { bold, dim } from "./style"
 
 /**

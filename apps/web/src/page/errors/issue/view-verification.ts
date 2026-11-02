@@ -6,10 +6,12 @@ import { cn } from "@maple/ui/lib/utils"
 import { DateTime, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { textLinkClass } from "@maple/views/ui/text-link"
 import { sectionHeading } from "../../kit/section-heading"
+import { hstack } from "@maple/views/ui/stack"
 
 // The issue verification card: the post-merge fix check.
 
@@ -77,23 +79,15 @@ export const verificationCard = <M>(
 		verification.status === "not_fixed" ||
 		verification.status === "inconclusive"
 	return panel(h, { className: "px-4 py-3" }, [
-		h.div(
-			[h.Class("flex items-center justify-between gap-2")],
-			[
-				h.div(
-					[h.Class("flex items-center gap-2")],
-					[
-						icon(h, "MagnifierCheckIcon", { className: "size-4 text-muted-foreground" }),
-						sectionHeading(h, { title: "Fix verification" }),
-					],
-				),
-				badge(
-					h,
-					{ variant: "outline", className: cn("shrink-0", STATUS_TONE[verification.status]) },
-					[STATUS_LABEL[verification.status]],
-				),
-			],
-		),
+		hstack(h, { gap: "2", justify: "between" }, [
+			hstack(h, { gap: "2" }, [
+				icon(h, "MagnifierCheckIcon", { className: "size-4 text-muted-foreground" }),
+				sectionHeading(h, { title: "Fix verification" }),
+			]),
+			badge(h, { variant: "outline", className: cn("shrink-0", STATUS_TONE[verification.status]) }, [
+				STATUS_LABEL[verification.status],
+			]),
+		]),
 		note(h, "mt-2 text-xs leading-relaxed text-muted-foreground", headline(verification, nowMs)),
 		...(isAwaitingClose
 			? [
@@ -131,7 +125,7 @@ export const verificationCard = <M>(
 									AppRoute.Investigation({ id: verification.investigationId, search: {} }),
 								),
 							),
-							h.Class("mt-2 inline-block text-xs text-primary hover:underline active:underline"),
+							h.Class(textLinkClass("primary", false, "mt-2 text-xs")),
 						],
 						["View the verification run"],
 					),

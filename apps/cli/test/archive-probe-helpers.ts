@@ -15,7 +15,7 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Chdb } from "../src/server/chdb"
+import { Chdb } from "@maple/local-server/chdb"
 
 export interface ArchiveProbeHandle {
 	/** The probe's owned root directory (created via mkdtemp, unique per run). */

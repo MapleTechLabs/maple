@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../ui/copy-button"
-import { eyebrow } from "../../ui/eyebrow"
-import type { IconName } from "../../ui/icon"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import type { IconName } from "@maple/views/ui/icon"
 import { Message, type Model } from "./model"
 
 // `CopyScenarios`: every shape `CopyButton` is asked to take, side by side.

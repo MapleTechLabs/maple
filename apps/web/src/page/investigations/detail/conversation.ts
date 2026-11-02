@@ -6,7 +6,7 @@ import {
 	investigationSuggestions,
 } from "./investigation-context"
 import { Command } from "foldkit"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { OutMessage as ConversationOut, type Message as ConversationMessage } from "../conversation/message"
 import type { ReadOnly } from "../conversation/model"

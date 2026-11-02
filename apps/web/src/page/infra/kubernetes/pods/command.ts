@@ -1,7 +1,7 @@
 import { getPodFacets, podsSummary, type PodsSummaryInput } from "@maple/web-data/warehouse/infra"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { fetchPods, fetchRestarts, PodsInput, RestartsInput } from "../pod-data"
 import { Message } from "./message"

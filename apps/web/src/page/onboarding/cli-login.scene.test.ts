@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { click, Command, expect as expectView, given, label, role, scene, text, type } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as OtpField from "../../ui/otp-field"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { DecideCliDevice, init, InspectCliDevice, Message, type Model, State, update } from "./cli-login"
 import { view as cliLoginView } from "./cli-login-view"
 

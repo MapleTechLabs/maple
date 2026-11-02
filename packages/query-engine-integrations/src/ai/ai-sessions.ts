@@ -1966,3 +1966,23 @@ export function aiTraceTotalsQuery() {
 		])
 		.format("JSON")
 }
+
+/**
+ * The Agent Session each of the listed traces is filed under, for the MCP session page's link back
+ * to the agents that called it. Keyed and filtered like the Agent Sessions list, so a trace that
+ * page would not show as a session links nowhere.
+ */
+export function aiSessionsOfTracesQuery(traceIds: readonly string[]) {
+	return from(AiTraceIndex)
+		.select(($) => ({ traceId: $.TraceId, sessionId: sessionKey(CH.max_($.SessionId), $.TraceId) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			CH.inList($.TraceId, traceIds),
+		])
+		.groupBy("traceId")
+		.having(($) => [isSessionTraceCond($)])
+		.limit(traceIds.length)
+		.format("JSON")
+}

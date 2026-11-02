@@ -2,16 +2,17 @@ import { chartFences } from "@maple/domain/chat-chart-spec"
 import type { ChatEvent } from "@maple/domain/chat-session"
 import { Array, Result } from "effect"
 import { Command, type Update } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { ChartRuntime, LoadChartRuntime } from "../../../charts/chart-runtime"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import type { Resources } from "../../../platform/resources"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
 import { taskSheetId } from "./kit/view-task"
 import { applyChatEvent, finalizeStreamingText, taskOf } from "./kit/fold"
 import { transcriptMarkdown } from "./kit/rich-text"
 import { initMinimap, updateMinimap } from "./kit/turn-minimap"
 import { TextPart } from "./kit/ui-message"
+import { isHighlighterReady } from "@maple/views/lib/highlight"
 import { highlight, highlightedFences, highlightKey } from "./kit/code-highlight"
 import {
 	AbortTurn,
@@ -161,8 +162,9 @@ const withHighlights = (
 	model: Model,
 	fences: ReadonlyArray<{ readonly language: string; readonly code: string }>,
 ): Model => {
+	// Plain tokens are not cached, so a parse after the highlighter loads colours these fences.
 	const missing = fences.filter((fence) => !(highlightKey(fence.language, fence.code) in model.highlights))
-	return missing.length === 0
+	return missing.length === 0 || !isHighlighterReady()
 		? model
 		: {
 				...model,

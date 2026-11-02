@@ -10,11 +10,13 @@ import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
+import { enterRoute, pageIdentity } from "./page/registry"
+import { Message as ServicesMessage } from "./page/services/list/message"
 import * as SignIn from "./page/sign-in"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
 import { DashboardsData } from "./shell/model"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { subscriptions } from "./subscription"
 import { settle, update } from "./update"
@@ -188,6 +190,38 @@ describe("re-render on change only", () => {
 			Message.ChangedClerkSession({ snapshot: { ...snapshotOf("Acme"), maybeUserId: Option.none() } }),
 		)
 		expect(signedOut.model.session).toEqual(Session.SignedOut())
+	})
+
+	test("a page message its page ignores keeps the root model", () => {
+		const route = AppRoute.Services({ search: {} })
+		const context = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+		const slot = Option.getOrThrow(Option.fromNullishOr(enterRoute(null, route, context, 1).slot))
+		const model: Model = {
+			...base(route),
+			page: slot,
+			pageInstances: 1,
+			preload: { ...Preload.init(), holder: pageIdentity(slot) },
+		}
+		const otherOrg = Schema.decodeSync(OrgId)("org_other")
+		const ignored = update(
+			model,
+			Message.GotPageMessage({
+				message: {
+					_tag: "ServicesList",
+					key: slot.key,
+					orgId: slot.orgId,
+					instance: slot.instance,
+					message: ServicesMessage.UpdatedIncidents({ orgId: otherOrg, incidents: [] }),
+				},
+			}),
+		)
+		expect(ignored.model).toBe(model)
+		expect(ignored.commands ?? []).toEqual([])
+	})
+
+	test("leaving a link that was never hovered keeps the root model", () => {
+		const model = base(AppRoute.Logs({ search: {} }))
+		expect(update(model, Message.EndedLinkIntent({ href: "/traces" })).model).toBe(model)
 	})
 
 	test("a shell message that changes no state keeps the root model, so the app does not re-render", () => {

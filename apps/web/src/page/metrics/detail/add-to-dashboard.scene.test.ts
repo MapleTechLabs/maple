@@ -1,6 +1,6 @@
 import { Result } from "effect"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as AddToDashboard from "./add-to-dashboard"
 
 const draft = null

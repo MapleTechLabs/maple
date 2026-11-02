@@ -2,8 +2,8 @@ import { Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../../ui/icon"
-import { spinner } from "../../../../ui/spinner"
+import { icon } from "@maple/views/ui/icon"
+import { spinner } from "@maple/views/ui/spinner"
 import {
 	trace,
 	traceCollapsible,
@@ -11,7 +11,7 @@ import {
 	traceIcon,
 	traceLine,
 	traceTitle,
-} from "../../../../ui/trace"
+} from "@maple/views/ui/trace"
 import { dotLoader } from "./dot-loader"
 import { toolActivity, toolIcon, toolLabel } from "./tool-metadata"
 import {

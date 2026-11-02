@@ -1,8 +1,8 @@
 import { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../data/load-failure"
-import * as CopyButton from "../../ui/copy-button"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },

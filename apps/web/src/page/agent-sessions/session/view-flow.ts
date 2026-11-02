@@ -3,7 +3,7 @@ import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSmoothStepPath, Position } from "@xyflow/system"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Canvas from "../../../service-map/xyflow/canvas"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
 import {
 	edgesLayer,
 	flowCanvas,
@@ -11,11 +11,12 @@ import {
 	flowHandle,
 	flowNode,
 	nodesLayer,
-} from "../../../service-map/xyflow/view"
-import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
+} from "@maple/views/service-map/xyflow/view"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { pressable } from "@maple/views/ui/pressable"
 import type { SessionData } from "./derive"
 import {
 	CANVAS_PADDING,
@@ -31,6 +32,8 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The session flow: one lane per turn on the xyflow canvas.
 // TODO(list-navigation): the arrow-key node cursor is not ported.
@@ -50,52 +53,50 @@ const toCanvas = (message: Canvas.Message) => Message.GotFlowCanvasMessage({ mes
 const stepNode = (h: H, node: FlowNode, isSelected: boolean): ReadonlyArray<Html> => [
 	flowHandle(h, node.key, "target", "left", HANDLE),
 	flowHandle(h, node.key, "source", "right", HANDLE),
-	h.button(
-		[
-			...(isSelected ? [h.AriaCurrent("true")] : []),
-			h.AriaHasPopup("dialog"),
-			h.Class(
-				cn(
-					"flex size-full cursor-pointer flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring active:border-ring",
-					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-					node.isErrored ? "border-severity-error/60" : "border-border",
-					isSelected && "border-primary bg-primary-a1",
-				),
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedSpan({ spanId: isSelected ? undefined : node.span.spanId }),
+			className: cn(
+				"flex size-full flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring active:border-ring",
+				"focus-visible:ring-ring",
+				node.isErrored ? "border-severity-error-a4" : "border-border",
+				isSelected && "border-primary bg-primary-a1",
 			),
-			h.DataAttribute("span-id", node.span.spanId),
-			h.Type("button"),
-			h.OnClick(Message.ClickedSpan({ spanId: isSelected ? undefined : node.span.spanId })),
-		],
+			attributes: [
+				...(isSelected ? [h.AriaCurrent("true")] : []),
+				h.AriaHasPopup("dialog"),
+				h.DataAttribute("span-id", node.span.spanId),
+			],
+		},
 		[
-			h.span(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					icon(h, node.isErrored ? "CircleXmarkIcon" : CATEGORY_ICON[node.category], {
-						size: 12,
-						className: cn(
-							"shrink-0",
-							node.isErrored ? "text-severity-error" : CATEGORY_TEXT[node.category],
-						),
-					}),
-					h.span(
-						[h.Class("min-w-0 truncate text-xs"), h.Title(node.title)],
-						[shortTarget(node.title)],
+			hstack(h, { gap: "1.5", as: "span" }, [
+				icon(h, node.isErrored ? "CircleXmarkIcon" : CATEGORY_ICON[node.category], {
+					size: 12,
+					className: cn(
+						"shrink-0",
+						node.isErrored ? "text-severity-error" : CATEGORY_TEXT[node.category],
 					),
-					...(node.count > 1
-						? [
-								h.span(
-									[h.Class("shrink-0 text-2xs text-muted-foreground tabular-nums")],
-									["×", String(node.count)],
-								),
-							]
-						: []),
-				],
-			),
+				}),
+				typography(
+					h,
+					{ size: "xs", truncate: true, className: "min-w-0", attributes: [h.Title(node.title)] },
+					[shortTarget(node.title)],
+				),
+				...(node.count > 1
+					? [
+							h.span(
+								[h.Class("shrink-0 text-2xs text-muted-foreground tabular-nums")],
+								["×", String(node.count)],
+							),
+						]
+					: []),
+			]),
 			h.span(
 				[
 					h.Class(
 						cn(
-							"truncate text-2xs",
+							typographyClass({ size: "2xs", truncate: true }),
 							node.isErrored ? "text-severity-error" : "text-muted-foreground",
 						),
 					),
@@ -131,7 +132,9 @@ const laneLabel = (h: H, lane: FlowLane): Html => {
 						],
 						[formatDuration(lane.turn.durationMs)],
 					),
-					...(lane.turn.failed ? [h.p([h.Class("text-severity-error text-xs")], ["failed"])] : []),
+					...(lane.turn.failed
+						? [typography(h, { size: "xs", tone: "error", as: "p" }, ["failed"])]
+						: []),
 				],
 			),
 		],
@@ -249,27 +252,21 @@ const floor = (h: H, model: Model): Html =>
 						],
 						[
 							...LEGEND.map((category) =>
-								h.span(
-									[h.Key(category), h.Class("flex items-center gap-1.5")],
-									[
-										icon(h, CATEGORY_ICON[category], {
-											size: 12,
-											className: cn("shrink-0", CATEGORY_TEXT[category]),
-										}),
-										category,
-									],
-								),
-							),
-							h.span(
-								[h.Class("flex items-center gap-1.5")],
-								[
-									icon(h, "CircleXmarkIcon", {
+								hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(category)] }, [
+									icon(h, CATEGORY_ICON[category], {
 										size: 12,
-										className: "shrink-0 text-severity-error",
+										className: cn("shrink-0", CATEGORY_TEXT[category]),
 									}),
-									"error",
-								],
+									category,
+								]),
 							),
+							hstack(h, { gap: "1.5", as: "span" }, [
+								icon(h, "CircleXmarkIcon", {
+									size: 12,
+									className: "shrink-0 text-severity-error",
+								}),
+								"error",
+							]),
 						],
 					),
 					controls(h, model),
@@ -288,7 +285,7 @@ export const flow = (h: H, model: Model, data: SessionData): Html => {
 	return h.div(
 		[h.Class("relative flex grow flex-col")],
 		lanes.length === 0
-			? [emptyMessage(h, {}, ["No spans match this filter."])]
+			? [emptyMessage(h, {}, ["No spans match this filter"])]
 			: [
 					h.div(
 						[h.Class("relative min-h-48 grow")],

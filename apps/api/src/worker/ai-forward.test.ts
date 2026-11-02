@@ -115,6 +115,31 @@ describe("forwardToAi", () => {
 		}).pipe(Effect.withSpan("test-root")),
 	)
 
+	it.effect("marks the request that built maple-ai's tool executor, and strips the marker", () =>
+		Effect.gen(function* () {
+			const built = yield* forwardToAi(
+				echoFetcher([], { "x-maple-ai-mcp-tools-built": "1", "content-type": "application/json" }),
+				HttpServerRequest.fromWeb(new Request("https://api.maple.dev/mcp")),
+			)
+			const span = yield* Effect.currentSpan
+
+			assert.strictEqual(span.attributes.get("maple.ai.mcp.tools_built"), true)
+			assert.deepStrictEqual(built.headers, { "content-type": "application/json" })
+		}).pipe(Effect.withSpan("test-root")),
+	)
+
+	it.effect("leaves a warm tools request unmarked", () =>
+		Effect.gen(function* () {
+			yield* forwardToAi(
+				echoFetcher([]),
+				HttpServerRequest.fromWeb(new Request("https://api.maple.dev/mcp")),
+			)
+			const span = yield* Effect.currentSpan
+
+			assert.isUndefined(span.attributes.get("maple.ai.mcp.tools_built"))
+		}).pipe(Effect.withSpan("test-root")),
+	)
+
 	it.effect("forwards unchanged when nothing is tracing", () =>
 		Effect.gen(function* () {
 			const seen: Array<Request> = []

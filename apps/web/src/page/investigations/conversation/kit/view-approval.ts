@@ -2,11 +2,13 @@ import { WIDGET_TYPES } from "@maple/domain/http"
 import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
 import { asArray, asRecord, asString, safeParseJson } from "./approval-parse"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../../ui/display"
-import { eyebrow } from "../../../../ui/eyebrow"
-import { icon, type IconName } from "../../../../ui/icon"
-import { inlineCode } from "../../../../ui/inline-code"
-import { panel } from "../../../../ui/panel"
+import { badge } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel } from "@maple/views/ui/panel"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The dashboard tools' approval summaries.
 // Icons and labels follow the widget-type registry (`widgetTypeFor`): `chart` and unknown kinds read as a line.
@@ -69,11 +71,11 @@ const widgetRow = <M>(h: HtmlBuilder<M>, widget: Widget): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2 rounded-md border border-border-subtle bg-background/60 px-2 py-1.5")],
 		[
-			icon(h, vizIcon(widget.visualization), { className: "size-3.5 shrink-0 text-muted-foreground" }),
-			h.span([h.Class("truncate text-xs font-medium")], [widget.title]),
+			icon(h, vizIcon(widget.visualization), { className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }) }),
+			typography(h, { size: "xs", weight: "medium", truncate: true }, [widget.title]),
 			...(widget.source === undefined
 				? []
-				: [h.span([h.Class("truncate text-2xs text-muted-foreground")], [widget.source])]),
+				: [typography(h, { size: "2xs", tone: "muted", truncate: true }, [widget.source])]),
 			...(widget.groupBy === undefined
 				? []
 				: [
@@ -120,10 +122,9 @@ const heading = <M>(
 	title: ReadonlyArray<string>,
 	dashboardId: string | null,
 ): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2")],
+	hstack(h, { gap: "2" },
 		[
-			icon(h, glyph, { className: "size-3.5 shrink-0 text-muted-foreground" }),
+			icon(h, glyph, { className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }) }),
 			h.span([h.Class("text-sm font-semibold")], title),
 			...(dashboardId === null
 				? []
@@ -156,18 +157,16 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 	return h.div(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
+			hstack(h, { gap: "2" },
 				[
-					icon(h, "PlusIcon", { className: "size-3.5 shrink-0 text-muted-foreground" }),
+					icon(h, "PlusIcon", { className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }) }),
 					h.div(
 						[h.Class("min-w-0 flex-1")],
 						[
-							h.div([h.Class("truncate text-sm font-semibold")], [name]),
+							typography(h, { size: "sm", weight: "semibold", truncate: true, as: "div" }, [name]),
 							...(innerName !== undefined && innerName !== name
 								? [
-										h.div(
-											[h.Class("truncate text-2xs text-muted-foreground")],
+										typography(h, { size: "2xs", tone: "muted", truncate: true, as: "div" },
 											["Inner title: ", innerName],
 										),
 									]
@@ -178,9 +177,8 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 			),
 			...(description === undefined
 				? []
-				: [h.div([h.Class("text-xs text-muted-foreground")], [description])]),
-			h.div(
-				[h.Class("flex flex-wrap gap-1.5")],
+				: [typography(h, { size: "xs", tone: "muted", as: "div" }, [description])]),
+			hstack(h, { gap: "1.5", align: "stretch", wrap: true },
 				[
 					fieldChip(
 						h,
@@ -240,7 +238,7 @@ const updateDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 					description === undefined &&
 					timeRange === undefined &&
 					!isReplacement
-						? [h.div([h.Class("text-xs text-muted-foreground")], ["No metadata changes"])]
+						? [typography(h, { size: "xs", tone: "muted", as: "div" }, ["No metadata changes"])]
 						: []),
 				],
 			),
@@ -289,8 +287,7 @@ const addWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 		[
 			heading(h, "PlusIcon", ["Add widget"], asString(obj.dashboard_id) ?? EMPTY_VALUE),
 			panel(h, { tone: "background", className: "border-border-subtle bg-background/60 p-2" }, [
-				h.div(
-					[h.Class("flex items-center gap-2")],
+				hstack(h, { gap: "2" },
 					[
 						icon(h, vizIcon(visualization), {
 							className: "size-4 shrink-0 text-muted-foreground",
@@ -298,15 +295,13 @@ const addWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 						h.div(
 							[h.Class("min-w-0 flex-1")],
 							[
-								h.div(
-									[h.Class("truncate text-xs font-medium")],
+								typography(h, { size: "xs", weight: "medium", truncate: true, as: "div" },
 									[asString(display?.title) ?? "Untitled widget"],
 								),
 								...(endpoint === undefined
 									? []
 									: [
-											h.div(
-												[h.Class("truncate text-2xs text-muted-foreground")],
+											typography(h, { size: "2xs", tone: "muted", truncate: true, as: "div" },
 												[endpoint],
 											),
 										]),
@@ -315,8 +310,7 @@ const addWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 					],
 				),
 			]),
-			h.div(
-				[h.Class("flex flex-wrap gap-1.5")],
+			hstack(h, { gap: "1.5", align: "stretch", wrap: true },
 				[
 					fieldChip(h, "viz", vizLabel(visualization)),
 					...(serviceName === undefined ? [] : [fieldChip(h, "service", serviceName)]),
@@ -353,8 +347,7 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 		[h.Class("space-y-3")],
 		[
 			heading(h, "PencilIcon", ["Update widget"], null),
-			h.div(
-				[h.Class("flex flex-wrap gap-1.5")],
+			hstack(h, { gap: "1.5", align: "stretch", wrap: true },
 				[
 					fieldChip(h, "dashboard", asString(obj.dashboard_id) ?? EMPTY_VALUE),
 					fieldChip(h, "widget", asString(obj.widget_id) ?? EMPTY_VALUE),
@@ -362,7 +355,7 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 			),
 			section(h, `Changes (${changes.length})`, [
 				changes.length === 0
-					? h.div([h.Class("text-xs text-muted-foreground")], ["No changes"])
+					? typography(h, { size: "xs", tone: "muted", as: "div" }, ["No changes"])
 					: h.ul(
 							[h.Class("space-y-1 text-xs")],
 							changes.map(({ label, detail }) =>
@@ -373,8 +366,7 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 										...(detail === undefined
 											? []
 											: [
-													h.span(
-														[h.Class("truncate text-muted-foreground")],
+													typography(h, { tone: "muted", truncate: true },
 														[detail],
 													),
 												]),
@@ -388,8 +380,7 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 }
 
 const removeWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html =>
-	h.div(
-		[h.Class("flex items-start gap-2")],
+	hstack(h, { gap: "2", align: "start" },
 		[
 			icon(h, "TrashIcon", { className: "mt-0.5 size-3.5 shrink-0 text-destructive" }),
 			h.div(
@@ -425,8 +416,7 @@ const reorderWidgets = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 			...(preview.length === 0
 				? []
 				: [
-						h.div(
-							[h.Class("flex flex-wrap gap-1")],
+						hstack(h, { gap: "1", align: "stretch", wrap: true },
 							[
 								...preview.map((id) =>
 									inlineCode(
@@ -437,8 +427,7 @@ const reorderWidgets = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 								),
 								...(overflow > 0
 									? [
-											h.span(
-												[h.Class("text-3xs text-muted-foreground")],
+											typography(h, { size: "3xs", tone: "muted" },
 												["+ ", String(overflow), " more"],
 											),
 										]

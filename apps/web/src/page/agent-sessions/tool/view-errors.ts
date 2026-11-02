@@ -1,4 +1,4 @@
-import { formatPercent, pluralize } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -10,16 +10,17 @@ import {
 	fillTrend,
 	unwrapToolErrorText,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatToolCount, UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
+import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../data/load-failure"
-import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { miniBars } from "../../../ui/mini-bars"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
-import { truncatedText } from "../../../ui/truncated-text"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { miniBars } from "@maple/views/ui/mini-bars"
+import { pressable } from "@maple/views/ui/pressable"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { errorTextLine, failureStatusLine, maskChip, windowRangeLabel } from "../tools-kit/error-parts"
 import type { ToolErrorRow } from "../tools-kit/model"
 import {
@@ -27,13 +28,16 @@ import {
 	type SortState,
 	sortRows,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableHead,
 } from "../tools-kit/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
 
 type H = HtmlBuilder<Message>
 
@@ -96,9 +100,9 @@ const SORT_FIELDS = new Map<string, (row: Prepared) => number>([
 
 const groupTitle = (h: H, row: Prepared): Html =>
 	row.fingerprint === UNGROUPED_FINGERPRINT
-		? h.span([h.Class("truncate text-muted-foreground")], ["Failures recorded before error grouping"])
+		? typography(h, { tone: "muted", truncate: true }, ["Failures recorded before error grouping"])
 		: row.display === ""
-			? h.span([h.Class("truncate text-muted-foreground")], ["No error message recorded"])
+			? typography(h, { tone: "muted", truncate: true }, ["No error message recorded"])
 			: errorTextLine(h, row.tokens)
 
 export type ErrorsTableInputs = Readonly<{
@@ -123,15 +127,14 @@ const errorRow = (
 	maxShare: number,
 	sharedType: string | undefined,
 ): Html =>
-	h.button(
-		[
-			h.Key(row.fingerprint),
-			h.AriaPressed(String(row.fingerprint === inputs.selected)),
-			h.Class(toolRowClass(row.fingerprint === inputs.selected)),
-			...(row.display === "" ? [] : [h.Title(row.display)]),
-			h.Type("button"),
-			h.OnClick(Message.ClickedErrorRow({ fingerprint: row.fingerprint })),
-		],
+	toolTableRow(
+		h,
+		{
+			onClick: Message.ClickedErrorRow({ fingerprint: row.fingerprint }),
+			isSelected: row.fingerprint === inputs.selected,
+			isToggle: true,
+			attributes: [h.Key(row.fingerprint), ...(row.display === "" ? [] : [h.Title(row.display)])],
+		},
 		[
 			h.span(
 				[
@@ -159,11 +162,7 @@ const errorRow = (
 					...(row.variants > 1
 						? [
 								h.span(
-									[
-										h.Class(
-											"shrink-0 pl-1.5 text-2xs leading-3.5 text-foreground-subtle",
-										),
-									],
+									[h.Class("shrink-0 pl-1.5 text-2xs leading-3.5 text-foreground-subtle")],
 									[String(row.variants), " variants"],
 								),
 							]
@@ -192,7 +191,7 @@ const errorRow = (
 			}),
 			h.span(
 				[h.Class("w-20 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
-				[formatToolCount(row.calls)],
+				[formatNumber(row.calls)],
 			),
 			h.span(
 				[
@@ -200,7 +199,7 @@ const errorRow = (
 						"hidden w-20 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
 					),
 				],
-				[formatToolCount(row.sessions)],
+				[formatNumber(row.sessions)],
 			),
 			relativeTime(h, {
 				value: row.lastSeen,
@@ -211,8 +210,13 @@ const errorRow = (
 				className:
 					"hidden w-24 shrink-0 text-right font-mono text-2xs tabular-nums text-foreground-subtle @min-[800px]/panel:block",
 			}),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
+			hstack(
+				h,
+				{
+					justify: "end",
+					as: "span",
+					className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+				},
 				[icon(h, "ChevronRightIcon", { size: 14, attributes: [h.AriaHidden(true)] })],
 			),
 		],
@@ -225,12 +229,14 @@ const loadingRows = (h: H): ReadonlyArray<Html> =>
 		h.div(
 			[
 				h.Key(String(width)),
-				h.Class("flex h-[38px] items-center gap-3 border-b border-border-subtle px-2.5 last:border-0"),
+				h.Class(
+					"flex h-[38px] items-center gap-3 border-b border-border-subtle px-2.5 last:border-0",
+				),
 				h.Style({ opacity: String(1 - index * 0.2) }),
 			],
 			[
 				h.span(
-					[h.Class("w-0 min-w-0 flex-1")],
+					[h.Class(columnClass({ min: "0" }))],
 					[skeleton(h, "h-2.5", { width: `${width}px`, "max-width": "100%" })],
 				),
 				h.span(
@@ -281,7 +287,7 @@ const head = (h: H, inputs: ErrorsTableInputs, headHint: string): Html => {
 			width: "w-24 shrink-0",
 			hidden: "hidden @min-[720px]/panel:flex",
 		}),
-		th(h, { label: "Share", width: "w-36 shrink-0 pl-6" }),
+		th(h, { label: "Share", width: columnClass({ width: "36", shrink: false, inset: "6" }) }),
 		sortable("Count", "calls"),
 		sortable("Sessions", "sessions", "hidden @min-[640px]/panel:flex"),
 		th(h, {
@@ -299,15 +305,14 @@ const head = (h: H, inputs: ErrorsTableInputs, headHint: string): Html => {
 
 const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): Html => {
 	const hiddenCalls = hidden.reduce((sum, row) => sum + row.calls, 0)
-	return h.button(
-		[
-			h.AriaExpanded(isExpanded),
-			h.Class(
+	return pressable(
+		h,
+		{
+			onClick: Message.ToggledErrorsExpanded(),
+			className:
 				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-			h.Type("button"),
-			h.OnClick(Message.ToggledErrorsExpanded()),
-		],
+			attributes: [h.AriaExpanded(isExpanded)],
+		},
 		[
 			icon(h, "ChevronDownIcon", {
 				size: 12,
@@ -323,7 +328,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 				[
 					isExpanded
 						? "Show fewer errors"
-						: `Show ${formatToolCount(hidden.length)} more ${pluralize(hidden.length, "error")}`,
+						: `Show ${formatNumber(hidden.length)} more ${pluralize(hidden.length, "error")}`,
 				],
 			),
 			...(isExpanded
@@ -332,7 +337,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 						h.span(
 							[h.Class("text-foreground-subtle")],
 							[
-								formatToolCount(hiddenCalls),
+								formatNumber(hiddenCalls),
 								` failed ${pluralize(hiddenCalls, "call")}`,
 								...(hiddenCalls === hidden.length && hidden.length > 1 ? [", 1 each"] : []),
 							],
@@ -393,22 +398,24 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 					h.div(
 						[h.Class("flex items-baseline gap-2.5")],
 						[
-							h.span([h.Class("text-xs font-medium text-foreground")], ["Errors"]),
+							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Errors"]),
 							inputs.isLoading
 								? skeleton(h, "h-2.5 w-36 self-center")
-								: h.span(
+								: typography(
+										h,
+										{
+											size: "2xs",
+											tone: "subtle",
+											numeric: true,
+											className: "leading-3.5",
+										},
 										[
-											h.Class(
-												"text-2xs leading-3.5 tabular-nums text-foreground-subtle",
-											),
-										],
-										[
-											formatToolCount(failures),
+											formatNumber(failures),
 											" failed ",
 											pluralize(failures, "call"),
 											...(inputs.rows.length > 0
 												? [
-														` · ${formatToolCount(inputs.rows.length)} ${pluralize(inputs.rows.length, "error")}`,
+														` · ${formatNumber(inputs.rows.length)} ${pluralize(inputs.rows.length, "error")}`,
 													]
 												: []),
 										],
@@ -431,11 +438,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 			),
 			isEmpty
 				? h.div(
-						[
-							h.Class(
-								"flex flex-col gap-2 border-t border-border px-2.5 py-5 font-mono",
-							),
-						],
+						[h.Class("flex flex-col gap-2 border-t border-border px-2.5 py-5 font-mono")],
 						[
 							h.span(
 								[h.Class("flex items-center gap-2 text-xs text-foreground")],
@@ -453,7 +456,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 								[h.Class("pl-3.5 text-xs text-muted-foreground")],
 								[
 									inputs.toolCalls > 0
-										? `All ${formatToolCount(inputs.toolCalls)} ${inputs.tool} ${pluralize(inputs.toolCalls, "call")} in this range succeeded.`
+										? `All ${formatNumber(inputs.toolCalls)} ${inputs.tool} ${pluralize(inputs.toolCalls, "call")} in this range succeeded.`
 										: `${inputs.tool} was not called in this range.`,
 								],
 							),
@@ -498,8 +501,9 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 												],
 											),
 											...masks.map((label) =>
-												h.span(
-													[h.Key(label), h.Class("flex items-center gap-1.5")],
+												hstack(
+													h,
+													{ gap: "1.5", as: "span", attributes: [h.Key(label)] },
 													[
 														maskChip(h, label, "", "text-2xs leading-3.5"),
 														h.span([], [MASK_MEANINGS.get(label) ?? ""]),

@@ -3,7 +3,7 @@ import type { IngestRuleSignal } from "@maple/domain/ingest-rules"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import type { AppRoute } from "../../../route"
-import * as Combobox from "../../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { FetchKeys, FetchRule, FetchSamples, FetchServices, FetchSession, SaveRule } from "./command"
 import {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { Message as HubMessage } from "../../page/alerts/hub/message"
-import * as Tabs from "../../ui/tabs"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type Flags, Message, type Model } from "./model"
 import * as TraceBox from "./trace-box"
 import { init, update } from "./update"

@@ -1,7 +1,7 @@
 import { hostDetailSummary, hostInfraTimeseries } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { HostMetric, Message } from "./message"
 
 export const SummaryInput = Schema.Struct({

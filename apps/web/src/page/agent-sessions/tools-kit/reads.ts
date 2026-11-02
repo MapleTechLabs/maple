@@ -1,7 +1,7 @@
 import type { AiToolsPeriod } from "@maple/domain/http"
 import { type AiToolsSelection, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
 import { Effect, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TotalsResult } from "./model"
 
 // The reads both tools pages make, as Effects returning the Model's shapes.

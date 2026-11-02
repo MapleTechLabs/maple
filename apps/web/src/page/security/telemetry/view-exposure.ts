@@ -3,18 +3,25 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
-import { panel, panelHeader } from "../../../ui/panel"
-import { statusDot } from "../../../ui/status-dot"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { textLink } from "../../../ui/text-link"
+import { badge } from "@maple/views/ui/display"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { textLink } from "@maple/views/ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { NARROW_TWO_COLUMNS } from "../kit/layout"
+import { NARROW_TWO_COLUMNS, WIDE_COLUMN } from "../kit/layout"
 import { placeholder } from "../kit/parts"
 import { TIMELINE_BUCKET_SECONDS } from "./command"
 import {
@@ -31,6 +38,8 @@ import {
 	timelineValues,
 } from "./derive"
 import { type Exposure, Message, type Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The Exposure tab: probe paths a service answered, the week's totals, categories and sources.
 
@@ -44,7 +53,7 @@ const lastSeen = (h: H, clock: Clock, value: string): Html =>
 		timeZone: clock.timeZone,
 		variant: "orDate",
 		tooltip: "title",
-		className: "whitespace-nowrap text-xs text-muted-foreground",
+		className: typographyClass({ size: "xs", tone: "muted", className: "whitespace-nowrap" }),
 	})
 
 const count = (value: number): string => formatNumber(value)
@@ -54,29 +63,37 @@ const count = (value: number): string => formatNumber(value)
 const EXPOSED_COPY =
 	"A scanner asked for something that should never be public and the service answered with a 2xx. Check that the response does not contain it. Services that answer almost every path are listed separately as likely catch-all routes."
 
+const sampleTraceLink = (h: H, traceId: string): Html =>
+	textLink(
+		h,
+		{
+			tone: "muted",
+			className: "whitespace-nowrap text-xs",
+			href: hrefOf(AppRoute.Trace({ traceId, search: {} })),
+		},
+		["Sample trace"],
+	)
+
 const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boolean): Html =>
 	panel(h, { className: "overflow-hidden border-severity-error-a3" }, [
 		panelHeader(h, {
 			className: "bg-severity-error-a1",
-			title: h.span(
-				[h.Class("flex items-center gap-2")],
-				[
-					icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
-					`${rows.length}${capped ? "+" : ""} probe ${rows.length === 1 && !capped ? "path" : "paths"} answered with a success`,
-				],
-			),
+			title: hstack(h, { gap: "2", as: "span" }, [
+				icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
+				`${rows.length}${capped ? "+" : ""} probe ${rows.length === 1 && !capped ? "path" : "paths"} answered with a success`,
+			]),
 		}),
 		h.p([h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")], [EXPOSED_COPY]),
 		table(h, { ariaLabel: "Probe paths answered with a success" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Service"]),
-					tableHead(h, ["Path"]),
-					tableHead(h, ["Category"]),
+					tableHead(h, ["Path"], WIDE_COLUMN),
+					tableHead(h, ["Category"], WIDE_COLUMN),
 					tableHead(h, ["Status"]),
-					tableHead(h, ["Requests"], "text-right"),
-					tableHead(h, ["Last seen"]),
-					tableHead(h, [h.span([h.Class("sr-only")], ["Trace"])]),
+					tableHead(h, ["Requests"], cn("text-right", WIDE_COLUMN)),
+					tableHead(h, ["Last seen"], WIDE_COLUMN),
+					tableHead(h, [h.span([h.Class("sr-only")], ["Trace"])], WIDE_COLUMN),
 				]),
 			]),
 			tableBody(
@@ -85,43 +102,64 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 					tableRow(
 						h,
 						[
-							tableCell(h, [row.service], "font-medium"),
-							tableCell(h, [
-								h.span(
-									[
-										h.Class("block max-w-80 truncate font-mono text-xs"),
-										h.Title(`${row.host}${row.path}`),
-									],
-									[h.span([h.Class("text-muted-foreground")], [row.host]), row.path],
-								),
-							]),
-							tableCell(h, [categoryLabelOf(row.signature)], "text-xs text-muted-foreground"),
+							tableCell(
+								h,
+								[
+									row.service,
+									// Phones drop the path column, so the path rides under its service.
+									h.span(
+										[
+											h.Class(
+												"block max-w-60 truncate font-mono text-xs font-normal text-muted-foreground sm:hidden",
+											),
+										],
+										[row.path],
+									),
+									...(row.sampleTraceId === ""
+										? []
+										: [
+												h.span(
+													[h.Class("block font-normal sm:hidden")],
+													[sampleTraceLink(h, row.sampleTraceId)],
+												),
+											]),
+								],
+								"font-medium",
+							),
+							tableCell(
+								h,
+								[
+									h.span(
+										[
+											h.Class("block max-w-80 truncate font-mono text-xs"),
+											h.Title(`${row.host}${row.path}`),
+										],
+										[h.span([h.Class("text-muted-foreground")], [row.host]), row.path],
+									),
+								],
+								WIDE_COLUMN,
+							),
+							tableCell(
+								h,
+								[categoryLabelOf(row.signature)],
+								cn(typographyClass({ size: "xs", tone: "muted" }), WIDE_COLUMN),
+							),
 							tableCell(h, [
 								badge(h, { variant: "crit", mono: true }, [String(row.httpStatus)]),
 							]),
-							tableCell(h, [count(row.requests)], "text-right font-mono tabular-nums"),
-							tableCell(h, [lastSeen(h, clock, row.lastSeen)]),
 							tableCell(
 								h,
-								row.sampleTraceId === ""
-									? []
-									: [
-											textLink(
-												h,
-												{
-													tone: "muted",
-													className: "whitespace-nowrap text-xs",
-													href: hrefOf(
-														AppRoute.Trace({
-															traceId: row.sampleTraceId,
-															search: {},
-														}),
-													),
-												},
-												["Sample trace"],
-											),
-										],
-								"text-right",
+								[count(row.requests)],
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
+								),
+							),
+							tableCell(h, [lastSeen(h, clock, row.lastSeen)], WIDE_COLUMN),
+							tableCell(
+								h,
+								row.sampleTraceId === "" ? [] : [sampleTraceLink(h, row.sampleTraceId)],
+								cn("text-right", WIDE_COLUMN),
 							),
 						],
 						undefined,
@@ -154,7 +192,7 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 			subline: "named tools on ordinary paths",
 		}),
 		statRailItem(h, {
-			eyebrow: "Sources",
+			eyebrow: "Clients",
 			value: totals.isSourcesCapped ? `${SOURCES_SHOWN}+` : String(totals.sources),
 			compact: true,
 			subline: totals.isSourcesCapped
@@ -198,33 +236,29 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 					[h.Class("flex items-center justify-between gap-4 py-2")],
 					[
 						h.span([h.Class("font-medium")], [entry.service]),
-						h.span(
-							[h.Class("flex items-center gap-4")],
-							[
-								h.span(
-									[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
-									[`${entry.answered} of ${entry.probed} sensitive probe paths answered`],
-								),
-								...(entry.sampleTraceId === ""
-									? []
-									: [
-											textLink(
-												h,
-												{
-													tone: "muted",
-													className: "whitespace-nowrap text-xs",
-													href: hrefOf(
-														AppRoute.Trace({
-															traceId: entry.sampleTraceId,
-															search: {},
-														}),
-													),
-												},
-												["Sample trace"],
-											),
-										]),
-							],
-						),
+						hstack(h, { gap: "4", as: "span" }, [
+							typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+								`${entry.answered} of ${entry.probed} sensitive probe paths answered`,
+							]),
+							...(entry.sampleTraceId === ""
+								? []
+								: [
+										textLink(
+											h,
+											{
+												tone: "muted",
+												className: "whitespace-nowrap text-xs",
+												href: hrefOf(
+													AppRoute.Trace({
+														traceId: entry.sampleTraceId,
+														search: {},
+													}),
+												),
+											},
+											["Sample trace"],
+										),
+									]),
+						]),
 					],
 				),
 			),
@@ -253,10 +287,9 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Categories",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
-				["Answered counts 2xx responses, catch-all routes left out"],
-			),
+			action: typography(h, { size: "xs", tone: "muted" }, [
+				"Answered counts 2xx responses, catch-all routes left out",
+			]),
 		}),
 		table(h, { ariaLabel: "Probe categories" }, [
 			tableHeader(h, [
@@ -264,8 +297,8 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 					tableHead(h, ["Category"]),
 					tableHead(h, ["Requests"], "text-right"),
 					tableHead(h, ["Answered"], "text-right"),
-					tableHead(h, ["Services"], "text-right"),
-					tableHead(h, ["Top signatures"]),
+					tableHead(h, ["Services"], cn("text-right", WIDE_COLUMN)),
+					tableHead(h, ["Top signatures"], WIDE_COLUMN),
 				]),
 			]),
 			tableBody(
@@ -274,24 +307,40 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 					tableRow(
 						h,
 						[
-							tableCell(h, [row.label], "font-medium"),
-							tableCell(h, [count(row.requests)], "text-right font-mono tabular-nums"),
+							tableCell(h, [row.label], "font-medium max-sm:whitespace-normal"),
+							tableCell(
+								h,
+								[count(row.requests)],
+								typographyClass({ mono: true, numeric: true, className: "text-right" }),
+							),
 							tableCell(h, [answeredCell(h, row)], "text-right"),
-							tableCell(h, [String(row.services)], "text-right font-mono tabular-nums"),
-							tableCell(h, [
-								h.span(
-									[h.Class("flex flex-wrap items-center gap-1.5")],
-									row.topSignatures.map((signature) =>
-										h.span(
-											[
-												h.Key(signature.signature),
-												h.Title(`${count(signature.requests)} requests`),
-											],
-											[inlineCode(h, {}, [signature.signature])],
+							tableCell(
+								h,
+								[String(row.services)],
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
+								),
+							),
+							tableCell(
+								h,
+								[
+									hstack(
+										h,
+										{ gap: "1.5", wrap: true, as: "span" },
+										row.topSignatures.map((signature) =>
+											h.span(
+												[
+													h.Key(signature.signature),
+													h.Title(`${count(signature.requests)} requests`),
+												],
+												[inlineCode(h, {}, [signature.signature])],
+											),
 										),
 									),
-								),
-							]),
+								],
+								WIDE_COLUMN,
+							),
 						],
 						undefined,
 						[h.Key(row.key)],
@@ -306,18 +355,18 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
-			title: "Top sources",
-			action: h.span([h.Class("text-xs text-muted-foreground")], ["Most requests first"]),
+			title: "Top clients",
+			action: typography(h, { size: "xs", tone: "muted" }, ["Most requests first"]),
 		}),
-		table(h, { ariaLabel: "Top sources" }, [
+		table(h, { ariaLabel: "Top clients" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Client address"]),
 					tableHead(h, ["Tool"]),
-					tableHead(h, ["User agent"]),
+					tableHead(h, ["User agent"], WIDE_COLUMN),
 					tableHead(h, ["Requests"], "text-right"),
-					tableHead(h, ["Distinct probes"], "text-right"),
-					tableHead(h, ["Last seen"]),
+					tableHead(h, ["Distinct probes"], cn("text-right", WIDE_COLUMN)),
+					tableHead(h, ["Last seen"], WIDE_COLUMN),
 				]),
 			]),
 			tableBody(
@@ -326,24 +375,39 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 					tableRow(
 						h,
 						[
-							tableCell(h, [source.clientAddress], "font-mono text-xs"),
+							tableCell(h, [source.clientAddress], typographyClass({ size: "xs", mono: true })),
 							tableCell(
 								h,
 								[source.scanner === "" ? "Unnamed" : source.scanner],
 								source.scanner === "" ? "text-muted-foreground" : undefined,
 							),
-							tableCell(h, [
-								h.span(
-									[
-										h.Class("block max-w-72 truncate text-xs text-muted-foreground"),
-										h.Title(source.userAgent),
-									],
-									[source.userAgent === "" ? "None sent" : source.userAgent],
+							tableCell(
+								h,
+								[
+									h.span(
+										[
+											h.Class("block max-w-72 truncate text-xs text-muted-foreground"),
+											h.Title(source.userAgent),
+										],
+										[source.userAgent === "" ? "None sent" : source.userAgent],
+									),
+								],
+								WIDE_COLUMN,
+							),
+							tableCell(
+								h,
+								[count(source.requests)],
+								typographyClass({ mono: true, numeric: true, className: "text-right" }),
+							),
+							tableCell(
+								h,
+								[String(source.signatures)],
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
 								),
-							]),
-							tableCell(h, [count(source.requests)], "text-right font-mono tabular-nums"),
-							tableCell(h, [String(source.signatures)], "text-right font-mono tabular-nums"),
-							tableCell(h, [lastSeen(h, clock, source.lastSeen)]),
+							),
+							tableCell(h, [lastSeen(h, clock, source.lastSeen)], WIDE_COLUMN),
 						],
 						undefined,
 						[h.Key(source.clientAddress)],
@@ -367,7 +431,7 @@ const exposureEmpty = (h: H): Html =>
 				]),
 			]),
 		],
-		"rounded-md border md:py-16",
+		emptyFrameClass("dashed"),
 	)
 
 export const telemetryLoading = (h: H): ReadonlyArray<Html> => [
@@ -395,9 +459,9 @@ export const exposureBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 			const exposed = exposedRows(exposure)
 			const catchAll = catchAllServices(exposure)
 			return [
+				totalsRail(h, clock, exposure),
 				...(exposed.length === 0 ? [] : [exposedPanel(h, clock, exposed, isExposedCapped(exposure))]),
 				...(catchAll.length === 0 ? [] : [catchAllPanel(h, catchAll)]),
-				totalsRail(h, clock, exposure),
 				...(categories.length === 0 ? [] : [categoriesPanel(h, categories)]),
 				...(exposure.sources.length === 0 ? [] : [sourcesPanel(h, clock, exposure.sources)]),
 			]

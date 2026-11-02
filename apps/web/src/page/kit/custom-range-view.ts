@@ -5,9 +5,9 @@ import { Option } from "effect"
 import * as Calendar from "foldkit/calendar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineView } from "foldkit/submodel"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { input } from "../../ui/input"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
 import { appliedRange, type CalendarDate, Message, type Model } from "./custom-range"
 
 // The custom range picker's DOM: a two-month range calendar (en-US, rdp-* classes, Maple's

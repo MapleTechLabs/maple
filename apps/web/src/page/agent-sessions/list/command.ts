@@ -8,7 +8,7 @@ import {
 import { getAiToolBreakdowns, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
 import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AgentSessionsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"

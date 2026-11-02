@@ -17,6 +17,9 @@ export interface IsolateStamp {
 export const ISOLATE_ORDINAL_HEADER = "x-maple-isolate-ordinal"
 export const ISOLATE_AGE_HEADER = "x-maple-isolate-age-ms"
 
+/** maple-ai answers with it on the `/mcp` request that imported and built its tool executor. */
+export const MCP_TOOLS_BUILT_HEADER = "x-maple-ai-mcp-tools-built"
+
 export const isolateStampHeaders = ({ ageMs, ordinal }: IsolateStamp): Record<string, string> => ({
 	[ISOLATE_ORDINAL_HEADER]: String(ordinal),
 	[ISOLATE_AGE_HEADER]: String(ageMs),

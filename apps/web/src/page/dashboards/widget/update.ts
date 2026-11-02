@@ -7,22 +7,21 @@ import {
 } from "@maple/query-engine"
 import { Option, Schema } from "effect"
 import { Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { AUTOCOMPLETE_LOOKUPS } from "../../kit/autocomplete-lookups"
 import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardWidgetSearch } from "../../../route/search"
-import * as Dialog from "../../../ui/dialog"
-import * as Tabs from "../../../ui/tabs"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget } from "../kit/widget-data"
-import { dataStateOf } from "../kit/data-state"
 import { FetchAutocomplete, FetchVariableOptions, FetchWidget, ReadClock } from "./command"
 import { planOptionRequests, planVariablesOf } from "../kit/variables"
 import type { EditorState } from "./editor-state"
@@ -228,13 +227,10 @@ const planWidgetGates = (
 		variables,
 	})
 	const asked = ask({ model: { ...model, gate }, commands: [] }, gate)
-	// `StatSparklineLoader`: the trend is asked for once the stat itself has its value.
+	// `StatSparklineLoader`: the trend is asked for beside the stat; it does not read the stat's value.
 	const sparkline = widget.display.sparkline
 	const sparkGate =
-		panel === "stat" &&
-		sparkline?.enabled === true &&
-		sparkline.dataSource !== undefined &&
-		dataStateOf(asked.model.requests, widget, gate)._tag === "Ready"
+		panel === "stat" && sparkline?.enabled === true && sparkline.dataSource !== undefined
 			? planWidget({
 					orgId: context.orgId,
 					dataSource: sparkline.dataSource,

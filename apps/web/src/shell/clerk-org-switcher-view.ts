@@ -1,22 +1,23 @@
 import { MAPLE_REGION_LABELS, MapleRegion } from "@maple/domain/organization-regions"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { cn } from "@maple/ui/lib/utils"
-import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import { currentRegion, hasMultipleRegions } from "../lib/region"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ClerkOrganization } from "../platform/clerk"
-import { warmAvatarTone } from "../ui/avatar-tone"
-import { avatarFallback, badge } from "../ui/display"
-import { icon } from "../ui/icon"
-import * as MenuView from "../ui/menu-view"
-import { button } from "../ui/button"
-import * as DialogView from "../ui/dialog-view"
-import { field, fieldDescription, fieldLabel } from "../ui/field"
-import { input } from "../ui/input"
-import * as RadioGroup from "../ui/radio-group"
-import type { Align, Side } from "../ui/overlay/position"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { avatarFallback, badge } from "@maple/views/ui/display"
+import { label } from "@maple/views/ui/label"
+import { spinner } from "@maple/views/ui/spinner"
+import { icon } from "@maple/views/ui/icon"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { button } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
+import { input } from "@maple/views/ui/input"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import type { Align, Side } from "@maple/views/ui/overlay/position"
 import {
 	ALL_NAMESPACES,
 	CREATE_VALUE,
@@ -28,6 +29,7 @@ import {
 	ORG_PREFIX,
 } from "./clerk-org-switcher"
 import { hasNamespaceSearch, namespaceRows, namespaceSearchRow, noNamespacesMatch } from "./namespace-search"
+import { typography } from "@maple/views/ui/typography"
 
 /** The namespace submenu's data (`NamespaceScopeList`), sidebar switcher only. */
 export type NamespaceScope = Readonly<{
@@ -129,7 +131,7 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 					label: name,
 					content: [
 						h.span([h.Class("truncate")], [name]),
-						h.span([h.Class("ml-2 text-xs text-muted-foreground")], ["no recent data"]),
+						typography(h, { size: "xs", tone: "muted", className: "ml-2" }, ["no recent data"]),
 						checkIcon(h),
 					],
 				},
@@ -170,13 +172,7 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 				? [
 						h.div(
 							[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
-							[
-								icon(h, "LoaderIcon", {
-									className: cn(spinnerStyles, "size-3.5"),
-									attributes: [h.AriaLabel("Loading"), h.Role("status")],
-								}),
-								" Loading namespaces…",
-							],
+							[spinner(h, "size-3.5", undefined, true), " Loading namespaces…"],
 						),
 					]
 				: [],
@@ -314,13 +310,13 @@ const regionField = (h: H, model: Model): Html => {
 			h,
 			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
 			MapleRegion.literals.map((region) =>
-				h.label(
-					[
-						h.Id(RadioGroup.labelId(`${regionIdOf(model, region)}-input`)),
-						h.Class(
-							"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-accent/64",
-						),
-					],
+				label(
+					h,
+					{
+						className:
+							"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 font-normal hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-surface-strong",
+						attributes: [h.Id(RadioGroup.labelId(`${regionIdOf(model, region)}-input`))],
+					},
 					[
 						regionBadge(h, region),
 						h.span([h.Class("min-w-0 flex-1 text-sm")], [MAPLE_REGION_LABELS[region].name]),

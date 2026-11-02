@@ -15,7 +15,7 @@ import { pages } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 import { settle } from "./update"
 import { view } from "./view"
 
@@ -76,18 +76,21 @@ const SAMPLE_PATHS = [
 	"/dashboards/templates",
 	"/dashboards/00000000-0000-4000-8000-000000000003/widgets/w1",
 	"/code-review",
-	"/security",
-	"/security/findings",
-	"/security/runs",
+	"/security/code",
+	"/security/code/findings",
+	"/security/code/runs",
 	"/security/exposure",
 	"/security/runtimes",
 	"/security/dependencies",
-	"/security/runs/run_1",
-	"/security/findings/00000000-0000-4000-8000-000000000005/fp_1",
+	"/security/code/runs/run_1",
+	"/security/code/findings/00000000-0000-4000-8000-000000000005/fp_1",
 	"/agent-sessions",
 	"/agent-sessions/tools",
 	"/agent-sessions/tools/run_sql",
 	"/agent-sessions/session_1",
+	"/mcp-servers",
+	"/mcp-servers/maple-ai",
+	"/mcp-servers/maple-ai/tools/run_sql",
 	"/integrations",
 	"/recommendations/rec_1",
 	"/anomalies",

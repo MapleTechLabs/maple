@@ -1,8 +1,8 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { GCP_SCOPE_NAMES, logRouterUrl } from "../../components/integrations/gcp-connector-state"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { CAPABILITIES } from "./gcp-configure-copy"
 import { chooseChanges } from "./gcp-configure-derive"
 import type { ConfigureModel } from "./gcp-configure-schema"
@@ -10,6 +10,7 @@ import { Message } from "./message"
 import { collectFields } from "./view-gcp-configure-collect"
 import { logFilter } from "./view-gcp-configure-filter"
 import { configureFooter, configureHeader, configurePanel, footerNote } from "./view-gcp-configure-parts"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // `ChooseStage`: a connection's data step, and the confirmation for a change that acts at once.
 
@@ -90,7 +91,9 @@ const confirmSave = (h: H, configure: ConfigureModel, connector: V2GcpConnector,
 			[],
 			[
 				h.dt([h.Class("font-medium")], [term]),
-				...lines.map((line) => h.dd([h.Class("text-pretty text-muted-foreground")], [line])),
+				...lines.map((line) =>
+					h.dd([h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))], [line]),
+				),
 			],
 		)
 	return confirmDialog(h, {

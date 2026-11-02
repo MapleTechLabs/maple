@@ -7,19 +7,19 @@ import { docsUrl } from "../../lib/docs"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../ui/alert"
+import { alert, alertDescription } from "@maple/views/ui/alert"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
-import * as Menu from "../../ui/menu"
-import { panel } from "../../ui/panel"
-import { rowActionsMenu } from "../../ui/row-actions-menu"
-import { skeletonList } from "../../ui/skeleton"
-import { statusDot } from "../../ui/status-dot"
-import { switchControl } from "../../ui/switch"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import * as Menu from "@maple/views/ui/menu"
+import { panel } from "@maple/views/ui/panel"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { switchControl } from "@maple/views/ui/switch"
 import { docsLink } from "../kit/signal-empty-state"
 import {
 	integrationEmpty,
@@ -37,6 +37,8 @@ import { hostnameOf } from "./prometheus"
 import { prometheusTargets } from "./update-prometheus"
 import { targetDetails } from "./view-prometheus-details"
 import { targetDialogs } from "./view-prometheus-form"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
 // TODO(tooltip): the last-error line renders its trigger; the raw-error popup is the overlay port's.
@@ -45,8 +47,8 @@ type H = HtmlBuilder<Message>
 
 export const AUTH_TYPE_LABELS = {
 	none: "None",
-	bearer: "Bearer Token",
-	basic: "Basic Auth",
+	bearer: "Bearer token",
+	basic: "Basic auth",
 	token: "Service Token",
 	planetscale_oauth: "PlanetScale OAuth",
 	supabase_oauth: "Supabase OAuth",
@@ -172,8 +174,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
+					hstack(h, { gap: "2", shrink: true },
 						[
 							h.span(
 								[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
@@ -279,7 +280,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 						slotId: menuId,
 						model: card.menus[menuId] ?? Menu.init(menuId),
 						label: `Actions for ${target.name}`,
-						className: "text-muted-foreground hover:text-foreground active:text-foreground shrink-0",
+						className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
 						entries: [
 							{
 								_tag: "Item",
@@ -292,7 +293,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 							{
 								_tag: "Item",
 								value: "delete",
-								label: "Disconnect",
+								label: "Delete scrape target",
 								icon: "TrashIcon",
 								variant: "destructive",
 								isDisabled: isManaged,
@@ -371,7 +372,7 @@ export const scrapeTargetsSection = (
 		return targets.length === 0
 			? focusId === null
 				? emptyState(h, integration)
-				: h.p([h.Class("text-muted-foreground text-sm")], ["This scrape target no longer exists."])
+				: typography(h, { size: "sm", tone: "muted", as: "p" }, ["This scrape target no longer exists."])
 			: h.div(
 					[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]")],
 					[
@@ -391,10 +392,9 @@ export const scrapeTargetsSection = (
 				...(isEmpty
 					? []
 					: [
-							h.div(
-								[h.Class("flex items-center justify-between gap-3")],
+							hstack(h, { gap: "3", justify: "between" },
 								[
-									h.p([h.Class("text-muted-foreground text-sm")], [COPY.description]),
+									typography(h, { size: "sm", tone: "muted", as: "p" }, [COPY.description]),
 									addButton(h, integration, "shrink-0"),
 								],
 							),

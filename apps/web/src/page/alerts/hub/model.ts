@@ -9,10 +9,10 @@ import {
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { AlertsSearch } from "../../../route/search"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 

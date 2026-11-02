@@ -1,18 +1,16 @@
-import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { confirmDialog } from "../../../../ui/confirm-dialog"
-import { badge } from "../../../../ui/display"
-import { formDialog } from "../../../../ui/form-dialog"
-import { icon } from "../../../../ui/icon"
-import * as Menu from "../../../../ui/menu"
-import type { MenuEntry } from "../../../../ui/menu-view"
-import * as OtpField from "../../../../ui/otp-field"
-import { rowActionsMenu } from "../../../../ui/row-actions-menu"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../../ui/table"
-import { truncatedText } from "../../../../ui/truncated-text"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { badge } from "@maple/views/ui/display"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
+import * as OtpField from "@maple/views/ui/otp-field"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "@maple/views/ui/table"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
 import { codeField } from "../code-field"
@@ -20,6 +18,8 @@ import { textField } from "../fields"
 import type { AccountEmail, AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { canRemove } from "./update"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -65,14 +65,13 @@ const emailRow = (h: H, model: Model, user: AccountUser, address: AccountEmail):
 	return tableRow(
 		h,
 		[
-			tableCell(
+			truncatedTableCell(
 				h,
 				[truncatedText(h, { text: address.email })],
-				cn(truncatedCellStyles, "font-medium text-xs"),
+				typographyClass({ size: "xs", weight: "medium" }),
 			),
 			tableCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-1.5")],
+				hstack(h, { gap: "1.5" },
 					[
 						...(isPrimary ? [badge(h, { variant: "secondary" }, ["Primary"])] : []),
 						address.isVerified
@@ -183,7 +182,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			toParentMessage: (message) => Message.GotRemoveDialogMessage({ message }),
 			title: "Remove email address?",
 			description: `${model.removing?.email ?? ""} can no longer be used to sign in or receive notifications from Maple.`,
-			confirmLabel: "Remove",
+			confirmLabel: "Remove email",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),

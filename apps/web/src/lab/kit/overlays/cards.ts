@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as HoverCard from "../../../ui/hover-card"
-import * as Popover from "../../../ui/popover"
-import * as Tooltip from "../../../ui/tooltip"
+import { button } from "@maple/views/ui/button"
+import * as HoverCard from "@maple/views/ui/hover-card"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { Message } from "./model"
 
 // `KitPopover` and `KitHoverCard`.

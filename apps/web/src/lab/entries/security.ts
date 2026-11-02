@@ -211,10 +211,10 @@ export const lab = defineShellLab("Security Center", {
 	init,
 	update,
 	view,
-	currentPath: "/security",
+	currentPath: "/security/code",
 	breadcrumbs: (model: Model) =>
 		model.tabs !== null
-			? tabsCrumbs(model.tabs.tab)
+			? tabsCrumbs("code", model.tabs.tab)
 			: model.run !== null
 				? runCrumbs(model.run)
 				: model.finding !== null

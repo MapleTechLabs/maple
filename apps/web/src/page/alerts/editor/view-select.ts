@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Select from "../../../ui/select"
-import { view as selectView, type SelectOption } from "../../../ui/select-view"
+import * as Select from "@maple/views/ui/select"
+import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import { Message } from "./message"
 
 type H = HtmlBuilder<Message>

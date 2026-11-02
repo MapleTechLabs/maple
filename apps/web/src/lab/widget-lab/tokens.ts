@@ -1,4 +1,4 @@
-import { pieChartTokens } from "../../charts/pie-chart"
+import { pieChartTokens } from "@maple/views/charts/pie-chart"
 import { WIDGET_CHART_TOKENS } from "../../page/dashboards/kit/chart-tokens"
 import { ALL_CELLS } from "./catalog"
 

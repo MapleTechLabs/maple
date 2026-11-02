@@ -1,6 +1,6 @@
 import type * as Markdown from "@foldkit/markdown"
 import { Option, Schema } from "effect"
-import { highlightTokens, resolveLang } from "../../../../lib/highlight"
+import { highlightTokens } from "@maple/views/lib/highlight"
 
 // A fenced block's tokens. Each token is coloured by its `--sh-<slot>` theme variable (`theme.css`);
 // a language the highlighter does not know is plain text.
@@ -37,5 +37,5 @@ export const highlightKey = (language: string, code: string): string => `${langu
 
 /** A fence's tokens, by its language or an alias of one (`py`, `SQL`). */
 export const highlight = (language: string, code: string): HighlightedCode => ({
-	lines: highlightTokens(code, resolveLang(language)),
+	lines: highlightTokens(code, language),
 })

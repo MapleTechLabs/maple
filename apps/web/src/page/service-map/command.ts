@@ -10,10 +10,10 @@ import {
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { loadServicesFacets } from "../../data/services-facets-probe"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
-import { Snapshot, ViewPrefs } from "../../service-map/map/state"
+import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { Message, RequestMode } from "./message"
 import {

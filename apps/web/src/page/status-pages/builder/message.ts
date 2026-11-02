@@ -6,7 +6,7 @@ import {
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme } from "../shared/preview"
 import { SubmitMode } from "./model"

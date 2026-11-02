@@ -5,10 +5,10 @@ import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
-import * as Dialog from "../../../ui/dialog"
-import * as Resizable from "../../../ui/resizable"
-import * as Tabs from "../../../ui/tabs"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Resizable from "@maple/views/ui/resizable"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { copyToast } from "../../kit/clipboard"
 import {
@@ -173,7 +173,6 @@ const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Re
 		totalDurationMs: trace.data.totalDurationMs,
 	}
 	const eventsKey = requestKey(org, "getTraceSpanEvents", { data: eventsInput })
-	const replaysKey = requestKey(org, "getReplaysForTrace", { data: { traceId } })
 	const windowed = Option.match(window, {
 		onNone: (): ReadonlyArray<Step> => [],
 		onSome: ({ startTime, endTime }) => {
@@ -208,19 +207,33 @@ const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Re
 					(spanEvents) => ({ spanEvents }),
 					() => FetchSpanEvents({ key: eventsKey, ...eventsInput }),
 				)),
-		...step(
-			model.replaySessionId,
-			replaysKey,
-			(replaySessionId) => ({ replaySessionId }),
-			() => FetchReplays({ key: replaysKey, traceId }),
-		),
 		...windowed,
 	]
-	return {
-		model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-		commands: steps.map((step) => step.command),
-	}
+	return applySteps(model, steps)
 }
+
+const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
+	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+	commands: steps.map((step) => step.command),
+})
+
+/** Replays need only the trace id, so they load beside the hierarchy instead of after it. */
+const requestReplays = (model: Model, context: PageContext): Return =>
+	Option.match(decodeTraceId(model.traceId), {
+		onNone: () => ({ model }),
+		onSome: (traceId) => {
+			const key = requestKey(context.orgId, "getReplaysForTrace", { data: { traceId } })
+			return applySteps(
+				model,
+				step(
+					model.replaySessionId,
+					key,
+					(replaySessionId) => ({ replaySessionId }),
+					() => FetchReplays({ key, traceId }),
+				),
+			)
+		},
+	})
 
 const requestHierarchy = (model: Model, context: PageContext): Return =>
 	Option.match(decodeTraceId(model.traceId), {
@@ -277,7 +290,7 @@ export const init = (route: Route, context: PageContext, isPeek = false): Return
 		spanPanel: null,
 		isPeek,
 	}
-	const requested = requestHierarchy(model, context)
+	const requested = chain(requestHierarchy(model, context), (next) => requestReplays(next, context))
 	const reads = isPeek ? [ReadClock()] : [ReadClock(), ReadListQuery()]
 	return { model: requested.model, commands: [...reads, ...(requested.commands ?? [])] }
 }

@@ -1,4 +1,4 @@
-import { chartBucketSeconds } from "../../../../components/infra/chart-units"
+import { chartBucketSeconds } from "@maple/views/lib/infra-chart-units"
 import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../../data/time-range"

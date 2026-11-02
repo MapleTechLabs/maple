@@ -2,14 +2,15 @@ import type { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
-import { errorState } from "../../ui/error-state"
-import { skeleton } from "../../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { cloudflareConnected } from "./view-cloudflare-connected"
+import { disconnectDialog } from "./view-disconnect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `CloudflareAccountCard` and `CloudflareHeaderActions`.
 
@@ -28,8 +29,8 @@ const cloudflareReconnect = (h: H): Html =>
 
 export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.statuses.cloudflare.data, {
-		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "40" }),
+		onLoading: () => skeletonBlock(h, { height: "40" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -83,33 +84,20 @@ export const cloudflareHeaderActions = (h: H, model: Model): ReadonlyArray<Html>
 	const multi = isMultiAccount(model)
 	const busy = isBusy(model)
 	return [
-		h.div(
-			[h.Class("flex items-center gap-2")],
-			[
-				cloudflareReconnectButton(h, model),
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "destructive-outline",
-						isDisabled: busy,
-						isLoading: model.disconnect.isPending,
-						attributes: [h.OnClick(Message.ClickedDisconnect())],
-					},
-					[multi ? "Disconnect all" : "Disconnect"],
-				),
-				confirmDialog(h, {
-					slotId: "integration-disconnect",
-					model: model.disconnect.dialog,
-					toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
-					title: "Disconnect Cloudflare",
-					description: multi
-						? "Maple stops collecting data from all connected Cloudflare accounts. You can reconnect later."
-						: "Maple stops collecting data from this Cloudflare account. You can reconnect later.",
-					confirmLabel: "Disconnect",
-					onConfirm: Message.ConfirmedDisconnect(),
-				}),
-			],
-		),
+		hstack(h, { gap: "2" }, [
+			cloudflareReconnectButton(h, model),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isDisabled: busy,
+					isLoading: model.disconnect.isPending,
+					attributes: [h.OnClick(Message.ClickedDisconnect())],
+				},
+				[multi ? "Disconnect all" : "Disconnect"],
+			),
+			disconnectDialog(h, model, multi ? "cloudflare-multi" : "cloudflare"),
+		]),
 	]
 }

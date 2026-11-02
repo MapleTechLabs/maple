@@ -1,10 +1,10 @@
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../charts/chart"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Select from "../../../ui/select"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Select from "@maple/views/ui/select"
 import { ServiceRuntime } from "../../kit/service-runtimes"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ServiceTab } from "./derive"
@@ -26,7 +26,14 @@ export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
 
 /** The reads that can be retried from their error state. */
-export const RetryTarget = Schema.Literals(["Overview"])
+export const RetryTarget = Schema.Literals([
+	"Overview",
+	"Operations",
+	"Dependencies",
+	"Endpoints",
+	"ApiOverview",
+	"StatusBreakdown",
+])
 export type RetryTarget = typeof RetryTarget.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({

@@ -1,9 +1,11 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { type FieldIds, type FieldState, field, fieldLabel, input } from "../../../ui/field"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import { type FieldIds, type FieldState, field, fieldLabel, input } from "@maple/views/ui/field"
+import { textarea } from "@maple/views/ui/textarea"
+import { dangerRow, dangerZone } from "../../settings/kit/danger-zone"
+import { saveBar } from "../../settings/kit/save-bar"
 import { settingsSection, settingsSections } from "../../settings/kit/section"
 import { rulesOutcome } from "../kit/rules"
 import * as RulesView from "../kit/rules-view"
@@ -13,17 +15,20 @@ import { platformMeta } from "../kit/platforms"
 import { hasToken, pausedLabel } from "../kit/shared"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
+import { isSettingsDirty } from "./update"
 import type { Model, RevealedToken, SettingsForm } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `SourceSetupTab` and `SourceSettings`.
 
 type H = HtmlBuilder<Message>
 
-const LINK_CLASS = "text-foreground underline underline-offset-2"
+const LINK_CLASS = typographyClass({ tone: "foreground", className: "underline underline-offset-2" })
 const INGESTION_HREF = hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))
 
 const note = (h: H, children: ReadonlyArray<Html | string>) =>
-	h.p([h.Class("text-muted-foreground text-sm")], children)
+	typography(h, { size: "sm", tone: "muted", as: "p" }, children)
 
 export const setupTab = (h: H, model: Model, source: V2Source, revealed: RevealedToken | null): Html => {
 	if (source.is_default)
@@ -69,13 +74,11 @@ const stateOf = (value: string, initial: string): FieldState => ({
 	isTouched: false,
 })
 
-const generalSection = (h: H, form: SettingsForm, source: V2Source, footer?: Html): Html => {
+const generalSection = (h: H, form: SettingsForm, source: V2Source): Html => {
 	const nameState = stateOf(form.name, source.name)
 	const descriptionState = stateOf(form.description, source.description ?? "")
-	const options = { id: "source-settings-general", title: "General" }
-	return settingsSection(h, footer === undefined ? options : { ...options, footer }, [
-		h.div(
-			[h.Class("flex flex-col gap-4")],
+	return settingsSection(h, { id: "source-settings-general", title: "General" }, [
+		vstack(h, { gap: "4" },
 			[
 				field(h, { state: nameState }, [
 					fieldLabel(h, { ids: NAME_IDS, state: nameState }, "Name"),
@@ -93,7 +96,7 @@ const generalSection = (h: H, form: SettingsForm, source: V2Source, footer?: Htm
 					fieldLabel(h, { ids: DESCRIPTION_IDS, state: descriptionState }, [
 						"Description",
 						" ",
-						h.span([h.Class("text-muted-foreground font-normal")], ["(optional)"]),
+						typography(h, { tone: "muted", weight: "normal" }, ["(optional)"]),
 					]),
 					textarea(h, {
 						id: DESCRIPTION_IDS.control,
@@ -141,15 +144,12 @@ const ingestionSection = (h: H, model: Model, source: V2Source): Html => {
 			],
 		},
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-4")],
+			hstack(h, { gap: "4", justify: "between" },
 				[
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-1")],
+					vstack(h, { gap: "1", shrink: true },
 						[
 							sourceStatusBadge(h, source, { nowMs: model.nowMs ?? 0, showTime: false }),
-							h.span(
-								[h.Class("text-muted-foreground text-xs")],
+							typography(h, { size: "xs", tone: "muted" },
 								[isPaused ? pausedLabel(source) : "Collected and stored as it arrives"],
 							),
 						],
@@ -182,46 +182,22 @@ const ingestionSection = (h: H, model: Model, source: V2Source): Html => {
 }
 
 const deleteSection = (h: H, source: V2Source): Html =>
-	settingsSection(h, { id: "source-settings-delete", title: "Delete source" }, [
-		h.div(
-			[h.Class("flex items-center justify-between gap-6")],
-			[
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-1")],
-					[
-						h.span(
-							[h.Class("text-sm")],
-							[`Disconnects ${platformMeta(source.platform).label} and removes this source.`],
-						),
-						h.span(
-							[h.Class("text-muted-foreground text-xs leading-relaxed")],
-							[
-								keepsStoredData(source)
-									? "Nothing new is collected or billed. Data already stored stays until retention ends."
-									: "Nothing new is collected, and its repositories and commits are deleted.",
-							],
-						),
-					],
-				),
-				button(
-					h,
-					{
-						variant: "destructive-outline",
-						size: "sm",
-						className: "shrink-0",
-						attributes: [h.OnClick(Message.ClickedDelete())],
-					},
-					["Delete source"],
-				),
+	dangerZone(h, { id: "source-settings-delete" }, [
+		dangerRow(h, {
+			title: "Delete source",
+			description: [
+				`Disconnects ${platformMeta(source.platform).label} and removes this source. `,
+				keepsStoredData(source)
+					? "Nothing new is collected or billed. Data already stored stays until retention ends."
+					: "Nothing new is collected, and its repositories and commits are deleted.",
 			],
-		),
+			action: button(
+				h,
+				{ variant: "destructive-outline", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
+				["Delete source"],
+			),
+		}),
 	])
-
-const saveRow = (h: H, isValid: boolean, isSaving: boolean): Html =>
-	h.div(
-		[h.Class("flex justify-end")],
-		[button(h, { type: "submit", isDisabled: !isValid, isLoading: isSaving }, ["Save changes"])],
-	)
 
 /** General for every source; rules for token sources, pausing and deleting for integrations. */
 export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
@@ -229,8 +205,14 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 	if (form === null) return h.empty
 	const isToken = hasToken(source)
 	const isValid = form.name.trim().length > 0 && (!isToken || rulesOutcome(form.rules).valid)
-	const save = saveRow(h, isValid, form.isSaving)
-	// Token sources save the rules too, so their Save closes the form; the rest save General alone.
+	const save = saveBar(h, {
+		isDirty: isSettingsDirty(form),
+		isPending: form.isSaving,
+		isSaveDisabled: !isValid,
+		onDiscard: Message.ClickedDiscardSettings(),
+		onSave: Message.SubmittedSettings(),
+	})
+	// Token sources save the rules too; the rest save General alone.
 	const sections: ReadonlyArray<Html> = isToken
 		? [
 				generalSection(h, form, source),
@@ -250,13 +232,14 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 						}),
 					],
 				),
-				save,
+				...save,
 			]
 		: [
-				generalSection(h, form, source, save),
+				generalSection(h, form, source),
 				...(source.is_default
 					? [defaultRulesSection(h)]
 					: [ingestionSection(h, model, source), deleteSection(h, source)]),
+				...save,
 			]
 	return h.form(
 		[h.Class("max-w-4xl"), h.OnSubmit(Message.SubmittedSettings())],

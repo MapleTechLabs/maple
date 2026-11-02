@@ -7,11 +7,14 @@ import {
 } from "../../components/integrations/planetscale-setup-steps"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button } from "../../ui/button"
-import { statusDot } from "../../ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { strip } from "@maple/views/ui/rule"
 
 // `PlanetScaleMetricsHealth`.
 
@@ -39,74 +42,67 @@ export const metricsHealth = (
 	const lastAt = metricsLastCollectedAt(status)
 	const excluded = status.scrape_target?.exclude_branches ?? []
 	const isOpen = model.planetscaleCard.isDetailsOpen
-	return h.div(
-		[h.Class("border-t border-border-subtle p-4")],
+	return strip(h, { kind: "block" },
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2 text-xs")],
-				[
-					statusDot(h, {
-						tone: state === "healthy" ? "ok" : state === "waiting" ? "neutral" : "warn",
-					}),
-					h.span([h.Class("font-medium text-foreground")], [HEADLINE.get(state) ?? ""]),
-					h.span(
-						[h.Class("text-muted-foreground")],
-						[
-							...(viaApi ? ["Polled from PlanetScale's metrics API every 5 minutes."] : []),
-							...(state === "waiting"
+			hstack(h, { gap: "2", wrap: true, className: typographyClass({ size: "xs" }) }, [
+				statusDot(h, {
+					tone: state === "healthy" ? "ok" : state === "waiting" ? "neutral" : "warn",
+				}),
+				typography(h, { tone: "foreground", weight: "medium" }, [HEADLINE.get(state) ?? ""]),
+				h.span(
+					[h.Class("text-muted-foreground")],
+					[
+						...(viaApi ? ["Polled from PlanetScale's metrics API every 5 minutes."] : []),
+						...(state === "waiting"
+							? [
+									viaApi
+										? " The first poll usually lands within 10 minutes."
+										: "Branch metrics usually appear within a minute.",
+								]
+							: lastAt !== null
 								? [
-										viaApi
-											? " The first poll usually lands within 10 minutes."
-											: "Branch metrics usually appear within a minute.",
+										...(viaApi ? [" "] : []),
+										relativeTime(h, {
+											value: lastAt,
+											nowMs: model.nowMs,
+											timeZone,
+											prefix: state === "healthy" ? "Updated" : "Last data",
+										}),
 									]
-								: lastAt !== null
-									? [
-											...(viaApi ? [" "] : []),
-											relativeTime(h, {
-												value: lastAt,
-												nowMs: model.nowMs,
-												timeZone,
-												prefix: state === "healthy" ? "Updated" : "Last data",
-											}),
-										]
-									: []),
-							...(state === "healthy" && excluded.length > 0
-								? [" · excluding ", excluded.join(", ")]
 								: []),
-						],
-					),
-					...(state === "healthy"
+						...(state === "healthy" && excluded.length > 0
+							? [" · excluding ", excluded.join(", ")]
+							: []),
+					],
+				),
+				...(state === "healthy"
+					? [
+							h.a(
+								[
+									h.Href(hrefOf(AppRoute.InfraPlanetscale({ search: {} }))),
+									h.Class(QUIET_LINK),
+								],
+								["View databases"],
+							),
+						]
+					: []),
+				hstack(h, { gap: "2", className: "ml-auto" }, [
+					...(state === "degraded"
 						? [
-								h.a(
-									[
-										h.Href(hrefOf(AppRoute.InfraPlanetscale({ search: {} }))),
-										h.Class(QUIET_LINK),
-									],
-									["View databases"],
+								button(
+									h,
+									{
+										variant: "link",
+										size: "xs",
+										className: `h-auto p-0 font-normal ${QUIET_LINK}`,
+										attributes: [h.OnClick(Message.ClickedMetricsDetails())],
+									},
+									[isOpen ? "Hide details" : "Show details"],
 								),
 							]
 						: []),
-					h.div(
-						[h.Class("ml-auto flex items-center gap-2")],
-						[
-							...(state === "degraded"
-								? [
-										button(
-											h,
-											{
-												variant: "link",
-												size: "xs",
-												className: `h-auto p-0 font-normal ${QUIET_LINK}`,
-												attributes: [h.OnClick(Message.ClickedMetricsDetails())],
-											},
-											[isOpen ? "Hide details" : "Show details"],
-										),
-									]
-								: []),
-						],
-					),
-				],
-			),
+				]),
+			]),
 			...(state === "degraded" && isOpen
 				? [
 						h.p(

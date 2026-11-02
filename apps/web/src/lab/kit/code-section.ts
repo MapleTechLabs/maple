@@ -1,10 +1,10 @@
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { highlightCode } from "../../lib/highlight"
+import { highlightCode } from "@maple/views/lib/highlight"
 import { highlight, highlightKey } from "../../page/investigations/conversation/kit/code-highlight"
 import { codeBlock as fenceBlock } from "../../page/investigations/conversation/kit/view-code"
 import { codeBlock } from "../../page/settings/kit/code-block"
-import type * as CopyButton from "../../ui/copy-button"
+import type * as CopyButton from "@maple/views/ui/copy-button"
 import { kitSection } from "./kit-layout"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -42,7 +42,8 @@ const LOG_BODY = encodePrettyJson({
 	http: { method: "POST", route: "/v1/orders/:id", status: 504 },
 })
 
-const FENCE_HIGHLIGHTS = { [highlightKey("py", FENCE)]: highlight("py", FENCE) }
+// Read per render: the tokens are plain until the highlighter has loaded.
+const fenceHighlights = () => ({ [highlightKey("py", FENCE)]: highlight("py", FENCE) })
 
 export const codeSection = <M>(
 	h: HtmlBuilder<M>,
@@ -58,7 +59,7 @@ export const codeSection = <M>(
 		fenceBlock(
 			h,
 			{
-				highlights: FENCE_HIGHLIGHTS,
+				highlights: fenceHighlights(),
 				onCopy,
 				onDownload: onCopy,
 			},

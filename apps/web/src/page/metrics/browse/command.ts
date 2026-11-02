@@ -2,7 +2,7 @@ import { getMetricSparklines, getMetricsSummary, listMetrics } from "@maple/web-
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message, RequestMode } from "./message"

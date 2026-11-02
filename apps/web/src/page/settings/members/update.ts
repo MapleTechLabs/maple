@@ -1,17 +1,17 @@
 import { toOrgRole } from "../../../components/settings/org-membership"
 import { Array, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type {
 	ClerkInvitationResource,
 	ClerkMembershipResource,
 	ClerkOrganizationResource,
 } from "../../../platform/clerk"
 import { ClerkActionError, clerkTry, currentClerkOrganization } from "../../../platform/clerk"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Menu from "../../../ui/menu"
-import * as Select from "../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Menu from "@maple/views/ui/menu"
+import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import { memberDisplayName, otherAdminName } from "../kit/members"

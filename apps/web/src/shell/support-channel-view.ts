@@ -2,12 +2,14 @@ import type { V2SupportChannel } from "@maple/domain/http/v2"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../ui/button"
-import * as DialogView from "../ui/dialog-view"
-import { errorState } from "../ui/error-state"
-import { icon } from "../ui/icon"
-import { skeleton } from "../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { Message, type Model } from "./support-channel"
+import { typography } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -86,7 +88,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ email: Option
 							"dialog",
 							ID,
 							[icon(h, "SlackIcon", { size: 18 }), "Shared Slack channel"],
-							"flex items-center gap-2",
+							hstackClass({ gap: "2" }),
 						),
 						DialogView.dialogDescription(
 							h,
@@ -106,8 +108,7 @@ const channelBody = (h: H, model: Model, channel: V2SupportChannel, email: Optio
 	if (channel.status === "unavailable")
 		return [
 			panel(h, [
-				h.p(
-					[h.Class("text-sm text-muted-foreground")],
+				typography(h, { size: "sm", tone: "muted", as: "p" },
 					[
 						"Shared Slack channels are not set up on this Maple instance. Email",
 						" ",

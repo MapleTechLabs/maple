@@ -8,7 +8,7 @@ import {
 	ensureEventConsumerToken,
 	eventConsumerTokenMatches,
 	eventConsumerTokenPath,
-} from "../src/server/eventing/consumer-auth"
+} from "@maple/local-server/eventing/consumer-auth"
 
 describe("local event consumer authorization", () => {
 	it("creates a stable private token separate from the data directory", async () => {

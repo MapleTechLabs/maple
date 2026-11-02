@@ -1,21 +1,22 @@
 import { allowedTransitionsForAll, type WorkflowState } from "@maple/domain/http"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import type * as Menu from "../../../ui/menu"
-import * as MenuView from "../../../ui/menu-view"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import type * as Menu from "@maple/views/ui/menu"
+import * as MenuView from "@maple/views/ui/menu-view"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
 import { WORKFLOW_LABEL } from "../kit/workflow"
 import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The issues bulk bar: the selection's actions, pinned to the foot.
 
 type H = HtmlBuilder<Message>
 
-const DOT_ITEM = "flex items-center gap-2"
+const DOT_ITEM = hstackClass({ gap: "2" })
 
 const bulkMenu = (
 	h: H,

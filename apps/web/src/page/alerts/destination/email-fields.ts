@@ -3,7 +3,7 @@ import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
 import type { Resources } from "../../../platform/resources"
-import * as Combobox from "../../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import type { DestinationForm } from "./form"
 
 // `EmailMemberPicker`: workspace members from Clerk's

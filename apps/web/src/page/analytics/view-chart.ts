@@ -3,15 +3,15 @@ import {
 	type AnalyticsMetricKey,
 	type AnalyticsMetricSource,
 	findMetric,
-} from "../../components/analytics/metrics"
+} from "@maple/views/lib/analytics-metrics"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { bucketTooltipBody } from "../../charts/bucket-tooltip"
-import type { Message, Model } from "../../charts/chart"
-import type { ChartSpec } from "../../charts/chart-spec"
-import { plotFrame } from "../../charts/plot-frame"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
+import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import type { Message, Model } from "@maple/views/charts/chart"
+import type { ChartSpec } from "@maple/views/charts/chart-spec"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../infra-integrations/kit/chart-card"
 import { seriesLegend } from "../kit/series-legend"
 
@@ -20,7 +20,7 @@ import { seriesLegend } from "../kit/series-legend"
 
 export const TRAFFIC_TOKENS = ["--border", "--background", "--primary", "--chart-2"]
 
-const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 type Series = Readonly<{
 	key: "primary" | "companion"
