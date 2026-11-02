@@ -5,8 +5,12 @@ import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { timeseriesLegend } from "./timeseries-legend"
-import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "@maple/ui/components/charts/_shared/bucket-series"
-import { ChartSpec, ChartTooltip, type TimeseriesAxisSpec } from "./chart-spec"
+import {
+	bucketTimeseries,
+	MAX_BAR_SERIES,
+	OTHER_LABEL,
+} from "@maple/ui/components/charts/_shared/bucket-series"
+import { ChartSpec, ChartTooltip, specCache, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
@@ -47,12 +51,19 @@ type Row = Readonly<Record<string, string | number | boolean>>
 /** `bucketBarSeries`: past `MAX_BAR_SERIES` the long tail folds into one "Other" series. */
 export const bucketBarSeries = (data: ReadonlyArray<Row>): ReadonlyArray<Row> => {
 	const seriesKeys = [
-		...new Set(data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket" && key !== "partial"))),
+		...new Set(
+			data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket" && key !== "partial")),
+		),
 	]
 	if (seriesKeys.length <= MAX_BAR_SERIES) return data
 	const { rows } = bucketTimeseries(data, seriesKeys, MAX_BAR_SERIES)
 	return rows.map((row, index) => (data[index]?.partial === true ? { ...row, partial: true } : row))
 }
+
+const barSpec = specCache(
+	(data: ReadonlyArray<Row>, rest: Omit<Parameters<typeof ChartSpec.QueryBuilderBar>[0], "data">) =>
+		ChartSpec.QueryBuilderBar({ data, ...rest }),
+)
 
 export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, inputs, h) => {
 	const data = bucketBarSeries(inputs.data)
@@ -93,8 +104,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 				chartId: inputs.chartId,
 				className: "h-full w-full",
 				ariaLabel: "Time series",
-				spec: ChartSpec.QueryBuilderBar({
-					data,
+				spec: barSpec(data, {
 					colors,
 					fallbackColor: SERIES_FALLBACK_COLOR,
 					unit: inputs.unit ?? null,
@@ -119,4 +129,3 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 		],
 	)
 })
-

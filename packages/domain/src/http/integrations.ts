@@ -14,6 +14,7 @@ import { SessionAuthorization } from "./current-tenant"
 import { OAuthCompleteRequest, OAuthCompleteResponse } from "./oauth-return"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
+import { InfraPresenceRequest, InfraSurfaceLiteral } from "./query-engine"
 import {
 	GitCommitSha,
 	PullRequestSummary,
@@ -1426,6 +1427,23 @@ export type IntegrationHttpError =
  * The OAuth callbacks and webhook receivers are raw routers under `/api/...`,
  * not part of this group: providers store those URLs on their side.
  */
+/** Connected or not; `null` when that provider's lookup failed, so one failure leaves the rest. */
+const ProviderConnected = Schema.NullOr(Schema.Boolean)
+
+/** The sidebar's infra surfaces in one read: the presence probe and every provider's status. */
+export class InfraSurfacesResponse extends Schema.Class<InfraSurfacesResponse>("InfraSurfacesResponse")({
+	/** The surfaces that reported in the window; `null` when the probe failed. */
+	surfaces: Schema.NullOr(Schema.Array(InfraSurfaceLiteral)),
+	integrations: Schema.Struct({
+		cloudflare: ProviderConnected,
+		railway: ProviderConnected,
+		planetscale: ProviderConnected,
+		gcp: ProviderConnected,
+		supabase: ProviderConnected,
+		aws: ProviderConnected,
+	}),
+}) {}
+
 export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.get("linearStatus", "/linear/status", {
@@ -1461,6 +1479,12 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.delete("linearDisconnect", "/linear", {
 			success: LinearDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("infraSurfaces", "/infra-surfaces", {
+			payload: InfraPresenceRequest,
+			success: InfraSurfacesResponse,
 		}),
 	)
 	.add(
