@@ -17,7 +17,18 @@
 		"plugins": [
 			{
 				"name": "@effect/language-service",
-				"reportSuggestionsAsWarningsInTsc": true
+				"reportSuggestionsAsWarningsInTsc": true,
+				"allowedUnstableApis": [
+					"effect/FileSystem",
+					"effect/Path",
+					"effect/PlatformError",
+					"effect/SemVer",
+					"effect/SemVerRange",
+					"effect/cli",
+					"effect/process",
+					"@effect/platform-node"
+				],
+				"allowedExperimentalApis": ["effect/Glob"]
 			}
 		]
 	}

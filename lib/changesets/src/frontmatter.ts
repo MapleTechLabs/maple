@@ -99,7 +99,11 @@ const readQuoted = (text: string): Parsed<Quoted> => {
 	return read(0, "")
 }
 
-const stripComment = (text: string) => text.replace(/(^|\s)#.*$/, "").trim()
+// A `#` at the start or after whitespace opens a comment that runs to the end of the line.
+const stripComment = (text: string) => {
+	const at = text.search(/(?:^|\s)#/)
+	return (at === -1 ? text : text.slice(0, at)).trim()
+}
 const isQuote = (text: string) => text.startsWith('"') || text.startsWith("'")
 
 const readValue = (raw: string): Parsed<YamlValue> => {

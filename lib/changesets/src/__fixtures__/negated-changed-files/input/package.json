@@ -1,0 +1,7 @@
+{
+	"name": "neg-files-root",
+	"private": true,
+	"workspaces": [
+		"packages/*"
+	]
+}

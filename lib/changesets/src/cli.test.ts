@@ -9,13 +9,20 @@ const bin = join(import.meta.dirname, "bin.ts")
 const fixturesDir = join(import.meta.dirname, "__fixtures__")
 
 /** Runs `changeset <args>` in a fresh copy of `fixture`; returns its output and new or removed files. */
-const changeset = (fixture: string, args: ReadonlyArray<string>) =>
+const changeset = (
+	fixture: string,
+	args: ReadonlyArray<string>,
+	extra: Readonly<Record<string, string>> = {},
+) =>
 	Effect.scoped(
 		Effect.gen(function* () {
 			const fs = yield* FileSystem.FileSystem
 			const path = yield* Path.Path
 			const dir = yield* fs.makeTempDirectoryScoped()
 			yield* setupFixture(path.join(fixturesDir, fixture), dir)
+			yield* Effect.forEach(Object.entries(extra), ([file, contents]) =>
+				fs.writeFileString(path.join(dir, file), contents),
+			)
 			const before = yield* snapshotTree(dir)
 			const result = yield* run("bun", [bin, ...args], dir)
 			const after = yield* snapshotTree(dir)
@@ -52,6 +59,21 @@ describe("changeset add", () => {
 		const result = await changeset("basic", ["--empty"])
 		expect(result.exitCode).toBe(0)
 		expect(result.added.map(([, contents]) => contents)).toEqual(["---\n\n---\n\n\n"])
+	})
+
+	test("names a package repeated within one flag once", async () => {
+		const result = await changeset("basic", ["--patch", "alpha,alpha", "--patch", "alpha", "-m", "Once"])
+		expect(result.added.map(([, contents]) => contents)).toEqual(['---\n"alpha": patch\n---\n\nOnce\n'])
+	})
+
+	test("refuses pre mode before writing anything", async () => {
+		const result = await changeset("basic", ["--patch", "alpha", "-m", "x"], {
+			".changeset/pre.json":
+				'{ "mode": "pre", "tag": "next", "initialVersions": {}, "changesets": [] }\n',
+		})
+		expect(result.exitCode).toBe(1)
+		expect(result.added).toEqual([])
+		expect(result.stderr).toContain("Pre mode (.changeset/pre.json) is not supported")
 	})
 
 	test("rejects unknown packages and conflicting bump flags without writing", async () => {

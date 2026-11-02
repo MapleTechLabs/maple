@@ -65,22 +65,21 @@ export interface Config {
 	readonly updateInternalDependents: "always" | "out-of-range"
 }
 
+/** A picomatch-style matcher: a `!pattern` matches what `pattern` does not. */
 const matcher = (pattern: string) => {
 	const negated = pattern.startsWith("!")
 	const glob = Glob.make(negated ? pattern.slice(1) : pattern)
-	return { negated, test: (value: string) => Glob.match(glob, value) }
+	return { negated, test: (value: string) => negated !== Glob.match(glob, value) }
 }
 
-/** `@changesets/config` `globMatch`: positive patterns admit, later negations can take back. */
-const globMatch = (names: ReadonlyArray<string>, patterns: ReadonlyArray<string>) => {
-	const matchers = patterns.map(matcher)
-	return names.filter((name) =>
-		matchers.reduce(
-			(passed, m) => (!passed ? !m.negated && m.test(name) : m.negated ? m.test(name) : passed),
-			false,
-		),
-	)
-}
+/** changesets' glob reduction: a positive pattern admits, a later `!pattern` it matches takes back. */
+export const matchesPatterns = (value: string, patterns: ReadonlyArray<string>): boolean =>
+	patterns
+		.map(matcher)
+		.reduce((passed, m) => (passed ? !(m.negated && !m.test(value)) : !m.negated && m.test(value)), false)
+
+const globMatch = (names: ReadonlyArray<string>, patterns: ReadonlyArray<string>) =>
+	names.filter((name) => matchesPatterns(name, patterns))
 
 // `"module"` means `["module", null]`; `commit: true` means the default commit module.
 const moduleReference = (

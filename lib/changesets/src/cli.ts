@@ -150,10 +150,11 @@ const confirmMajor = (pkg: Package) =>
 
 const releasesFromFlags = (options: AddOptions, packages: ReadonlyArray<Package>) => {
 	const names = new Set(packages.map((pkg) => pkg.packageJson.name))
+	// `--patch a,a` names `a` once; a duplicate key would make the changeset unreadable.
 	const byType: ReadonlyArray<readonly [BumpType, ReadonlyArray<string>]> = [
-		["major", options.major],
-		["minor", options.minor],
-		["patch", options.patch],
+		["major", [...new Set(options.major)]],
+		["minor", [...new Set(options.minor)]],
+		["patch", [...new Set(options.patch)]],
 	]
 	const unknown = byType.flatMap(([type, list]) =>
 		list
@@ -265,13 +266,8 @@ const changedNames = (changesets: Changesets["Service"], project: Project, since
 const add = Effect.fn("add")(function* (options: AddOptions) {
 	const changesets = yield* Changesets
 	const project = yield* changesets.load(yield* cwd)
-	if (project.config.commit !== false) {
-		return yield* new UnsupportedFeatureError({
-			feature: "commit",
-			message:
-				'The "commit" option is not supported by this changesets implementation; set it to false.',
-		})
-	}
+	// Refuse before any prompt: `version` could never consume a changeset added in pre mode.
+	yield* changesets.refuseUnsupported(project)
 	const versionable = project.packages.packages.filter(
 		(pkg) => !shouldSkipPackage(pkg, skipOptions(project.config)),
 	)

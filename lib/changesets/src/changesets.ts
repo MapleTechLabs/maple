@@ -2,19 +2,7 @@
  * The `add`, `version` and `status` commands of `@changesets/cli` 3.x, reading and writing the
  * same files. Pre mode, snapshots, `commit` and `publish` are out of scope and fail loudly.
  */
-import {
-	Console,
-	Context,
-	Effect,
-	FileSystem,
-	Glob,
-	Layer,
-	Option,
-	Path,
-	Predicate,
-	Result,
-	Schema,
-} from "effect"
+import { Console, Context, Effect, FileSystem, Layer, Option, Path, Predicate, Result, Schema } from "effect"
 import {
 	type ChangelogFunctions,
 	changelogEntry,
@@ -25,6 +13,7 @@ import {
 } from "./changelog.ts"
 import {
 	type Config,
+	matchesPatterns,
 	normalizeConfig,
 	shouldSkipPackage,
 	skipOptions,
@@ -462,23 +451,14 @@ export class Changesets extends Context.Service<Changesets>()("@maple/changesets
 			return { id, file }
 		})
 
-		return { load, readChangesets, version, status, changedPackages, writeChangeset }
+		return { load, refuseUnsupported, readChangesets, version, status, changedPackages, writeChangeset }
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide([Git.layer, Formatter.layer]))
 }
 
 const matchesSome = (paths: ReadonlyArray<string>, patterns: ReadonlyArray<string>) =>
-	paths.some((file) =>
-		patterns.reduce((passed, pattern) => {
-			const negated = pattern.startsWith("!")
-			const glob = negated ? pattern.slice(1) : pattern
-			const hit = globMatch(glob, file.replaceAll("\\", "/"))
-			return !passed ? !negated && hit : negated ? hit : passed
-		}, false),
-	)
-
-const globMatch = (pattern: string, file: string) => Glob.match(Glob.make(pattern), file)
+	paths.some((file) => matchesPatterns(file.replaceAll("\\", "/"), patterns))
 
 // The changesets changelog module contract: each function returns a line, possibly as a promise.
 type ModuleFunction = (...args: ReadonlyArray<unknown>) => string | PromiseLike<string>
