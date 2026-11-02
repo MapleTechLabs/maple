@@ -216,7 +216,8 @@ const MapleStackLive = Layer.effect(
 	MapleStack,
 	Effect.gen(function* () {
 		// The stage string (`prd`, `prd-eu`) names the instance; alchemy keys state by it.
-		const deployment = yield* parseMapleDeploymentEffect(yield* Alchemy.Stage)
+		const stage = yield* Alchemy.Stage
+		const deployment = yield* parseMapleDeploymentEffect(stage)
 		// The `preview:web` label: Workers and seeded branches only, no AWS (docs/pr-previews.md).
 		const webOnlyPreview =
 			deployment.stage.kind === "pr" &&

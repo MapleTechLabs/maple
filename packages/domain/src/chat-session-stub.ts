@@ -141,7 +141,9 @@ export const chatSessionClient = (rpc: ChatSessionRpc): ChatSessionClient => ({
 	history: () => rpc.history().pipe(Effect.mapError(callFailed("history"))),
 	since: (cursor) => rpc.since(cursor).pipe(Effect.mapError(callFailed("since"))),
 	subscribe: (cursor) =>
-		rpc.subscribe(cursor).pipe(Effect.mapError(callFailed("subscribe")), Effect.map(subscription)),
+		rpc
+			.subscribe(cursor)
+			.pipe(Effect.mapBoth({ onSuccess: subscription, onFailure: callFailed("subscribe") })),
 	append: (event) => rpc.append(event).pipe(Effect.mapError(callFailed("append"))),
 	beginTurn: (input) => rpc.beginTurn(input).pipe(Effect.mapError(callFailed("beginTurn"))),
 	settleProposal: (input) => rpc.settleProposal(input).pipe(Effect.mapError(callFailed("settleProposal"))),

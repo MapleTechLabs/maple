@@ -1,6 +1,13 @@
 import { Option, Predicate, Record, Schema, SchemaGetter } from "effect"
 
-const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const decodeFullJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))
+
+/** JSON text opens with one of these after whitespace; any other string skips the throwing parse. */
+const JSON_START = /^\s*[-\d{["tfn]/
+
+const decodeJson = (raw: string): Option.Option<Schema.Json> =>
+	JSON_START.test(raw) ? decodeFullJson(raw) : Option.none()
 
 // TanStack Router's default search format: each value is JSON when it parses as JSON, raw
 // otherwise, and a string that would parse as JSON is written quoted. Same URLs both ways.
@@ -15,10 +22,10 @@ const stringifyValue = (value: unknown): Option.Option<string> => {
 	}
 
 	if (Predicate.isString(value)) {
-		return Option.some(isJson(value) ? JSON.stringify(value) : value)
+		return isJson(value) ? encodeJson(value) : Option.some(value)
 	}
 
-	return Option.some(JSON.stringify(value))
+	return encodeJson(value)
 }
 
 const parseSearch = (record: Readonly<Record<string, string>>) => ({ search: Record.map(record, parseValue) })
@@ -34,7 +41,9 @@ const stringifySearch = (decoded: unknown): Record<string, string> =>
  */
 export const orderedSearch = (entries: ReadonlyArray<readonly [string, string | undefined]>): string => {
 	const query = new URLSearchParams(
-		entries.flatMap(([key, value]) => Option.toArray(Option.map(stringifyValue(value), (raw) => [key, raw]))),
+		entries.flatMap(([key, value]) =>
+			Option.toArray(Option.map(stringifyValue(value), (raw) => [key, raw])),
+		),
 	).toString()
 	return query === "" ? "" : `?${query}`
 }

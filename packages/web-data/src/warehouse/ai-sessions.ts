@@ -60,7 +60,8 @@ export const listAiSessions = Effect.fn("AiSessions.listAiSessions")(function* (
 	data: ListAiSessionsInput
 }) {
 	const input = yield* decodeInput(ListAiSessionsInput, data, "listAiSessions")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQuery("listAiSessions", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -133,7 +134,8 @@ export const getAiSessionsFacets = Effect.fn("AiSessions.aiSessionsFacets")(func
 	data: AiSessionsFacetsInput
 }) {
 	const input = yield* decodeInput(AiSessionsFacetsInput, data, "aiSessionsFacets")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQuery("aiSessionsFacets", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -164,7 +166,8 @@ export const getAiSessionsDistributions = Effect.fn("AiSessions.aiSessionsDistri
 	data: AiSessionsFacetsInput
 }) {
 	const input = yield* decodeInput(AiSessionsFacetsInput, data, "aiSessionsDistributions")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQuery("aiSessionsDistributions", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp

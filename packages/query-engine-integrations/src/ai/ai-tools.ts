@@ -77,7 +77,7 @@ import {
 	type CHUnionQuery,
 } from "@maple-dev/effect-orm/clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
-import { Array as Arr, type DateTime, Schema } from "effect"
+import { Array as Arr, type DateTime, Option, Schema } from "effect"
 import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import {
 	AiTraceIndex,
@@ -1073,8 +1073,14 @@ export interface AiToolErrorPayloadsOutput {
 const utf8 = new TextEncoder()
 
 /** Decoded payloads are re-serialised for display; a string is already the text. */
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 const payloadText = (value: unknown): string =>
-	value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value)
+	value === undefined
+		? ""
+		: typeof value === "string"
+			? value
+			: Option.getOrElse(encodeJsonOption(value), () => "")
 
 /** Characters, not UTF-16 units: a cut never splits a codepoint. */
 const truncatePayload = (text: string): string =>

@@ -1,6 +1,9 @@
+import { Schema } from "effect"
 import type { DashboardDocument } from "@maple/domain/http"
 import { dataSourceRawSql, isQueryDataSource } from "@maple/widgets/dashboard"
 import type { AlertsCreateSearch } from "../../../route/search"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The widget actions: which actions a
 // tile's menu offers, and the alert prefill it hands /alerts/create.
@@ -23,7 +26,7 @@ const MAX_ENCODED_LENGTH = 12_000
 
 const encodeAlertChart = (dashboardId: string, widget: Widget): string | undefined => {
 	const encoded = toBase64Url(
-		JSON.stringify({
+		encodeJson({
 			dashboardId,
 			widget: {
 				id: widget.id,

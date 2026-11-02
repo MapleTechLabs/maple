@@ -38,6 +38,7 @@ import {
 	storeOpenMarkerPath,
 	writeStoreMarkerDurable,
 } from "./store-version"
+import { decodeJsonEffect, decodeJsonSync, encodeJson } from "./json"
 
 const STATE_FORMAT_VERSION = 1
 const MANIFEST_FORMAT_VERSION = 2
@@ -304,6 +305,15 @@ export class CheckpointRetainedError extends Schema.TaggedError<CheckpointRetain
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
+/** A best-effort checkpoint file operation that failed; callers ignore or remap it. */
+export class CheckpointFileError extends Schema.TaggedError<CheckpointFileError>()(
+	"@maple/cli/CheckpointFileError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const checkpointFileError = (cause: unknown): CheckpointFileError =>
+	new CheckpointFileError({ message: errorMessage(cause), cause })
+
 const errorCause = (error: unknown): string =>
 	error instanceof Error ? (error.stack ?? error.message) : String(error)
 
@@ -564,7 +574,7 @@ export const postCheckpointBackup = (
 		const client = yield* HttpClient.HttpClient
 		const request = HttpClientRequest.post(url).pipe(
 			HttpClientRequest.setHeader("x-maple-maintenance-token", token),
-			HttpClientRequest.bodyText(JSON.stringify({ checkpointId }), "application/json"),
+			HttpClientRequest.bodyText(encodeJson({ checkpointId }), "application/json"),
 		)
 		const response = yield* client
 			.execute(request)
@@ -576,10 +586,11 @@ export const postCheckpointBackup = (
 		)
 		if (response.status < 200 || response.status >= 300)
 			return yield* localQueryError(response.status, responseText)
-		return yield* Effect.try({
-			try: () => JSON.parse(responseText) as unknown,
-			catch: (error) => localQueryError(response.status, errorMessage(error), errorCause(error)),
-		})
+		return yield* decodeJsonEffect(responseText).pipe(
+			Effect.mapError((error) =>
+				localQueryError(response.status, errorMessage(error), errorCause(error)),
+			),
+		)
 	})
 	// Deliberately NO client-side timeout. The server runs BACKUP through a
 	// synchronous db.exec that cannot observe cancellation, so a timeout here
@@ -617,7 +628,7 @@ const readJsonRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
 		.filter((line) => line.length > 0)
 		.map((line) => {
 			try {
-				return decodeJsonRow(JSON.parse(line) as unknown)
+				return decodeJsonRow(decodeJsonSync(line))
 			} catch (error) {
 				throw new Error(`invalid JSONEachRow result: ${errorMessage(error)}`)
 			}
@@ -820,7 +831,7 @@ const validateRestoredDatabaseInFreshProcess = (
 	}
 	let parsed: CheckpointValidation
 	try {
-		parsed = parseValidation(JSON.parse(child.stdout.trim()) as unknown)
+		parsed = parseValidation(decodeJsonSync(child.stdout.trim()))
 	} catch (error) {
 		throw new Error(
 			`fresh-process checkpoint reopen probe returned invalid output: ${error instanceof Error ? error.message : String(error)}`,
@@ -906,7 +917,7 @@ export const parseCheckpointState = (value: unknown): CheckpointState => {
 const readStateFileOptional = async (dataDir: string): Promise<CheckpointState | null> => {
 	try {
 		await assertCheckpointInfrastructureSafe(dataDir)
-		return parseCheckpointState(JSON.parse(await readFile(checkpointStatePath(dataDir), "utf8")))
+		return parseCheckpointState(decodeJsonSync(await readFile(checkpointStatePath(dataDir), "utf8")))
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
 		throw error
@@ -1053,7 +1064,7 @@ const resolveCheckpointById = async (
 	await assertRealDirectory(snapshotDir, "checkpoint snapshot")
 	await assertRealFile(snapshotManifestPath(dataDir, checkpointId), "checkpoint manifest")
 	const manifest = parseCheckpointManifest(
-		JSON.parse(await readFile(snapshotManifestPath(dataDir, checkpointId), "utf8")),
+		decodeJsonSync(await readFile(snapshotManifestPath(dataDir, checkpointId), "utf8")),
 		checkpointId,
 		compatibility,
 	)
@@ -1302,7 +1313,7 @@ const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "absent" |
 	const ownerPath = join(lockPath, "owner.json")
 	return assertRealFile(ownerPath, "maintenance lock owner")
 		.then(async () =>
-			Schema.decodeUnknownSync(LockHolderSchema)(JSON.parse(await readFile(ownerPath, "utf8"))),
+			Schema.decodeUnknownSync(LockHolderSchema)(decodeJsonSync(await readFile(ownerPath, "utf8"))),
 		)
 		.catch((error: NodeJS.ErrnoException): "absent" | "uncertain" =>
 			error?.code === "ENOENT" ? "absent" : "uncertain",
@@ -1388,7 +1399,7 @@ const acquireMaintenance = async (
 		const ownerPath = join(lockPath, "owner.json")
 		await assertRealFile(ownerPath, "maintenance lock owner")
 		const current = Schema.decodeUnknownSync(MaintenanceOwnerSchema)(
-			JSON.parse(await readFile(ownerPath, "utf8")),
+			decodeJsonSync(await readFile(ownerPath, "utf8")),
 		)
 		if (current.operationId !== operationId || current.pid !== process.pid) {
 			throw new Error(`maintenance lock ownership changed unexpectedly: ${lockPath}`)
@@ -1452,7 +1463,7 @@ export const reconcileCheckpointOperations = async (
 	await assertNoSymlink(operationsRoot, intentPath)
 	await assertRealDirectory(entryDir, "checkpoint operation")
 	await assertRealFile(intentPath, "checkpoint operation intent")
-	const operation = parseOperation(JSON.parse(await readFile(intentPath, "utf8")))
+	const operation = parseOperation(decodeJsonSync(await readFile(intentPath, "utf8")))
 	if (operation.operationId !== entryOperationId) {
 		throw new Error(
 			`checkpoint operation identity mismatch (directory: ${entryOperationId}; intent: ${operation.operationId})`,
@@ -1665,7 +1676,7 @@ export const assertCheckpointPinIdentity = async (
 	}
 	await assertNoSymlink(pinDir, resolvedPinPath)
 	await assertRealFile(resolvedPinPath, "checkpoint pin")
-	const parsed = JSON.parse(await readFile(resolvedPinPath, "utf8")) as unknown
+	const parsed = decodeJsonSync(await readFile(resolvedPinPath, "utf8"))
 	const expectedKeys = new Set(["formatVersion", "pinId", "checkpointId", "purpose", "createdAt"])
 	if (
 		!isRecord(parsed) ||
@@ -1798,7 +1809,7 @@ export const retireCheckpointIfEligible = async (
 		await assertNoSymlink(retirement, retirementIntent)
 		await assertRealFile(retirementIntent, "checkpoint retirement intent")
 		const parsed = Schema.decodeUnknownSync(RetirementRecordSchema)(
-			JSON.parse(await readFile(retirementIntent, "utf8")),
+			decodeJsonSync(await readFile(retirementIntent, "utf8")),
 		)
 		if (
 			parsed.retirementId !== retirementId ||
@@ -1812,7 +1823,7 @@ export const retireCheckpointIfEligible = async (
 		await assertNoSymlink(retirement, retirementComplete)
 		await assertRealFile(retirementComplete, "checkpoint retirement completion")
 		const complete = Schema.decodeUnknownSync(RetirementRecordSchema)(
-			JSON.parse(await readFile(retirementComplete, "utf8")),
+			decodeJsonSync(await readFile(retirementComplete, "utf8")),
 		)
 		if (
 			complete.retirementId !== retirementId ||
@@ -1870,12 +1881,12 @@ const removeCompletedRetirement = async (
 	await assertRealFile(intent, "checkpoint retirement intent")
 	await assertRealFile(complete, "checkpoint retirement completion")
 	const intentValue = Schema.decodeUnknownSync(RetirementRecordSchema)(
-		JSON.parse(await readFile(intent, "utf8")),
+		decodeJsonSync(await readFile(intent, "utf8")),
 	)
 	const completeValue = Schema.decodeUnknownSync(RetirementRecordSchema)(
-		JSON.parse(await readFile(complete, "utf8")),
+		decodeJsonSync(await readFile(complete, "utf8")),
 	)
-	if (JSON.stringify(intentValue) !== JSON.stringify(completeValue)) {
+	if (encodeJson(intentValue) !== encodeJson(completeValue)) {
 		throw new Error(`checkpoint retirement records do not match: ${retirement}`)
 	}
 	const cleanup = `${retirement}.cleanup-${randomUUID()}`
@@ -1965,15 +1976,19 @@ export const sweepUnreferencedCheckpoints = (
 	state: CheckpointState,
 ): Effect.Effect<ReadonlyArray<CheckpointId>> =>
 	Effect.gen(function* () {
-		yield* Effect.tryPromise(() => removeSweepDebris(dataDir)).pipe(Effect.ignore)
-		const candidates = yield* Effect.tryPromise(() => unreferencedCheckpointIds(dataDir, state)).pipe(
-			Effect.orElseSucceed((): ReadonlyArray<CheckpointId> => []),
+		yield* Effect.tryPromise({ try: () => removeSweepDebris(dataDir), catch: checkpointFileError }).pipe(
+			Effect.ignore,
 		)
+		const candidates = yield* Effect.tryPromise({
+			try: () => unreferencedCheckpointIds(dataDir, state),
+			catch: checkpointFileError,
+		}).pipe(Effect.orElseSucceed((): ReadonlyArray<CheckpointId> => []))
 		const retired: CheckpointId[] = []
 		for (const checkpointId of candidates) {
-			const outcome = yield* Effect.tryPromise(() =>
-				retireUnreferencedCheckpoint(dataDir, checkpointId, state),
-			).pipe(Effect.option)
+			const outcome = yield* Effect.tryPromise({
+				try: () => retireUnreferencedCheckpoint(dataDir, checkpointId, state),
+				catch: checkpointFileError,
+			}).pipe(Effect.option)
 			if (Option.isSome(outcome) && !existsSync(checkpointSnapshotDir(dataDir, checkpointId))) {
 				retired.push(checkpointId)
 			}
@@ -1994,31 +2009,38 @@ export const RESET_PRESERVED_PIN_PURPOSE = "reset-preserved"
 const preserveCheckpointsAcrossReset = (
 	dataDir: string,
 	operationId: CheckpointOperationId,
-): Effect.Effect<ReadonlyArray<CheckpointId>, unknown> =>
+): Effect.Effect<ReadonlyArray<CheckpointId>, CheckpointFileError> =>
 	Effect.gen(function* () {
 		// A registry this build cannot read cannot rotate either: every later
 		// checkpoint refuses it. It needs no pin and must not block the reset.
-		const state = yield* Effect.tryPromise(() => readStateFileOptional(dataDir)).pipe(
-			Effect.orElseSucceed(() => null),
-		)
+		const state = yield* Effect.tryPromise({
+			try: () => readStateFileOptional(dataDir),
+			catch: checkpointFileError,
+		}).pipe(Effect.orElseSucceed(() => null))
 		if (state === null) return []
-		const candidates = yield* Effect.tryPromise(() => snapshotIds(dataDir))
+		const candidates = yield* Effect.tryPromise({
+			try: () => snapshotIds(dataDir),
+			catch: checkpointFileError,
+		})
 		const preserved: CheckpointId[] = []
 		for (const checkpointId of candidates) {
-			const resolved = yield* Effect.tryPromise(() =>
-				resolveCheckpointById(dataDir, checkpointId, "registry"),
-			).pipe(Effect.option)
+			const resolved = yield* Effect.tryPromise({
+				try: () => resolveCheckpointById(dataDir, checkpointId, "registry"),
+				catch: checkpointFileError,
+			}).pipe(Effect.option)
 			if (Option.isNone(resolved)) continue
 			// A failed pin write fails the reset: clearing the store while a kept
 			// checkpoint stays retirable would break the promise the reset makes.
-			yield* Effect.tryPromise(() =>
-				writeCheckpointPin(
-					dataDir,
-					checkpointId,
-					`${RESET_PRESERVED_PIN_PURPOSE}:${operationId}`,
-					randomUUID(),
-				),
-			)
+			yield* Effect.tryPromise({
+				try: () =>
+					writeCheckpointPin(
+						dataDir,
+						checkpointId,
+						`${RESET_PRESERVED_PIN_PURPOSE}:${operationId}`,
+						randomUUID(),
+					),
+				catch: checkpointFileError,
+			})
 			preserved.push(checkpointId)
 		}
 		return preserved
@@ -2117,29 +2139,37 @@ const CheckpointFailuresSchema = Schema.Struct({
 type CheckpointFailures = Schema.Schema.Type<typeof CheckpointFailuresSchema>
 
 const readCheckpointFailures = (dataDir: string): Effect.Effect<CheckpointFailures | null> =>
-	Effect.tryPromise(async () =>
-		existsSync(checkpointFailuresPath(dataDir))
-			? Schema.decodeUnknownSync(CheckpointFailuresSchema)(
-					JSON.parse(await readFile(checkpointFailuresPath(dataDir), "utf8")),
-				)
-			: null,
-	).pipe(Effect.orElseSucceed(() => null))
+	Effect.tryPromise({
+		try: async () =>
+			existsSync(checkpointFailuresPath(dataDir))
+				? Schema.decodeUnknownSync(CheckpointFailuresSchema)(
+						decodeJsonSync(await readFile(checkpointFailuresPath(dataDir), "utf8")),
+					)
+				: null,
+		catch: checkpointFileError,
+	}).pipe(Effect.orElseSucceed(() => null))
 
 const recordCheckpointFailure = (dataDir: string, message: string): Effect.Effect<void> =>
 	Effect.flatMap(readCheckpointFailures(dataDir), (previous) =>
-		Effect.tryPromise(() =>
-			durableJson(checkpointFailuresPath(dataDir), {
-				formatVersion: 1,
-				consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
-				lastFailureAt: new Date().toISOString(),
-				lastError: message.slice(0, 2048),
-			} satisfies CheckpointFailures),
-		),
+		Effect.tryPromise({
+			try: () =>
+				durableJson(checkpointFailuresPath(dataDir), {
+					formatVersion: 1,
+					consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
+					lastFailureAt: new Date().toISOString(),
+					lastError: message.slice(0, 2048),
+				} satisfies CheckpointFailures),
+			catch: checkpointFileError,
+		}),
 	).pipe(Effect.ignore)
 
 const clearCheckpointFailures = (dataDir: string): Effect.Effect<void> =>
-	Effect.tryPromise(async () => {
-		if (existsSync(checkpointFailuresPath(dataDir))) await durableRemove(checkpointFailuresPath(dataDir))
+	Effect.tryPromise({
+		try: async () => {
+			if (existsSync(checkpointFailuresPath(dataDir)))
+				await durableRemove(checkpointFailuresPath(dataDir))
+		},
+		catch: checkpointFileError,
 	}).pipe(Effect.ignore)
 
 export interface CheckpointRefreshBackoff {
@@ -2424,7 +2454,7 @@ const readResetTransaction = async (dataDir: string): Promise<ResetTransaction |
 	const path = resetTransactionPath(dataDir)
 	try {
 		await assertRealFile(path, "reset transaction")
-		return parseResetTransaction(JSON.parse(await readFile(path, "utf8")), dataDir)
+		return parseResetTransaction(decodeJsonSync(await readFile(path, "utf8")), dataDir)
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
 		throw error
@@ -2548,7 +2578,9 @@ const parseRestoreTransaction = (value: unknown): RestoreTransaction => {
 const readRestoreTransaction = async (dataDir: string): Promise<RestoreTransaction | null> => {
 	try {
 		await assertRealFile(restoreTransactionPath(dataDir), "restore transaction")
-		return parseRestoreTransaction(JSON.parse(await readFile(restoreTransactionPath(dataDir), "utf8")))
+		return parseRestoreTransaction(
+			decodeJsonSync(await readFile(restoreTransactionPath(dataDir), "utf8")),
+		)
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
 		throw error
@@ -2572,7 +2604,7 @@ const readyIdentityMatches = (dataDir: string, transaction: RestoreTransaction):
 			const info = lstatSync(path)
 			if (info.isSymbolicLink() || !info.isFile()) return false
 			const parsed = Schema.decodeUnknownSync(RestoreReadySchema)(
-				JSON.parse(readFileSync(path, "utf8")),
+				decodeJsonSync(readFileSync(path, "utf8")),
 			)
 			if (
 				parsed.operationId === transaction.operationId &&

@@ -31,9 +31,10 @@ export interface SandboxHandleEnv {
 const decodeRequest = Schema.decodeUnknownEffect(SandboxExecRequest)
 const encodeRequest = Schema.encodeSync(SandboxExecRequest)
 const encodeResponse = Schema.encodeUnknownSync(SandboxExecResponse)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const json = (body: unknown, status = 200) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+	new Response(encodeJson(body), { status, headers: { "content-type": "application/json" } })
 
 export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<Response> =>
 	Effect.gen(function* () {

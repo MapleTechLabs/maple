@@ -17,6 +17,7 @@ import { classStrings, splitToken } from "./design-rules.mjs"
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, "../..")
 const BASELINE_OFF = process.env.MAPLE_UI_BASELINE === "off"
+// oxlint-disable-next-line effecttsgo/global-json -- oxlint plugin: loaded by oxlint itself, not through an Effect runtime
 const BASELINE = BASELINE_OFF ? {} : JSON.parse(readFileSync(resolve(HERE, "ui-kit-baseline.json"), "utf8"))
 
 const BURNDOWN_HINT =
@@ -61,8 +62,7 @@ const ratcheted = (name, { description, message, collect }) => ({
 
 /** Raw element → the kit call that replaces it. */
 const CONTROLS = {
-	button:
-		"`button` / `linkButton` (ui/button), `iconButton`, `textLink`, `cardButton`, a clickable `listRow`, `sortButton` (ui/table), or `pressable` (ui/pressable) for a target that draws its own look",
+	button: "`button` / `linkButton` (ui/button), `iconButton`, `textLink`, `cardButton`, a clickable `listRow`, `sortButton` (ui/table), or `pressable` (ui/pressable) for a target that draws its own look",
 	input: "`input` / `field` (ui/field), `searchInput`, `checkbox`, `switchControl`",
 	textarea: "`textarea` (ui/textarea)",
 	select: "`select` (ui/select) or `nativeSelect`",

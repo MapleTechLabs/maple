@@ -1,6 +1,6 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Deferred, Effect } from "effect"
 import { beforeEach, expect, vi } from "vitest"
 import { mockedWarehouse } from "./testing"
 
@@ -85,6 +85,32 @@ describe("tinybird traces attribute filter params", () => {
 				"queryEngine.getTracesDurationStats",
 				"queryEngine.getTracesFacets",
 			])
+		}).pipe(mockedWarehouse),
+	)
+
+	it.effect("runs the facets and duration stats queries concurrently", () =>
+		Effect.gen(function* () {
+			const statsStarted = yield* Deferred.make<void>()
+			const facets = { result: { kind: "facets", source: "traces", data: [] } }
+			const stats = {
+				result: {
+					kind: "stats",
+					source: "traces",
+					data: { minDurationMs: 1, maxDurationMs: 9, p50DurationMs: 4, p95DurationMs: 8 },
+				},
+			}
+			// The facets query only finishes once the stats query has started.
+			executeQueryEngineMock.mockImplementation((operation: string) =>
+				operation === "queryEngine.getTracesFacets"
+					? Effect.as(Deferred.await(statsStarted), facets)
+					: Effect.as(Deferred.succeed(statsStarted, undefined), stats),
+			)
+
+			const response = yield* getTracesFacets({
+				data: { startTime: "2026-02-01 00:00:00", endTime: "2026-02-01 01:00:00" },
+			})
+
+			expect(response.data.durationStats.p95DurationMs).toBe(8)
 		}).pipe(mockedWarehouse),
 	)
 

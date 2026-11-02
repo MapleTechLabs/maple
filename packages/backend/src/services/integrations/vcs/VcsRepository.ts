@@ -263,7 +263,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				const rows = yield* selectInstallationRow(provider, externalInstallationId)
 				const row = Option.fromNullishOr(rows[0])
 				if (Option.isNone(row)) return Option.none<VcsInstallation>()
-				return Option.some(yield* decodeOne("vcs_installations", row.value, rowToInstallation))
+				const decoded = yield* decodeOne("vcs_installations", row.value, rowToInstallation)
+				return Option.some(decoded)
 			})
 
 			const listInstallationsByOrg = Effect.fn("VcsRepository.listInstallationsByOrg")(function* (
@@ -305,7 +306,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				)
 				const row = Option.fromNullishOr(rows[0])
 				if (Option.isNone(row)) return Option.none<VcsInstallation>()
-				return Option.some(yield* decodeOne("vcs_installations", row.value, rowToInstallation))
+				const decoded = yield* decodeOne("vcs_installations", row.value, rowToInstallation)
+				return Option.some(decoded)
 			})
 
 			const upsertInstallation = Effect.fn("VcsRepository.upsertInstallation")(function* (
@@ -600,7 +602,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				)
 				const row = Option.fromNullishOr(rows[0])
 				if (Option.isNone(row)) return Option.none<VcsRepo>()
-				return Option.some(yield* decodeOne("vcs_repositories", row.value, rowToRepo))
+				const decoded = yield* decodeOne("vcs_repositories", row.value, rowToRepo)
+				return Option.some(decoded)
 			})
 
 			// Look up a repo by Maple's own id — org-scoped as a safety bound
@@ -619,7 +622,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				)
 				const row = Option.fromNullishOr(rows[0])
 				if (Option.isNone(row)) return Option.none<VcsRepo>()
-				return Option.some(yield* decodeOne("vcs_repositories", row.value, rowToRepo))
+				const decoded = yield* decodeOne("vcs_repositories", row.value, rowToRepo)
+				return Option.some(decoded)
 			})
 
 			// Bulk sibling of getRepositoryById. The services table resolves a whole
@@ -919,7 +923,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				)
 				const row = Option.fromNullishOr(rows[0])
 				if (Option.isNone(row)) return Option.none<VcsCommit>()
-				return Option.some(yield* decodeOne("vcs_commits", row.value, rowToCommit))
+				const decoded = yield* decodeOne("vcs_commits", row.value, rowToCommit)
+				return Option.some(decoded)
 			})
 
 			// Bulk sibling of findCommitBySha, for resolving a whole table of deploy

@@ -292,14 +292,14 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 						.pipe(Effect.mapError(toPersistenceError))
 					const entries = yield* Effect.forEach(rows, (row) =>
 						decodeStoredAuditLogEntry(row).pipe(
-							Effect.map((decoded) => storedRowToEntry(orgId, decoded)),
-							Effect.mapError(
-								(error) =>
+							Effect.mapBoth({
+								onSuccess: (decoded) => storedRowToEntry(orgId, decoded),
+								onFailure: (error) =>
 									new AuditLogPersistenceError({
 										message: "Stored audit entry failed to decode",
 										cause: error,
 									}),
-							),
+							}),
 						),
 					)
 					// A redelivered event the ReplacingMergeTree has not merged yet is

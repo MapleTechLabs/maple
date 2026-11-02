@@ -1,7 +1,10 @@
+import { Schema } from "effect"
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
 import { buildTraceDetail, type SpanHierarchyRow } from "@maple/ui/lib/span-tree"
 
 import { LONG_SERVICE, type WorstCaseMode } from "./worst-case-fixture"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const T0_MS = new Date("2026-07-21T10:00:00.000Z").getTime()
 
@@ -52,8 +55,8 @@ function chain(depth: number, worst: boolean): SpanHierarchyRow[] {
 				: `step ${i}`,
 			serviceName,
 			spanKind: i === 0 ? "Server" : "Internal",
-			spanAttributes: JSON.stringify(CALLS[i % CALLS.length]),
-			resourceAttributes: JSON.stringify(RUNTIMES.get(serviceName) ?? {}),
+			spanAttributes: encodeJson(CALLS[i % CALLS.length]),
+			resourceAttributes: encodeJson(RUNTIMES.get(serviceName) ?? {}),
 			startTime: formatWarehouseDateTimeMs(T0_MS + i * 5),
 			durationMs: Math.max(0.001, 2000 - i * 33),
 			statusCode: worst && i === depth - 1 ? "Error" : "Ok",

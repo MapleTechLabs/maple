@@ -3,6 +3,9 @@ import { Base64Url } from "effect/encoding"
 import { V2CursorInvalid } from "@maple/domain/http/v2"
 import { parseUtc } from "@maple/query-engine"
 
+const CursorPartsJson = Schema.fromJsonString(Schema.Array(Schema.String))
+const encodeCursorParts = Schema.encodeSync(CursorPartsJson)
+
 /**
  * Opaque keyset cursors for the v2 list endpoints backed by warehouse queries.
  *
@@ -14,11 +17,11 @@ import { parseUtc } from "@maple/query-engine"
  * previous page already showed.
  */
 export const encodeKeysetCursor = (prefix: string, parts: ReadonlyArray<string>) =>
-	`${prefix}_${Base64Url.encode(JSON.stringify(parts))}`
+	`${prefix}_${Base64Url.encode(encodeCursorParts(parts))}`
 
 const WAREHOUSE_CURSOR_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/u
 
-const decodeCursorParts = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Array(Schema.String)))
+const decodeCursorParts = Schema.decodeUnknownResult(CursorPartsJson)
 
 /**
  * Decode a keyset cursor into its parts.

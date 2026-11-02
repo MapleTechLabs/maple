@@ -43,12 +43,12 @@ import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesServ
 import { timestampMs } from "@maple/backend/platform/time"
 
 const decodeIsoDateTime = Schema.decodeUnknownSync(IsoDateTimeString)
-const decodeChecksCursorParts = Schema.decodeUnknownOption(
-	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
-)
+const ChecksCursorPartsJson = Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String]))
+const decodeChecksCursorParts = Schema.decodeUnknownOption(ChecksCursorPartsJson)
+const encodeChecksCursorParts = Schema.encodeSync(ChecksCursorPartsJson)
 
 const encodeChecksCursor = (check: AlertCheckDocument): string =>
-	`chk_${Base64Url.encode(JSON.stringify([check.timestamp, check.groupKey]))}`
+	`chk_${Base64Url.encode(encodeChecksCursorParts([check.timestamp, check.groupKey]))}`
 
 const decodeChecksCursor = (value: string | undefined) => {
 	if (value === undefined) return Effect.succeed<readonly [string, string] | undefined>(undefined)

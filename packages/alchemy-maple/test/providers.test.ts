@@ -66,13 +66,11 @@ const wireDashboard = {
 const runWithProvider = <A, E, R>(api: MapleApiContract, program: Effect.Effect<A, E, R>) => {
 	const apiLayer = Layer.succeed(MapleApi, api)
 	return program.pipe(
-		Effect.provide(
-			Layer.mergeAll(
-				DashboardProvider().pipe(Layer.provide(apiLayer)),
-				ApiKeyProvider().pipe(Layer.provide(apiLayer)),
-				AlertDestinationProvider().pipe(Layer.provide(apiLayer)),
-			),
-		),
+		Effect.provide([
+			DashboardProvider().pipe(Layer.provide(apiLayer)),
+			ApiKeyProvider().pipe(Layer.provide(apiLayer)),
+			AlertDestinationProvider().pipe(Layer.provide(apiLayer)),
+		]),
 	)
 }
 

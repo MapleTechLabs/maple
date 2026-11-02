@@ -40,8 +40,7 @@ export type ListInput = typeof ListInput.Type
 
 const fetchList = (input: ListInput) =>
 	listMetrics({ data: input }).pipe(
-		Effect.map((response) => response.data),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
@@ -64,8 +63,7 @@ export const FetchSummary = Command.define("FetchMetricsSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, window }) =>
 		getMetricsSummary({ data: window }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
 		),
@@ -84,8 +82,7 @@ export const FetchSparklines = Command.define("FetchMetricSparklines", {
 	messages: [Message.CompletedFetchSparklines],
 	execute: ({ slot, key, input }) =>
 		getMetricSparklines({ data: input }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSparklines({ slot, key, result })),
 		),

@@ -252,7 +252,7 @@ describe("PlanetScaleConnectionService", () => {
 			])
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -280,7 +280,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.isTrue(after.pendingOrgSelection)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -305,7 +305,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.isTrue(status.pendingOrgSelection)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -369,7 +369,7 @@ describe("PlanetScaleConnectionService", () => {
 				assert.isTrue(row?.enabled)
 			}).pipe(
 				Effect.provideService(FetchHttpClient.Fetch, stub),
-				Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+				Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 			)
 		},
 	)
@@ -402,7 +402,7 @@ describe("PlanetScaleConnectionService", () => {
 			}
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -428,7 +428,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.include(error.message, "HTTP 503")
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -482,7 +482,7 @@ describe("PlanetScaleConnectionService", () => {
 				])
 			}).pipe(
 				Effect.provideService(FetchHttpClient.Fetch, stub),
-				Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+				Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 			)
 		},
 	)
@@ -520,7 +520,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.strictEqual(targets.targets[0]?.id, rebound.scrapeTarget?.id)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -553,7 +553,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.isTrue(targets.targets.some((target) => target.id === rebound.scrapeTarget!.id))
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -585,7 +585,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.strictEqual(targets.targets.length, 0)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -613,7 +613,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.deepStrictEqual(yield* integrationSources(testDb), [])
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -640,7 +640,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.isFalse(status.pendingOrgSelection)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -672,7 +672,7 @@ describe("PlanetScaleConnectionService", () => {
 				assert.match(after.path ?? "", /^\/api\/integrations\/planetscale\/webhook\//)
 			}).pipe(
 				Effect.provideService(FetchHttpClient.Fetch, stub),
-				Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+				Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 			)
 		},
 	)

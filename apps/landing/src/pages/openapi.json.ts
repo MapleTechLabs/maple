@@ -8,11 +8,14 @@
  */
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import type { APIRoute } from "astro"
+import { Schema } from "effect"
 import { OpenApi } from "effect/http-api"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export const openApiDocument = () => OpenApi.fromApi(MapleApiV2)
 
 export const GET: APIRoute = () =>
-	new Response(`${JSON.stringify(openApiDocument())}\n`, {
+	new Response(`${encodeJson(openApiDocument())}\n`, {
 		headers: { "Content-Type": "application/json; charset=utf-8" },
 	})

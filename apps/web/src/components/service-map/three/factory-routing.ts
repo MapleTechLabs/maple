@@ -1,7 +1,11 @@
 import * as THREE from "three"
+import { Schema } from "effect"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { Edge3D, Topology3D } from "./types"
 import type { SpatialLayout } from "./spatial-layout"
+
+const encodePair = Schema.encodeSync(Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])))
+const encodePoints = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Number))))
 
 export interface FactoryRoute {
 	id: string
@@ -100,10 +104,10 @@ export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout):
 			const curve = roundedRoute(clean, 0.3)
 			return [
 				{
-					id: `link:${JSON.stringify([edge.source, edge.target])}`,
+					id: `link:${encodePair([edge.source, edge.target])}`,
 					source: edge.source,
 					target: edge.target,
-					geometryKey: JSON.stringify(clean.map((point) => point.toArray())),
+					geometryKey: encodePoints(clean.map((point) => point.toArray())),
 					kind,
 					curve,
 					signPosition: curve.getPointAt(0.5).add(new THREE.Vector3(0, 0.9, 0)),
@@ -114,10 +118,10 @@ export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout):
 
 /** Metrics update independently of route geometry and its GPU resources. */
 export function decorateRoutes(routes: FactoryRoute[], edges: ReadonlyArray<Edge3D>): FactoryLink[] {
-	const byId = new Map(edges.map((edge) => [JSON.stringify([edge.source, edge.target]), edge]))
+	const byId = new Map(edges.map((edge) => [encodePair([edge.source, edge.target]), edge]))
 	const peak = Math.max(1, ...edges.map((edge) => edge.callsPerSecond))
 	return routes.flatMap((route) => {
-		const edge = byId.get(JSON.stringify([route.source, route.target]))
+		const edge = byId.get(encodePair([route.source, route.target]))
 		if (!edge) return []
 		return [
 			{

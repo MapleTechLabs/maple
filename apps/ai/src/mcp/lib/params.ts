@@ -335,12 +335,8 @@ export const timeWindow = (spec: TimeWindowSpec) => {
 			McpInvalidInputError
 		> =>
 			Effect.gen(function* () {
-				const resolution = resolveWindow(
-					params.start_time,
-					params.end_time,
-					{ ...spec, tool },
-					yield* Clock.currentTimeMillis,
-				)
+				const now = yield* Clock.currentTimeMillis
+				const resolution = resolveWindow(params.start_time, params.end_time, { ...spec, tool }, now)
 				if (resolution._tag === "Rejected") {
 					return yield* new McpInvalidInputError({
 						message: resolution.message,

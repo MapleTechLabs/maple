@@ -22,6 +22,7 @@ import {
 import type { DashboardRow } from "@maple/domain/mcp-outputs"
 import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "./query-warehouse"
+import { stringifyJson } from "./json"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { McpInvalidInputError, McpQueryError } from "../tools/types"
 
@@ -32,6 +33,7 @@ export type DashboardWidget = typeof DashboardWidgetSchema.Type
 const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const parseJsonValue = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonValue = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 	SchemaTransformation.transformEffect<unknown, string>({
@@ -45,7 +47,7 @@ const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 						: Effect.fail(new SchemaIssue.InvalidValue({ message }, value))
 				}),
 			),
-		encode: (value) => Effect.succeed(JSON.stringify(value)),
+		encode: (value) => encodeJsonValue(value).pipe(Effect.mapError((error) => error.issue)),
 	})
 
 const noHint = (): undefined => undefined
@@ -145,7 +147,7 @@ export const dataSourceKindHint = (value: unknown): string | undefined => {
 	const decoded = decodeKindField(value)
 	const kind = Result.isFailure(decoded) ? undefined : decoded.success.kind
 	if (WIDGET_DATA_SOURCE_KINDS.some((known) => known === kind)) return undefined
-	return `${kind === undefined ? "The data source has no `kind`" : `Unknown data-source kind ${JSON.stringify(kind)}`}. Valid shapes: ${DATA_SOURCE_VARIANTS}.`
+	return `${kind === undefined ? "The data source has no `kind`" : `Unknown data-source kind ${stringifyJson(kind)}`}. Valid shapes: ${DATA_SOURCE_VARIANTS}.`
 }
 
 /** The same hint, one level in: a whole widget whose `dataSource` is the v2 shape. */

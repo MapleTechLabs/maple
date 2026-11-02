@@ -16,8 +16,12 @@
  * denylist would leak every future field by default, which is exactly the wrong
  * direction for a payload served without a session.
  */
+import { Schema } from "effect"
+
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "./access"
 import type { DashboardVariable } from "./shared/variables"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * The data source as a viewer sees it: enough to choose a renderer, nothing
@@ -146,7 +150,7 @@ const redactWidget = (widget: ShareWidgetInput): RedactedWidget => {
  */
 const referencedVariableNames = (widget: ShareWidgetInput): ReadonlySet<string> => {
 	const names = new Set<string>()
-	for (const match of JSON.stringify(widget ?? null).matchAll(/\$\{?([A-Za-z][A-Za-z0-9_]*)\}?/g)) {
+	for (const match of encodeJson(widget ?? null).matchAll(/\$\{?([A-Za-z][A-Za-z0-9_]*)\}?/g)) {
 		const name = match[1]
 		if (name !== undefined) names.add(name)
 	}

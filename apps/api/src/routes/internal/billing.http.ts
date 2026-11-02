@@ -227,11 +227,10 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// from now rather than forward from the reset, so mid-cycle it
 						// folded most of the previous cycle into "this cycle's usage".
 						const { customerId, result: customerResult } = yield* readCustomer(tenant.orgId)
-						const customer = yield* decodeUpstream(
-							BillingCustomer,
-							yield* ensureOk(customerResult),
-						)
-						const cycle = resolveCycleWindow(customer, yield* Clock.currentTimeMillis)
+						const okCustomer = yield* ensureOk(customerResult)
+						const customer = yield* decodeUpstream(BillingCustomer, okCustomer)
+						const now = yield* Clock.currentTimeMillis
+						const cycle = resolveCycleWindow(customer, now)
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 						const result = yield* autumn.aggregateEvents(customerId, {
 							featureId: query.featureId,
@@ -266,7 +265,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const { result } = yield* readCustomer(tenant.orgId)
 						const response = yield* ensureOk(result)
 						const customer = yield* decodeUpstream(BillingCustomer, response)
-						const cycle = resolveCycleWindow(customer, yield* Clock.currentTimeMillis)
+						const now = yield* Clock.currentTimeMillis
+						const cycle = resolveCycleWindow(customer, now)
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 						// A billing org's invoice carries its members' usage, so its chart does too.
 						const members = yield* billingOrgs.members(tenant.orgId)
@@ -515,8 +515,10 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							customerId,
 							autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
 						)
-						const customer = yield* decodeUpstream(BillingCustomer, yield* ensureOk(result))
-						const cycle = resolveCycleWindow(customer, yield* Clock.currentTimeMillis)
+						const okCustomer = yield* ensureOk(result)
+						const customer = yield* decodeUpstream(BillingCustomer, okCustomer)
+						const now = yield* Clock.currentTimeMillis
+						const cycle = resolveCycleWindow(customer, now)
 						const members = yield* billingOrgs.members(tenant.orgId)
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,

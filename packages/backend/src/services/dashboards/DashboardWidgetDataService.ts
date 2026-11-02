@@ -112,6 +112,7 @@ const asWidgetOutcomeFailure =
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * The identity a shared dashboard's queries execute under.
@@ -512,7 +513,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			for (const definition of definitions) {
 				const query = dashboardVariableOptionsQuery(definition)
 				if (query === null) continue
-				const key = JSON.stringify(query)
+				const key = encodeJsonSync(query)
 				const entry = byQuery.get(key) ?? { query, names: [] }
 				entry.names.push(definition.name)
 				byQuery.set(key, entry)
