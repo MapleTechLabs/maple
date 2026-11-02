@@ -2,7 +2,8 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option, Record } from "effect"
 import type { Command } from "foldkit"
-import { idle, keyOf, request } from "../../data/slot"
+import { idle, requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { queryOf } from "../../route"
 import { type PageContext, rangeOf } from "../contract"
 import { errorsFiltersOf, FetchByType, FetchFacets, FetchSummary, FetchTraces } from "./command"
@@ -34,7 +35,7 @@ export const loadCard = (model: Model, context: PageContext, fingerprintHash: st
 		env: env ?? null,
 		bounds: boundsKey(bounds),
 	})
-	return Option.match(request(card.traces, key, force), {
+	return Option.match(requestKeepingFailure(card.traces, key, force ? "Refresh" : "Load"), {
 		onNone: () => ({ model }),
 		onSome: (traces) => ({
 			model: { ...model, cards: Record.set(model.cards, fingerprintHash, { ...card, traces }) },
@@ -56,9 +57,9 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 			const summaryKey = keyOf("errors-summary", identity)
 			const byTypeKey = keyOf("errors-by-type", identity)
 			const facetsKey = keyOf("errors-facets", identity)
-			const summary = request(model.summary, summaryKey, force)
-			const byType = request(model.byType, byTypeKey, force)
-			const facets = request(model.facets, facetsKey, force)
+			const summary = requestKeepingFailure(model.summary, summaryKey, force ? "Refresh" : "Load")
+			const byType = requestKeepingFailure(model.byType, byTypeKey, force ? "Refresh" : "Load")
+			const facets = requestKeepingFailure(model.facets, facetsKey, force ? "Refresh" : "Load")
 			const base: Step = {
 				model: {
 					...model,

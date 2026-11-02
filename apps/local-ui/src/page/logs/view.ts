@@ -2,8 +2,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { toKitFailure } from "../../data/local-query"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
@@ -50,12 +49,12 @@ const listContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInpu
 			}),
 		],
 	})
-	if (isPending(model.logs)) return [listSkeleton(h, "table", 8), ...sheet]
+	if (isAwaitingFirstData(model.logs)) return [listSkeleton(h, "table", 8), ...sheet]
 	const failure = failureWithoutData(model.logs)
 	if (Option.isSome(failure))
 		return [
 			errorState(h, {
-				failure: toKitFailure(failure.value, "logs"),
+				failure: failure.value, title: "Couldn’t load logs",
 				onRetry: Message.ClickedRefresh(),
 			}),
 			...sheet,
@@ -65,11 +64,11 @@ const listContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInpu
 }
 
 const patternsContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): Html => {
-	if (isPending(model.patterns)) return listSkeleton(h, "table", 8)
+	if (isAwaitingFirstData(model.patterns)) return listSkeleton(h, "table", 8)
 	const failure = failureWithoutData(model.patterns)
 	if (Option.isSome(failure))
 		return errorState(h, {
-			failure: toKitFailure(failure.value, "log patterns"),
+			failure: failure.value, title: "Couldn’t load log patterns",
 			onRetry: Message.ClickedRefresh(),
 		})
 	return Option.match(AsyncData.getData(model.patterns.data), {
@@ -77,7 +76,7 @@ const patternsContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageView
 		onSome: (data) =>
 			data.patterns.length === 0
 				? emptyState(h, model, inputs, filters)
-				: patternsList(h, { patterns: data.patterns, totalSampled: data.totalSampled, isDimmed: model.patterns.isPlaceholder }),
+				: patternsList(h, { patterns: data.patterns, totalSampled: data.totalSampled, isDimmed: model.patterns.retained === true }),
 	})
 }
 

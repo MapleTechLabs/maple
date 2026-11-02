@@ -26,7 +26,7 @@ import {
 } from "../cloudflare-fixture"
 import { Schema } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import type { Keyed } from "../../data/keyed"
+import type { Keyed } from "@maple/views/data/keyed"
 import type { PageContext } from "../../page/contract"
 import type { Resources } from "../../platform/resources"
 import type { ListFrame } from "../../page/infra-integrations/cloudflare/list/view"

@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
-import { LoadFailure } from "../../data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { LocalTable, ResultRow } from "./model"
 
 export const DownloadFormat = Schema.Literals(["Csv", "Json"])

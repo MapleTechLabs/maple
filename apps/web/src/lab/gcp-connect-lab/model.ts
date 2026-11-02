@@ -1,7 +1,7 @@
 import { V2GcpSetupScripts } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import { Model as IntegrationsModel } from "../../page/integrations/model"

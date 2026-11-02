@@ -3,7 +3,7 @@ import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
-import { LoadFailure } from "../../data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { GoldenSignalRow, OperationRow, Overview, SeriesPoint } from "./model"
 
 export const Message = defineMessageUnion({

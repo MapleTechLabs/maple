@@ -2,7 +2,7 @@ import { CommitSha, ServiceName, VcsCommitDetailResponse, VcsCommitRangeResponse
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import * as Overlays from "../overlays"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ReleasesSearch } from "../../../route/search"

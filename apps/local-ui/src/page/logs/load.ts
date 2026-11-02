@@ -2,7 +2,8 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { keyOf, request } from "../../data/slot"
+import { requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { queryOf } from "../../route"
 import { type PageContext, rangeOf } from "../contract"
 import { FetchLogs, FetchPatterns, FetchServices, FetchSeverities } from "./command"
@@ -36,13 +37,13 @@ export const load = (
 				onNone: () => 1,
 				onSome: (data) => (force && model.logs.key === logsKey ? Math.max(1, data.pages.length) : 1),
 			})
-			const logs = isPatterns ? Option.none() : request(model.logs, logsKey, force)
+			const logs = isPatterns ? Option.none() : requestKeepingFailure(model.logs, logsKey, force ? "Refresh" : "Load")
 			const patternsKey = keyOf("log-patterns", { filters, window })
-			const patterns = isPatterns ? request(model.patterns, patternsKey, force) : Option.none()
+			const patterns = isPatterns ? requestKeepingFailure(model.patterns, patternsKey, force ? "Refresh" : "Load") : Option.none()
 			const servicesKey = keyOf("log-services", { severity: filters.severity ?? null, search: filters.search ?? null, attrs: filters.attrs, window })
-			const services = request(model.services, servicesKey, force)
+			const services = requestKeepingFailure(model.services, servicesKey, force ? "Refresh" : "Load")
 			const severitiesKey = keyOf("log-severities", { service: filters.service ?? null, search: filters.search ?? null, attrs: filters.attrs, window })
-			const severities = request(model.severities, severitiesKey, force)
+			const severities = requestKeepingFailure(model.severities, severitiesKey, force ? "Refresh" : "Load")
 			return {
 				model: {
 					...model,

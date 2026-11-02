@@ -1,6 +1,6 @@
 import { ListNodesResponse, NodeFacetsResponse } from "@maple/domain/http"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesNodesSearch } from "../../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"

@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Toast from "@maple/views/ui/toast"
-import { KeyedSchema } from "../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 
 import { TimeWindow } from "../../data/time-range"
 import { WarehouseFailure } from "../../data/warehouse-error"

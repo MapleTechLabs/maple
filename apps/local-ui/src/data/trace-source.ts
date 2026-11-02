@@ -9,7 +9,7 @@ import { LocalLog, logKey, normalizeLog } from "../lib/log-shape"
 import { boundsForRange, parseClickHouseDateTime, toClickHouseDateTime, WIDEST_RANGE } from "../lib/time"
 import { cachedAs, readCached, recordCached } from "./cached"
 import type { QueryKey } from "./cache-store"
-import { type LoadFailure, localParams, queryFirstRow, queryRows, toKitFailure } from "./local-query"
+import { localParams, queryFirstRow, queryRows } from "./local-query"
 import { LocalQueryCache } from "./query-cache"
 
 // The trace views' reads over `/local/query`. Every answer is recorded in the result cache, which
@@ -90,8 +90,6 @@ export const cachedSpanLogRecords = (request: LogsRequest) => readCached(spanLog
 
 const toEntry = (log: LocalLog) => ({ key: logKey(log), timestamp: log.timestamp, severityText: log.severityText, body: log.body })
 
-const failed = (subject: string) => (failure: LoadFailure) => toKitFailure(failure, subject)
-
 export const TraceSourceLocal = Layer.effect(
 	TraceSource,
 	Effect.gen(function* () {
@@ -101,12 +99,8 @@ export const TraceSourceLocal = Layer.effect(
 		const run = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient | LocalQueryCache>) =>
 			effect.pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.provideService(LocalQueryCache, cache))
 		return TraceSource.of({
-			spanDetail: (request) => run(fetchSpanDetail(request, apiBase)).pipe(Effect.mapError(failed("attributes"))),
-			spanLogs: (request) =>
-				run(fetchSpanLogRecords(request, apiBase)).pipe(
-					Effect.map((logs) => logs.map(toEntry)),
-					Effect.mapError(failed("logs")),
-				),
+			spanDetail: (request) => run(fetchSpanDetail(request, apiBase)),
+			spanLogs: (request) => run(fetchSpanLogRecords(request, apiBase)).pipe(Effect.map((logs) => logs.map(toEntry))),
 			cachedSpanDetail: (request) =>
 				run(readCached(spanDetailCacheKey(request), cachedAs(SpanDetail))).pipe(
 					Effect.map(Option.map(({ data, isFresh }) => ({ data, isFresh }))),

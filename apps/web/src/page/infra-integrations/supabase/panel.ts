@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { Keyed } from "../../../data/keyed"
+import type { Keyed } from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
 import { emptyMessage } from "@maple/views/ui/empty"

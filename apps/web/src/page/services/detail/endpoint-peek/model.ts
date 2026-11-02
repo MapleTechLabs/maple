@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { KeyedSchema } from "../../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import { ApiBucket, EndpointDetail } from "../model-tabs"

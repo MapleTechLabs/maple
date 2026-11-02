@@ -2,7 +2,7 @@ import { CachedOf } from "../../data/cached"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { SessionDetail, SessionTrace, TranscriptEvent } from "./model"
 
 export const Message = defineMessageUnion({

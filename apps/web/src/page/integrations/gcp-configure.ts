@@ -6,7 +6,7 @@ import {
 import { GcpConnectorId, GcpLogRuntime } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import * as Keyed from "../../data/keyed"
+import * as Keyed from "@maple/views/data/keyed"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import * as CopyButton from "@maple/views/ui/copy-button"

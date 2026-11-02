@@ -12,7 +12,7 @@ import { displayError } from "@maple/web-data/lib/error-messages"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
 // The alert rule preview: the payload the preview is keyed by, the fetch, and the

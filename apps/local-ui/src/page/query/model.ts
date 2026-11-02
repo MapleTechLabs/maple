@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 
 // The Query page as data.
 
@@ -24,7 +25,7 @@ export const Model = Schema.TaggedStruct("QueryPage", {
 	/** `navigator.platform` reads Mac: the shortcut hint shows ⌘, else Ctrl. */
 	isMac: Schema.Boolean,
 	/** The sidebar's `system.tables` read; a failure keeps `describeQueryError`'s detail as its message. */
-	tables: SlotSchema(Schema.Array(LocalTable)),
+	tables: KeyedSchema(Schema.Array(LocalTable), LoadFailure),
 	run: RunState,
 	nextRunId: Schema.Number,
 })

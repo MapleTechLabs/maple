@@ -1,7 +1,7 @@
 import { SourceId } from "@maple/domain/primitives"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { baseKey } from "../../../data/keyed"
+import { baseKey } from "@maple/views/data/keyed"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { V2SourceUpdateParams } from "@maple/domain/http/v2"

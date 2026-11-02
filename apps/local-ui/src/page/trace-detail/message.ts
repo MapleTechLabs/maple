@@ -7,7 +7,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
-import { LoadFailure } from "../../data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Message as LogSheetMessage } from "../kit/log-sheet/message"
 import { LocalLog } from "../../lib/log-shape"
 

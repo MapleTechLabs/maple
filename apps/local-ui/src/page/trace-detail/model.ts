@@ -5,7 +5,8 @@ import type { FlowGraph } from "@maple/views/service-map/trace-flow/trace-flow"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import * as SpanPanel from "@maple/views/traces/span-panel"
 import * as LogSheet from "../kit/log-sheet/model"
 
@@ -19,7 +20,7 @@ const FlowGraphData = Schema.declare(
 export const Model = Schema.TaggedStruct("TraceDetailPage", {
 	traceId: Schema.String,
 	/** The trace's spans: none when the trace has no spans (or its id is not a trace id). */
-	trace: SlotSchema(Schema.Option(TraceData)),
+	trace: KeyedSchema(Schema.Option(TraceData), LoadFailure),
 	/** `dataUpdatedAt` of the trace, for the "New data" pill. */
 	traceUpdatedAtMs: Schema.Number,
 	isRefreshing: Schema.Boolean,

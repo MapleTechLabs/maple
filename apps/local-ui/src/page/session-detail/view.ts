@@ -6,8 +6,7 @@ import { truncatedText } from "@maple/views/ui/truncated-text"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { toKitFailure } from "../../data/local-query"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import type { PageViewInputs } from "../kit/inputs"
 import type { TimeFormat } from "../kit/local-time"
 import { refreshButton } from "../kit/toolbar"
@@ -21,9 +20,9 @@ import { transcript } from "./view-transcript"
 // The session detail page.
 
 const transcriptBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail): Html => {
-	if (isPending(model.transcript)) return spinner(h, "size-4")
+	if (isAwaitingFirstData(model.transcript)) return spinner(h, "size-4")
 	const failure = failureWithoutData(model.transcript)
-	if (Option.isSome(failure)) return errorState(h, { failure: toKitFailure(failure.value, "transcript") })
+	if (Option.isSome(failure)) return errorState(h, { failure: failure.value, title: "Couldn’t load transcript" })
 	const events = Option.getOrElse(AsyncData.getData(model.transcript.data), () => [])
 	if (events.length === 0) return h.p([h.Class("text-sm text-muted-foreground")], ["No distilled events for this session."])
 	return transcript(h, events, session.startTime)
@@ -48,11 +47,11 @@ const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 }
 
 const content = (h: HtmlBuilder<Message>, model: Model, timeFormat: TimeFormat): Html => {
-	if (isPending(model.detail)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
+	if (isAwaitingFirstData(model.detail)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
 	const failure = failureWithoutData(model.detail)
 	if (Option.isSome(failure))
 		return errorState(h, {
-			failure: toKitFailure(failure.value, "session"),
+			failure: failure.value, title: "Couldn’t load session",
 			onRetry: Message.ClickedRetryDetail(),
 		})
 	const session = Option.getOrNull(AsyncData.getData(model.detail.data))

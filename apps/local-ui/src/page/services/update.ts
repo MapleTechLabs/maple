@@ -4,7 +4,7 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { Cached } from "../../data/cached"
-import { accept, acceptCached, idle } from "../../data/slot"
+import { accept, acceptCached, idle } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
@@ -13,7 +13,7 @@ import { filtersOf, visibleEntries } from "./derive"
 import { boundsOf, load } from "./load"
 import { Message } from "./message"
 import type { Catalog, Model } from "./model"
-import type { LoadFailure } from "../../data/local-query"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
 
@@ -42,7 +42,7 @@ export const init = (
 
 /** An empty list renders `SignalEmptyState`, which reads the shared signal presence. */
 const withPresence = (step: UpdateReturn, context: PageContext): UpdateReturn => {
-	const isLoaded = Option.isSome(AsyncData.getData(step.model.catalog.data)) && !step.model.catalog.isPlaceholder
+	const isLoaded = Option.isSome(AsyncData.getData(step.model.catalog.data)) && step.model.catalog.retained !== true
 	const isEmpty = visibleEntries(step.model, filtersOf(queryOf(context.location))).length === 0
 	return isLoaded && isEmpty && step.outMessage === undefined
 		? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() }
@@ -76,7 +76,7 @@ const settleRefresh = (model: Model): Model => {
 }
 
 /** One fetch answers whichever slots hold its key (both, while no filter is set). */
-const settled = (model: Model, key: string, result: Result.Result<Catalog, LoadFailure>, atMs: number | null = null): Model => ({
+const settled = (model: Model, key: string, result: Result.Result<Catalog, LoadFailure>, atMs?: number): Model => ({
 	...model,
 	catalog: accept(model.catalog, key, result, atMs),
 	unfiltered: accept(model.unfiltered, key, result, atMs),

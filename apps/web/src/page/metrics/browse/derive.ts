@@ -1,4 +1,4 @@
-import { requestKey } from "../../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { MetricRow, SparklineMetricType } from "../shared"
 import type { SparklinePoint } from "./model"

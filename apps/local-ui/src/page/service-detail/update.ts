@@ -4,7 +4,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { Option, Record, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle, acceptCached } from "../../data/slot"
+import { accept, idle, acceptCached } from "@maple/views/data/keyed"
 import { hrefFor, queryOf } from "../../route"
 import { type PageContext, PageOutMessage, withParams } from "../contract"
 import { ReadClock, ReadRefreshClock } from "./command"
@@ -65,7 +65,7 @@ const settle = (model: Model, context: PageContext): UpdateReturn => {
 
 /** A cached slot is on screen: re-key the charts it decides, and fetch it unless it is fresh. */
 const settleCached = (model: Model, context: PageContext, slot: SlotName, isFresh: boolean): UpdateReturn => {
-	const next = load(model, context, isFresh ? [] : [slot])
+	const next = load(model, context, [], isFresh ? [] : [slot])
 	return { model: settleRefresh(next.model), commands: next.commands }
 }
 

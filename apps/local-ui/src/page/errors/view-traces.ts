@@ -1,5 +1,4 @@
 import { errorState } from "@maple/views/ui/error-state"
-import { toKitFailure } from "../../data/local-query"
 import { parseClickHouseDateTime } from "../../lib/time"
 import { formatDuration } from "@maple/ui/lib/format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
@@ -8,7 +7,7 @@ import type { DateTime } from "effect"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { hrefFor } from "../../route"
 import type { ErrorTrace, ErrorTypeRow } from "./fetch"
 import { Message } from "./message"
@@ -61,12 +60,12 @@ const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, nowMs: numbe
 	)
 
 export const cardTraces = (h: H, row: ErrorTypeRow, card: Card, query: URLSearchParams, nowMs: number): Html => {
-	if (isPending(card.traces))
+	if (isAwaitingFirstData(card.traces))
 		return h.div([h.Class("flex h-16 items-center justify-center")], [spinner(h, "size-4")])
 	const failure = failureWithoutData(card.traces)
 	if (Option.isSome(failure))
 		return errorState(h, {
-			failure: toKitFailure(failure.value, "traces"),
+			failure: failure.value, title: "Couldn’t load traces",
 			onRetry: Message.ClickedRetryTraces({ fingerprintHash: row.fingerprintHash }),
 		})
 	const traces = Option.getOrElse(AsyncData.getData(card.traces.data), () => [])

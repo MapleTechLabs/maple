@@ -3,7 +3,7 @@ import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import type { ColumnOption } from "@maple/views/ui/logs/logs-stream-toolbar"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { canExtend } from "../../data/slot"
+import { canExtend } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { type PageContext, replaceParams } from "../contract"
 import * as LogSheet from "../kit/log-sheet/update"
@@ -111,7 +111,6 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<LocalL
 				...model.logs,
 				key,
 				data: AsyncData.Success({ data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined } }),
-				isPlaceholder: false,
 			},
 		}),
 	})

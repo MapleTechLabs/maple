@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { ReplaySearch } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"

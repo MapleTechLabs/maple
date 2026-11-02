@@ -12,7 +12,7 @@ import {
 	type Scope,
 	SynchronizedRef,
 } from "effect"
-import { orgOfKey, type RequestKey, requestKey } from "./request-key"
+import { orgOfKey, type RequestKey, requestKey } from "@maple/views/data/request-key"
 
 /**
  * The app's read cache (s6-data.md "Read cache"): reads shared across pages.

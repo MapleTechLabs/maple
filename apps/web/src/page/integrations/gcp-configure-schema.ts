@@ -1,7 +1,7 @@
 import { V2GcpConnector, V2GcpSetupScripts } from "@maple/domain/http/v2"
 import { GcpLogRuntime, GcpScopeType } from "@maple/domain/primitives"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"

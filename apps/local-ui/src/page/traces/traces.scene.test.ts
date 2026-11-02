@@ -65,7 +65,7 @@ describe("local traces list", () => {
 		expect(args[0]).toEqual(expect.objectContaining({ readsCache: true }))
 		const cached = { data: { pages: [[row("old")]], hasNextPage: false }, updatedAtMs: NOW - 3_600_000, isStandIn: true, isFresh: false }
 		const found = pageUpdate(base.model, Message.FoundCachedTraces({ key: base.model.traces.key ?? "", cached }))
-		expect([found.model.traces.isStandIn, found.model.traces.isPlaceholder, found.model.traces.updatedAtMs]).toEqual([true, false, NOW - 3_600_000])
+		expect([found.model.traces.isStandIn, found.model.traces.retained === true, found.model.traces.updatedAtMs]).toEqual([true, false, NOW - 3_600_000])
 		expect((found.commands ?? []).map(({ name, args }) => [name, args])).toEqual([
 			[FetchTraces.name, expect.objectContaining({ readsCache: false, pageCount: 1 })],
 		])
@@ -73,7 +73,7 @@ describe("local traces list", () => {
 			found.model,
 			Message.SucceededFetchTraces({ key: found.model.traces.key ?? "", data: { pages: [[row("new")]], hasNextPage: false }, fetchedAtMs: NOW }),
 		)
-		expect([fetched.model.traces.isStandIn, fetched.model.traces.updatedAtMs]).toEqual([false, NOW])
+		expect([fetched.model.traces.isStandIn === true, fetched.model.traces.updatedAtMs]).toEqual([false, NOW])
 	})
 
 	test("a fresh exact result is shown without a fetch", () => {
@@ -118,7 +118,7 @@ describe("local traces list", () => {
 	test("Load more on the previous filter's rows waits for the new filter's list", () => {
 		const filtered = { ...context, location: { path: "/traces", search: "errors=1" } }
 		const pending = locationChanged(fullList(), filtered).model
-		expect(pending.traces.isPlaceholder).toBe(true)
+		expect(pending.traces.retained).toBe(true)
 		expect(names(update(pending, Message.ClickedLoadMore(), filtered).commands)).toEqual([])
 	})
 

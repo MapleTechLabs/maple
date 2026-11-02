@@ -2,7 +2,9 @@ import type { Resources } from "../../platform/resources"
 import { toCsv, toJson } from "../../lib/query-console"
 import { Option, Result } from "effect"
 import type { Command, Update } from "foldkit"
-import { accept, acceptCached, idle, keyOf, request } from "../../data/slot"
+import { accept, acceptCached, idle, requestKeepingFailure } from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { keyOf } from "../../data/local-query"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams } from "../contract"
 import { DownloadText, FetchTables, ReadPlatform, RunQuery } from "./command"
@@ -15,8 +17,8 @@ type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 const TABLES_KEY = keyOf("query-console", "tables")
 
 export const init = (context: PageContext): Readonly<{ model: Model; commands: Commands }> => {
-	const empty = idle<ReadonlyArray<LocalTable>>()
-	const tables = Option.getOrElse(request(empty, TABLES_KEY), () => empty)
+	const empty = idle<ReadonlyArray<LocalTable>, LoadFailure>()
+	const tables = Option.getOrElse(requestKeepingFailure(empty, TABLES_KEY, "Load"), () => empty)
 	return {
 		model: { _tag: "QueryPage", isMac: false, tables, run: RunState.Idle(), nextRunId: 0 },
 		commands: [ReadPlatform(), FetchTables({ key: TABLES_KEY, apiBase: context.env.apiBase, readsCache: true })],

@@ -3,7 +3,7 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
-import { LoadFailure } from "../../data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TraceFacets, TracePages, TraceRow } from "./model"
 
 /** A sidebar facet the list takes one value of: its URL param. */

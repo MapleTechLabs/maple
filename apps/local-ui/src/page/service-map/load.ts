@@ -3,7 +3,8 @@ import { boundsForRange, resolveRange, type TimeBounds } from "../../lib/time"
 import { buildSourceGraph, type SourceGraph } from "@maple/views/service-map/map/graph"
 import { Option } from "effect"
 import type { Command } from "foldkit"
-import { keyOf, request } from "../../data/slot"
+import { requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { type PageContext, rangeOf } from "../contract"
 import { FetchServiceMap } from "./command"
 import { graphRowsOf, type LocalServiceMapData } from "./data"
@@ -25,13 +26,17 @@ export const load = (
 	model: Model,
 	context: PageContext,
 	force = false,
+	revalidates = false,
 ): Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }> =>
 	Option.match(boundsOf(model, context), {
 		onNone: () => ({ model }),
 		onSome: (bounds) => {
 			const durationSeconds = durationSecondsOf(context)
 			const key = keyOf("service-map", { durationSeconds, bounds: `${bounds.startTime}/${bounds.endTime}` })
-			return Option.match(request(model.data, key, force), {
+			// `revalidates`: a stale cached answer is shown and its fetch has not started.
+			const requested =
+				revalidates && model.data.key === key ? Option.some(model.data) : requestKeepingFailure(model.data, key, force ? "Refresh" : "Load")
+			return Option.match(requested, {
 				onNone: () => ({ model }),
 				onSome: (data) => ({
 					model: { ...model, data },

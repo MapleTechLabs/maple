@@ -4,13 +4,13 @@ import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Option, Record, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle, acceptCached } from "../../data/slot"
+import { accept, idle, acceptCached } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
 import { ReadClock, ReadRefreshClock, FetchByType, FetchFacets, FetchSummary, FetchTraces } from "./command"
 import type { ErrorTrace, ErrorTypeRow } from "./fetch"
-import type { LoadFailure } from "../../data/local-query"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { cardOf, load, loadCard, boundsOf } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -75,7 +75,7 @@ const settleTraces = (
 	fingerprintHash: string,
 	key: string,
 	result: Result.Result<ReadonlyArray<ErrorTrace>, LoadFailure>,
-	atMs: number | null = null,
+	atMs?: number,
 ): Model => {
 	const card = cardOf(model, fingerprintHash)
 	return Record.has(model.cards, fingerprintHash)

@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 
 // A metric chart's data as every infra detail page reads it: the long-form rows of an

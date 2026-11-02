@@ -6,8 +6,7 @@ import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@map
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { toKitFailure } from "../../data/local-query"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
@@ -88,11 +87,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const entries = visibleEntries(model, filters)
 	const totalErrorCount = entries.reduce((sum, entry) => sum + entry.errorCount, 0)
 	const content = (): Html => {
-		if (isPending(model.catalog)) return servicesSkeleton(h)
+		if (isAwaitingFirstData(model.catalog)) return servicesSkeleton(h)
 		const failure = failureWithoutData(model.catalog)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: toKitFailure(failure.value, "services"),
+				failure: failure.value, title: "Couldn’t load services",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (entries.length === 0)
@@ -107,7 +106,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				nowMs: inputs.presenceNowMs,
 				guide: { id: "services-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 			})
-		return servicesTable(h, entries, query, model.catalog.isPlaceholder)
+		return servicesTable(h, entries, query, model.catalog.retained === true)
 	}
 	return pageShell(
 		h,

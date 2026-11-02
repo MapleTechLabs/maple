@@ -5,7 +5,8 @@ import * as Popover from "@maple/views/ui/popover"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 import * as LogSheet from "../kit/log-sheet/model"
 import { LocalLog } from "../../lib/log-shape"
@@ -45,16 +46,16 @@ export const Model = Schema.TaggedStruct("LogsPage", {
 	/** `useTimeWindow`'s anchor, snapped to the minute; none until the clock is read. */
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	nowMs: Schema.Number,
-	logs: SlotSchema(LogPages),
+	logs: KeyedSchema(LogPages, LoadFailure),
 	isFetchingNextPage: Schema.Boolean,
 	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
 	pageGeneration: Schema.Number,
 	/** `dataUpdatedAt` of the active mode's main query, for the "New data" pill. */
 	logsUpdatedAtMs: Schema.Number,
 	patternsUpdatedAtMs: Schema.Number,
-	patterns: SlotSchema(LogPatterns),
-	services: SlotSchema(Schema.Array(FacetOption)),
-	severities: SlotSchema(Schema.Array(FacetOption)),
+	patterns: KeyedSchema(LogPatterns, LoadFailure),
+	services: KeyedSchema(Schema.Array(FacetOption), LoadFailure),
+	severities: KeyedSchema(Schema.Array(FacetOption), LoadFailure),
 	/** The shared logs stream: rows derived from `logs` and the pinned columns. */
 	stream: LogsStream.Model,
 	/** The pinned columns the stream's rows were derived with. */

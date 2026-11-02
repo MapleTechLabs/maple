@@ -1,7 +1,7 @@
 import { Result } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
-import * as Keyed from "../../../data/keyed"
+import * as Keyed from "@maple/views/data/keyed"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as Tooltip from "@maple/views/ui/tooltip"

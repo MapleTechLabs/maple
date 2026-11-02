@@ -17,7 +17,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { init, Message, OutMessage, open, update, view } from "./index"
 import type { Model } from "./model"
 import { contextKeyOf, mergeLogContext, traceLogsInput } from "./panels"
-import { requestKey } from "../../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import { TraceId } from "@maple/domain"
 import { CenterContextRow } from "./view-panels"
 

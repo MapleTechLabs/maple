@@ -6,7 +6,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 

@@ -1,6 +1,6 @@
 import { Option, Result } from "effect"
 import { AsyncData } from "foldkit"
-import { accept, acceptCached } from "../../data/slot"
+import { accept, acceptCached } from "@maple/views/data/keyed"
 import { fetchAfterCache } from "./load"
 import { type PageContext, PageOutMessage } from "../contract"
 import type { Message } from "./message"

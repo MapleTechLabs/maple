@@ -10,7 +10,7 @@ import {
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { SeverityBucket } from "../kit/findings"
 import { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"

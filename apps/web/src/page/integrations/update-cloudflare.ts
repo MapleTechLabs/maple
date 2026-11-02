@@ -3,9 +3,9 @@ import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import * as Keyed from "../../data/keyed"
+import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { requestKey } from "../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import type { PageContext, PageReturn } from "../contract"
 import {
 	type CloudflareCardModel,

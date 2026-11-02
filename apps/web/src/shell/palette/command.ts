@@ -2,7 +2,7 @@ import { getTracesFacetValues } from "@maple/web-data/warehouse/traces"
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { ReadCache } from "../../data/read-cache"
-import { requestKey } from "../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import { applyScrollOverflow, trackScrollbar } from "@maple/views/ui/scroll-area"
 import { Message } from "./model"
 

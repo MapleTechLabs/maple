@@ -1,6 +1,6 @@
 import { Option, Result, Schema } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
+import * as Keyed from "@maple/views/data/keyed"
 import type { Resources } from "../../../platform/resources"
 
 // `Keyed.request` steps shared by the Code Review pages (S6): two slots that may read the same
