@@ -39,6 +39,8 @@ const gitEnv = {
 	GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
 	GIT_CONFIG_GLOBAL: "/dev/null",
 	GIT_CONFIG_NOSYSTEM: "1",
+	// Set inside changesets/action; `status` would write its JSON there instead of printing it.
+	CHANGESETS_OUTPUT: undefined,
 }
 
 export const run = (command: string, args: ReadonlyArray<string>, cwd: string) =>

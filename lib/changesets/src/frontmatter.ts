@@ -6,7 +6,44 @@
 import { Result } from "effect"
 import type { Changeset, Release } from "./types.ts"
 
-const mdRegex = /\s*---([^]*?)\r?\n\s*---(\s*(?:\n|$)[^]*)/
+const isSpace = (char: string) => /^\s$/.test(char)
+
+/** For each index, the first index at or after it whose character is not whitespace (or `length`). */
+const nextNonSpaceIndex = (text: string): ReadonlyArray<number> =>
+	Array.from({ length: text.length }, (_, i) => i).reduceRight(
+		(next, i) => {
+			next[i] = isSpace(text.charAt(i)) ? (next[i + 1] ?? text.length) : i
+			return next
+		},
+		Array<number>(text.length + 1).fill(text.length),
+	)
+
+/**
+ * `@changesets/parse`'s `/\s*---([^]*?)\r?\n\s*---(\s*(?:\n|$)[^]*)/` as one linear scan.
+ * Only the first `---` can open a match: a later one has a subset of the same closing lines.
+ * The closing line is the first `\n` (or `\r\n`) then optional whitespace then `---`, followed
+ * by whitespace that holds a newline or runs to the end.
+ */
+export const splitFrontmatter = (text: string) => {
+	const opener = text.indexOf("---")
+	if (opener === -1) return undefined
+	const start = opener + 3
+	const nextNonSpace = nextNonSpaceIndex(text)
+	const closes = (e: number) => {
+		const lineStart = text.startsWith("\r\n", e) ? e + 2 : text.charAt(e) === "\n" ? e + 1 : -1
+		if (lineStart === -1) return undefined
+		const dashes = nextNonSpace[lineStart] ?? text.length
+		if (!text.startsWith("---", dashes)) return undefined
+		const after = dashes + 3
+		const end = nextNonSpace[after] ?? text.length
+		const newline = text.indexOf("\n", after)
+		return end === text.length || (newline !== -1 && newline < end) ? after : undefined
+	}
+	const offsets = Array.from({ length: Math.max(text.length - start, 0) }, (_, i) => start + i)
+	const close = offsets.find((e) => closes(e) !== undefined)
+	if (close === undefined) return undefined
+	return { releases: text.slice(start, close), summary: text.slice(closes(close)) }
+}
 const EXAMPLE_FORMAT = `---\n"package-name": patch\n---`
 const validVersionTypes = ["major", "minor", "patch", "none"]
 
@@ -284,13 +321,13 @@ export const parseChangesetFile = (contents: string): Result.Result<Changeset, s
 			`could not parse changeset - file is empty.\nChangesets must have frontmatter with package names and version types.\nExample:\n${EXAMPLE_FORMAT}\n\nYour changeset summary here.`,
 		)
 	}
-	const execResult = mdRegex.exec(contents)
-	if (!execResult) {
+	const split = splitFrontmatter(contents)
+	if (split === undefined) {
 		return Result.fail(
 			`could not parse changeset - missing or invalid frontmatter.\nChangesets must start with frontmatter delimited by "---".\nExample:\n${EXAMPLE_FORMAT}\n\nYour changeset summary here.\nReceived content:\n${truncate(trimmedContents)}`,
 		)
 	}
-	const [, roughReleases = "", roughSummary = ""] = execResult
+	const { releases: roughReleases, summary: roughSummary } = split
 	const summary = roughSummary.trim()
 	const document = readDocument(roughReleases)
 	if (Result.isFailure(document)) {
