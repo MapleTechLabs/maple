@@ -67,18 +67,20 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 			retryable: (status: number | null) => boolean,
 		) =>
 			Effect.gen(function* () {
-				const response = yield* executeAttempt(client, request, {
-					peerService: "maple-api",
-					timeout: REQUEST_TIMEOUT,
-				}).pipe(Effect.mapError(transportError))
-				const text = yield* response.text.pipe(
-					Effect.timeout(REQUEST_TIMEOUT),
-					Effect.mapError(transportError),
-				)
-				if (response.status < 200 || response.status >= 300) {
+				const { status, text } = yield* executeAttempt(
+					client,
+					request,
+					{ peerService: "maple-api", timeout: REQUEST_TIMEOUT },
+					(response) =>
+						response.text.pipe(
+							Effect.timeout(REQUEST_TIMEOUT),
+							Effect.map((text) => ({ status: response.status, text })),
+						),
+				).pipe(Effect.mapError(transportError))
+				if (status < 200 || status >= 300) {
 					return yield* new ApiRequestError({
-						message: `${label} returned HTTP ${response.status}: ${text.slice(0, 200)}`,
-						status: response.status,
+						message: `${label} returned HTTP ${status}: ${text.slice(0, 200)}`,
+						status,
 					})
 				}
 				return text

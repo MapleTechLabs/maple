@@ -22,19 +22,20 @@ export const isTransientStatus = (status: number | null): boolean =>
 
 const disableHttpClientSpan = () => true
 
+type AttemptError = HttpClientError.HttpClientError | Cause.TimeoutError
+
 /**
  * One attempt of a retried call, under a client span that a failure annotates but does not error.
  * Replaces HttpClient's own span, which errors on every failed attempt and so opened an issue for
  * failures the retry recovered from; the caller's span around the retry errors if it gives up.
+ * `read` consumes the response inside the span, so a failed body read is recorded on it too.
  */
-export const executeAttempt = (
+export const executeAttempt = <A>(
 	client: HttpClient.HttpClient,
 	request: HttpClientRequest.HttpClientRequest,
 	options: { readonly peerService: string; readonly timeout: Duration.Input },
-): Effect.Effect<
-	HttpClientResponse.HttpClientResponse,
-	HttpClientError.HttpClientError | Cause.TimeoutError
-> => {
+	read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, AttemptError>,
+): Effect.Effect<A, AttemptError> => {
 	const url = URL.parse(request.url)
 	return Effect.useSpan(
 		request.method,
@@ -59,6 +60,7 @@ export const executeAttempt = (
 				Effect.tap((response) =>
 					Effect.sync(() => span.attribute("http.response.status_code", response.status)),
 				),
+				Effect.flatMap(read),
 				Effect.tapError((error) =>
 					Effect.sync(() => {
 						span.attribute(

@@ -57,10 +57,18 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 							"application/json",
 						),
 					)
-					const response = yield* executeAttempt(client, request, {
-						peerService: "ingest",
-						timeout: REQUEST_TIMEOUT,
-					}).pipe(
+					// Drained either way, so the connection goes back to the pool.
+					const { status, text } = yield* executeAttempt(
+						client,
+						request,
+						{ peerService: "ingest", timeout: REQUEST_TIMEOUT },
+						(response) =>
+							response.text.pipe(
+								Effect.timeout(REQUEST_TIMEOUT),
+								Effect.orElseSucceed(() => ""),
+								Effect.map((text) => ({ status: response.status, text })),
+							),
+					).pipe(
 						Effect.mapError(
 							(error) =>
 								new UptimeSpanExportError({
@@ -69,18 +77,10 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 								}),
 						),
 					)
-					// Drained either way, so the connection goes back to the pool.
-					if (response.status >= 200 && response.status < 300) {
-						yield* response.text.pipe(Effect.timeout(REQUEST_TIMEOUT), Effect.ignore)
-						return
-					}
-					const text = yield* response.text.pipe(
-						Effect.timeout(REQUEST_TIMEOUT),
-						Effect.orElseSucceed(() => ""),
-					)
+					if (status >= 200 && status < 300) return
 					return yield* new UptimeSpanExportError({
-						message: `ingest gateway returned HTTP ${response.status}: ${text.slice(0, 200)}`,
-						status: response.status,
+						message: `ingest gateway returned HTTP ${status}: ${text.slice(0, 200)}`,
+						status,
 					})
 				}).pipe(
 					Effect.retry({
