@@ -1,11 +1,11 @@
 import { focusCrosshair } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { dropNullPoints } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
 import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
 import { formatBucketLabel } from "@maple/ui/lib/format"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { GHOST_KEY, SINGLE_KEY } from "@maple/web-data/alerts/chart-series"
-import { areaY, d3Curve, defineChart, lineY, rect, ruleY, type ChartValue } from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, dot, lineY, rect, ruleY, type ChartValue } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
@@ -65,6 +65,9 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 	}
 	const curve = d3Curve(curveMonotoneX)
 	const gradientId = spec.gradientId
+	const runsOf = (key: string) => seriesRuns(points, valueOf(key), at)
+	const loneDot = (key: string, fill: string) =>
+		dot(runsOf(key).lone, { x: at, y: valueOf(key), r: 2.5, fill })
 
 	const signalGradient = {
 		id: gradientId,
@@ -143,46 +146,55 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 				: []),
 			...(spec.hasGhost
 				? [
-						lineY(dropNullPoints(points, valueOf(GHOST_KEY)), {
-							id: GHOST_KEY,
-							x: at,
-							y: valueOf(GHOST_KEY),
-							stroke: palette.muted,
-							strokeWidth: 1.5,
-							strokeDasharray: roundCapDasharray(5, 3, 1.5),
-							curve,
-						}),
+						...runsOf(GHOST_KEY).runs.map((run, index) =>
+							lineY(run, {
+								id: `${GHOST_KEY}:${index}`,
+								x: at,
+								y: valueOf(GHOST_KEY),
+								stroke: palette.muted,
+								strokeWidth: 1.5,
+								strokeDasharray: roundCapDasharray(5, 3, 1.5),
+								curve,
+							}),
+						),
+						loneDot(GHOST_KEY, palette.muted),
 					]
 				: []),
 			...(spec.isMultiSeries
-				? spec.seriesKeys.map((key) =>
-						lineY(dropNullPoints(points, valueOf(key)), {
-							id: key,
-							x: at,
-							y: valueOf(key),
-							stroke: color(key),
-							strokeWidth: 1.5,
-							curve,
-						}),
-					)
+				? spec.seriesKeys.flatMap((key) => [
+						...runsOf(key).runs.map((run, index) =>
+							lineY(run, {
+								id: `${key}:${index}`,
+								x: at,
+								y: valueOf(key),
+								stroke: color(key),
+								strokeWidth: 1.5,
+								curve,
+							}),
+						),
+						loneDot(key, color(key)),
+					])
 				: [
-						areaY(dropNullPoints(points, valueOf(SINGLE_KEY)), {
-							id: `${SINGLE_KEY}-band`,
-							x: at,
-							y: valueOf(SINGLE_KEY),
-							y1: () => yDomain[0],
-							fill: `url(#${gradientId})`,
-							stroke: "none",
-							curve,
-						}),
-						lineY(dropNullPoints(points, valueOf(SINGLE_KEY)), {
-							id: SINGLE_KEY,
-							x: at,
-							y: valueOf(SINGLE_KEY),
-							stroke: palette.signal,
-							strokeWidth: SERIES_STROKE_WIDTH,
-							curve,
-						}),
+						...runsOf(SINGLE_KEY).runs.flatMap((run, index) => [
+							areaY(run, {
+								id: `${SINGLE_KEY}-band:${index}`,
+								x: at,
+								y: valueOf(SINGLE_KEY),
+								y1: () => yDomain[0],
+								fill: `url(#${gradientId})`,
+								stroke: "none",
+								curve,
+							}),
+							lineY(run, {
+								id: `${SINGLE_KEY}:${index}`,
+								x: at,
+								y: valueOf(SINGLE_KEY),
+								stroke: palette.signal,
+								strokeWidth: SERIES_STROKE_WIDTH,
+								curve,
+							}),
+						]),
+						loneDot(SINGLE_KEY, palette.signal),
 					]),
 			focusCrosshair(chrome),
 		],

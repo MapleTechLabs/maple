@@ -2,8 +2,8 @@ import { ANALYTICS_METRICS, findMetric } from "../../components/analytics/metric
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { dropNullPoints } from "@maple/ui/components/plot/series-gaps"
-import { areaY, d3Curve, defineChart, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
+import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
+import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
@@ -50,26 +50,32 @@ export const buildAnalyticsTraffic = (
 			verticalGradient(`${spec.gradientPrefix}-${entry.key}`, colorOf(entry.key)),
 		),
 		marks: [
-			...spec.series.flatMap((entry) => [
-				areaY(dropNullPoints(data, valueOf(entry.key)), {
-					id: `${entry.key}-band`,
-					x: at,
-					y: valueOf(entry.key),
-					y1: () => 0,
-					fill: `url(#${spec.gradientPrefix}-${entry.key})`,
-					fillOpacity: 1,
-					stroke: "none",
-					curve,
-				}),
-				lineY(dropNullPoints(data, valueOf(entry.key)), {
-					id: entry.key,
-					x: at,
-					y: valueOf(entry.key),
-					stroke: colorOf(entry.key),
-					strokeWidth: 1.5,
-					curve,
-				}),
-			]),
+			...spec.series.flatMap((entry) => {
+				const { runs, lone } = seriesRuns(data, valueOf(entry.key), at)
+				return [
+					...runs.flatMap((run, index) => [
+						areaY(run, {
+							id: `${entry.key}-band:${index}`,
+							x: at,
+							y: valueOf(entry.key),
+							y1: () => 0,
+							fill: `url(#${spec.gradientPrefix}-${entry.key})`,
+							fillOpacity: 1,
+							stroke: "none",
+							curve,
+						}),
+						lineY(run, {
+							id: `${entry.key}:${index}`,
+							x: at,
+							y: valueOf(entry.key),
+							stroke: colorOf(entry.key),
+							strokeWidth: 1.5,
+							curve,
+						}),
+					]),
+					dot(lone, { x: at, y: valueOf(entry.key), r: 2.5, fill: colorOf(entry.key) }),
+				]
+			}),
 			...spec.series.map((entry) => focusDot(data, at, valueOf(entry.key), colorOf(entry.key), chrome)),
 			focusCrosshair(chrome),
 		],

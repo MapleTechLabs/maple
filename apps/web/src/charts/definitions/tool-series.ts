@@ -1,11 +1,11 @@
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { dropNullPoints } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { formatDurationNs, formatToolMetric } from "@maple/web-data/lib/tool-analytics"
-import { type ChartValue, d3Curve, defineChart, lineY } from "@tanstack/charts"
+import { type ChartValue, d3Curve, defineChart, dot, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
@@ -77,15 +77,19 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 	const valueOf = (cell: Cell) => valueAt(cell.row, cell.key)
 	const marks = spec.series.flatMap((entry) => {
 		const cells = spec.rows.map((row) => ({ row, key: entry.key }))
+		const { runs, lone } = seriesRuns(cells, valueOf, at)
 		return [
-			lineY(dropNullPoints(cells, valueOf), {
-				id: entry.key,
-				x: at,
-				y: valueOf,
-				stroke: entry.color,
-				strokeWidth: LINE_WIDTH,
-				curve: d3Curve(curveMonotoneX),
-			}),
+			...runs.map((run, index) =>
+				lineY(run, {
+					id: `${entry.key}:${index}`,
+					x: at,
+					y: valueOf,
+					stroke: entry.color,
+					strokeWidth: LINE_WIDTH,
+					curve: d3Curve(curveMonotoneX),
+				}),
+			),
+			dot(lone, { x: at, y: valueOf, r: LINE_WIDTH + 1, fill: entry.color }),
 			focusDot(cells, at, valueOf, entry.color, spec.chrome),
 		]
 	})

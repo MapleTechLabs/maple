@@ -1,9 +1,9 @@
-import { d3Curve, defineChart, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
+import { d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { dropNullPoints } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
@@ -46,16 +46,21 @@ export const buildPlanetScaleMetric = (
 	const chrome = { border: spec.colors.border ?? "", background: spec.colors.background ?? "" }
 	const at = (point: MetricPoint) => point.date
 	const value = (point: MetricPoint) => point.value
+	const { runs, lone } = seriesRuns(data, value, at)
 	const definition = defineChart({
 		marks: [
 			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
-			lineY(dropNullPoints(data, value), {
-				x: at,
-				y: value,
-				stroke: color,
-				strokeWidth: 1.5,
-				curve: d3Curve(curveMonotoneX),
-			}),
+			...runs.map((run, index) =>
+				lineY(run, {
+					id: `value:${index}`,
+					x: at,
+					y: value,
+					stroke: color,
+					strokeWidth: 1.5,
+					curve: d3Curve(curveMonotoneX),
+				}),
+			),
+			dot(lone, { x: at, y: value, r: 2.5, fill: color }),
 			focusDot(data, at, value, color, chrome),
 			focusCrosshair(chrome),
 		],

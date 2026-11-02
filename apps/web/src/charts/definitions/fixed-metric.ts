@@ -2,7 +2,7 @@ import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartVal
 import { curveMonotoneX } from "d3-shape"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
-import { dropNullPoints, loneReading } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -43,7 +43,7 @@ const STROKE_WIDTH = SERIES_STROKE_WIDTH
 const curve = d3Curve(curveMonotoneX)
 const at = (row: TimeseriesRow) => row.date
 const valueOf = (key: string) => (row: TimeseriesRow) => asFiniteNumber(row[key])
-/** A missing value stays null, so the line bridges it and the focus dot skips it instead of dropping to 0. */
+/** A missing value stays null, so the line bridges or breaks on it and the focus dot skips it. */
 const gapValueOf = (key: string) => (row: TimeseriesRow) =>
 	row[key] == null ? null : asFiniteNumber(row[key])
 const read = (key: string) => (row: TimeseriesRow) => {
@@ -324,29 +324,38 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	}))
 	const keys = series.map((entry) => entry.key)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
-	const line = (slice: ReadonlyArray<TimeseriesRow>, entry: (typeof series)[number], dash: boolean) =>
+	const line = (
+		slice: ReadonlyArray<TimeseriesRow>,
+		entry: (typeof series)[number],
+		dash: boolean,
+		run: number,
+	) =>
 		lineY(slice, {
 			curve,
-			id: dash ? `${entry.key}-partial` : entry.key,
+			id: dash ? `${entry.key}-partial:${run}` : `${entry.key}:${run}`,
 			x: at,
 			y: gapValueOf(entry.key),
 			stroke: entry.color,
 			strokeWidth: STROKE_WIDTH,
 			strokeDasharray: dash ? partialDash : undefined,
 		})
-	// Each series bridges the buckets it has no reading for, then splits, so the dashed tail
-	// starts at that series' last closed reading.
-	const lines = series.flatMap((entry) => {
-		const readings = dropNullPoints(plotRows, gapValueOf(entry.key))
-		const { solid, dashed } = splitAtFirstPartial(readings, [entry.key], model.trimOptions)
-		return [line(solid, entry, false), ...(dashed.length > 0 ? [line(dashed, entry, true)] : [])]
-	})
+	const runs = series.map((entry) => ({ entry, ...seriesRuns(plotRows, gapValueOf(entry.key), at) }))
+	// Each run splits on its own, so the dashed tail starts at that series' last closed reading.
+	const lines = runs.flatMap(({ entry, runs: entryRuns }) =>
+		entryRuns.flatMap((run, index) => {
+			const { solid, dashed } = splitAtFirstPartial(run, [entry.key], model.trimOptions)
+			return [
+				line(solid, entry, false, index),
+				...(dashed.length > 0 ? [line(dashed, entry, true, index)] : []),
+			]
+		}),
+	)
 	const definition = defineChart({
 		margin: marginOf(spec),
 		marks: [
 			...lines,
-			...series.map((entry) =>
-				dot(loneReading(plotRows, gapValueOf(entry.key)), {
+			...runs.map(({ entry, lone }) =>
+				dot(lone, {
 					x: at,
 					y: gapValueOf(entry.key),
 					r: STROKE_WIDTH + 1,

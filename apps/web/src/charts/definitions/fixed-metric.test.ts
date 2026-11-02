@@ -5,15 +5,16 @@ import { buildFixedMetric } from "./fixed-metric"
 const START = Date.UTC(2026, 10, 1, 12)
 const BUCKET = 5 * 60_000
 
-// A quiet endpoint: p50 reported in three buckets with silence between, p95 in one only.
-const rows = [
-	{ p50LatencyMs: 10, p95LatencyMs: null, p99LatencyMs: null },
-	{ p50LatencyMs: null, p95LatencyMs: null, p99LatencyMs: null },
-	{ p50LatencyMs: null, p95LatencyMs: 40, p99LatencyMs: null },
-	{ p50LatencyMs: 20, p95LatencyMs: null, p99LatencyMs: null },
-	{ p50LatencyMs: null, p95LatencyMs: null, p99LatencyMs: null },
-	{ p50LatencyMs: 30, p95LatencyMs: null, p99LatencyMs: null },
-].map((row, index) => ({ bucket: new Date(START + index * BUCKET).toISOString(), ...row }))
+// 5-minute buckets. p50: one empty bucket between its first two readings, then two empty
+// before its last pair. p95: two readings 20 minutes apart.
+const P50 = [10, null, 20, null, null, 30, 40, null]
+const P95 = [null, null, 40, null, null, null, 50, null]
+const rows = P50.map((p50, index) => ({
+	bucket: new Date(START + index * BUCKET).toISOString(),
+	p50LatencyMs: p50,
+	p95LatencyMs: P95[index] ?? null,
+	p99LatencyMs: null,
+}))
 
 const flatten = (nodes: ReadonlyArray<SceneNode>): ReadonlyArray<SceneNode> =>
 	nodes.flatMap((node) => (node.kind === "group" ? flatten(node.children) : [node]))
@@ -44,23 +45,23 @@ const scene = () => {
 		: []
 }
 
+const lines = (nodes: ReadonlyArray<SceneNode>, key: string) =>
+	nodes.flatMap((node) =>
+		node.kind === "polyline" && node.key.startsWith(`${key}:`) ? [node.points.length] : [],
+	)
+
 describe("latency chart with missing buckets", () => {
-	test("a series with silent buckets draws one line through its readings", () => {
-		const p50 = scene().filter((node) => node.kind === "polyline" && node.key.startsWith("p50LatencyMs:"))
-		expect(p50).toHaveLength(1)
-		expect(p50[0]?.kind === "polyline" ? p50[0].points : []).toHaveLength(3)
+	test("a line bridges one empty bucket and breaks on a longer silence", () => {
+		expect(lines(scene(), "p50LatencyMs")).toEqual([2, 2])
 	})
 
-	test("a series with a single reading is drawn as a dot", () => {
+	test("readings too far apart to share a line draw as dots", () => {
 		const nodes = scene()
-		const p95Lines = nodes.filter(
-			(node) => node.kind === "polyline" && node.key.startsWith("p95LatencyMs:"),
-		)
-		// The focus dot carries a background ring; the lone-reading dot is a plain fill.
+		// The focus dot carries a background ring; a lone-reading dot is a plain fill.
 		const loneDots = nodes.filter(
 			(node) => node.kind === "dot" && node.style?.fill === "#f80" && node.style.stroke === undefined,
 		)
-		expect(p95Lines.flatMap((node) => (node.kind === "polyline" ? node.points : []))).toHaveLength(1)
-		expect(loneDots).toHaveLength(1)
+		expect(lines(nodes, "p95LatencyMs").filter((points) => points > 1)).toEqual([])
+		expect(loneDots).toHaveLength(2)
 	})
 })
