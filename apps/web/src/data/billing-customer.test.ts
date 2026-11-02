@@ -36,4 +36,21 @@ describe("BillingCustomerCache loader", () => {
 				}),
 			),
 		))
+
+	test("a failed read is not kept: the next reader for the same org asks again", () =>
+		Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const runs = yield* Ref.make(0)
+					const load = Effect.flatMap(
+						Ref.updateAndGet(runs, (n) => n + 1),
+						(n) => (n === 1 ? Effect.fail("unreachable") : Effect.succeed(n)),
+					)
+					const get = yield* orgLoader(load)
+					expect(yield* Effect.flip(get({ orgId: "org_a" }))).toBe("unreachable")
+					expect(yield* get({ orgId: "org_a" })).toBe(2)
+					expect(yield* get({ orgId: "org_a" })).toBe(2)
+				}),
+			),
+		))
 })

@@ -46,7 +46,10 @@ const requestCustomer = (model: Model, context: PageContext): Return => {
 	const key = customerKey(context)
 	return Option.match(Keyed.request(model.customer, key, "Load"), {
 		onNone: () => ({ model }),
-		onSome: (customer) => ({ model: { ...model, customer }, commands: [LoadCustomer({ key })] }),
+		onSome: (customer) => ({
+			model: { ...model, customer },
+			commands: [LoadCustomer({ key, orgId: context.orgId })],
+		}),
 	})
 }
 

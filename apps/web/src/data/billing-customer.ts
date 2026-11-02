@@ -16,6 +16,11 @@ export const orgLoader = <A>(load: Effect.Effect<A, unknown>) =>
 	Effect.gen(function* () {
 		const scope = yield* Effect.scope
 		const current = yield* SynchronizedRef.make(Option.none<Entry<A>>())
+		// A failed read is dropped once it settles, so the next reader asks again.
+		const dropIfCurrent = (result: Entry<A>["result"]) =>
+			SynchronizedRef.update(current, (existing) =>
+				Option.isSome(existing) && existing.value.result === result ? Option.none() : existing,
+			)
 		const entryFor = (options: GetOptions | undefined) =>
 			SynchronizedRef.modifyEffect(current, (existing) => {
 				const orgId = options?.orgId ?? Option.getOrNull(existing)?.orgId ?? null
@@ -23,7 +28,8 @@ export const orgLoader = <A>(load: Effect.Effect<A, unknown>) =>
 					return Effect.succeed([existing.value, existing] as const)
 				return Effect.gen(function* () {
 					const result = yield* Deferred.make<A, unknown>()
-					yield* Effect.forkIn(Deferred.complete(result, load), scope)
+					const read = load.pipe(Effect.onError(() => dropIfCurrent(result)))
+					yield* Effect.forkIn(Deferred.complete(result, read), scope)
 					const entry: Entry<A> = { orgId, result }
 					return [entry, Option.some(entry)] as const
 				})
