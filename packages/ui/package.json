@@ -19,12 +19,12 @@
 		"@maple/query-engine": "workspace:*",
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
-		"@xyflow/system": "0.0.83",
+		"@xyflow/system": "0.0.84",
 		"class-variance-authority": "catalog:ui",
 		"clsx": "catalog:ui",
 		"d3-scale": "^4.0.2",
 		"effect": "catalog:effect",
-		"elkjs": "^0.12.0",
+		"elkjs": "^0.12.1",
 		"tailwind-merge": "catalog:tailwind"
 	},
 	"devDependencies": {
