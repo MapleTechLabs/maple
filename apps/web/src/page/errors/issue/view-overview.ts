@@ -1,7 +1,7 @@
 import type { ErrorIssueDocument, IssueSeverity } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../ui/copy-button"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -131,6 +131,11 @@ const trendLine = (inputs: StatInputs): string | undefined =>
 					? `Fading, ${inputs.surge.toFixed(1)}x the usual rate`
 					: "Steady in this window"
 
+/** Resolving keeps `lastRegressedAt`, so a fix after the last regression is what holds now. */
+const isFixHeldSince = (issue: ErrorIssueDocument): boolean =>
+	issue.lastResolvedAt !== null &&
+	(issue.lastRegressedAt === null || toEpochMs(issue.lastResolvedAt) > toEpochMs(issue.lastRegressedAt))
+
 /** `IssueStats`: the window's events and trend, lifetime events, first seen, last seen and any regression. */
 export const issueStats = (h: H, issue: ErrorIssueDocument, inputs: StatInputs): Html => {
 	const isSurging = inputs.surge !== null && inputs.surge >= SURGE_THRESHOLD
@@ -161,7 +166,7 @@ export const issueStats = (h: H, issue: ErrorIssueDocument, inputs: StatInputs):
 			compact: true,
 			valueClassName: "text-xl",
 			subline:
-				issue.lastRegressedAt !== null
+				issue.lastRegressedAt !== null && !isFixHeldSince(issue)
 					? h.span(
 							[h.Class("text-severity-warn")],
 							["regressed ", formatRelativeTime(issue.lastRegressedAt, inputs.nowMs)],
