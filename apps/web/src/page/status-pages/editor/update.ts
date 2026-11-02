@@ -4,9 +4,9 @@ import { Option, Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import type { AppRoute } from "../../../route"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage } from "../../contract"
 import {
 	type EditorView,

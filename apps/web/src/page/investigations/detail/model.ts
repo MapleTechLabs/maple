@@ -1,13 +1,13 @@
 import { V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { InvestigationSearch } from "../../../route/search"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { Model as ConversationModel } from "../conversation/model"
-import * as Canvas from "../../../service-map/xyflow/canvas"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
 
 // `/investigations/$id`.
 

@@ -2,18 +2,21 @@ import type { DashboardDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option } from "effect"
-import { button } from "../../../ui/button"
-import { emptyMessage } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import * as Menu from "../../../ui/menu"
-import type * as MenuView from "../../../ui/menu-view"
-import { rowActionsMenu } from "../../../ui/row-actions-menu"
-import { confirmDialog } from "../../../ui/confirm-dialog"
+import { button } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { inlineRenameInput } from "@maple/views/ui/inline-rename-input"
+import * as Menu from "@maple/views/ui/menu"
+import type * as MenuView from "@maple/views/ui/menu-view"
+import { pressable } from "@maple/views/ui/pressable"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { countLabel } from "@maple/ui/lib/format"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { sectionMenuIdOf } from "./section-update"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // A dashboard section's header, `SectionTabBar` and
 // `InlineEditableText`: the chevron, the renamable title, the tabs, "+" and the options menu.
@@ -37,26 +40,23 @@ export const inlineEditableText = (
 ): Html => {
 	const rename = model.rename
 	if (options.isEditable && rename !== null && rename.sectionId === options.sectionId && rename.tabId === options.tabId)
-		return h.input([
-			h.Value(rename.draft),
-			h.AriaLabel(options.ariaLabel),
-			h.Class(
-				cn(
-					"min-w-0 border-b border-foreground/20 bg-transparent outline-none focus:border-foreground/50",
-					options.className,
+		return inlineRenameInput(h, {
+			className: options.className,
+			attributes: [
+				h.Value(rename.draft),
+				h.AriaLabel(options.ariaLabel),
+				h.Autofocus(true),
+				h.OnInput((value) => Message.ChangedRenameDraft({ value })),
+				h.OnBlur(Message.SubmittedRename()),
+				h.OnKeyDownPreventDefault((key) =>
+					key === "Enter"
+						? Option.some(Message.SubmittedRename())
+						: key === "Escape"
+							? Option.some(Message.CancelledRename())
+							: Option.none(),
 				),
-			),
-			h.Autofocus(true),
-			h.OnInput((value) => Message.ChangedRenameDraft({ value })),
-			h.OnBlur(Message.SubmittedRename()),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter"
-					? Option.some(Message.SubmittedRename())
-					: key === "Escape"
-						? Option.some(Message.CancelledRename())
-						: Option.none(),
-			),
-		])
+			],
+		})
 	const start = Message.StartedRename({ sectionId: options.sectionId, tabId: options.tabId })
 	const keyboardRename = options.isEditable && options.isFocusable
 	return h.span(
@@ -99,24 +99,26 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 						),
 					],
 					[
-						h.button(
-							[
-								h.Type("button"),
-								h.Role("tab"),
-								h.AriaSelected(isActive),
-								h.OnClick(Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id })),
-								...(isEditable
-									? [
-											h.AriaKeyshortcuts("F2"),
-											h.OnKeyDownPreventDefault((key) =>
-												key === "F2"
-													? Option.some(Message.StartedRename({ sectionId: section.id, tabId: tab.id }))
-													: Option.none(),
-											),
-										]
-									: []),
-								h.Class("min-w-0 max-w-48 cursor-pointer font-medium outline-none"),
-							],
+						pressable(
+							h,
+							{
+								onClick: Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id }),
+								className: "min-w-0 max-w-48 cursor-pointer font-medium outline-none",
+								attributes: [
+									h.Role("tab"),
+									h.AriaSelected(isActive),
+									...(isEditable
+										? [
+												h.AriaKeyshortcuts("F2"),
+												h.OnKeyDownPreventDefault((key) =>
+													key === "F2"
+														? Option.some(Message.StartedRename({ sectionId: section.id, tabId: tab.id }))
+														: Option.none(),
+												),
+											]
+										: []),
+								],
+							},
 							[
 								inlineEditableText(h, model, {
 									sectionId: section.id,
@@ -195,7 +197,7 @@ const optionEntries = (
 			: []),
 		{ _tag: "Item", value: "collapsible", label: isCollapsible ? "Always expanded" : "Allow collapsing" },
 		{ _tag: "Separator" },
-		{ _tag: "Item", value: "delete", label: "Delete group…", icon: "TrashIcon", variant: "destructive" },
+		{ _tag: "Item", value: "delete", label: "Delete group", icon: "TrashIcon", variant: "destructive" },
 	]
 }
 
@@ -255,7 +257,7 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, model, section, activeTabId, isEditable)])]
 						: []),
 					h.div(
-						[h.Class(cn("flex items-center gap-1", !hasTabs && "ml-auto"))],
+						[h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))],
 						[
 							...(isEditable && !isCollapsed
 								? [
@@ -309,7 +311,7 @@ const sectionBody = (h: H, inputs: SectionViewInputs): Html => {
 					"Add widget",
 				]),
 			])
-		: emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty."])
+		: emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty"])
 }
 
 const trash = (h: H) => icon(h, "TrashIcon", { className: "text-destructive" })

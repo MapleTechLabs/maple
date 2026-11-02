@@ -3,11 +3,11 @@ import type { AwsConnectionId, AwsMetricNamespace } from "@maple/domain/primitiv
 import { Option, type Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../data/keyed"
-import type { LoadFailure } from "../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "../../data/request-key"
-import * as CopyButton from "../../ui/copy-button"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	type AwsCardModel,
@@ -32,6 +32,7 @@ import {
 } from "./aws"
 import { integrationOfSearch } from "./catalog"
 import { ReadClock } from "./command"
+import { disconnectSpec } from "./disconnect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
@@ -262,7 +263,7 @@ export const completedDisconnect = (
 	error: string | null,
 ): Return => {
 	const settled = withCard(model, { isDisconnecting: false })
-	if (removed === null) return toast(settled, "error", "Couldn't disconnect AWS", error ?? "")
+	if (removed === null) return toast(settled, "error", disconnectSpec("aws").error, error ?? "")
 	const card = settled.awsCard
 	const stacks = [removed, ...card.removed.filter((stack) => stack.connectionId !== removed.connectionId)]
 	return chain(
@@ -282,7 +283,7 @@ export const completedDisconnect = (
 				commands: [WriteAwsRemoved({ orgId: context.orgId, removed: stacks })],
 			}),
 			(next) =>
-				toast(next, "success", "AWS disconnected", "Delete the stack in AWS to remove the role."),
+				toast(next, "success", disconnectSpec("aws").success, "Delete the stack in AWS to remove the role."),
 			(next) => requestStatus(next, context, "aws", "Supersede"),
 		],
 	)

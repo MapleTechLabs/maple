@@ -2,18 +2,20 @@ import type { AlertDestinationDocument, AlertDestinationId, AlertDestinationType
 import type { V2ChatConnector } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { iconButton } from "../../../ui/icon-button"
-import { icon } from "../../../ui/icon"
-import * as Menu from "../../../ui/menu"
-import * as MenuView from "../../../ui/menu-view"
-import { middleTruncate } from "../../../ui/middle-truncate"
-import { panel } from "../../../ui/panel"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { panel } from "@maple/views/ui/panel"
 import { destinationProvider, destinationTypesFor, providerLogo, type ProviderLogoOptions } from "../shared/providers"
 import { menuIdOf } from "./dest-steps"
+import { pressable } from "@maple/views/ui/pressable"
 import { waitingFor } from "../shared/chat-connect"
 import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
 
@@ -55,9 +57,8 @@ const selectedRow = (h: H, model: NotifyView, tier: Tier, destination: AlertDest
 		[h.Class("flex items-center gap-2.5 px-3 py-2")],
 		[
 			logo(h, model, destination.type, destination.chatConnector ?? undefined, "flex shrink-0", logoError(destination.type)),
-			middleTruncate(h, { text: primary, tail: 16, className: "text-sm font-medium" }),
-			h.span(
-				[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
+			middleTruncate(h, { text: primary, tail: 16, className: typographyClass({ size: "sm", weight: "medium" }) }),
+			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" },
 				[...(paused === null ? [] : [h.span([h.Class("text-severity-error")], [paused, " · "])]), secondary],
 			),
 			iconButton(
@@ -128,7 +129,7 @@ const menuEntries = (
 				content: [
 					mark,
 					h.span([h.Class("flex-1")], [connector.name]),
-					h.span([h.Class("text-xs text-muted-foreground")], ["Connect"]),
+					typography(h, { size: "xs", tone: "muted" }, ["Connect"]),
 				],
 			},
 		]
@@ -175,19 +176,16 @@ const addMenu = (
 				h.span(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.Class(
-									cn(
-										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-										// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
-										menu.isOpen && "border-b border-border-subtle",
-									),
+						pressable(
+							h,
+							{
+								className: cn(
+									"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
+									// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
+									menu.isOpen && "border-b border-border-subtle",
 								),
-								h.DataAttribute("slot", "dropdown-menu-trigger"),
-								...trigger,
-							],
+								attributes: [h.DataAttribute("slot", "dropdown-menu-trigger"), ...trigger],
+							},
 							[
 								icon(h, "PlusIcon", { size: 14 }),
 								waiting === undefined ? "Add destination" : `Finish connecting ${waiting.name} in the other window…`,

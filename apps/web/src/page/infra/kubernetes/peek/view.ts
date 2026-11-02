@@ -4,18 +4,18 @@ import { formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { linkButton } from "../../../../ui/button"
-import * as DialogView from "../../../../ui/dialog-view"
-import { kbd } from "../../../../ui/display"
-import { emptyMessage } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { iconButton } from "../../../../ui/icon-button"
-import { skeleton } from "../../../../ui/skeleton"
+import { linkButton } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { kbd } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { k8sChart } from "../../kit/k8s-chart"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
 import type { TimeSearch } from "../../kit/view-tabs"
 import { POD_METRIC_LABELS, type PodRow } from "../pod-data"
@@ -24,6 +24,7 @@ import { Message } from "./message"
 import { type Model, PEEK_CHART_HEIGHT, PEEK_METRICS, seriesId } from "./model"
 import type { Peek } from "./update"
 import { peekHeader } from "./view-header"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PodPeekSheet`.
 
@@ -58,7 +59,7 @@ const peekSummary = (h: H, model: Model, pod: PodRow): Html => {
 			errorState(h, { failure, title: "Couldn't load pod metrics", onRetry: Message.ClickedRetrySummary() }),
 		onData: (summary) =>
 			summary === null || summary === undefined
-				? emptyMessage(h, { dashed: true }, ["No metrics arrived for this pod in this window."])
+				? emptyMessage(h, { dashed: true }, ["No metrics arrived for this pod in this window"])
 				: statRail(h, { className: refreshingClass(AsyncData.isRefreshing(data)) }, [
 						compactItem(h, "CPU vs limit", summary.cpuLimitPct, true),
 						compactItem(h, "CPU vs request", summary.cpuRequestPct, false),
@@ -104,8 +105,7 @@ const peekFooter = (h: H, peek: Peek, timeSearch: TimeSearch, locale: string): H
 		h,
 		"sheet",
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5" },
 				[
 					stepButton(h, "Previous pod", "ArrowUpIcon", peek.index > 0, -1),
 					stepButton(h, "Next pod", "ArrowDownIcon", peek.index < peek.count - 1, 1),

@@ -3,9 +3,9 @@
  * week (four headline stats, top pages, top sources, AI traffic), with the app
  * one click away for everything else.
  *
- * The markup lives in `emails/web-analytics-digest.vue` and is compiled to
- * `src/generated/web-analytics-digest.ts` by Maizzle (`bun run --cwd
- * packages/email build`). This module only splices those strings together.
+ * The markup lives in `templates/` and is compiled to
+ * `src/generated/web-analytics-digest.ts` (`bun run --cwd packages/email build`).
+ * This module only splices those strings together.
  */
 import { FRAGMENTS, PAGE } from "./generated/web-analytics-digest"
 import { C, deltaPalette, deltaParts, rowBorder, trendColor } from "./delta-render"

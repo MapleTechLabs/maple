@@ -1,9 +1,9 @@
 import { DashboardVariableSchema } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Dialog from "../../../../ui/dialog"
-import * as Field from "../../../../ui/field"
-import * as Select from "../../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 
 // The variables manager dialog: a session of
 // drafts started from the saved variables each time it opens, one draft's form expanded at a time.

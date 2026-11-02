@@ -2,17 +2,18 @@ import type { GithubIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "@maple/views/ui/heading"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { item, itemActions, itemContent, itemDescription, itemMedia } from "../../ui/item"
-import { panel } from "../../ui/panel"
-import { refreshButton } from "../../ui/refresh-button"
-import { settingRow } from "../../ui/setting-row"
-import { skeleton } from "../../ui/skeleton"
-import { statusDot } from "../../ui/status-dot"
-import { switchControl } from "../../ui/switch"
+import { button, linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { item, itemActions, itemContent, itemDescription, itemMedia } from "@maple/views/ui/item"
+import { panel } from "@maple/views/ui/panel"
+import { refreshButton } from "@maple/views/ui/refresh-button"
+import { settingRow } from "@maple/views/ui/setting-row"
+import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { switchControl } from "@maple/views/ui/switch"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { GITHUB_ACCENT } from "./catalog"
 import { integrationNotice } from "./kit/notice"
@@ -21,6 +22,8 @@ import type { Model } from "./model"
 import { ciTracesShown, githubStatusOf } from "./update-github"
 import { disconnectDialog } from "./view-disconnect"
 import { repositoriesPanels, repoDialogs } from "./view-github-repos"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // `GithubIntegrationCard`.
 
@@ -41,8 +44,7 @@ export const githubReconnectButton = (h: H, model: Model, label = "Reconnect Git
 	)
 
 const needsApprovalNote = (h: H, login: string): Html =>
-	h.p(
-		[h.Class("text-sm text-muted-foreground")],
+	typography(h, { size: "sm", tone: "muted", as: "p" },
 		[
 			`Maple could not confirm you are an owner of ${login}: GitHub did not share organization roles with the Maple app. An owner of ${login} can approve the app's pending permission request (organization Settings > GitHub Apps > Review request), then connect again.`,
 		],
@@ -56,8 +58,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 	const replacesCurrent =
 		current !== null && selection.installations.some((choice) => choice.accountLogin !== current)
 	return [
-		h.p(
-			[h.Class("text-sm text-muted-foreground")],
+		typography(h, { size: "sm", tone: "muted", as: "p" },
 			[
 				selection.installations.length > 0
 					? "Choose the GitHub account to connect to this Maple organization."
@@ -66,8 +67,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 		),
 		...(replacesCurrent
 			? [
-					h.p(
-						[h.Class("text-sm text-muted-foreground")],
+					typography(h, { size: "sm", tone: "muted", as: "p" },
 						[
 							status?.connected === true
 								? `This Maple organization is connected to ${current}. Choosing a different account replaces it and removes ${current}'s synced repositories and commit history from Maple.`
@@ -76,8 +76,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 					),
 				]
 			: []),
-		h.div(
-			[h.Class("flex flex-col gap-2")],
+		vstack(h, { gap: "2" },
 			selection.installations.map((choice) =>
 				h.div(
 					[
@@ -86,12 +85,10 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 						),
 					],
 					[
-						h.div(
-							[h.Class("flex min-w-0 flex-col gap-1")],
+						vstack(h, { gap: "1", shrink: true },
 							[
-								h.span([h.Class("truncate text-sm font-medium")], [choice.accountLogin]),
-								h.span(
-									[h.Class("text-xs text-muted-foreground")],
+								typography(h, { size: "sm", weight: "medium", truncate: true }, [choice.accountLogin]),
+								typography(h, { size: "xs", tone: "muted" },
 									[
 										ACCOUNT_TYPE[choice.accountType],
 										" · ",
@@ -125,8 +122,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 		...selection.needsApproval.map((login) => needsApprovalNote(h, login)),
 		...(selection.unavailable > 0
 			? [
-					h.p(
-						[h.Class("text-sm text-muted-foreground")],
+					typography(h, { size: "sm", tone: "muted", as: "p" },
 						[
 							`${countLabel(selection.unavailable, "installation", "installations")} of the Maple app can't be connected here: another Maple organization already has it, you aren't an admin of its GitHub account, or GitHub didn't answer. Ask an admin of that account, or connect again later.`,
 						],
@@ -160,7 +156,7 @@ const ciTracesRow = (h: H, model: Model): Html => {
 		description: [
 			"Each finished GitHub Actions run becomes a trace under the",
 			" ",
-			h.span([h.Class("font-mono text-foreground")], ["github-actions"]),
+			typography(h, { tone: "foreground", mono: true }, ["github-actions"]),
 			" service, with a span per job and step. Each job's log lines become logs on the step that wrote them, up to 5 MB per job. Counts toward your usage.",
 		],
 		filled: isChecked,
@@ -269,13 +265,13 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 					" of ",
 					String(active.length),
 					" ",
-					"repositories reviewed. Rules, models and analytics live in Code Review.",
+					"repositories reviewed. Rules, models and analytics live on the Code review page.",
 				],
 				control: [
 					linkButton(
 						h,
 						{ size: "sm", variant: "outline", href: hrefOf(AppRoute.CodeReviewSettings()) },
-						["Open Code Review"],
+						["Open code review"],
 					),
 				],
 			}),
@@ -303,7 +299,7 @@ export const githubCard = (h: H, model: Model, timeZone: string): ReadonlyArray<
 
 const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: string): Html =>
 	model.githubCard.selection !== null
-		? h.div([h.Class("flex flex-col gap-3")], githubInstallationPicker(h, model))
+		? vstack(h, { gap: "3" }, githubInstallationPicker(h, model))
 		: !status.connected && status.repositoryDiscovery?._tag === "Pending"
 			? integrationNotice(h, { message: "Discovering repositories…" })
 			: !status.connected && status.repositoryDiscovery?._tag === "Failed"
@@ -326,7 +322,7 @@ const loadingState = (h: H): Html =>
 	h.div(
 		[h.Class("space-y-4")],
 		[
-			skeleton(h, "h-16 w-full rounded-md"),
+			skeletonBlock(h, { height: "16" }),
 			panel(h, { className: "overflow-hidden" }, [
 				skeleton(h, "h-11 w-full rounded-none"),
 				h.div(
@@ -352,7 +348,7 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 	const suspended = status.state === "suspended"
 	const account =
 		status.accountLogin !== null && status.accountLogin !== ""
-			? [" ", "for ", h.span([h.Class("font-medium text-foreground")], [`@${status.accountLogin}`])]
+			? [" ", "for ", typography(h, { tone: "foreground", weight: "medium" }, [`@${status.accountLogin}`])]
 			: []
 	const repoCount = status.repositories.length
 	return h.div(
@@ -377,12 +373,12 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 			h.div(
 				[h.Class("flex max-w-md flex-col gap-1.5")],
 				[
-					h.h3(
-						[h.Class("text-base font-semibold")],
+					heading(
+						h,
+						{ level: 3, variant: "section" },
 						[suspended ? "GitHub integration suspended" : "GitHub integration deactivated"],
 					),
-					h.p(
-						[h.Class("text-sm text-muted-foreground")],
+					typography(h, { size: "sm", tone: "muted", as: "p" },
 						suspended
 							? [
 									"GitHub suspended the Maple GitHub App",
@@ -399,8 +395,7 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 			),
 			...(repoCount > 0
 				? [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
 							[
 								countLabel(repoCount, "repository", "repositories"),
 								" and their commit history are preserved.",
@@ -419,8 +414,7 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 						},
 						[icon(h, "ArrowRotateClockwiseIcon"), "Reconnect GitHub"],
 					),
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", as: "p" },
 						["GitHub opens in a new window to reconnect the Maple app."],
 					),
 				],

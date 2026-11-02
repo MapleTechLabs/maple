@@ -2,8 +2,8 @@ import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2GcpIntegration } from "@maple/domain/http/v2"
 import { Effect, Result, Schema } from "effect"
 import { describe, expect, test, vi } from "vitest"
-import * as Menu from "../../ui/menu"
-import { toLoadFailure } from "../../data/load-failure"
+import * as Menu from "@maple/views/ui/menu"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../contract"
 import { ReadRemoved, WriteRemoved } from "./gcp"
 import { Message } from "./message"
@@ -101,7 +101,7 @@ describe("google cloud card", () => {
 		)
 		expect(failed.model.gcpCard.removed).toEqual([])
 		expect(failed.outMessage).toEqual(
-			expect.objectContaining({ _tag: "RequestedToast", title: "Couldn't disconnect" }),
+			expect.objectContaining({ _tag: "RequestedToast", title: "Couldn't disconnect Google Cloud" }),
 		)
 	})
 

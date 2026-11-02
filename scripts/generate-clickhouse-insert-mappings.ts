@@ -32,7 +32,7 @@ const INGEST_DATASOURCES = [
 const ORG_PLACEHOLDER = "__ORG__"
 
 const localOutputPath = fileURLToPath(
-	new URL("../apps/cli/src/server/schema/local-inserts.json", import.meta.url),
+	new URL("../packages/local-server/src/schema/local-inserts.json", import.meta.url),
 )
 const rustOutputPath = fileURLToPath(
 	new URL("../apps/ingest/src/clickhouse_insert_mappings.rs", import.meta.url),

@@ -1,28 +1,29 @@
 // BOUNDARY: chart tiles render whatever their endpoint answered; rows are untyped query results.
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as AreaChart from "../../../charts/area-chart"
-import * as BarChart from "../../../charts/bar-chart"
-import { bucketBarSeries } from "../../../charts/bar-chart"
+import * as AreaChart from "@maple/views/charts/area-chart"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import { bucketBarSeries } from "@maple/views/charts/bar-chart"
 import { OTHER_LABEL } from "@maple/ui/components/charts/_shared/bucket-series"
-import * as Chart from "../../../charts/chart"
-import { type ChartRuntime, isChartRuntimeReady } from "../../../charts/chart-runtime"
-import * as FunnelChart from "../../../charts/funnel-chart"
-import * as FunnelDropoffChart from "../../../charts/funnel-dropoff-chart"
-import * as HbarChart from "../../../charts/hbar-chart"
-import * as HeatmapChart from "../../../charts/heatmap-chart"
-import * as HistogramChart from "../../../charts/histogram-chart"
-import * as PathsChart from "../../../charts/paths-chart"
-import * as PieChart from "../../../charts/pie-chart"
-import { hoistedSeries } from "../../../charts/timeseries"
-import type { TimeseriesAxisSpec } from "../../../charts/chart-spec"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { type ChartRuntime, isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import * as FunnelChart from "@maple/views/charts/funnel-chart"
+import * as FunnelDropoffChart from "@maple/views/charts/funnel-dropoff-chart"
+import * as HbarChart from "@maple/views/charts/hbar-chart"
+import * as HeatmapChart from "@maple/views/charts/heatmap-chart"
+import * as HistogramChart from "@maple/views/charts/histogram-chart"
+import * as PathsChart from "@maple/views/charts/paths-chart"
+import * as PieChart from "@maple/views/charts/pie-chart"
+import { hoistedSeries } from "@maple/views/charts/timeseries"
+import type { TimeseriesAxisSpec } from "@maple/views/charts/chart-spec"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
-import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
+import { chartSkeleton, type ChartSkeletonVariant } from "@maple/views/ui/chart-skeleton"
 import { type ChartCategory, chartCategoryOf } from "./chart-registry"
 import { widgetEmptyState, widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
+import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
 // `makeChartWidget`: one factory for every widget
 // that mounts a registry chart, each branch handing its chart only the settings it declares.
@@ -315,7 +316,7 @@ export const chartWidgetTile = <M>(
 		if (isServiceChart(chartId))
 			return theme === null || ctx.nowMs === null || !isChartRuntimeReady(ctx.chartRuntime)
 				? [skeleton]
-				: [serviceChart(h, ctx, widget, chartId, data, theme, ctx.nowMs, options.className ?? "h-full w-full aspect-auto")]
-		return [chartView(h, ctx, widget, { category, data, className: options.className ?? "h-full w-full aspect-auto", legend })]
+				: [serviceChart(h, ctx, widget, chartId, data, theme, ctx.nowMs, options.className ?? chartFrameClass("fill"))]
+		return [chartView(h, ctx, widget, { category, data, className: options.className ?? chartFrameClass("fill"), legend })]
 	})
 }

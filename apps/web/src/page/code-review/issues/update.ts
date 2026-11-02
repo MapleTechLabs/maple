@@ -5,8 +5,8 @@ import { requestKey } from "../../../data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import type { CodeReviewIssuesSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Select from "@maple/views/ui/select"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { ALL, type FrameOut, type FrameReturn } from "../kit/frame"
@@ -31,11 +31,12 @@ import {
 	type Model,
 	WaitSearchDebounce,
 } from "./model"
+import type { PresetValue } from "../../kit/time-controls"
 
 export type Search = typeof CodeReviewIssuesSearch.Type
 type Return = PageReturn<Model, Message>
 
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 export const PAGE = 50
 export const MAX_ROWS = 200
 const FRAME_ID = "code-review-issues"

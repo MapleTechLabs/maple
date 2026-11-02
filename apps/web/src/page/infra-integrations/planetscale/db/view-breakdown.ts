@@ -2,9 +2,10 @@ import type { BranchCandidate } from "../../../../components/infra/planetscale/b
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { panel, panelHeader } from "../../../../ui/panel"
-import { segmentedSelect } from "../../../../ui/segmented-select"
-import { skeleton, skeletonList } from "../../../../ui/skeleton"
+import { pressable } from "@maple/views/ui/pressable"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
@@ -17,6 +18,8 @@ import {
 } from "../../../../components/infra/planetscale/metrics"
 import { formatWholePercent } from "../../../../components/infra/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { columnClass } from "@maple/views/ui/column"
 
 // `PlanetScaleBranchBreakdownPanel`.
 
@@ -142,7 +145,7 @@ const rowsOf = (candidates: ReadonlyArray<BranchCandidate>, spec: MeasureSpec) =
 }
 
 const metaChip = (h: H, text: string): Html =>
-	h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])
+	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
 
 const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): ReadonlyArray<Html> => [
 	h.div(
@@ -152,7 +155,7 @@ const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): Readonly
 				[
 					h.Class(
 						cn(
-							"truncate text-sm",
+							typographyClass({ size: "sm", truncate: true }),
 							row.isOther ? "text-muted-foreground" : "font-mono text-foreground-soft",
 							isSelected && "text-primary",
 						),
@@ -212,7 +215,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 			[
 				columnHead(h, {
 					label: "Branch",
-					width: "w-0 flex-1 min-w-52",
+					width: columnClass({ min: "52" }),
 					sort: {
 						onSort: Message.ClickedBreakdownSort({ key: "branch" }),
 						isActive: inputs.sort.key === "branch",
@@ -242,20 +245,17 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 							)
 						}
 						const isSelected = inputs.selectedBranches.includes(row.branch)
-						return h.button(
-							[
-								h.AriaPressed(String(isSelected)),
-								h.Class(
-									cn(
-										"flex w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-										isSelected && "bg-surface-strong",
-									),
+						return pressable(
+							h,
+							{
+								onClick: Message.ToggledBranch({ branch: row.branch }),
+								isSelected,
+								className: cn(
+									"flex w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+									isSelected && "bg-surface-strong",
 								),
-								...styleAttrs,
-								h.Title(`Filter to ${row.branch}`),
-								h.Type("button"),
-								h.OnClick(Message.ToggledBranch({ branch: row.branch })),
-							],
+								attributes: [...styleAttrs, h.Title(`Filter to ${row.branch}`)],
+							},
 							cells(h, row, spec, isSelected),
 						)
 					}),

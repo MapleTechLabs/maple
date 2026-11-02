@@ -3,11 +3,11 @@ import { getAiSessionSpans, getAiSessionSummary } from "@maple/web-data/warehous
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { detectModels } from "../kit/detected-models"
 import { writeClipboard } from "../../kit/clipboard"
-import { readLocale } from "../../kit/locale"
+import { readLocale } from "@maple/views/lib/locale"
 import { Message, SpanScope } from "./message"
 import { parseMarkdownTexts } from "../../kit/message-response"
 

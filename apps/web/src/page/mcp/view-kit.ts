@@ -1,16 +1,17 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { errorRate } from "@maple/web-data/lib/tool-analytics"
+import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Option, Record } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../charts/chart"
-import type { ThemeColors } from "../../charts/theme-colors"
-import { chartEmpty } from "../../ui/chart-state"
-import { icon, type IconName } from "../../ui/icon"
-import { panelHeader } from "../../ui/panel"
+import * as Chart from "@maple/views/charts/chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartEmpty } from "@maple/views/ui/chart-state"
+import { badge } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { meter } from "@maple/views/ui/meter"
+import { panelHeader } from "@maple/views/ui/panel"
 import { relativeTime } from "../kit/relative-time"
 import { seriesLegend } from "../kit/series-legend"
 import { TOOL_CHIP } from "../agent-sessions/kit/error-chip"
@@ -18,6 +19,8 @@ import type { ToolPercentile, ToolSeriesPoint } from "../agent-sessions/tools-ki
 import { type ToolPlotInputs, toolPlotView } from "../agent-sessions/tools-kit/series-chart"
 import { volumeSparkCell } from "../agent-sessions/tools-kit/spark"
 import type { McpClientKind } from "./data"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // Pieces every MCP view shares: the chart cell over `toolPlotView`, section headings, client glyphs.
 
@@ -202,7 +205,7 @@ export const mcpPlot = <M>(
 				className: "px-0 pt-0",
 			}),
 			options.rows.length === 0
-				? chartEmpty(h, { height: options.height }, ["No calls in the selected window."])
+				? chartEmpty(h, { height: options.height }, ["No calls in this window"])
 				: h.submodel({
 						slotId: options.chartId,
 						model: Option.getOrElse(Record.get(env.charts, options.chartId), () => Chart.init()),
@@ -237,12 +240,13 @@ export const sectionTitle = <M>(
 			h.div(
 				[h.Class("flex items-baseline gap-2.5 font-mono")],
 				[
-					h.span([h.Class("text-xs font-medium text-foreground")], [title]),
+					typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [title]),
 					...(count === undefined
 						? []
 						: [
-								h.span(
-									[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
+								typography(
+									h,
+									{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 									[count],
 								),
 							]),
@@ -279,10 +283,11 @@ export const attr = <M>(h: HtmlBuilder<M>, name: string): Html =>
 
 /** The muted mono note on the right of a heading. */
 export const headingNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.span([h.Class("font-mono text-2xs text-foreground-subtle")], [text])
+	typography(h, { size: "2xs", tone: "subtle", mono: true }, [text])
 
 const CLIENT_ICONS = new Map<string, IconName>([
 	["Claude Code", "ClaudeIcon"],
+	["Claude", "ClaudeIcon"],
 	["curl", "SquareTerminalIcon"],
 	["Bun", "BunIcon"],
 	["Node (undici)", "NodejsIcon"],
@@ -305,7 +310,43 @@ export const kindTag = <M>(h: HtmlBuilder<M>, kind: McpClientKind): ReadonlyArra
 
 /** `error.type` as a pill, in the tone Agent Sessions gives tool failures. */
 export const errorTypeChip = <M>(h: HtmlBuilder<M>, errorType: string): Html =>
-	h.span([h.Class(cn(badgeVariants({ pill: true, size: "xs", mono: true }), TOOL_CHIP))], [errorType])
+	badge(h, { pill: true, size: "xs", mono: true, className: TOOL_CHIP }, [errorType])
+
+/** A call's duration as a bar against the table's slowest, red when the call failed. */
+export const durationMeterCell = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ durationNs: number; max: number; isFailed: boolean }>,
+): Html =>
+	h.span(
+		[h.Class("flex w-52 shrink-0 items-center justify-end gap-2.5")],
+		[
+			meter(h, {
+				value: options.durationNs,
+				max: options.max,
+				minVisible: 3,
+				fillClassName: options.isFailed ? "bg-severity-error" : "bg-primary",
+				className: "hidden w-28 shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
+			}),
+			h.span(
+				[h.Class("w-14 text-right font-mono text-xs tabular-nums")],
+				[formatDurationNs(options.durationNs)],
+			),
+		],
+	)
+
+/** The result lane's width, shared by its header and cells. */
+export const RESULT_LANE = "w-28 shrink-0 pl-4"
+
+/** A call's result: `ok`, or its `error.type` chip. */
+export const resultCell = <M>(h: HtmlBuilder<M>, errorType: string | null): Html =>
+	h.span(
+		[h.Class(RESULT_LANE)],
+		[
+			errorType === null
+				? h.span([h.Class("font-mono text-xs text-foreground-subtle")], ["ok"])
+				: errorTypeChip(h, errorType),
+		],
+	)
 
 /** An unknown zone throws in the constructor; the clock then reads as the empty value. */
 const clockFormatter = Option.liftThrowable(
@@ -329,13 +370,10 @@ export const mcpScopeRow = <M>(h: HtmlBuilder<M>, scope: string, count: string, 
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					h.span([h.Class(eyebrowVariants({ variant: "mono" }))], ["Scope"]),
-					h.span([h.Class("text-2xs text-foreground-subtle")], [scope]),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				eyebrow(h, { variant: "mono" }, ["Scope"]),
+				typography(h, { size: "2xs", tone: "subtle" }, [scope]),
+			]),
 			h.span(
 				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
 				[

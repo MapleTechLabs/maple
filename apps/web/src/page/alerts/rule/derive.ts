@@ -10,19 +10,19 @@ import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import { ruleToFormState } from "@maple/web-data/alerts/form-utils"
 import {
 	buildRuleStatesByRuleId,
-	rowToAlertDestinationDocument,
+	rowsToAlertDestinationDocuments,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { presetLabel } from "../../kit/time-controls"
+import { type PresetValue, presetLabel } from "../../kit/time-controls"
 import { previewPayload } from "../shared/preview"
 import { isoMs } from "../shared/time"
 import type { ChecksResponse, Model } from "./model"
 
-export const DEFAULT_PRESET = "24h"
+export const DEFAULT_PRESET: PresetValue = "24h"
 
 /** `formatBucketSpan`. */
 export const formatBucketSpan = (seconds: number): string => {
@@ -54,7 +54,7 @@ export const ruleIncidentsOf = (model: Model): ReadonlyArray<AlertIncidentDocume
 		})
 
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
-	(model.destinations ?? []).map(rowToAlertDestinationDocument)
+	rowsToAlertDestinationDocuments(model.destinations ?? [])
 
 export const ruleDeliveriesOf = (model: Model): ReadonlyArray<AlertDeliveryEventDocument> =>
 	AsyncData.getOrElse(model.deliveries.data, () => []).filter((event) => event.ruleId === model.ruleId)
@@ -108,8 +108,13 @@ export const chartChecksOf = (
 	})
 }
 
-export const payloadOf = (model: Model, rule: AlertRuleDocument | null): Option.Option<V2AlertRulePreviewParams> =>
-	rule === null || model.window === null ? Option.none() : previewPayload(ruleToFormState(rule), model.window)
+export const payloadOf = (
+	model: Model,
+	rule: AlertRuleDocument | null,
+): Option.Option<V2AlertRulePreviewParams> =>
+	rule === null || model.window === null
+		? Option.none()
+		: previewPayload(ruleToFormState(rule), model.window)
 
 /** The picker's label: a preset's, else the range (not yet zone-aware). */
 export const rangeLabelOf = (model: Model): string =>

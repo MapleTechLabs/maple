@@ -6,19 +6,21 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../../ui/button"
-import { textLink } from "../../../ui/text-link"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
-import { panel } from "../../../ui/panel"
+import { linkButton } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { listFooter, loadingMoreRow } from "@maple/views/ui/list-footer"
+import { panel } from "@maple/views/ui/panel"
 import { runsTableSkeleton } from "../kit/skeletons"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { truncatedId } from "../../../ui/truncated-id"
-import { nothingInWindow } from "../../kit/nothing-in-window"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { truncatedId } from "@maple/views/ui/truncated-id"
 import { ciResultBadge, traceLink } from "../kit/parts"
-import { relativeTime } from "../../kit/relative-time"
+import { filteredEmpty } from "../../kit/signal-empty-state"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { emptyFrameClass } from "@maple/views/ui/empty"
 
 // `CiRunsList`, `RunRows` and the paging footers.
 
@@ -107,8 +109,13 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 									),
 							...(job.reason
 								? [
-										h.span(
-											[h.Class("truncate text-muted-foreground"), h.Title(job.reason)],
+										typography(
+											h,
+											{
+												tone: "muted",
+												truncate: true,
+												attributes: [h.Title(job.reason)],
+											},
 											[job.reason],
 										),
 									]
@@ -138,7 +145,11 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			tableCell(
 				h,
 				[
-					h.div([h.Class("truncate font-medium"), h.Title(run.pipeline)], [run.pipeline]),
+					typography(
+						h,
+						{ weight: "medium", truncate: true, as: "div", attributes: [h.Title(run.pipeline)] },
+						[run.pipeline],
+					),
 					runMeta(h, run, prUrl),
 					...failedJobs(h, run),
 					...traceLink(h, run, time.nowMs, "mt-1 -ml-2 sm:hidden"),
@@ -152,7 +163,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			),
 			tableCell(
 				h,
-				[relativeTime(h, { tooltip: "title", value: run.startedAt, variant: "short", ...time })],
+				[listRelativeTime(h, { value: run.startedAt, variant: "short", ...time })],
 				"hidden px-3 text-right align-top text-muted-foreground tabular-nums md:table-cell",
 			),
 			tableCell(
@@ -229,9 +240,10 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 			}),
 		onData: (response) => {
 			if (response.runs.length === 0)
-				return nothingInWindow(h, {
-					title: "No runs match",
+				return filteredEmpty(h, {
+					noun: "runs",
 					description: "No run in this window has this result or branch.",
+					className: emptyFrameClass("dashed"),
 					onClear: canClear ? Message.ClickedClearRunFilters() : undefined,
 				})
 			const rows = [...response.runs, ...model.cursors.flatMap((cursor) => runsOf(model, cursor))]

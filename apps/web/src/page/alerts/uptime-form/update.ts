@@ -4,7 +4,7 @@ import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import type { AppRoute } from "../../../route"
-import * as Menu from "../../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
 import {

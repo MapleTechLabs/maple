@@ -2,8 +2,8 @@ import type { AlertSeverity } from "@maple/domain/http"
 import { TONE_BORDER, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import { statusDot } from "@maple/views/ui/status-dot"
 
 // The alert severity and status badges.
 

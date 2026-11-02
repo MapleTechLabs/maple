@@ -3,7 +3,7 @@ import { sessionTagsFromSearch } from "../../../components/replays/session-tags"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { ReplaysSearch } from "../../../route/search"
@@ -26,6 +26,7 @@ export const filterInputs = (search: Search, window: TimeWindow) => ({
 	userId: search.userId,
 	userSearch: search.user,
 	groupName: search.group,
+	groupId: search.groupId,
 	visitorId: search.visitorId,
 	hasErrors: search.hasErrors,
 	search: search.q,

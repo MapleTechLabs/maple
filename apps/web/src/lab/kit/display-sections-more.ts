@@ -1,13 +1,15 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { CopyStatus } from "../../ui/copy-button"
-import { delta } from "../../ui/delta"
-import { keyValue, keyValueList } from "../../ui/key-value"
-import { meter, segmentedBar } from "../../ui/meter"
-import { miniBars } from "../../ui/mini-bars"
-import { skeleton, skeletonList } from "../../ui/skeleton"
-import { statFigure } from "../../ui/stat-figure"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../ui/table"
-import { tableSkeleton } from "../../ui/table-skeleton"
+import type { CopyStatus } from "@maple/views/ui/copy-button"
+import { delta } from "@maple/views/ui/delta"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
+import { meter, segmentedBar } from "@maple/views/ui/meter"
+import { miniBars } from "@maple/views/ui/mini-bars"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { statFigure } from "@maple/views/ui/stat-figure"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { tableSkeleton } from "@maple/views/ui/table-skeleton"
+import { typography } from "@maple/views/ui/typography"
 import { ROWS } from "./display-sections"
 import { kitRow, kitSection } from "./kit-layout"
 
@@ -102,5 +104,25 @@ export const tableSection = <M>(h: HtmlBuilder<M>): Html =>
 					]),
 				),
 			),
+		]),
+	])
+
+/** `typography` on the type scale and tones, laid out with `hstack` and `vstack`. */
+export const typeAndStackSection = <M>(h: HtmlBuilder<M>): Html =>
+	kitSection(h, "Typography and stacks", [
+		vstack(h, { gap: "2", className: "max-w-md" }, [
+			typography(h, { size: "sm", weight: "medium", tone: "foreground" }, ["checkout-api"]),
+			typography(h, { size: "xs", tone: "muted" }, ["Meta: 1.2k requests in this window"]),
+			typography(h, { size: "2xs", tone: "subtle", mono: true, numeric: true }, ["4bf92f35 · 12.4ms"]),
+			typography(h, { size: "xs", tone: "error" }, ["Couldn't load the service map"]),
+		]),
+		hstack(h, { gap: "2", wrap: true }, [
+			typography(h, { size: "xs", tone: "muted" }, ["Row"]),
+			typography(h, { size: "xs", tone: "soft" }, ["gap 2"]),
+			typography(h, { size: "xs", tone: "faint" }, ["wraps"]),
+		]),
+		hstack(h, { gap: "3", justify: "between", className: "max-w-md" }, [
+			typography(h, { size: "sm", truncate: true }, ["A long label that truncates before the value"]),
+			typography(h, { size: "sm", mono: true, numeric: true }, ["98.2%"]),
 		]),
 	])

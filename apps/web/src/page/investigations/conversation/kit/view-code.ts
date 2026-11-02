@@ -1,7 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { iconButton } from "@maple/views/ui/icon-button"
 import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../../kit/message-response"
 import { type HighlightedCode, highlightKey } from "./code-highlight"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // Streamdown's full code block, its lines coloured by `code-highlight.ts`.
 
@@ -32,9 +34,6 @@ const glyph = <M>(h: HtmlBuilder<M>, d: string, size: string): Html =>
 		],
 	)
 
-const ACTION_CLASS =
-	"cursor-pointer p-1 text-muted-foreground hover:text-foreground active:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-
 const action = <M>(
 	h: HtmlBuilder<M>,
 	label: string,
@@ -42,15 +41,22 @@ const action = <M>(
 	slot: string | null,
 	onClick: M | null,
 ): Html =>
-	h.button(
-		[
-			h.AriaLabel(label),
-			h.Class(ACTION_CLASS),
-			...(slot === null ? [] : [h.DataAttribute("streamdown", slot)]),
-			h.Title(label),
-			h.Type("button"),
-			...(onClick === null ? [] : [h.OnClick(onClick)]),
-		],
+	iconButton(
+		h,
+		{
+			label,
+			size: "icon-xs",
+			hasTooltip: false,
+			className: typographyClass({
+				tone: "muted",
+				hoverTone: "foreground",
+			}),
+			attributes: [
+				...(slot === null ? [] : [h.DataAttribute("streamdown", slot)]),
+				h.Title(label),
+				...(onClick === null ? [] : [h.OnClick(onClick)]),
+			],
+		},
 		[glyph(h, d, "14")],
 	)
 

@@ -8,11 +8,11 @@ import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { badge, kbd, kbdGroup } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { panel } from "../../../ui/panel"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import { badge, kbd, kbdGroup } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { panel } from "@maple/views/ui/panel"
+import { textarea } from "@maple/views/ui/textarea"
 import { messageResponse } from "../../code-review/kit/markdown"
 import { relativeTime } from "../../kit/relative-time"
 import { type ActorIdentity, identityAvatar, resolveActorIdentity } from "../kit/actor"
@@ -26,6 +26,8 @@ import {
 	renderPayload,
 } from "./activity-format"
 import { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
+import { spaced } from "@maple/views/ui/spaced"
 
 // The issue timeline and the comment composer.
 
@@ -106,7 +108,7 @@ const escalationRow = (h: H, escalation: IssueEscalationAttemptDocument, clock: 
 		escalation.createdAt,
 		TONE_FILL.warn,
 		[
-			h.span([h.Class("font-medium text-foreground")], ["Escalation"]),
+			typography(h, { tone: "foreground", weight: "medium" }, ["Escalation"]),
 			h.span(
 				[h.Class("font-mono text-2xs capitalize text-muted-foreground")],
 				[escalation.severity, " · ", escalation.status],
@@ -171,10 +173,9 @@ const messageRow = (
 								h.div(
 									[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-0.5")],
 									[
-										h.span(
-											[h.Class("text-sm font-medium text-foreground")],
-											[identity?.name ?? "Unknown"],
-										),
+										typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
+											identity?.name ?? "Unknown",
+										]),
 										...(isAgent
 											? [
 													badge(
@@ -193,7 +194,7 @@ const messageRow = (
 												]
 											: []),
 										...(verb
-											? [h.span([h.Class("text-xs text-muted-foreground")], [verb])]
+											? [typography(h, { size: "xs", tone: "muted" }, [verb])]
 											: []),
 									],
 								),
@@ -228,13 +229,14 @@ const eventRow = (h: H, event: ErrorIssueEventDocument, previous: Item | undefin
 		event.createdAt,
 		DOT_CLASS[event.type],
 		[
-			h.span([h.Class("font-medium text-foreground")], [EVENT_LABEL[event.type]]),
+			typography(h, { tone: "foreground", weight: "medium" }, [EVENT_LABEL[event.type]]),
 			...(event.fromState && event.toState
 				? [
-						h.span(
-							[h.Class("font-mono text-2xs text-muted-foreground")],
-							[event.fromState, " → ", event.toState],
-						),
+						typography(h, { size: "2xs", tone: "muted", mono: true }, [
+							event.fromState,
+							" → ",
+							event.toState,
+						]),
 					]
 				: []),
 			...authorLabel(h, event.actor),
@@ -261,7 +263,7 @@ export const issueTimeline = (
 	].sort((a, b) => isoMs(a.createdAt) - isoMs(b.createdAt))
 	if (items.length === 0)
 		return emptyMessage(h, { dashed: true, className: "py-10" }, [
-			h.p([h.Class("text-sm font-medium text-foreground")], ["No activity yet"]),
+			typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, ["No activity yet"]),
 			h.p(
 				[h.Class("mt-1 text-xs")],
 				["Comments from your team and notes from agents working this issue land here."],
@@ -279,7 +281,11 @@ export const issueTimeline = (
 							[
 								button(
 									h,
-									{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedShowEarlier())] },
+									{
+										variant: "ghost",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedShowEarlier())],
+									},
 									["Show ", countLabel(hiddenCount, "earlier event")],
 								),
 							],
@@ -350,53 +356,50 @@ export const commentComposer = (
 					),
 				},
 				[
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-2")],
-						[
-							textarea(h, {
-								id: "comment-input",
-								isUnstyled: true,
-								isDisabled: options.isPosting,
-								controlClassName:
-									"max-h-80 min-h-11 resize-none px-0 py-0 text-sm leading-relaxed placeholder:text-muted-foreground",
-								attributes: [
-									h.Value(options.draft),
-									h.Placeholder("Context, findings, links… markdown supported"),
-									h.OnInput((value) => Message.ChangedCommentDraft({ value })),
-									// Mod+Enter submits (`ClickedComment` guards empty and double sends).
-									h.OnKeyDownPreventDefault((key, modifiers) =>
-										key === "Enter" && (modifiers.metaKey || modifiers.ctrlKey)
-											? Option.some(Message.ClickedComment())
-											: Option.none(),
-									),
-								],
-							}),
-							h.div(
-								[
-									h.Class(
-										"flex items-center justify-between gap-3 text-xs text-muted-foreground",
-									),
-								],
-								[
-									kbdGroup(h, undefined, [
-										kbd(h, undefined, ["⌘"]),
-										kbd(h, undefined, ["↵"]),
-										h.span([h.Class("ml-1")], ["to comment"]),
-									]),
-									button(
-										h,
-										{
-											size: "sm",
-											isDisabled: !canSubmit,
-											isLoading: options.isPosting,
-											attributes: [h.OnClick(Message.ClickedComment())],
-										},
-										["Comment"],
-									),
-								],
-							),
-						],
-					),
+					spaced(h, { space: "2", fill: true }, [
+						textarea(h, {
+							id: "comment-input",
+							isUnstyled: true,
+							isDisabled: options.isPosting,
+							controlClassName:
+								"max-h-80 min-h-11 resize-none px-0 py-0 text-sm leading-relaxed placeholder:text-muted-foreground",
+							attributes: [
+								h.Value(options.draft),
+								h.Placeholder("Context, findings, links… markdown supported"),
+								h.OnInput((value) => Message.ChangedCommentDraft({ value })),
+								// Mod+Enter submits (`ClickedComment` guards empty and double sends).
+								h.OnKeyDownPreventDefault((key, modifiers) =>
+									key === "Enter" && (modifiers.metaKey || modifiers.ctrlKey)
+										? Option.some(Message.ClickedComment())
+										: Option.none(),
+								),
+							],
+						}),
+						h.div(
+							[
+								h.Class(
+									"flex items-center justify-between gap-3 text-xs text-muted-foreground",
+								),
+							],
+							[
+								kbdGroup(h, undefined, [
+									kbd(h, undefined, ["⌘"]),
+									kbd(h, undefined, ["↵"]),
+									h.span([h.Class("ml-1")], ["to comment"]),
+								]),
+								button(
+									h,
+									{
+										size: "sm",
+										isDisabled: !canSubmit,
+										isLoading: options.isPosting,
+										attributes: [h.OnClick(Message.ClickedComment())],
+									},
+									["Comment"],
+								),
+							],
+						),
+					]),
 				],
 			),
 		],

@@ -1,10 +1,10 @@
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { type DocsPage, docsUrl } from "../../lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
-import { icon, type IconName } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PresenceState, TelemetrySignalKind } from "./signal-presence"
 
 // `SignalEmptyState`, `FilteredEmpty` and `DocsLink`/`EmptyActions`. Presence comes from the
@@ -139,7 +139,7 @@ export const filteredEmpty = <M>(
 					? []
 					: [
 							emptyDescription(h, [
-								options.description ?? "Everything in this time range was excluded by the current filters.",
+								options.description ?? "Everything in this window was excluded by the current filters.",
 							]),
 						]),
 			]),
@@ -225,10 +225,10 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 			[
 				emptyHeader(h, [
 					iconMedia(h, "ClockIcon"),
-					emptyTitle(h, ["No ", subject, " in this time range"]),
+					emptyTitle(h, ["No ", subject, " in this window"]),
 					emptyDescription(h, [
 						presence.lastSeenMs === null
-							? `Maple is receiving ${copy.noun}, just none in the selected window.`
+							? `Maple is receiving ${copy.noun}, just none in this window.`
 							: `Maple last received ${copy.noun} ${formatRelativeTime(presence.lastSeenMs, options.nowMs)}. Widen the range to see them.`,
 					]),
 				]),

@@ -14,8 +14,8 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
-import { toLoadFailure } from "../../../data/load-failure"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchCommit,
@@ -29,8 +29,8 @@ import {
 	FetchRuntimes,
 	FetchWorkloads,
 } from "./command"
-import { LinkedCursorMessage, MountLinkedCursor } from "../../../charts/linked-cursor"
-import * as Dialog from "../../../ui/dialog"
+import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import * as Dialog from "@maple/views/ui/dialog"
 import * as PeekMessage from "./endpoint-peek/message"
 import { Message } from "./message"
 import type { Model, OverviewData } from "./model"
@@ -303,6 +303,30 @@ describe("service detail view", () => {
 			click(role("button", { name: "Errors" })),
 			expectView(role("columnheader", { name: "Errors" })).toHaveAttr("aria-sort", "descending"),
 		)
+	})
+
+	test("Try again on a failed Operations or Dependencies tab asks for that read again", () => {
+		const operations = entered({ tab: "operations" })
+		const failedOperations = pageUpdate(
+			operations,
+			Message.CompletedFetchOperations({
+				key: operations.operations.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const retriedOperations = pageUpdate(failedOperations, Message.ClickedRetry({ target: "Operations" }))
+		expect(names(retriedOperations.commands)).toEqual([FetchOperations.name])
+
+		const dependencies = entered({ tab: "dependencies" })
+		const failedDependencies = pageUpdate(
+			dependencies,
+			Message.CompletedFetchDependencies({
+				key: dependencies.dependencies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const retriedDependencies = pageUpdate(failedDependencies, Message.ClickedRetry({ target: "Dependencies" }))
+		expect(names(retriedDependencies.commands)).toEqual([FetchDependencies.name])
 	})
 
 	test("the Dependencies tab shows a skeleton, not an empty table, until its read answers", () => {
@@ -655,7 +679,7 @@ describe("the API tab's endpoint drawer", () => {
 			themeResolved(),
 			expectView(text("/a")).toExist(),
 			click(role("button", { name: "Rejecting > 5%" })),
-			expectView(text("No endpoint matches this filter.")).toExist(),
+			expectView(text("No endpoint matches this filter")).toExist(),
 		)
 	})
 })

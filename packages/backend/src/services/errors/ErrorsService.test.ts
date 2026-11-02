@@ -2345,6 +2345,7 @@ describe("ErrorsService.runTick", () => {
 				workflowState: "done",
 				resolvedAt: RETENTION_TICK_MS - 120 * DAY_MS,
 				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				lastSeenAt: RETENTION_TICK_MS - 120 * DAY_MS,
 			})
 			const seededAt = RETENTION_TICK_MS - 120 * DAY_MS
 			yield* database.execute((db) =>
@@ -2425,6 +2426,121 @@ describe("ErrorsService.runTick", () => {
 			assert.lengthOf(purgedStates, 0)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
+
+	it.effect("an archived fixed issue that old clients still hit is kept, not re-minted as new", () => {
+		let rows: Array<Record<string, unknown>> = []
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			// Fixed long ago and archived past the purge age, but a pre-fix build in the
+			// wild still reports it: deleting it forgets the fix and the next old-client
+			// occurrence would open a brand-new triage issue for a bug already fixed.
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				workflowState: "done",
+				resolvedAt: RETENTION_TICK_MS - 120 * DAY_MS,
+				resolvedVersionsJson: ["1.4.0"],
+				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				lastSeenAt: RETENTION_TICK_MS - DAY_MS,
+				occurrenceCount: 40,
+			})
+
+			const retention = yield* errors.runTick()
+			assert.isTrue(retention.retentionRan)
+			assert.strictEqual(retention.issuesDeleted, 0)
+
+			rows = [scanRow({ serviceVersions: ["1.4.0"] })]
+			yield* TestClock.setTime(TICK_MS)
+			yield* errors.runTick()
+
+			const issues = yield* loadIssuesByFingerprint(SCAN_FINGERPRINT)
+			assert.lengthOf(issues, 1)
+			assert.strictEqual(issues[0]?.id, issueId)
+			assert.strictEqual(issues[0]?.workflowState, "done")
+			assert.strictEqual(issues[0]?.occurrenceCount, 43)
+			const candidates = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select()
+						.where(($) => [$.fingerprintHash.eq(SCAN_FINGERPRINT)]),
+				),
+			)
+			assert.lengthOf(candidates, 0)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("the retention phase forgets a candidate quiet for a day and keeps a recent one", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			yield* seedIssue(asIssueId(randomUUID()))
+			const candidate = (fingerprintHash: string, lastSeenAt: number) => ({
+				orgId: ORG,
+				fingerprintHash,
+				serviceName: "checkout-api",
+				exceptionType: "TimeoutError",
+				exceptionMessage: "upstream timed out",
+				errorLabel: "TimeoutError",
+				topFrame: "",
+				serviceVersionsJson: [],
+				occurrenceCount: 2,
+				firstSeenAt: lastSeenAt,
+				lastSeenAt,
+				updatedAt: lastSeenAt,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorFingerprintCandidates).values([
+						candidate("11111111111111111111", RETENTION_TICK_MS - DAY_MS - 60_000),
+						candidate("22222222222222222222", RETENTION_TICK_MS - DAY_MS + 60_000),
+					]),
+				),
+			)
+
+			assert.isTrue((yield* errors.runTick()).retentionRan)
+
+			const left = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select("fingerprintHash")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(
+				left.map((row) => row.fingerprintHash),
+				["22222222222222222222"],
+			)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("a duplicated scan row keeps every build it carried for the regression check", () => {
+		// Duplicates are merged before the batched write; the merge must union the
+		// build sets, or a new build in one copy is hidden behind an old one.
+		const rows = [
+			scanRow({ count: 1, serviceVersions: ["2.0.0"] }),
+			scanRow({ count: 1, serviceVersions: ["1.4.0"] }),
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				workflowState: "done",
+				resolvedAt: TICK_MS - 20 * DAY_MS,
+				resolvedVersionsJson: ["1.4.0"],
+			})
+
+			yield* errors.runTick()
+
+			const issue = yield* loadIssueById(issueId)
+			assert.strictEqual(issue.workflowState, "regressed")
+			assert.sameMembers([...issue.seenVersionsJson], ["2.0.0", "1.4.0"])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
 
 	it.effect("the retention phase archives an issue left on an older fingerprint version", () =>
 		Effect.gen(function* () {

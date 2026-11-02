@@ -22,6 +22,7 @@ import {
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "@/mcp/__evals__/eval-runtime"
 import { infraFixtureRules } from "@/mcp/__evals__/infra-world"
 import { providerFixtureRules } from "@/mcp/__evals__/provider-world"
+import { securityCatalogFetch, securityFixtureRules, seedSecurityWorld } from "@/mcp/__evals__/security-world"
 import { inputSchemaOf, mapleToolCatalog } from "@/mcp/tools/registry"
 
 const env = process.env
@@ -31,8 +32,15 @@ const publicTools = mapleToolCatalog.filter((entry) => entry.audience === "publi
 let rt: EvalRuntime | undefined
 beforeAll(async () => {
 	if (env.PLAYGROUND_CMD !== "call") return
+	// The Security Center's release and advisory catalogs read endoflife.date and OSV.
+	globalThis.fetch = securityCatalogFetch
 	installFakeWarehouse(
-		[...integrationFixtureRules(), ...providerFixtureRules(), ...infraFixtureRules()],
+		[
+			...securityFixtureRules(),
+			...integrationFixtureRules(),
+			...providerFixtureRules(),
+			...infraFixtureRules(),
+		],
 		undefined,
 		"empty",
 	)
@@ -41,6 +49,7 @@ beforeAll(async () => {
 	rt = { ...base, tenant: { ...base.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
 	await seedIntegrationWorld(rt)
 	await seedCommitWorld(rt)
+	await seedSecurityWorld(rt)
 })
 afterAll(async () => {
 	restoreWarehouse()

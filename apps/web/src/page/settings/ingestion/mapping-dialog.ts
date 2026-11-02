@@ -4,13 +4,13 @@ import { getResourceAttributeKeys, getSpanAttributeKeys } from "@maple/web-data/
 import { Effect, Result, Schema } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
-import * as Combobox from "../../../ui/combobox"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Select from "../../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 
 // The add / edit dialog of `AttributeMappingsSection`, with `AttributeKeyAutocomplete`'s two key lists (read
 // once, when the dialog first opens).

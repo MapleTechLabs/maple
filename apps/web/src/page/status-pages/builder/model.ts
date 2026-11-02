@@ -2,7 +2,7 @@ import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { StatusPageThemeAppearance, StatusPageThemePreset } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Picker } from "../shared/picker"
 import { PreviewHistory, PreviewScheme } from "../shared/preview"
 

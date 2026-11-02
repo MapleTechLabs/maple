@@ -3,10 +3,10 @@ import { Array, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Tabs from "../../../ui/tabs"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Tabs from "@maple/views/ui/tabs"
 import {
 	ApplyRecommendation,
 	DeleteMapping,
@@ -295,7 +295,7 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 				}),
 				onFailure: (error) => ({
 					...closed,
-					outMessage: toast("error", "Unable to complete request", error.message),
+					outMessage: toast("error", "Couldn't regenerate the key", error.message),
 				}),
 			})
 		},

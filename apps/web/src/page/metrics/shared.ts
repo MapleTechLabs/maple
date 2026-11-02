@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../ui/display"
+import { badge } from "@maple/views/ui/display"
 
 // Pieces both metrics pages read: the catalog row, the type badge and the type colours.
 
@@ -32,6 +32,9 @@ export const METRIC_TYPE_COLORS = new Map<string, string>([
 	["histogram", "var(--chart-4)"],
 	["exponential_histogram", "var(--primary)"],
 ])
+
+/** The type's short label ("Exp Hist"), or the raw type when it is unknown. */
+export const metricTypeLabel = (type: string): string => METRIC_TYPE_CONFIG.get(type)?.label ?? type
 
 /** `MetricTypeBadge`. */
 export const metricTypeBadge = <M>(h: HtmlBuilder<M>, type: string): Html => {

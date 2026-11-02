@@ -1,21 +1,23 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isSameFailure, type LoadFailure } from "../../../data/load-failure"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { emptyMessage } from "../../../ui/empty"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+import { isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { sectionHeading } from "../../kit/section-heading"
 import type { TimeSearch } from "../kit/view-tabs"
 import { findingHref } from "./links"
 import type { Finding, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
+import { typography } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
 
 /** The muted caption beside an overview section's title, set in the sans prose face. */
 export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.span([h.Class("font-prose text-xs text-muted-foreground")], [text])
+	typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [text])
 
 // `NeedsAttention` and its rows.
 
@@ -63,41 +65,37 @@ export const findingRow = <M>(h: HtmlBuilder<M>, finding: Finding, time: TimeSea
 				? statusDot(h, { tone: "custom", size: "lg", className: STALE_DOT })
 				: statusDot(h, { tone: finding.tone, size: "lg" }),
 			sourceLabel(h, finding.source),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-				[
-					findingTitle(h, finding),
-					h.span([h.Class("truncate text-xs text-muted-foreground")], [finding.detail]),
-				],
-			),
+			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+				findingTitle(h, finding),
+				typography(h, { size: "xs", tone: "muted", truncate: true }, [finding.detail]),
+			]),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],
 	)
 
 const findingRowLoading = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
-		[h.Class(cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS))],
+		[h.Class(cn(hstackClass({ gap: "4", className: "px-4 py-3" }), FINDINGS_ROW_CLASS))],
 		[
 			skeleton(h, "size-2 shrink-0 rounded-full"),
 			h.span([h.Class("flex w-32 shrink-0 items-center")], [skeleton(h, "h-3 w-20")]),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-				[skeleton(h, "my-0.5 h-4 w-64 max-w-full"), skeleton(h, "my-0.5 h-3 w-40 max-w-full")],
-			),
+			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+				skeleton(h, "my-0.5 h-4 w-64 max-w-full"),
+				skeleton(h, "my-0.5 h-3 w-40 max-w-full"),
+			]),
 		],
 	)
 
 /** A source we couldn't read is not an all-clear, so it gets a row of its own. */
 const findingRowError = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
 	h.div(
-		[h.Class(cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS))],
+		[h.Class(cn(hstackClass({ gap: "4", className: "px-4 py-3" }), FINDINGS_ROW_CLASS))],
 		[
 			statusDot(h, { tone: "neutral", size: "lg" }),
 			sourceLabel(h, id),
-			h.span(
-				[h.Class("text-sm text-muted-foreground")],
-				["Couldn't check this source. Its page shows the error."],
-			),
+			typography(h, { size: "sm", tone: "muted" }, [
+				"Couldn't check this source. Its page shows the error.",
+			]),
 		],
 	)
 

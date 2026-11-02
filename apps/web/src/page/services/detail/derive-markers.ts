@@ -8,7 +8,7 @@ import {
 } from "../../../components/vcs/commit-markers/marker-layout"
 import { parseBucketMs } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
-import type { PlotGeometry } from "../../../charts/chart"
+import type { PlotGeometry } from "@maple/views/charts/chart"
 import { firstLine, isResolvableSha } from "./derive-panels"
 import type { CommitData, Release } from "./model"
 

@@ -1,9 +1,9 @@
 import { getMetricsAggregations } from "@maple/query-engine/query-builder"
 import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Combobox from "../../../ui/combobox"
-import * as ComboboxView from "../../../ui/combobox-view"
-import { eyebrow } from "../../../ui/eyebrow"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as ComboboxView from "@maple/views/ui/combobox-view"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import type { QueryDraft } from "./draft"
 import { Message, metricBreakdownIdOf, metricPickerIdOf, type Model } from "./panel"
 import { panelSelect, textInput, whereClauseEditor } from "./parts"
@@ -61,8 +61,8 @@ const picker = (
 				listed.length > 0
 					? ""
 					: term === ""
-						? "No metrics found."
-						: `No metric name contains "${term}".`,
+						? "No metrics found"
+						: `No metric name contains "${term}"`,
 			highlightsSelected: true,
 			// Measured: the positioner resolves the input (30 px), not the input group.
 			anchorsInput: true,

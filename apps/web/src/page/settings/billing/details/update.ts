@@ -14,11 +14,11 @@ import { fieldOrNull } from "../../../../lib/billing/billing-profile"
 import { countryName, sortedCountryCodes } from "../../../../lib/billing/countries"
 import { Effect, Option, Result } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
-import * as Combobox from "../../../../ui/combobox"
-import * as Dialog from "../../../../ui/dialog"
-import * as Select from "../../../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import { Message, type Model, TaxIdRef } from "./model"
 
@@ -198,7 +198,7 @@ export const update = (model: Model, message: Message): Step =>
 				onFailure: (error) =>
 					fresh({
 						model: { ...model, isSaving: false },
-						outMessage: toast("error", "Billing details could not be saved.", error.message),
+						outMessage: toast("error", "Couldn't save billing details", error.message),
 					}),
 			}),
 		GotTaxTypeMessage: ({ message: child }) => {
@@ -222,7 +222,7 @@ export const update = (model: Model, message: Message): Step =>
 				onFailure: (error) =>
 					fresh({
 						model: { ...model, isAddingTax: false },
-						outMessage: toast("error", "The tax ID could not be added.", error.message),
+						outMessage: toast("error", "Couldn't add the tax ID", error.message),
 					}),
 			}),
 		ClickedRemoveTax: ({ taxId }) => fresh(liftRemove({ ...model, removingTax: taxId }, Dialog.open(model.removeDialog))),
@@ -250,7 +250,7 @@ export const update = (model: Model, message: Message): Step =>
 				onSuccess: () =>
 					stale({ model: next, outMessage: toast("success", `Removed ${taxIdLabel(taxId.type)} ${taxId.value}`) }),
 				onFailure: (error) =>
-					fresh({ model: next, outMessage: toast("error", "The tax ID could not be removed.", error.message) }),
+					fresh({ model: next, outMessage: toast("error", "Couldn't remove the tax ID", error.message) }),
 			})
 		},
 	})

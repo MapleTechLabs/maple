@@ -10,9 +10,9 @@ import { defineMessageUnion } from "foldkit/message"
 import { Message as SessionMessage } from "../../page/agent-sessions/session/message"
 import { Model as SessionModel } from "../../page/agent-sessions/session/model"
 import type { Resources } from "../../platform/resources"
-import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
-import * as Toast from "../../ui/toast"
-import { segmentedSelect } from "../../ui/segmented-select"
+import { ViewerFlags, viewerFlags } from "@maple/views/ui/logs/viewer"
+import * as Toast from "@maple/views/ui/toast"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { defineLabWithFlags } from "../define"
 import {
 	enterSession,

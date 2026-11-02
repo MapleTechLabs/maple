@@ -1,15 +1,15 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { type FilterOption, filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../ui/filters/filter-sidebar"
+} from "@maple/views/ui/filters/filter-sidebar"
 import { facetsOf, filtersOf, hasAnomalyFilters } from "./derive"
 import { type Facet, Message } from "./message"
 import type { Model } from "./model"

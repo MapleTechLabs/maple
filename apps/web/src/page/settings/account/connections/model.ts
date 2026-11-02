@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Dialog from "../../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { AccountUser } from "../user"
 
 // The Connected accounts tab.

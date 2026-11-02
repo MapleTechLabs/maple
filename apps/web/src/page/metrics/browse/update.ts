@@ -1,18 +1,19 @@
 import { toQueryBuilderMetricType } from "@maple/query-model"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { MetricsSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { PresetValue } from "../../kit/time-controls"
 import { SPARKLINE_METRIC_TYPES } from "../shared"
 import {
 	CompleteReloadSpin,
@@ -42,7 +43,7 @@ type Search = typeof MetricsSearch.Type
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 /** `DashboardPage`'s `defaultPreset` for `/metrics`. */
-export const DEFAULT_PRESET = "24h"
+export const DEFAULT_PRESET: PresetValue = "24h"
 export const TYPE_SELECT_ID = "metrics-type-filter"
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>

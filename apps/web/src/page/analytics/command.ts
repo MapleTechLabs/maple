@@ -13,7 +13,7 @@ import {
 } from "@maple/web-data/warehouse/web-analytics"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../data/time-range"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { Message, RequestMode, SlotName } from "./message"

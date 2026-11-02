@@ -13,7 +13,7 @@ import {
 	generationsRoot,
 	nextMidnightUtc,
 	shardsRoot,
-} from "../src/server/archives/paths"
+} from "@maple/local-server/archives/paths"
 import {
 	ARCHIVE_VERIFY_BUFFER_BYTES,
 	activeParquetPaths,
@@ -21,11 +21,11 @@ import {
 	rebuildCatalog,
 	rebuildCatalogWithMaintenanceLock,
 	verifyActiveGenerations,
-} from "../src/server/archives/listing"
-import { withMaintenanceLock } from "../src/server/checkpoints"
-import { type ArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/listing"
+import { withMaintenanceLock } from "@maple/local-server/checkpoints"
+import { type ArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 
 const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-archive-listing-test-"))

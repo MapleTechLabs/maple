@@ -3,7 +3,7 @@ import { createFormulaDraft, createQueryDraft } from "@maple/query-engine/query-
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { requestKey } from "../../data/request-key"
-import * as Select from "../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import type { QueryDraft } from "../../page/kit/query-builder/draft"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import { type Flags, Message, type Model } from "./model"

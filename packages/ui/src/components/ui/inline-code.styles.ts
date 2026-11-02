@@ -1,4 +1,4 @@
-export const inlineCodeStyles = "font-mono text-[0.9em]"
+export const inlineCodeStyles = "font-mono text-code"
 
 export const inlineCodeChipStyles = "rounded-sm bg-muted px-1 py-px text-foreground"
 

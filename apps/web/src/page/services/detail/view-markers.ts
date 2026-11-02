@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { PlotGeometry } from "../../../charts/chart"
-import { truncatedText } from "../../../ui/truncated-text"
+import type { PlotGeometry } from "@maple/views/charts/chart"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import type { MarkerLayout } from "./derive-markers"
 
 // Commit markers over a chart, idle.

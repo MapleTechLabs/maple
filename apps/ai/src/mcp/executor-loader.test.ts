@@ -11,6 +11,7 @@ import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimi
 import { McpToolExecutor } from "./dispatcher"
 import { McpToolExecutorLoader } from "./executor-loader"
 import { McpLive } from "./app"
+import { MCP_TOOL_DESCRIPTORS } from "./tool-descriptors.generated"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -57,6 +58,9 @@ const countingGraph = (options: { readonly failFirstBuild: boolean }) => {
 const ToolsListBody = Schema.Struct({
 	result: Schema.Struct({ tools: Schema.Array(Schema.Unknown) }),
 })
+const ToolCallBody = Schema.Struct({
+	result: Schema.Struct({ content: Schema.Array(Schema.Struct({ text: Schema.String })) }),
+})
 const ErrorBody = Schema.Struct({ error: Schema.String })
 
 /** The public MCP routes over the given loader, and a client holding a valid MCP key. */
@@ -80,7 +84,10 @@ const mcpClient = async (loader: ReturnType<typeof McpToolExecutorLoader.layerFr
 	)
 	const routes = McpLive.pipe(Layer.provideMerge(loader), Layer.provideMerge(services))
 	const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
-	const send = (method: string, options: { readonly authorized: boolean }) =>
+	const send = (
+		method: string,
+		options: { readonly authorized: boolean; readonly params?: Record<string, unknown> },
+	) =>
 		handler(
 			new Request("https://api.example.com/mcp", {
 				method: "POST",
@@ -103,15 +110,18 @@ const mcpClient = async (loader: ReturnType<typeof McpToolExecutorLoader.layerFr
 									capabilities: {},
 									clientInfo: { name: "test", version: "1.0.0" },
 								}
-							: {},
+							: (options.params ?? {}),
 				}),
 			}),
 		)
 	return { send, dispose }
 }
 
+const toolCall = { authorized: true, params: { name: "list_services", arguments: {} } }
+const builtHeader = (response: Response) => response.headers.get("x-maple-ai-mcp-tools-built")
+
 describe("McpToolExecutorLoader", () => {
-	it("loads the tool graph on the first tools request, once, and never for initialize or a 401", async () => {
+	it("lists tools without the tool graph, and builds it once, on the first tools/call", async () => {
 		const { counts, loader } = countingGraph({ failFirstBuild: false })
 		const { send, dispose } = await mcpClient(loader)
 		try {
@@ -121,42 +131,48 @@ describe("McpToolExecutorLoader", () => {
 				(await send("resources/list", { authorized: true })).status,
 				(await send("prompts/list", { authorized: true })).status,
 			]
-			expect({ statuses, ...counts() }).toEqual({
+			const listed = Schema.decodeUnknownSync(ToolsListBody)(
+				await (await send("tools/list", { authorized: true })).json(),
+			)
+			expect({ statuses, listed: listed.result.tools.length, ...counts() }).toEqual({
 				statuses: [401, 200, 200, 200],
+				listed: MCP_TOOL_DESCRIPTORS.length,
 				imports: 0,
 				builds: 0,
 			})
 
-			const listed = Schema.decodeUnknownSync(ToolsListBody)(
-				await (await send("tools/list", { authorized: true })).json(),
-			)
-			await send("tools/list", { authorized: true })
-			expect(listed.result.tools.length).toBeGreaterThan(0)
-			expect(counts()).toEqual({ imports: 1, builds: 1 })
+			const first = await send("tools/call", toolCall)
+			const second = await send("tools/call", toolCall)
+			const called = Schema.decodeUnknownSync(ToolCallBody)(await first.json())
+			expect({
+				statuses: [first.status, second.status],
+				text: called.result.content[0]?.text,
+				built: [builtHeader(first), builtHeader(second)],
+				...counts(),
+			}).toEqual({ statuses: [200, 200], text: "ok", built: ["1", null], imports: 1, builds: 1 })
 		} finally {
 			await dispose()
 		}
 	})
 
-	it("answers 503 when the tool graph fails to build, and the next tools request retries it", async () => {
+	it("answers 503 when the tool graph fails to build, and the next tools/call retries it", async () => {
 		const { counts, loader } = countingGraph({ failFirstBuild: true })
 		const { send, dispose } = await mcpClient(loader)
 		try {
-			const failed = await send("tools/list", { authorized: true })
+			const failed = await send("tools/call", toolCall)
 			const failedBody = Schema.decodeUnknownSync(ErrorBody)(await failed.json())
-			const retried = await send("tools/list", { authorized: true })
-			const listed = Schema.decodeUnknownSync(ToolsListBody)(await retried.json())
+			const retried = await send("tools/call", toolCall)
 			expect({
 				statuses: [failed.status, retried.status],
 				failedError: failedBody.error,
 				cacheControl: failed.headers.get("cache-control"),
-				hasTools: listed.result.tools.length > 0,
+				built: [builtHeader(failed), builtHeader(retried)],
 				...counts(),
 			}).toEqual({
 				statuses: [503, 200],
 				failedError: "service_unavailable",
 				cacheControl: "no-store",
-				hasTools: true,
+				built: [null, "1"],
 				imports: 2,
 				builds: 2,
 			})

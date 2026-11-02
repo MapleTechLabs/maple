@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, Mount, role, scene } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Popover from "../../../ui/popover"
-import { onScreenOr } from "../../../ui/overlay/position"
+import * as Popover from "@maple/views/ui/popover"
+import { onScreenOr } from "@maple/views/ui/overlay/position"
 import * as QuickPick from "./quick-pick"
 
 const items = [

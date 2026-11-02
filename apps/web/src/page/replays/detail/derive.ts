@@ -1,13 +1,13 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { isSessionLive, sessionDurationMs } from "@maple/ui/lib/replay-format"
-import { buildTimeline, parseChTimestampMs, type Timeline } from "../../../components/replays/replay-timeline"
+import { parseChTimestampMs } from "../../../components/replays/replay-timeline"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { classifyUnplayable } from "../kit/replay-meta"
 import { manifestDurationMs } from "../kit/replay-range"
 import { recordedMarker, type ReplayPartitionWindow, replayPartitionWindow } from "../kit/replay-window"
 import { chunksOf, neededFailure, seedEvents } from "./loader"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Model, ReplayDetail } from "./model"
 
 export type PlayerStatus = "loading" | "error" | "empty" | "unrecorded" | "ready"
@@ -75,20 +75,6 @@ export const playerStatus = (model: Model, session: ReplayDetail): { status: Pla
 }
 
 export const manifestTotalMs = (model: Model): number => manifestDurationMs(chunksOf(model))
-
-/** What the real⇄display mapping reads, flat so a view can hold it by reference across ticks. */
-export type TimelineInputs = Readonly<{
-	isSkippingIdle: boolean
-	totalMs: number
-	inactiveIntervals: Model["meta"]["inactiveIntervals"]
-}>
-
-export const timelineFrom = (inputs: TimelineInputs): Timeline =>
-	buildTimeline(inputs.isSkippingIdle ? inputs.inactiveIntervals : [], inputs.totalMs)
-
-/** Real⇄display mapping: idle gaps collapse while skip-idle is on. */
-export const timelineOf = (model: Model): Timeline =>
-	timelineFrom({ ...model.player, inactiveIntervals: model.meta.inactiveIntervals })
 
 /** A warehouse timestamp as a real offset into a recording `totalMs` long from `startTime`, clamped. */
 export const realOffsetFrom = (startTime: number, totalMs: number, timestamp: string): number | undefined => {

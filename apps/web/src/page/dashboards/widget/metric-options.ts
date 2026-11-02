@@ -2,7 +2,7 @@ import { QUERY_BUILDER_METRIC_TYPES, toQueryBuilderMetricType } from "@maple/que
 import { getMetricAttributeKeys, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { applyQueryChange, QueryChange } from "../../kit/query-builder/change"
 import type { MetricOption } from "./metric-option"
 import type { EditorState } from "./editor-state"

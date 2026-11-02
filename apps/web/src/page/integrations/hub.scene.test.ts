@@ -294,17 +294,20 @@ describe("linear card", () => {
 		expect(cardStatusOf(unnamed.statuses, "linear", 0)?.label).toBe("Connected")
 	})
 
-	test("disconnect toasts and re-reads the Linear status", () => {
+	test("disconnect stays open while pending, then closes, toasts and re-reads the Linear status", () => {
 		const opened = pageUpdate(withLinear("connected"), Message.ClickedDisconnect()).model
 		const confirmed = pageUpdate(opened, Message.ConfirmedDisconnect())
 		expect(names(confirmed.commands)).toContain("DisconnectIntegration")
+		expect(confirmed.model.disconnect.dialog.isOpen).toBe(true)
+		expect(confirmed.model.disconnect.isPending).toBe(true)
 		const done = pageUpdate(
 			confirmed.model,
 			Message.CompletedDisconnect({ integration: "linear", failure: null }),
 		)
+		expect(done.model.disconnect.dialog.isOpen).toBe(false)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({ type: "success", title: "Linear disconnected", description: "" }),
 		)
-		expect(names(done.commands)).toEqual(["LoadIntegrationsLinearStatus"])
+		expect(names(done.commands)).toContain("LoadIntegrationsLinearStatus")
 	})
 })

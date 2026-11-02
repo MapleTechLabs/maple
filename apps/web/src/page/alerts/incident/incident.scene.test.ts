@@ -14,8 +14,8 @@ import {
 } from "foldkit/scene"
 import { CreateInvestigation } from "./command"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
-import { toLoadFailure } from "../../../data/load-failure"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow, stateRow } from "../shared/test-rows"
 import { Message } from "./message"
@@ -52,6 +52,30 @@ describe("alert incident", () => {
 		expect(names(withRule.commands)).toEqual(["FetchAlertIncidentPreview"])
 		const again = step(withRule.model, Message.UpdatedRuleStates({ orgId: ORG, rows: [stateRow(2)] }))
 		expect(again.commands ?? []).toHaveLength(0)
+	})
+
+	test("another rule's live tick keeps the page as it was; its own rule's tick does not", () => {
+		const loaded = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2), ruleRow(3)] }),
+			Message.UpdatedRuleStates({ orgId: ORG, rows: [stateRow(2), stateRow(3)] }),
+		].reduce((model, message) => step(model, message).model, init(route(), context).model)
+		const otherTicked = step(
+			loaded,
+			Message.UpdatedRuleStates({ orgId: ORG, rows: [stateRow(2), stateRow(3, { last_value: 99 })] }),
+		)
+		expect(otherTicked.model).toBe(loaded)
+		const otherEdited = step(
+			loaded,
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2), ruleRow(3, { name: "Renamed" })] }),
+		)
+		expect(otherEdited.model).toBe(loaded)
+		const ownTicked = step(
+			loaded,
+			Message.UpdatedRuleStates({ orgId: ORG, rows: [stateRow(2, { last_value: 99 }), stateRow(3)] }),
+		)
+		expect(ownTicked.model).not.toBe(loaded)
 	})
 
 	test("an uptime incident asks for no rule preview and says what its signal is", () => {

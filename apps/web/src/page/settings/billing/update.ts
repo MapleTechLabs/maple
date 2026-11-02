@@ -25,12 +25,12 @@ import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/b
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import { Cause, Clock, Duration, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command, Dom } from "foldkit"
-import * as Chart from "../../../charts/chart"
+import * as Chart from "@maple/views/charts/chart"
 import { trackProduct } from "../../../data/analytics"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiClient, MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { currentClerkUser } from "../../../platform/clerk"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import * as Details from "./details/update"
@@ -607,7 +607,7 @@ export const update = (
 				onFailure: (error) =>
 					same({
 						model: { ...model, isOpeningPortal: false },
-						outMessage: toast("error", error.message || "Couldn't open the billing portal."),
+						outMessage: toast("error", error.message || "Couldn't open the billing portal"),
 					}),
 			}),
 		CompletedRedirect: () => same({ model }),
@@ -654,7 +654,7 @@ export const update = (
 				onFailure: (error) =>
 					same({
 						model: { ...model, isSavingCap: false },
-						outMessage: toast("error", "The overage cap could not be saved.", error.message),
+						outMessage: toast("error", "Couldn't save the overage cap", error.message),
 					}),
 			}),
 		ToggledBreakdown: () => same({ model: { ...model, isBreakdownOpen: !model.isBreakdownOpen } }),
@@ -689,7 +689,7 @@ export const update = (
 									daily: revalidate(model.daily),
 								},
 								commands: [FetchPlans(), FetchInvoices(), FetchDaily()],
-								outMessage: toast("success", "Plan updated successfully"),
+								outMessage: toast("success", "Plan updated"),
 							}),
 				onFailure: (error) =>
 					same({

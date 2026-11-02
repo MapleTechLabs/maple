@@ -1,15 +1,15 @@
-import { pluralize } from "@maple/ui/lib/format"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { fillSeriesBuckets, formatToolCount, scopeSummary } from "@maple/web-data/lib/tool-analytics"
+import { fillSeriesBuckets, scopeSummary } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
-import type { LoadFailure } from "../../../data/load-failure"
-import { errorState } from "../../../ui/error-state"
-import { pageTitle } from "../../../ui/page-layout"
-import { skeleton } from "../../../ui/skeleton"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
@@ -45,7 +45,7 @@ const isPendingFirst = <A>(data: AsyncData.AsyncData<A, LoadFailure>): boolean =
 const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, controls: Html | undefined): Html => {
 	const { current } = totals
 	const subtitle = [
-		`${formatToolCount(current.calls)} ${pluralize(current.calls, "call")} in ${formatToolCount(current.sessions)} ${pluralize(current.sessions, "session")}`,
+		`${formatNumber(current.calls)} ${pluralize(current.calls, "call")} in ${formatNumber(current.sessions)} ${pluralize(current.sessions, "session")}`,
 		totals.firstSeen > 0
 			? `first seen ${formatTimestampInTimezone(totals.firstSeen, { timeZone })}`
 			: undefined,

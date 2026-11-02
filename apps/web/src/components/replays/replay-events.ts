@@ -5,7 +5,7 @@
 // carry duplicate/overwritten chunk-index rows whose blobs decode out of order,
 // so the concatenated stream may be scrambled or contain duplicates. rrweb's
 // `getMetaData().totalTime` (last − first timestamp) and the player's
-// idle-collapse both assume a clean, chronologically-ordered stream — feed them
+// idle-skip both assume a clean, chronologically-ordered stream — feed them
 // a corrupted one and the reported length balloons to the whole tab lifetime.
 //
 // `normalizeEvents` repairs the stream so those legacy sessions stay playable.

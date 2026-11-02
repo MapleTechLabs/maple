@@ -13,9 +13,9 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
-import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
+import { MeasureTabIndicator, Message as TabsMessage } from "@maple/views/ui/tabs"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { allIncidentsOf } from "./derive"
@@ -153,7 +153,7 @@ describe("anomalies list", () => {
 			{ update: pageUpdate, view },
 			given(withPresence(loaded([]), "absent")),
 			measured(),
-			expectView(text("No open anomalies")).toExist(),
+			expectView(text("No anomalies yet")).toExist(),
 			expectView(role("link", { name: "Set up tracing" })).toExist(),
 		)
 		scene(

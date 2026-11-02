@@ -1,6 +1,6 @@
-import { attributesSection } from "@maple/web/ui/attributes/attributes-view"
-import type { Message, Model } from "@maple/web/ui/attributes/attributes-panel"
-import { skeleton, skeletonList } from "@maple/web/ui/skeleton"
+import { attributesSection } from "@maple/views/ui/attributes/attributes-view"
+import type { Message, Model } from "@maple/views/ui/attributes/attributes-panel"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 

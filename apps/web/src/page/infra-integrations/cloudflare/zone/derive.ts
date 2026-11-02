@@ -7,7 +7,7 @@ import {
 import { zoneSignalTotals } from "../../../../components/infra/cloudflare/zone-signals"
 import type { Tone } from "@maple/ui/lib/tone"
 import { AsyncData } from "foldkit"
-import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
+import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { TimeWindow } from "../../../../data/time-range"
 import type {
 	BreakdownDimension,

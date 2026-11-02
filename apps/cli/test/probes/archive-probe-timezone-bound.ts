@@ -11,10 +11,10 @@
 // Run: TZ=America/New_York MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-timezone-bound.ts
 
 import { ArchiveProbe } from "../archive-probe-helpers"
-import { parseArchiveGenerationManifest } from "../../src/server/archives/manifest"
+import { parseArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
 import { randomUUID } from "node:crypto"
-import { CHDB_VERSION, MAPLE_VERSION } from "../../src/version"
-import { SCHEMA_FINGERPRINT } from "../../src/server/schema-identity"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 
 const h = ArchiveProbe.create("timezone-bound")
 

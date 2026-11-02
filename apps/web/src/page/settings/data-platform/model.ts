@@ -7,8 +7,8 @@ import {
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 
 // `OrgClickHouseSettingsSection` and `DataPlatformUsageSection` (apps/web/src/components/settings/).
 

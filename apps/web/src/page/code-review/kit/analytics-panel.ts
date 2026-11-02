@@ -1,8 +1,8 @@
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
-import { emptyMessage } from "../../../ui/empty"
-import { panel, panelBody, panelHeader } from "../../../ui/panel"
+import { BAR_CHART_TOKENS } from "@maple/views/charts/bar-chart"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
 
 // `AnalyticsPanel` and `ChartFrame`, shared with the CI tab.
 

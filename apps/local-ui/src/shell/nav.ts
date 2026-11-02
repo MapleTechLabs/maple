@@ -1,4 +1,4 @@
-import type { IconName } from "@maple/web/ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import { AppRoute } from "../route"
 
 // The sidebar nav: grouped and iconed like apps/web's sidebar.

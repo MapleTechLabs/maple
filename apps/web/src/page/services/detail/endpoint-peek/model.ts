@@ -1,8 +1,8 @@
 import { Schema } from "effect"
-import * as Chart from "../../../../charts/chart"
+import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "../../../../data/keyed"
-import { LoadFailure } from "../../../../data/load-failure"
-import * as Dialog from "../../../../ui/dialog"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { ApiBucket, EndpointDetail } from "../model-tabs"
 
 // The API tab's endpoint drawer: one endpoint's page in a sheet over the table.

@@ -1,4 +1,4 @@
-import { icon } from "@maple/web/ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 /** The lockup: `maple` in the display face, `local` in mono. */

@@ -1,5 +1,5 @@
 import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { mcpServicesWithFeatureFlags } from "../../runtime/mcp-service-graph"
+import { mcpServicesWithFeatureFlags } from "../../runtime/mcp-tool-graph"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Env } from "@maple/backend/platform/Env"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"

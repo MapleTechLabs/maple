@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../../ui/copy-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { type ClampedRendering, type ClampLines, clampedText } from "./clamped-text"
 import { Message } from "./message"
 import type { Model } from "./model"

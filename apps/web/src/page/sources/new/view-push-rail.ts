@@ -36,7 +36,7 @@ const docsOf = (platform: PushSourcePlatform) => ({
 
 /** The first place this platform's data lands. */
 const LANDS_IN = {
-	browser: { icon: "GlobeIcon", title: "Web Analytics", detail: "Sessions, replays and events" },
+	browser: { icon: "GlobeIcon", title: "Web analytics", detail: "Sessions, replays and events" },
 	claude_code: { icon: "ClaudeIcon", title: "Agent sessions", detail: "Each session with its usage" },
 	kubernetes: { icon: "ServerIcon", title: "Infrastructure", detail: "Nodes, pods and containers" },
 	docker: { icon: "ServerIcon", title: "Infrastructure", detail: "Containers on each host" },

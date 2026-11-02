@@ -2,11 +2,11 @@ import type { V2Recommendation } from "@maple/domain/http/v2"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../data/keyed"
-import type { LoadFailure } from "../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "../../data/request-key"
 import type { Resources } from "../../platform/resources"
 import type { AppRoute } from "../../route"
-import * as CopyButton from "../../ui/copy-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	CreateMapping,

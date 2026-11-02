@@ -1,7 +1,7 @@
 import { DashboardVariableSchema, DashboardWidgetSchema, TimeRangeSchema } from "@maple/domain/http"
 import { Clock, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { errorMessageOf, mutateDashboard } from "../kit/store"

@@ -2,9 +2,10 @@
  * Scaffold a local-store schema version bump.
  *
  * Everything the append-only gate demands except the DDL itself is a pure
- * function of one integer: the snapshot copy, the version constant, three edit
- * sites in `schema-identity.ts`, the history entry's four hashes, a new row in
- * the step table, and the pinned literals in both the bun test and the native
+ * function of one integer: the snapshot copy, the version constant, two edit
+ * sites in the CLI's `schema-snapshots.ts`, one in `schema-identity.ts`, the
+ * history entry's four hashes, a new row in the step table, and the pinned
+ * literals in both the bun test and the native
  * probe. This script writes all of them, then leaves the row's operations to a
  * human, which is the only part that was ever real work.
  *
@@ -16,12 +17,16 @@
  */
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { buildLocalSchemaManifest } from "../apps/cli/src/server/schema-manifest"
-import { schemaDigest, schemaFingerprint } from "../apps/cli/src/server/store-version"
+import { buildLocalSchemaManifest } from "../packages/local-server/src/schema-manifest"
+import { schemaDigest, schemaFingerprint } from "../packages/local-server/src/store-version"
 
-const SERVER_DIR = "apps/cli/src/server"
-const STEPS_FILE = `${SERVER_DIR}/local-store-migrations/steps.ts`
+// The current schema and its identity live in @maple/local-server; the frozen
+// snapshots and the migration steps that read them stay in the CLI.
+const SERVER_DIR = "packages/local-server/src"
+const CLI_SERVER_DIR = "apps/cli/src/server"
+const STEPS_FILE = `${CLI_SERVER_DIR}/local-store-migrations/steps.ts`
 const SCHEMA_DIR = `${SERVER_DIR}/schema`
+const SNAPSHOT_DIR = `${CLI_SERVER_DIR}/schema`
 const TEST_FILE = "apps/cli/test/local-store-migrations.test.ts"
 const NATIVE_PROBE = "apps/cli/test/native-local-store-migration.sh"
 
@@ -96,11 +101,11 @@ if (!versionMatch) fail("could not read LOCAL_SCHEMA_VERSION")
 const from = Number(versionMatch[1])
 const to = from + 1
 
-const snapshotPath = `${SCHEMA_DIR}/local-schema-v${to}.sql`
+const snapshotPath = `${SNAPSHOT_DIR}/local-schema-v${to}.sql`
 if (existsSync(snapshotPath)) fail(`${snapshotPath} already exists; v${to} looks already bumped`)
 
 // The identity is computed from the generated DDL directly rather than through
-// `schema-identity.ts`, which cannot even be imported until the v{to} snapshot
+// `schema-snapshots.ts`, which cannot even be imported until the v{to} snapshot
 // it statically imports exists.
 const currentSql = read(`${SCHEMA_DIR}/local-schema.sql`)
 const identity = {
@@ -163,12 +168,15 @@ const plannedVersion: PlannedWrite = plan(`${SERVER_DIR}/local-schema-version.ts
 	],
 ])
 
-const plannedIdentity: PlannedWrite = plan(`${SERVER_DIR}/schema-identity.ts`, [
+const plannedSnapshots: PlannedWrite = plan(`${CLI_SERVER_DIR}/schema-snapshots.ts`, [
 	[
 		`import schemaV${from}Sql from "./schema/local-schema-v${from}.sql" with { type: "text" }`,
 		`import schemaV${from}Sql from "./schema/local-schema-v${from}.sql" with { type: "text" }\nimport schemaV${to}Sql from "./schema/local-schema-v${to}.sql" with { type: "text" }`,
 	],
 	[`\tschemaV${from}Sql,\n]`, `\tschemaV${from}Sql,\n\tschemaV${to}Sql,\n]`],
+])
+
+const plannedIdentity: PlannedWrite = plan(`${SERVER_DIR}/schema-identity.ts`, [
 	// The test pins CURRENT_LOCAL_SCHEMA to this constant; steps look versions up by number.
 	[
 		`export const LOCAL_SCHEMA_V${from} = localSchemaIdentity(${from})`,
@@ -237,6 +245,7 @@ const writes: ReadonlyArray<PlannedWrite> = [
 	// The retained snapshot is the generated DDL, verbatim.
 	{ path: snapshotPath, content: currentSql },
 	plannedVersion,
+	plannedSnapshots,
 	plannedIdentity,
 	plannedHistory,
 	plannedSteps,
@@ -256,7 +265,7 @@ console.log(`bumped local schema v${from} -> v${to} (${identity.fingerprint})
   ${snapshotPath}
   ${STEPS_FILE}  <- fill in the ${moduleId} row
 
-edited: local-schema-version.ts, schema-identity.ts, local-schema-history.ts,
+edited: local-schema-version.ts, schema-snapshots.ts, schema-identity.ts, local-schema-history.ts,
         ${TEST_FILE}, ${NATIVE_PROBE}
 
 next:

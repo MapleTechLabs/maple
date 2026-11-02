@@ -2,8 +2,8 @@ import type { IssueKind } from "@maple/domain/http"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { filterSection, singleCheckboxFilter } from "../../../ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { filterSection, singleCheckboxFilter } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -11,10 +11,10 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../ui/filters/filter-sidebar"
+} from "@maple/views/ui/filters/filter-sidebar"
 import { SOURCE_COLOR, SOURCE_DESCRIPTION, SOURCES } from "../kit/source"
 import { Option } from "effect"
-import { failureKind } from "../../../ui/error-state"
+import { failureKind } from "@maple/views/ui/error-state"
 import { hasErrorFilters, KIND_LABEL, listFailureOf } from "./derive"
 import { MountFilterRail } from "./command"
 import { type FilterParam, Message } from "./message"

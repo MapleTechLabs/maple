@@ -22,6 +22,7 @@ export const SECTIONS = [
 			"Session Replay",
 			"Product Events",
 			"Agent Sessions",
+			"MCP Servers",
 			"Dashboards",
 			"Alerting",
 			"Code Review",

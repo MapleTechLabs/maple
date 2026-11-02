@@ -6,16 +6,16 @@ import {
 } from "../../../components/settings/keys-table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { confirmDialog } from "../../../ui/confirm-dialog"
-import { icon } from "../../../ui/icon"
-import * as MenuView from "../../../ui/menu-view"
-import { panel } from "../../../ui/panel"
-import { searchInput } from "../../../ui/search-input"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import * as SelectView from "../../../ui/select-view"
-import { skeletonList, skeletonSlowNote } from "../../../ui/skeleton"
-import { errorState } from "../../../ui/error-state"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { icon } from "@maple/views/ui/icon"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { panel } from "@maple/views/ui/panel"
+import { searchInput } from "@maple/views/ui/search-input"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import * as SelectView from "@maple/views/ui/select-view"
+import { skeletonList, skeletonSlowNote } from "@maple/views/ui/skeleton"
+import { errorState } from "@maple/views/ui/error-state"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { sectionNote, settingsSection, settingsSections } from "../kit/section"
 import * as CreateDialogView from "./create-dialog-view"
@@ -25,6 +25,8 @@ import * as RollDialog from "./roll-dialog"
 import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
 import { devicesTable, keysEmpty, keysTable } from "./view-table"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ApiKeysSection`.
 
@@ -62,7 +64,7 @@ const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 					className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
 					attributes: [h.OnClick(Message.ClickedCreateKey())],
 				},
-				[plus, "Create key"],
+				[plus, "New key"],
 			),
 			h.submodel({
 				slotId: "keys-create-menu",
@@ -99,63 +101,60 @@ const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 }
 
 const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-3")],
-		[
-			segmentedSelect<KeyTypeFilter, Message>(h, {
-				size: "sm",
-				ariaLabel: "Key type",
-				value: model.typeFilter,
-				onChange: (type) => Message.ClickedTypeFilter({ type }),
-				options: (["all", "api", "mcp"] as const).map((type) => ({
-					value: type,
-					// Counts only once the keys are in: a loading "· 0" reads as an empty org.
-					label:
-						model.apiKeys === null
-							? TYPE_FILTER_LABELS[type]
-							: `${TYPE_FILTER_LABELS[type]} · ${counts.typeCounts[type]}`,
+	hstack(h, { gap: "3", wrap: true }, [
+		segmentedSelect<KeyTypeFilter, Message>(h, {
+			size: "sm",
+			ariaLabel: "Key type",
+			value: model.typeFilter,
+			onChange: (type) => Message.ClickedTypeFilter({ type }),
+			options: (["all", "api", "mcp"] as const).map((type) => ({
+				value: type,
+				// Counts only once the keys are in: a loading "· 0" reads as an empty org.
+				label:
+					model.apiKeys === null
+						? TYPE_FILTER_LABELS[type]
+						: `${TYPE_FILTER_LABELS[type]} · ${counts.typeCounts[type]}`,
+			})),
+		}),
+		h.submodel({
+			slotId: "keys-status-select",
+			model: { ...model.statusSelect, value: model.statusFilter },
+			view: SelectView.view,
+			toParentMessage: (message) => Message.GotStatusSelectMessage({ message }),
+			viewInputs: {
+				entries: STATUS_VALUES.map((status): SelectView.SelectEntry => ({
+					_tag: "Item",
+					item: { value: status, label: STATUS_LABELS[status] },
 				})),
-			}),
-			h.submodel({
-				slotId: "keys-status-select",
-				model: { ...model.statusSelect, value: model.statusFilter },
-				view: SelectView.view,
-				toParentMessage: (message) => Message.GotStatusSelectMessage({ message }),
-				viewInputs: {
-					entries: STATUS_VALUES.map((status): SelectView.SelectEntry => ({
-						_tag: "Item",
-						item: { value: status, label: STATUS_LABELS[status] },
-					})),
-					ariaLabel: "Key status",
-					size: "sm",
-					className: "w-36",
-					renderValue: () => [STATUS_LABELS[model.statusFilter]],
-					renderItem: (option) =>
-						model.apiKeys === null
-							? [option.label]
-							: [
-									option.label,
-									" · ",
-									String(
-										new Map<string, number>(Object.entries(counts.statusCounts)).get(
-											option.value,
-										) ?? 0,
-									),
-								],
-					toView: (parts) => h.div([h.Class("contents")], parts),
-				},
-			}),
-			h.div([h.Class("flex-1")], []),
-			searchInput(h, {
-				id: "keys-search",
-				value: model.search,
-				onInput: (value) => Message.ChangedSearch({ value }),
-				onClear: Message.ClickedClearSearch(),
-				placeholder: "Search keys",
-				className: "w-64",
-			}),
-		],
-	)
+				ariaLabel: "Key status",
+				size: "sm",
+				className: "w-36",
+				renderValue: () => [STATUS_LABELS[model.statusFilter]],
+				renderItem: (option) =>
+					model.apiKeys === null
+						? [option.label]
+						: [
+								option.label,
+								" · ",
+								String(
+									new Map<string, number>(Object.entries(counts.statusCounts)).get(
+										option.value,
+									) ?? 0,
+								),
+							],
+				toView: (parts) => h.div([h.Class("contents")], parts),
+			},
+		}),
+		h.div([h.Class("flex-1")], []),
+		searchInput(h, {
+			id: "keys-search",
+			value: model.search,
+			onInput: (value) => Message.ChangedSearch({ value }),
+			onClear: Message.ClickedClearSearch(),
+			placeholder: "Search keys…",
+			className: "w-64",
+		}),
+	])
 
 /** `SyncUnavailable`: the `api_keys` stream stopped before its first answer. */
 const SYNC_UNAVAILABLE = makeClientErrorBody({
@@ -172,9 +171,9 @@ const revokeDescription = (h: H, model: Model): ReadonlyArray<Html | string> | s
 	if (model.revoking === null)
 		return "Any integrations using this key will stop working immediately. This action cannot be undone."
 	const subject = [
-		h.span([h.Class("text-foreground font-medium")], [model.revoking.name]),
+		typography(h, { tone: "foreground", weight: "medium" }, [model.revoking.name]),
 		" (",
-		h.span([h.Class("font-mono text-xs")], [model.revoking.key_prefix]),
+		typography(h, { size: "xs", mono: true }, [model.revoking.key_prefix]),
 		")",
 	]
 	return model.revoking.kind === "device"

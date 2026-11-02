@@ -1,8 +1,8 @@
-import { highlightCode, type Lang, resolveLang } from "../../../lib/highlight"
+import { highlightCode, type Lang, resolveLang } from "@maple/views/lib/highlight"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../../ui/copy-button"
-import { eyebrow } from "../../../ui/eyebrow"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 
 // `CodeBlock`: language eyebrow, copy button, highlighted markup. The parent owns the copy status.
 

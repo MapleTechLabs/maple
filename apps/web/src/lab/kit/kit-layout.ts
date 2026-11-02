@@ -1,5 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 
 // Port of apps/web/src/lab/kit/kit-layout.ts: the frame every `/lab/kit/<group>` page shares.
 

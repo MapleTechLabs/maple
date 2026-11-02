@@ -2,22 +2,23 @@ import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import { panel, panelHeader } from "../../../../ui/panel"
-import { middleTruncate } from "../../../../ui/middle-truncate"
-import { formatValueWithUnit } from "../../../../components/infra/chart-units"
-import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "../../../../charts/linked-cursor"
+import * as Chart from "@maple/views/charts/chart"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { formatValueWithUnit } from "@maple/views/lib/infra-chart-units"
+import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import {
 	INFRA_METRIC_CHART_HEIGHT,
 	type InfraSeriesInfo,
 	metricView as metricChartView,
-} from "../../../../charts/infra-metric-chart"
-import { chartError, chartLoading, chartPlotArea } from "../../../../ui/chart-state"
+} from "@maple/views/charts/infra-metric-chart"
+import { chartError, chartLoading, chartPlotArea } from "@maple/views/ui/chart-state"
 import { attributeSection, metaRow, resourceAttributesCard } from "../../kit/resource-attributes"
 import { seriesLegend } from "../../../kit/series-legend"
-import { formatSeen } from "../../../metrics/time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { type HostMetric, Message } from "./message"
 import type { HostSummary, Model } from "./model"
+import { typography } from "@maple/views/ui/typography"
 
 // `HostMetadataPanel`, and the Metrics panel of `HostDetailPage` with its `MetricStrip`s.
 
@@ -58,11 +59,11 @@ export const hostMetadataPanel = (
 				attributeSection(h, "Lifecycle", [
 					row("first seen", formatRelativeTime(summary.firstSeen, nowMs), {
 						copyValue: summary.firstSeen,
-						tooltip: formatSeen(summary.firstSeen, timeZone),
+						tooltip: formatTimestampInTimezone(summary.firstSeen, { timeZone, withYear: true }),
 					}),
 					row("last seen", formatRelativeTime(summary.lastSeen, nowMs), {
 						copyValue: summary.lastSeen,
-						tooltip: formatSeen(summary.lastSeen, timeZone),
+						tooltip: formatTimestampInTimezone(summary.lastSeen, { timeZone, withYear: true }),
 					}),
 				]),
 			],
@@ -132,7 +133,9 @@ const metricStrip = (h: H, model: Model, strip: (typeof METRIC_STRIPS)[number], 
 			h.div(
 				[h.Class("border-b px-1 py-3 lg:border-b-0 lg:border-r lg:py-5")],
 				[
-					h.div([h.Class("text-xs font-medium text-foreground")], [strip.label]),
+					typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "div" }, [
+						strip.label,
+					]),
 					h.div([h.Class("mt-1 text-2xs leading-relaxed text-muted-foreground")], [strip.caption]),
 				],
 			),
@@ -148,10 +151,9 @@ export const metricsPanel = (h: H, model: Model, timeZone: string): Html =>
 	panel(h, { className: "overflow-visible" }, [
 		panelHeader(h, {
 			title: "Metrics",
-			action: h.span(
-				[h.Class("text-xs tabular-nums text-muted-foreground")],
-				[countLabel(METRIC_STRIPS.length, "signal")],
-			),
+			action: typography(h, { size: "xs", tone: "muted", numeric: true }, [
+				countLabel(METRIC_STRIPS.length, "signal"),
+			]),
 		}),
 		h.div(
 			[h.Class("px-4"), h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())],

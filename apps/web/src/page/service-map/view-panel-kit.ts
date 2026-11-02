@@ -4,7 +4,9 @@ import { formatErrorRate, formatRate } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../ui/display"
+import { badge } from "@maple/views/ui/display"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The small pieces both detail panels share.
 
@@ -28,9 +30,9 @@ export const metricTile = <M>(h: HtmlBuilder<M>, label: string, value: Html, cap
 	h.div(
 		[h.Class("space-y-0.5")],
 		[
-			h.span([h.Class("text-3xs text-muted-foreground")], [label]),
+			typography(h, { size: "3xs", tone: "muted" }, [label]),
 			value,
-			...(caption === undefined ? [] : [h.span([h.Class("text-3xs text-muted-foreground")], caption)]),
+			...(caption === undefined ? [] : [typography(h, { size: "3xs", tone: "muted" }, caption)]),
 		],
 	)
 
@@ -44,17 +46,14 @@ export const detailPanelHeader = <M>(
 	h.div(
 		[h.Class("flex items-center justify-between px-4 py-3 border-b shrink-0")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2 min-w-0")],
-				[
-					h.div([
-						h.Class("w-[3px] h-[18px] rounded-sm shrink-0"),
-						h.Style({ "background-color": accentColor }),
-					]),
-					...title,
-				],
-			),
-			h.div([h.Class("flex items-center gap-2 shrink-0")], actions),
+			hstack(h, { gap: "2", shrink: true }, [
+				h.div([
+					h.Class("w-[3px] h-[18px] rounded-sm shrink-0"),
+					h.Style({ "background-color": accentColor }),
+				]),
+				...title,
+			]),
+			hstack(h, { gap: "2", className: "shrink-0" }, actions),
 		],
 	)
 
@@ -103,25 +102,30 @@ export const edgeRow = <M>(
 			...(title === undefined ? [] : [h.Title(title)]),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5 min-w-0")],
-				[
-					h.div([
-						h.Class("w-[3px] h-3.5 rounded-sm shrink-0"),
-						h.Style({ "background-color": getServiceColor(options.service) }),
-					]),
-					h.span([h.Class("text-foreground truncate")], [options.service]),
-				],
-			),
+			hstack(h, { gap: "1.5", shrink: true }, [
+				h.div([
+					h.Class("w-[3px] h-3.5 rounded-sm shrink-0"),
+					h.Style({ "background-color": getServiceColor(options.service) }),
+				]),
+				typography(h, { tone: "foreground", truncate: true }, [options.service]),
+			]),
 			h.div(
 				[h.Class("flex items-center gap-2 shrink-0 text-3xs")],
 				[
+					typography(h, { tone: "muted", mono: true, numeric: true }, [
+						...sampled(edge.hasSampling, formatRate(reqPerSec)),
+						" ",
+						options.unit,
+					]),
 					h.span(
-						[h.Class("text-muted-foreground tabular-nums font-mono")],
-						[...sampled(edge.hasSampling, formatRate(reqPerSec)), " ", options.unit],
-					),
-					h.span(
-						[h.Class(cn("tabular-nums font-mono", errorRateClass(edge.errorRate)))],
+						[
+							h.Class(
+								cn(
+									typographyClass({ mono: true, numeric: true }),
+									errorRateClass(edge.errorRate),
+								),
+							),
+						],
 						[formatErrorRate(edge.errorRate)],
 					),
 				],

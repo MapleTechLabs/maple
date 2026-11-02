@@ -1,6 +1,6 @@
 import { Command } from "foldkit"
 import type { Resources } from "../../../../platform/resources"
-import * as Menu from "../../../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import { Message } from "./model"
 import { ALL_PROJECTS, MANAGE_CONNECTIONS } from "./view-project-menu"
 

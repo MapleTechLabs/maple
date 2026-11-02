@@ -2,13 +2,13 @@ import { Schema } from "effect"
 import * as AddToDashboard from "./add-to-dashboard"
 import { CaretMessage } from "./where-editor"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../charts/chart"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { LoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
-import * as Combobox from "../../../ui/combobox"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Select from "../../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Select from "@maple/views/ui/select"
 import { MetricRow } from "../shared"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { AttributeKeyRow, AutocompleteLookup, BreakdownRow, TimeseriesRows } from "./model"
@@ -54,6 +54,8 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	ClickedReload: {},
+	/** The chart's failure card: asks again for the failed content reads only, no Reload spin. */
+	ClickedRetryChart: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
 	GotAggregationSelectMessage: { message: Select.Message },

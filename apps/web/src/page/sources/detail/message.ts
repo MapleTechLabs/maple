@@ -1,12 +1,12 @@
 import { V2Source, V2SourceUsage, V2SourceWithSecret } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../charts/chart"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
@@ -40,6 +40,7 @@ export const Message = defineMessageUnion({
 	ChangedSettingsName: { value: Schema.String },
 	ChangedSettingsDescription: { value: Schema.String },
 	SubmittedSettings: {},
+	ClickedDiscardSettings: {},
 	CompletedSave: { result: Schema.Result(V2Source, LoadFailure) },
 	GotConnectionMessage: { message: IntegrationMessage },
 })

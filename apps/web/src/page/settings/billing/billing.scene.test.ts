@@ -8,7 +8,7 @@ import { Message, type Model } from "./model"
 import { Message as DetailsMessage } from "./details/model"
 import { customerChanged, init, requestRuleStats, revisit, spendModelOf, update } from "./update"
 import { usageTable } from "./view-usage"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)

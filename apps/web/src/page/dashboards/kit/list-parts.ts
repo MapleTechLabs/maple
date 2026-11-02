@@ -1,7 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { searchInput } from "../../../ui/search-input"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { searchInput } from "@maple/views/ui/search-input"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { fillRule } from "@maple/views/ui/rule"
 
 // Shared by the dashboards list and the template gallery.
 
@@ -18,17 +20,17 @@ export const listSectionHeader = <M>(
 				[
 					h.Class(
 						cn(
-							"font-mono text-2xs",
+							typographyClass({ size: "2xs", mono: true }),
 							options.accent === true ? "text-primary" : "text-muted-foreground",
 						),
 					),
 				],
 				[String(options.count)],
 			),
-			h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], []),
+			fillRule(h),
 			...(options.note === undefined
 				? []
-				: [h.span([h.Class("text-muted-foreground text-2xs")], [options.note])]),
+				: [typography(h, { size: "2xs", tone: "muted" }, [options.note])]),
 		],
 	)
 

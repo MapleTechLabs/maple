@@ -1,24 +1,24 @@
 import type { AlertRuleDocument } from "@maple/domain/http"
 import { formatSql } from "../../../lib/sql-format"
-import { tokenizeSql } from "../../../lib/sql-highlight"
+import { tokenizeSql } from "@maple/views/lib/sql-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import { SIGNAL_SOURCE_LABEL } from "@maple/web-data/alerts/chart-series"
 import { comparatorLabels, formatSignalValue, ruleToFormState, signalLabels } from "@maple/web-data/alerts/form-utils"
 import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { button } from "../../../ui/button"
-import { card, cardPanel } from "../../../ui/card"
-import { badge } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { keyValue, keyValueList } from "../../../ui/key-value"
-import { panel } from "../../../ui/panel"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { button } from "@maple/views/ui/button"
+import { card, cardPanel } from "@maple/views/ui/card"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
+import { panel } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { alertStatusBadge } from "../shared/badges"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { ruleChart } from "../shared/rule-chart"
@@ -39,6 +39,7 @@ import { checksPanel } from "./view-checks"
 import { diagnosisPanel } from "./view-diagnosis"
 import { queryTimeCard } from "./view-query-time"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography } from "@maple/views/ui/typography"
 
 // The rule detail's Overview tab.
 
@@ -95,8 +96,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 									: h.div(
 											[h.Class("flex flex-wrap gap-1 justify-end")],
 											[
-												h.span(
-													[h.Class("font-mono font-medium")],
+												typography(h, { weight: "medium", mono: true },
 													[
 														rule.groupBy && rule.groupBy.length > 0
 															? `all (per ${rule.groupBy.join(" · ")})`
@@ -111,7 +111,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 									? badgeList(h, rule.environments, "text-xs")
 									: h.div(
 											[h.Class("flex flex-wrap gap-1 justify-end")],
-											[h.span([h.Class("font-mono font-medium")], ["all"])],
+											[typography(h, { weight: "medium", mono: true }, ["all"])],
 										),
 							]),
 							...(rule.excludeServiceNames?.length > 0
@@ -119,8 +119,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 								: []),
 							...rule.thresholds.map((tier) =>
 								configRow(h, tier.severity === "critical" ? "Critical" : "Warning", [
-									h.span(
-										[h.Class("font-mono font-medium")],
+									typography(h, { weight: "medium", mono: true },
 										[tierCondition(rule, tier), " / ", String(rule.windowMinutes), "min"],
 									),
 								]),
@@ -150,7 +149,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 											h.span([h.Class("font-mono font-medium capitalize")], [rule.queryBuilderDraft.dataSource ?? ""]),
 										]),
 										configRow(h, "Aggregation", [
-											h.span([h.Class("font-mono font-medium")], [rule.queryBuilderDraft.aggregation ?? ""]),
+											typography(h, { weight: "medium", mono: true }, [rule.queryBuilderDraft.aggregation ?? ""]),
 										]),
 										...(rule.queryBuilderDraft.whereClause
 											? [
@@ -265,8 +264,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 									eyebrow(h, { as: "h2", className: "mb-0 block" }, [
 										`${signalLabels[rule.signalType]}: ${rangeLabel}`,
 									]),
-									h.p(
-										[h.Class("text-muted-foreground text-xs")],
+									typography(h, { size: "xs", tone: "muted", as: "p" },
 										[SIGNAL_SOURCE_DESCRIPTION.get(model.signalSource) ?? ""],
 									),
 								],
@@ -317,8 +315,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 								[h.Class("min-w-0")],
 								[
 									eyebrow(h, { variant: "label", as: "p" }, ["Investigation"]),
-									h.p(
-										[h.Class("truncate text-sm")],
+									typography(h, { size: "sm", truncate: true, as: "p" },
 										["Review the latest incident in a durable evidence workspace."],
 									),
 								],

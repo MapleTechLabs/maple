@@ -1,15 +1,18 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { collectTraceErrors, spanHttpStatus, type TraceErrors } from "../../../lib/traces/trace-errors"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
-import { button } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { serviceDot } from "../../../ui/values"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
+import { serviceDot } from "@maple/views/ui/values"
 import { Message } from "./message"
 import type { ProductEvent } from "./model"
 import { type SpanNodeData, toSpanNode } from "./trace-data"
+import { typography } from "@maple/views/ui/typography"
 
 // The trace's error callout and product events.
 
@@ -33,7 +36,7 @@ export const errorCallout = (
 			[
 				h.span([h.Class("text-severity-error")], [countLabel(errors.spans.length, "failed span")]),
 				errors.spans.length > 1
-					? h.span([h.Class("text-muted-foreground font-normal")], ["likely origin"])
+					? typography(h, { tone: "muted", weight: "normal" }, ["likely origin"])
 					: null,
 				h.span(
 					[h.Class("flex min-w-0 items-center gap-1.5 font-mono font-normal")],
@@ -92,14 +95,12 @@ const productEventRow = (h: HtmlBuilder<Message>, event: ProductEvent): Html => 
 		: h.li(
 				[],
 				[
-					h.button(
-						[
-							h.Class(
-								`${rowClassName} hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none`,
-							),
-							h.Type("button"),
-							h.OnClick(Message.ClickedProductEvent({ spanId: event.spanId })),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedProductEvent({ spanId: event.spanId }),
+							className: `${rowClassName} hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none`,
+						},
 						content,
 					),
 				],
@@ -118,8 +119,9 @@ export const productEvents = (h: HtmlBuilder<Message>, events: ReadonlyArray<Pro
 						h.div(
 							[h.Class("flex items-baseline gap-2.5")],
 							[
-								h.h2(
-									[h.Class("text-sm font-medium text-foreground")],
+								heading(
+									h,
+									{ level: 2, variant: "subsection" },
 									[
 										"Product events",
 										h.span(

@@ -1,7 +1,7 @@
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { SceneHandle, SceneInput } from "./three/scene"
 
 // The 3D viewport's own state: the Atlas or

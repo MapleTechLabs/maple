@@ -5,11 +5,12 @@ import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { anomalyRow } from "../../anomalies/kit/row"
 import { sectionHeading } from "../../kit/section-heading"
 import type { Model } from "./model"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The related anomalies section and the open anomaly badge.
 
@@ -31,8 +32,7 @@ export const relatedAnomaliesSection = <M>(
 		return b.lastTriggeredAt.localeCompare(a.lastTriggeredAt)
 	})
 	return [
-		h.section(
-			[h.AriaLabelledBy("related-anomalies-heading"), h.Class("flex shrink-0 flex-col gap-3.5")],
+		vstack(h, { as: "section", className: "shrink-0 gap-3.5", attributes: [h.AriaLabelledBy("related-anomalies-heading")] },
 			[
 				sectionHeading(h, {
 					id: "related-anomalies-heading",
@@ -66,8 +66,7 @@ export const openAnomalyBadge = <M>(
 		SEVERITY_TONE[open.some((incident) => incident.severity === "critical") ? "critical" : "warning"]
 	return [
 		badge(h, { variant: "outline", className: tone.badge }, [
-			h.span(
-				[h.Class("flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5", as: "span" },
 				[statusDot(h, { tone: tone.tone }), "Anomaly open"],
 			),
 		]),

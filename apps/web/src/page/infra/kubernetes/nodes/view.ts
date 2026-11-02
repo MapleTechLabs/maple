@@ -7,9 +7,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../../ui/error-state"
-import { filterSection } from "../../../../ui/filters/filter-section"
-import * as FilterSections from "../../../../ui/filters/filter-sections"
+import { errorState } from "@maple/views/ui/error-state"
+import { filterSection } from "@maple/views/ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -17,8 +17,8 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../../ui/filters/filter-sidebar"
-import { icon } from "../../../../ui/icon"
+} from "@maple/views/ui/filters/filter-sidebar"
+import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { fleetBand } from "../../kit/fleet-band"

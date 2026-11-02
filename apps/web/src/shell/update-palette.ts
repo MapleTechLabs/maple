@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import * as Dialog from "../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../platform/resources"
 import { SaveTheme } from "./command"
 import { Message, OutMessage } from "./message"

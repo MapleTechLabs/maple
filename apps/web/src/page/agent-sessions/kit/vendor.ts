@@ -1,4 +1,4 @@
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 
 export { modelVendorColor, vendorColor } from "../../../lib/agent-sessions/vendor-color"
 export { vendorLabel } from "../../../lib/agent-sessions/vendor-label"

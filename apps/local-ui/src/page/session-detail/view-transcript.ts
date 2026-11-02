@@ -1,6 +1,6 @@
 import { parseClickHouseDateTime, type WarehouseTime } from "../../lib/time"
 import { cn } from "@maple/ui/lib/utils"
-import { icon, type IconName } from "@maple/web/ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TranscriptEvent } from "./model"
 

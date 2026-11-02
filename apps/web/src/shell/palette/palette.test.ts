@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import * as Combobox from "../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import { browseEntries, paletteEntries } from "./entries"
 import { Message, type Model, OutMessage } from "./model"
 import { type Context, open, shownEntries, update } from "./update"
@@ -36,7 +36,7 @@ describe("command palette", () => {
 			shownEntries(typed(loadedWith([]), query).model, context, ALL_FLAGGED).entries.map(
 				(entry) => entry.title,
 			)
-		expect(titles("serv")).toEqual(expect.arrayContaining(["Services", "Service Map"]))
+		expect(titles("serv")).toEqual(expect.arrayContaining(["Services", "Service map"]))
 		expect(titles("serv")).not.toContain("Overview")
 		expect(titles("srevices")).toContain("Services")
 	})

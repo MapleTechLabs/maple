@@ -7,6 +7,7 @@ import {
 } from "../../../../components/infra/cloudflare/filters"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { scopeChip } from "../../kit/scope-chip"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PanelScope`: what a panel is actually scoped to.
 
@@ -51,14 +52,11 @@ export const panelScope = <M>(h: HtmlBuilder<M>, options: PanelScopeOptions): Ht
 	}
 	const shown = honored.slice(0, 2)
 	const extra = honored.length - shown.length
-	return h.span(
-		[h.Class("inline-flex items-center gap-1")],
-		[
-			...shown.map((chip) => scopeChip(h, { className: "max-w-[20ch] truncate" }, [chip.label])),
-			...(extra > 0 ? [scopeChip(h, { tone: "muted" }, ["+", String(extra)])] : []),
-			...(ignored.length > 0
-				? [scopeChip(h, { tone: "muted", trigger: options.trigger(options.id) }, ["partial"])]
-				: []),
-		],
-	)
+	return hstack(h, { gap: "1", inline: true, as: "span" }, [
+		...shown.map((chip) => scopeChip(h, { className: "max-w-[20ch] truncate" }, [chip.label])),
+		...(extra > 0 ? [scopeChip(h, { tone: "muted" }, ["+", String(extra)])] : []),
+		...(ignored.length > 0
+			? [scopeChip(h, { tone: "muted", trigger: options.trigger(options.id) }, ["partial"])]
+			: []),
+	])
 }

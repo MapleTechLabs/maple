@@ -3,15 +3,14 @@ import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../../../ui/dialog"
-import { MountDialog } from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { SpanNodeData, TraceData } from "./trace-data"
 import { init, routeChanged, update } from "./update"
-import * as Tabs from "../../../ui/tabs"
-import * as SpanPanel from "./span-panel"
+import * as Tabs from "@maple/views/ui/tabs"
 import { MeasureSplit } from "./split"
 import { MeasureTimelineBody, MountAltToggle } from "./timeline/command"
 import { Message as TimelineMessage } from "./timeline/message"
@@ -184,10 +183,7 @@ describe("trace detail", () => {
 			Mount.resolve(MountAltToggle, TimelineMessage.AltClickedToggleCollapse({ spanId: "none" })),
 			Mount.resolve(MeasureTimelineBody, TimelineMessage.MeasuredScroller({ width: 390, height: 400 })),
 			Mount.resolve(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
-			Mount.resolve<string, SpanPanel.Message>(
-				Tabs.MeasureTabIndicator,
-				SpanPanel.Message.GotTabsMessage({ message: Tabs.Message.MeasuredIndicator({ rect: RECT }) }),
-			),
+			Mount.resolve(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
 			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(role("dialog", { name: "Span details" })).toExist(),
 		)

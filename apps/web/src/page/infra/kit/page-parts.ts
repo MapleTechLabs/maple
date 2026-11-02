@@ -2,13 +2,15 @@ import type { DocsPage } from "../../../lib/docs"
 import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { pageTitle } from "../../../ui/page-layout"
-import { searchInput } from "../../../ui/search-input"
+import { button } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { searchInput } from "@maple/views/ui/search-input"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
+import { hstack } from "@maple/views/ui/stack"
+import { spaced } from "@maple/views/ui/spaced"
 
 // `PageHero`, `SearchToolbar` and the infra empty states.
 
@@ -68,7 +70,7 @@ export const pageHeroParts = <M>(
 	body:
 		options.meta === undefined || options.meta.length === 0
 			? null
-			: h.div([h.Class("flex flex-wrap items-center gap-2")], options.meta),
+			: hstack(h, { gap: "2", wrap: true }, options.meta),
 })
 
 /** `PageHero` for a page that draws its header in the body: `pageHeroParts` with actions beside it. */
@@ -77,22 +79,21 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 	return h.header(
 		[h.Class(cn("flex flex-wrap items-start gap-x-6 gap-y-3", options.className))],
 		[
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-2")],
+			spaced(
+				h,
+				{ space: "2", fill: true },
 				parts.body === null ? [parts.title] : [parts.title, parts.body],
 			),
 			...(options.actions === undefined || options.actions.length === 0
 				? []
-				: [h.div([h.Class("flex shrink-0 items-center gap-2")], options.actions)]),
+				: [hstack(h, { gap: "2", className: "shrink-0" }, options.actions)]),
 		],
 	)
 }
 
 /** The header's right side: a page's own actions before its time controls. */
 export const headerActions = <M>(h: HtmlBuilder<M>, extra: ReadonlyArray<Html>, controls: Html): Html =>
-	extra.length === 0
-		? controls
-		: h.div([h.Class("flex flex-wrap items-center gap-2")], [...extra, controls])
+	extra.length === 0 ? controls : hstack(h, { gap: "2", wrap: true }, [...extra, controls])
 
 export type SearchToolbarOptions<M> = Readonly<{
 	id: string
@@ -111,21 +112,18 @@ export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOption
 	listToolbar(h, {
 		// Parents space their sections; the list toolbar's own bottom padding would double it.
 		className: cn("pb-0", options.className),
-		leading: h.div(
-			[h.Class("flex flex-wrap items-center gap-2")],
-			[
-				searchInput(h, {
-					id: options.id,
-					size: "sm",
-					className: "w-64",
-					placeholder: options.placeholder,
-					value: options.value,
-					onInput: options.onInput,
-					onClear: options.onClear,
-				}),
-				...(options.children ?? []),
-			],
-		),
+		leading: hstack(h, { gap: "2", wrap: true }, [
+			searchInput(h, {
+				id: options.id,
+				size: "sm",
+				className: "w-64",
+				placeholder: options.placeholder,
+				value: options.value,
+				onInput: options.onInput,
+				onClear: options.onClear,
+			}),
+			...(options.children ?? []),
+		]),
 		trailing:
 			options.trailing === undefined || options.trailing === ""
 				? []
@@ -171,7 +169,7 @@ export const setupEmpty = <M>(
 /** `NoMetricsMessage`. */
 export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
 	emptyMessage(h, { dashed: true, className: "py-12" }, [
-		`No metrics arrived for this ${noun} in the selected window.`,
+		`No metrics arrived for this ${noun} in this window`,
 	])
 
 /** `countLabel`: "Top 50 of 541 pods" for a slice, "541 pods" for the whole list. */

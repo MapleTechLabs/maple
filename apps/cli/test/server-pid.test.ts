@@ -3,7 +3,10 @@ import { Effect, Exit } from "effect"
 import { mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { claimPidFileExclusive } from "../src/commands/server"
+import { claimPidFileExclusive } from "@maple/local-server/store-claim"
+
+/** The host's refusal, carrying the live owner it was given. */
+const busy = (pid: number | undefined) => ({ busyPid: pid })
 
 const withPidPath = async (run: (pidPath: string, root: string) => Promise<void>): Promise<void> => {
 	const root = mkdtempSync(join(tmpdir(), "maple-pid-claim-"))
@@ -20,7 +23,7 @@ const deadPid = (): number => Bun.spawnSync(["true"]).pid
 describe("start PID claim is exclusive", () => {
 	it("writes exactly the bare PID, readable by older builds", async () => {
 		await withPidPath(async (pidPath) => {
-			await Effect.runPromise(claimPidFileExclusive(pidPath))
+			await Effect.runPromise(claimPidFileExclusive(pidPath, { busy }))
 			expect(readFileSync(pidPath, "utf8")).toBe(String(process.pid))
 		})
 	})
@@ -29,9 +32,8 @@ describe("start PID claim is exclusive", () => {
 		await withPidPath(async (pidPath) => {
 			// The runner's parent started before this write, so it provably owns it.
 			writeFileSync(pidPath, String(process.ppid))
-			const second = await Effect.runPromiseExit(claimPidFileExclusive(pidPath))
-			expect(Exit.isFailure(second)).toBe(true)
-			expect(JSON.stringify(second)).toContain("already running or starting")
+			const second = await Effect.runPromiseExit(claimPidFileExclusive(pidPath, { busy }))
+			expect(second).toEqual(Exit.fail({ busyPid: process.ppid }))
 			expect(readFileSync(pidPath, "utf8")).toBe(String(process.ppid))
 		})
 	})
@@ -39,7 +41,7 @@ describe("start PID claim is exclusive", () => {
 	it("takes over a PID file whose process is gone, leaving no debris", async () => {
 		await withPidPath(async (pidPath, root) => {
 			writeFileSync(pidPath, String(deadPid()))
-			await Effect.runPromise(claimPidFileExclusive(pidPath))
+			await Effect.runPromise(claimPidFileExclusive(pidPath, { busy }))
 			expect(readFileSync(pidPath, "utf8")).toBe(String(process.pid))
 			expect(readdirSync(root)).toEqual(["maple.pid"])
 		})
@@ -51,7 +53,7 @@ describe("start PID claim is exclusive", () => {
 			writeFileSync(pidPath, String(process.ppid))
 			const longAgo = new Date("2001-01-01T00:00:00Z")
 			utimesSync(pidPath, longAgo, longAgo)
-			await Effect.runPromise(claimPidFileExclusive(pidPath))
+			await Effect.runPromise(claimPidFileExclusive(pidPath, { busy }))
 			expect(readFileSync(pidPath, "utf8")).toBe(String(process.pid))
 		})
 	})
@@ -59,7 +61,7 @@ describe("start PID claim is exclusive", () => {
 	it("hands a `start -d` parent's claim to its child", async () => {
 		await withPidPath(async (pidPath) => {
 			writeFileSync(pidPath, String(process.ppid))
-			await Effect.runPromise(claimPidFileExclusive(pidPath, { handoverFrom: process.ppid }))
+			await Effect.runPromise(claimPidFileExclusive(pidPath, { busy, handoverFrom: process.ppid }))
 			expect(readFileSync(pidPath, "utf8")).toBe(String(process.pid))
 		})
 	})

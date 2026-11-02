@@ -2,10 +2,10 @@ import type { RailwayIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { spinner } from "../../ui/spinner"
-import { truncatedText } from "../../ui/truncated-text"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { spinner } from "@maple/views/ui/spinner"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { RAILWAY_ACCENT } from "./catalog"
@@ -22,6 +22,10 @@ import {
 	integrationErrorNotice,
 	integrationStatusCard,
 } from "./view-integration-card"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // `RailwayIntegrationCard`.
 
@@ -34,43 +38,43 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 		h,
 		{ ariaLabel: "Railway environments" },
 		[
-			columnHead(h, { label: "Environment", width: "w-0 min-w-48 flex-1" }),
+			columnHead(h, { label: "Environment", width: columnClass({ min: "48" }) }),
 			columnHead(h, { label: "Services", width: "w-20", align: "right" }),
 			columnHead(h, { label: "Last sync", width: "w-32", align: "right" }),
 		],
 		status.environments.length === 0
 			? [dataTableEmpty(h, ["This token can't see any projects yet."])]
 			: status.environments.map((environment) =>
-					h.div(
+					hstack(
+						h,
+						{
+							gap: "4",
+							className: typographyClass({
+								size: "sm",
+								className: stripClass("row"),
+							}),
+						},
 						[
-							h.Class(
-								"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
-							),
-						],
-						[
-							h.span(
-								[h.Class("flex w-0 min-w-48 flex-1 flex-col")],
-								[
-									h.span(
-										[h.Class("truncate")],
-										[
-											environment.projectName,
-											h.span(
-												[h.Class("text-muted-foreground")],
-												[" ", "/ ", environment.environmentName],
-											),
-										],
-									),
-									...(environment.lastError !== null
-										? [
-												truncatedText(h, {
-													text: environment.lastError,
-													className: "text-xs text-severity-error",
-												}),
-											]
-										: []),
-								],
-							),
+							vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
+								h.span(
+									[h.Class("truncate")],
+									[
+										environment.projectName,
+										h.span(
+											[h.Class("text-muted-foreground")],
+											[" ", "/ ", environment.environmentName],
+										),
+									],
+								),
+								...(environment.lastError !== null
+									? [
+											truncatedText(h, {
+												text: environment.lastError,
+												className: typographyClass({ size: "xs", tone: "error" }),
+											}),
+										]
+									: []),
+							]),
 							h.span(
 								[h.Class("w-20 shrink-0 text-right tabular-nums text-muted-foreground")],
 								[String(environment.serviceCount)],
@@ -87,10 +91,10 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 											})
 										: environment.lastError !== null
 											? "Failed"
-											: h.span(
-													[h.Class("inline-flex items-center gap-1")],
-													[spinner(h, undefined, 12), "Syncing"],
-												),
+											: hstack(h, { gap: "1", inline: true, as: "span" }, [
+													spinner(h, undefined, 12),
+													"Syncing",
+												]),
 								],
 							),
 						],

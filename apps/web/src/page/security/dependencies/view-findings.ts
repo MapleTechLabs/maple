@@ -3,46 +3,59 @@ import type {
 	DependencyProductionCoverage,
 	DependencyScanRepository,
 } from "@maple/domain/http"
-import { type AdvisorySeverity, displayAdvisoryId } from "@maple/domain/package-advisories"
+import { displayAdvisoryId } from "@maple/domain/package-advisories"
 import { countLabel, formatRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { middleTruncate } from "../../../ui/middle-truncate"
-import * as Select from "../../../ui/select"
-import * as SelectView from "../../../ui/select-view"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { textLink } from "../../../ui/text-link"
+import { badge } from "@maple/views/ui/display"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { listFooter } from "@maple/views/ui/list-footer"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { pressable } from "@maple/views/ui/pressable"
+import * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
+import {
+	clickableRowClass,
+	laneTableCell,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
+import { textLink } from "@maple/views/ui/text-link"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { relativeTime } from "../../kit/relative-time"
-import { securitySeverityBadge } from "../kit/parts"
+import { ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
+import { advisorySeverityBadge, repositoryName } from "../kit/parts"
 import {
 	filteredFindings,
 	RELATION_LABEL,
 	repositoryFilterOf,
-	SEVERITY_LABEL,
 	STATUS_FILTER_LABEL,
 	STATUS_FILTERS,
 	statusFilterOf,
 } from "./derive"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { borderedBox } from "@maple/views/ui/bordered-box"
+import { vstack } from "@maple/views/ui/stack"
 
 // The findings table: one row per advisory on a package in a lockfile, worst first as the server
 // sorts them, under a status and a repository filter.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
-
-/** The code audit's severity badge; an advisory with no score reads as "Unrated". */
-export const dependencySeverityBadge = (h: H, severity: AdvisorySeverity, className?: string): Html =>
-	severity === "unknown"
-		? badge(h, { variant: "muted", className: cn("text-muted-foreground", className) }, [
-				SEVERITY_LABEL.unknown,
-			])
-		: securitySeverityBadge(h, severity, className)
 
 export const advisoryHref = (advisoryId: string): string =>
 	`https://osv.dev/vulnerability/${encodeURIComponent(advisoryId)}`
@@ -51,7 +64,7 @@ export const advisoryLink = (h: H, finding: DependencyFindingView, className?: s
 	textLink(
 		h,
 		{
-			className: cn("font-mono text-xs", className),
+			className: cn(typographyClass({ size: "xs", mono: true }), className),
 			href: advisoryHref(finding.advisoryId),
 			attributes: [
 				h.Target("_blank"),
@@ -67,12 +80,12 @@ export const versionsLabel = (finding: DependencyFindingView): string =>
 		? finding.packageName
 		: `${finding.packageName}@${finding.versions.join(", ")}`
 
-const item = (value: string, label: string): SelectView.SelectEntry => ({
+export const item = (value: string, label: string): SelectView.SelectEntry => ({
 	_tag: "Item",
 	item: { value, label },
 })
 
-const filterSelect = (
+export const filterSelect = (
 	h: H,
 	select: Select.Model,
 	entries: ReadonlyArray<SelectView.SelectEntry>,
@@ -97,19 +110,11 @@ const filterSelect = (
 		toParentMessage: wrap,
 	})
 
-const toolbar = (
-	h: H,
-	model: Model,
-	findings: ReadonlyArray<DependencyFindingView>,
-	repositories: ReadonlyArray<DependencyScanRepository>,
-): Html => {
+const toolbar = (h: H, model: Model, findings: ReadonlyArray<DependencyFindingView>): Html => {
 	const statusLabel = (value: string) =>
 		STATUS_FILTER_LABEL[STATUS_FILTERS.find((status) => status === value) ?? "open"]
-	const repositoryLabel = (value: string) =>
-		repositories.find((repository) => repository.id === value)?.fullName ?? "All repositories"
 	return listToolbar(h, {
 		framed: true,
-		leading: h.h2([h.Class("px-1 text-sm font-medium")], ["Vulnerable packages"]),
 		trailing: [
 			filterSelect(
 				h,
@@ -124,28 +129,12 @@ const toolbar = (
 				statusLabel,
 				(message) => Message.GotStatusSelectMessage({ message }),
 			),
-			// One repository needs no repository filter.
-			...(repositories.length < 2
-				? []
-				: [
-						filterSelect(
-							h,
-							model.repositorySelect,
-							[
-								item("all", "All repositories"),
-								...repositories.map((repository) => item(repository.id, repository.fullName)),
-							],
-							"Repository",
-							repositoryLabel,
-							(message) => Message.GotRepositorySelectMessage({ message }),
-						),
-					]),
 		],
 	})
 }
 
 const muted = (h: H, text: string, className?: string): Html =>
-	h.span([h.Class(cn("text-xs text-muted-foreground", className))], [text])
+	typography(h, { size: "xs", tone: "muted", className }, [text])
 
 export type ProductionScanState = "running" | "unscanned" | "failed"
 
@@ -198,10 +187,9 @@ const productionCell = (
 	return h.span(
 		[h.Class("flex min-w-0 max-w-48 flex-col")],
 		[
-			h.span(
-				[h.Class("truncate text-sm"), h.Title(busiest.serviceName)],
-				[others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName],
-			),
+			typography(h, { size: "sm", truncate: true, attributes: [h.Title(busiest.serviceName)] }, [
+				others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName,
+			]),
 			muted(h, `${formatRate(productionSpans(finding))} spans/day`, "tabular-nums"),
 		],
 	)
@@ -211,7 +199,7 @@ const productionCell = (
  * Said when findings cannot be tied to what runs: no service reports the commit it was built from,
  * or none of those commits belongs to a connected repository.
  */
-const productionHint = (h: H, production: DependencyProductionCoverage): ReadonlyArray<Html> => {
+export const productionHint = (h: H, production: DependencyProductionCoverage): ReadonlyArray<Html> => {
 	const text = !production.available
 		? "Production traffic could not be read, so findings are ranked by severity alone."
 		: production.runningServices === 0
@@ -231,57 +219,86 @@ const findingRow = (
 	clock: Clock,
 	production: DependencyProductionCoverage,
 	scans: ReadonlyMap<string, ProductionScanState>,
+	showRepository: boolean,
 ): Html => {
 	const open = Message.ClickedFinding({ findingId: finding.id })
 	return tableRow(
 		h,
 		[
-			tableCell(h, [dependencySeverityBadge(h, finding.severity)], "w-24"),
+			// A set-aside finding says so under its severity: the time column folds away beside the list.
+			laneTableCell(
+				h,
+				isSelected,
+				[
+					vstack(h, { gap: "1", align: "start" }, [
+						advisorySeverityBadge(h, finding.severity),
+						...(finding.status === "open"
+							? []
+							: [badge(h, { variant: "meta" }, [STATUS_FILTER_LABEL[finding.status]])]),
+					]),
+				],
+				"w-24",
+			),
 			tableCell(h, [
-				h.button(
-					[
-						h.Type("button"),
-						h.OnClick(open, { propagation: "Stop" }),
-						h.Class(
+				pressable(
+					h,
+					{
+						className:
 							"flex min-w-0 max-w-72 flex-col items-start text-left focus-visible:underline focus-visible:outline-none",
-						),
-					],
+						attributes: [h.OnClick(open, { propagation: "Stop" })],
+					},
 					[
-						h.span(
-							[h.Class("truncate font-mono text-sm"), h.Title(versionsLabel(finding))],
+						typography(
+							h,
+							{
+								size: "sm",
+								mono: true,
+								truncate: true,
+								attributes: [h.Title(versionsLabel(finding))],
+							},
 							[finding.packageName],
 						),
 						muted(
 							h,
 							`${finding.ecosystem} · ${finding.versions.join(", ")}`,
-							"truncate font-mono",
+							typographyClass({ mono: true, truncate: true }),
 						),
 					],
 				),
 			]),
-			tableCell(h, [advisoryLink(h, finding)]),
-			tableCell(h, [productionCell(h, finding, production, scans)]),
+			tableCell(h, [advisoryLink(h, finding)], WIDE_COLUMN),
+			tableCell(h, [productionCell(h, finding, production, scans)], WIDE_COLUMN),
 			tableCell(h, [
 				finding.fixedIn === null
 					? muted(h, "No fix yet")
-					: h.span([h.Class("font-mono text-xs tabular-nums")], [finding.fixedIn]),
+					: typography(h, { size: "xs", mono: true, numeric: true }, [finding.fixedIn]),
 			]),
-			tableCell(h, [muted(h, RELATION_LABEL[finding.relation])], "hidden md:table-cell"),
+			tableCell(h, [muted(h, RELATION_LABEL[finding.relation])], ROOMY_COLUMN),
 			tableCell(
 				h,
 				[
 					h.span(
 						[h.Class("flex min-w-0 max-w-64 flex-col")],
 						[
-							h.span(
-								[h.Class("truncate text-sm"), h.Title(finding.repositoryFullName)],
-								[finding.repositoryFullName],
-							),
+							// Scoped to one repository, every row would repeat its name.
+							...(showRepository
+								? [
+										typography(
+											h,
+											{
+												size: "sm",
+												truncate: true,
+												attributes: [h.Title(finding.repositoryFullName)],
+											},
+											[repositoryName(h, finding.repositoryFullName)],
+										),
+									]
+								: []),
 							middleTruncate(h, {
 								text: finding.lockfilePath,
 								tail: Math.min(24, finding.lockfilePath.length),
 								mono: true,
-								className: "text-xs text-muted-foreground",
+								className: typographyClass({ size: "xs", tone: "muted" }),
 							}),
 						],
 					),
@@ -291,29 +308,23 @@ const findingRow = (
 			tableCell(
 				h,
 				[
-					...(finding.status === "open"
-						? []
-						: [
-								badge(h, { variant: "meta", className: "mr-2" }, [
-									STATUS_FILTER_LABEL[finding.status],
-								]),
-							]),
 					relativeTime(h, {
 						value: finding.createdAt,
 						nowMs: clock.nowMs,
 						timeZone: clock.timeZone,
 						variant: "orDate",
 						tooltip: "title",
-						className: "whitespace-nowrap text-xs text-muted-foreground",
+						className: typographyClass({
+							size: "xs",
+							tone: "muted",
+							className: "whitespace-nowrap",
+						}),
 					}),
 				],
-				"whitespace-nowrap text-right",
+				cn("whitespace-nowrap text-right", ROOMY_COLUMN),
 			),
 		],
-		cn(
-			"cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken",
-			isSelected && "bg-surface-strong",
-		),
+		clickableRowClass(isSelected),
 		[h.Key(finding.id), h.OnClick(open)],
 	)
 }
@@ -325,24 +336,25 @@ const findingsTable = (
 	clock: Clock,
 	production: DependencyProductionCoverage,
 	scans: ReadonlyMap<string, ProductionScanState>,
+	showRepository: boolean,
 ): Html =>
 	table(h, { ariaLabel: "Vulnerable packages" }, [
 		tableHeader(h, [
 			tableRow(h, [
 				tableHead(h, ["Severity"]),
 				tableHead(h, ["Package"]),
-				tableHead(h, ["Advisory"]),
-				tableHead(h, ["In production"]),
+				tableHead(h, ["Advisory"], WIDE_COLUMN),
+				tableHead(h, ["In production"], WIDE_COLUMN),
 				tableHead(h, ["Fixed in"]),
-				tableHead(h, ["Relation"], "hidden md:table-cell"),
-				tableHead(h, ["Location"], "hidden lg:table-cell"),
-				tableHead(h, ["First seen"], "text-right"),
+				tableHead(h, ["Relation"], ROOMY_COLUMN),
+				tableHead(h, [showRepository ? "Location" : "Lockfile"], "hidden lg:table-cell"),
+				tableHead(h, ["First seen"], cn("text-right", ROOMY_COLUMN)),
 			]),
 		]),
 		tableBody(
 			h,
 			rows.map((finding) =>
-				findingRow(h, finding, finding.id === selectedId, clock, production, scans),
+				findingRow(h, finding, finding.id === selectedId, clock, production, scans, showRepository),
 			),
 		),
 	])
@@ -351,13 +363,13 @@ const packagesChecked = (repositories: ReadonlyArray<DependencyScanRepository>):
 	repositories.reduce((sum, repository) => sum + (repository.latestScan?.packageCount ?? 0), 0)
 
 /** A repository is only clean when its latest scan completed whole and read every lockfile it found. */
-const readEverything = (repository: DependencyScanRepository): boolean =>
+export const readEverything = (repository: DependencyScanRepository): boolean =>
 	repository.latestScan?.status === "completed" &&
 	repository.latestScan.error === null &&
 	repository.latestScan.lockfiles.every((lockfile) => lockfile.status === "parsed")
 
 /** Scanned and nothing open: a calm line, not an alarm. */
-const cleanState = (h: H, repositories: ReadonlyArray<DependencyScanRepository>): Html =>
+export const cleanState = (h: H, repositories: ReadonlyArray<DependencyScanRepository>): Html =>
 	empty(
 		h,
 		[
@@ -386,26 +398,48 @@ export const findingsSection = (
 	const status = statusFilterOf(model)
 	const repositoryId = repositoryFilterOf(model)
 	const rows = filteredFindings(findings, status, repositoryId)
+	const footer = listFooter(h, {
+		shown: Math.min(rows.length, model.shownRows),
+		total: rows.length,
+		noun: "findings",
+		hasMore: rows.length > model.shownRows,
+		onLoadMore: Message.ClickedShowMoreRows(),
+	})
 	const content =
 		rows.length > 0
-			? findingsTable(h, rows, model.selectedId, clock, production, productionScanStates(repositories))
+			? findingsTable(
+					h,
+					rows.slice(0, model.shownRows),
+					model.selectedId,
+					clock,
+					production,
+					productionScanStates(repositories),
+					repositoryId === null,
+				)
 			: // Clean only when every repository's latest scan read its lockfiles; a failed or missing one is not a clean bill.
 				status === "open" && repositoryId === null && repositories.every(readEverything)
 				? cleanState(h, repositories)
 				: h.div(
 						[h.Class("p-4")],
 						[
-							nothingInWindow(h, {
-								title: "No findings match",
+							filteredEmpty(h, {
+								noun: "findings",
+								className: emptyFrameClass("dashed"),
 								description:
 									status === "all"
-										? "No findings for these filters."
-										: `No ${STATUS_FILTER_LABEL[status].toLowerCase()} findings for these filters.`,
+										? ""
+										: `Showing ${STATUS_FILTER_LABEL[status].toLowerCase()} findings only.`,
 							}),
 						],
 					)
-	return h.section(
-		[h.AriaLabel("Vulnerable packages"), h.Class("overflow-hidden rounded-md border bg-card")],
-		[toolbar(h, model, findings, repositories), ...productionHint(h, production), content],
+	return borderedBox(
+		h,
+		{ as: "section", overflow: "hidden", card: true, attributes: [h.AriaLabel("Vulnerable packages")] },
+		[
+			toolbar(h, model, findings),
+			...productionHint(h, production),
+			content,
+			...(rows.length > 0 && footer !== null ? [footer] : []),
+		],
 	)
 }

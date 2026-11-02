@@ -2,7 +2,7 @@ import { SecurityExposureResponse, SecurityRuntimesResponse } from "@maple/domai
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 
 // `/security/exposure` and `/security/runtimes` as one page instance: each tab reads its own
 // endpoint the first time it shows, and a tab change keeps what either has read.

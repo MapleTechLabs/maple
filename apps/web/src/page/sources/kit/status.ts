@@ -2,7 +2,7 @@ import type { V2Source } from "@maple/domain/http/v2"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { statusDot } from "../../../ui/status-dot"
+import { statusDot } from "@maple/views/ui/status-dot"
 
 // `SourceStatusBadge`.
 

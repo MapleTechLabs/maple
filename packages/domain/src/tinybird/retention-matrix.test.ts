@@ -120,4 +120,17 @@ describe("Tinybird retention matrix", () => {
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
 		}
 	})
+
+	/**
+	 * The error views also replay 30-day `traces` into 90-day targets, and a rebuild
+	 * recomputes FingerprintHash for every stored row, re-keying every issue. The
+	 * fingerprint fixes in #2071 sat undeployable behind this refusal.
+	 */
+	it("applies error-events view changes by ALTER, never by rebuild", () => {
+		for (const name of ["error_events_mv", "error_events_by_time_mv"]) {
+			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
+			expect(pipe, name).toBeDefined()
+			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
+		}
+	})
 })

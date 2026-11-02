@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../../ui/alert"
-import { icon } from "../../../ui/icon"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { icon } from "@maple/views/ui/icon"
 
 // `memberDisplayName` and `AdminOnlyNotice`.
 

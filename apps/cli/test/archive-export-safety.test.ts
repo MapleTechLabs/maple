@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { throws } from "node:assert"
-import { exportSignalShards } from "../src/server/archives/export"
+import { exportSignalShards } from "@maple/local-server/archives/export"
 
 // Pure-logic tests for export safety primitives that don't require chDB.
 // The full Parquet write+reopen+validation path is exercised by the native

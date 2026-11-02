@@ -1,23 +1,23 @@
 import { Schema } from "effect"
-import * as Chart from "../../../charts/chart"
-import { ChartRuntime } from "../../../charts/chart-runtime"
-import { ThemeColors } from "../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as LogsStream from "../../../ui/logs/logs-stream"
-import * as Menu from "../../../ui/menu"
-import * as Popover from "../../../ui/popover"
-import * as Tooltip from "../../../ui/tooltip"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import * as Menu from "@maple/views/ui/menu"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import * as LogDetail from "../detail"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The `/logs` stream.
 
-import { LogRecord } from "../../../ui/logs/log-row-view"
+import { LogRecord } from "@maple/views/ui/logs/log-row-view"
 
 /** `LogRow` (`@maple/query-engine` route-rows), shared with the stream (`ui/logs`). */
 export const LogRowSchema = LogRecord

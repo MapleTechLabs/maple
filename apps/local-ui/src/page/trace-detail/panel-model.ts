@@ -1,5 +1,5 @@
-import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
-import * as Tabs from "@maple/web/ui/tabs"
+import * as AttributesPanel from "@maple/views/ui/attributes/attributes-panel"
+import * as Tabs from "@maple/views/ui/tabs"
 import { SpanNodeData } from "@maple/web/page/traces/detail/trace-data"
 import { CopyState } from "@maple/web/page/traces/detail/span-panel/model"
 import { Schema } from "effect"

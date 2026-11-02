@@ -3,7 +3,7 @@ import { GithubIntegrationStatus, GithubInstallationSelection } from "@maple/dom
 import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -158,6 +158,7 @@ describe("github card", () => {
 		expect(picked.model.githubCard.branchDialog.isOpen).toBe(true)
 		const confirmed = pageUpdate(picked.model, Message.ConfirmedBranch())
 		expect(names(confirmed.commands)).toContain("SetGithubTrackedBranch")
+		expect(confirmed.model.githubCard.branchDialog.isOpen).toBe(true)
 		const done = pageUpdate(
 			confirmed.model,
 			Message.CompletedTrackedBranch({
@@ -168,6 +169,7 @@ describe("github card", () => {
 			}),
 		)
 		expect(done.model.githubCard.isForcePolling).toBe(true)
+		expect(done.model.githubCard.branchDialog.isOpen).toBe(false)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "success",
