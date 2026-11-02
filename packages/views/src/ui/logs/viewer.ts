@@ -61,6 +61,8 @@ const WRAP_KEY = "maple.logs.wrap"
 const DENSITY_KEY = "maple.logs.density"
 const decodeWrap = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Boolean))
 const decodeDensity = Schema.decodeUnknownOption(Schema.fromJsonString(Density))
+const encodeWrap = Schema.encodeSync(Schema.fromJsonString(Schema.Boolean))
+const encodeDensity = Schema.encodeSync(Schema.fromJsonString(Density))
 
 /** The `Atom.kvs` preferences (JSON in localStorage); unreadable ones fall back to the defaults. */
 export const readLogsViewPreferences: Effect.Effect<LogsViewPreferences> = Effect.sync(() => ({
@@ -70,6 +72,6 @@ export const readLogsViewPreferences: Effect.Effect<LogsViewPreferences> = Effec
 
 export const saveLogsViewPreferences = (preferences: LogsViewPreferences): Effect.Effect<void> =>
 	Effect.sync(() => {
-		writeLocalStorage(WRAP_KEY, JSON.stringify(preferences.wrap))
-		writeLocalStorage(DENSITY_KEY, JSON.stringify(preferences.density))
+		writeLocalStorage(WRAP_KEY, encodeWrap(preferences.wrap))
+		writeLocalStorage(DENSITY_KEY, encodeDensity(preferences.density))
 	})
