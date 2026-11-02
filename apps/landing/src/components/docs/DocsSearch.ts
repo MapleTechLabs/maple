@@ -134,10 +134,8 @@ const ScrollHighlighted = Command.define("ScrollDocsHitIntoView", {
 		}),
 })
 
-type ShortcutMessage =
-	| typeof Message.StartedShortcuts.Type
-	| typeof Message.PressedToggleShortcut.Type
-	| typeof Message.PressedSlash.Type
+const ShortcutMessage = Schema.Union([Message.StartedShortcuts, Message.PressedToggleShortcut, Message.PressedSlash])
+type ShortcutMessage = typeof ShortcutMessage.Type
 
 /** ⌘K / Ctrl+K toggles the palette from anywhere; `/` opens it outside a text field. */
 const ListenForShortcuts = Mount.defineStream("ListenForDocsSearchShortcuts", {
