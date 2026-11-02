@@ -10,7 +10,7 @@
  * Each cell is washed in its side's color: a flat tint and a halftone dither
  * from `.pair-cell`.
  */
-import { MapleMark } from "@maple/ui/components/icons/maple-mark";
+import Icon from "../Icon.astro";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
 import { brandMark, markTint } from "../../lib/brand-marks";
 import type { Competitor } from "../../lib/competitors";
@@ -28,7 +28,7 @@ const vendorColor = markTint(brandMark(competitor.mark));
 <div class="relative grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border">
 	<div class="pair-cell flex flex-col items-center gap-4 px-6 py-10 text-center md:py-12" style="--pair: var(--primary)">
 		<span class="flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-bg-elevated">
-			<MapleMark size={34} className="text-primary" />
+			<Icon name="MapleMark" size={34} class="text-primary" />
 		</span>
 		<div>
 			<div class="font-display text-lg font-medium tracking-[-0.01em] text-fg md:text-xl">Maple</div>

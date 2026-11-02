@@ -204,6 +204,7 @@
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
         "@maple/ui": "workspace:*",
+        "@maple/views": "workspace:*",
         "@shikijs/themes": "^4.5.0",
         "@shikijs/transformers": "^4.5.0",
         "@tailwindcss/vite": "catalog:tailwind",
