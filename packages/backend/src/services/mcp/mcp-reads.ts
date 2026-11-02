@@ -709,7 +709,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 			),
 			warehouse.compiledQuery(
 				tenant,
-				CH.compile(CH.mcpUserActivityQuery(selection, USER_ACTIVITY_LIMIT), params),
+				CH.compile(CH.mcpUserActivityQuery(selection, USER_ACTIVITY_LIMIT + 1), params),
 				{ ...aggregate, context: "mcpUserActivity" },
 			),
 			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSessionActivityQuery(selection), params), {
@@ -719,7 +719,8 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 		],
 		{ concurrency: MCP_READ_CONCURRENCY },
 	)
-	const userSessions = stitchUserSessions(activityRows)
+	// One row past the limit says the read was cut; it is never stitched.
+	const userSessions = stitchUserSessions(activityRows.slice(0, USER_ACTIVITY_LIMIT))
 	const failingUserSessions = userSessions.filter((session) => session.errors > 0)
 	const calls = summary.filter((row) => row.method === TOOLS_CALL)
 	const total = totals[0]
@@ -748,7 +749,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 		"maple.mcp.user_sessions": userSessions.length,
 		"maple.mcp.user_activity_rows": activityRows.length,
 	})
-	const isUserActivityCut = activityRows.length >= USER_ACTIVITY_LIMIT
+	const isUserActivityCut = activityRows.length > USER_ACTIVITY_LIMIT
 	return new McpSessionsResponse({
 		service: payload.service,
 		totals: {

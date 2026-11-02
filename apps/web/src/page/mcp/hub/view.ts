@@ -448,7 +448,7 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 	const title =
 		isUserSession && userLabel !== undefined
 			? `${userLabel} on ${data.client}`
-			: sessionId.startsWith("user:")
+			: data === undefined && sessionId.startsWith("user:")
 				? "User session"
 				: sessionId
 	const description =

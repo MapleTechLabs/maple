@@ -196,7 +196,10 @@ const sessionsOverview = <M>(
 			statRailItem(h, {
 				eyebrow: "Median length",
 				value: median === undefined ? "–" : formatLatency(median),
-				subline: `of the latest ${formatNumber(data.sessions.length)}`,
+				subline:
+					data.sessions.length === 0
+						? undefined
+						: `of the latest ${formatNumber(data.sessions.length)}`,
 			}),
 			statRailItem(h, {
 				eyebrow: "Calls a session",
