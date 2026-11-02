@@ -1,4 +1,3 @@
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -18,7 +17,7 @@ import * as Menu from "../../../ui/menu"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import * as SelectView from "../../../ui/select-view"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "../../../ui/table"
 import { truncatedText } from "../../../ui/truncated-text"
 import { accountSectionSkeleton, noOrganization } from "../kit/account-skeleton"
 import { adminOnlyNotice } from "../kit/members"
@@ -46,9 +45,6 @@ const COLUMN = { role: "w-36", date: "w-36", actions: "w-12" } as const
 
 /** Without the actions column the date column ends the row, so it sits flush right. */
 const dateAlign = (isAdmin: boolean): string | undefined => (isAdmin ? undefined : "text-right")
-
-const truncatedCell = (h: H, children: ReadonlyArray<Html>, className?: string): Html =>
-	tableCell(h, children, cn(truncatedCellStyles, className))
 
 const loadMore = (h: H, isLoading: boolean, onClick: Message): Html =>
 	h.div(
@@ -110,7 +106,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 	const row = tableRow(
 		h,
 		[
-			truncatedCell(h, [
+			truncatedTableCell(h, [
 				h.div(
 					[h.Class("flex items-center gap-3")],
 					[
@@ -307,7 +303,7 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 	return tableRow(
 		h,
 		[
-			truncatedCell(h, [
+			truncatedTableCell(h, [
 				h.div(
 					[h.Class("flex items-center gap-3")],
 					[

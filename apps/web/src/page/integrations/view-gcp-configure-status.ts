@@ -8,6 +8,7 @@ import {
 	gcpSetupRunning,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { icon } from "../../ui/icon"
 import { spinner } from "../../ui/spinner"
 import { statusDot } from "../../ui/status-dot"
@@ -225,8 +226,9 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 			h.div(
 				[h.Class("flex flex-col gap-1")],
 				[
-					h.h3(
-						[h.Class("text-base font-medium")],
+					heading(
+						h,
+						{ level: 3, variant: "subsection" },
 						created
 							? [h.span([h.Class("font-mono")], [connector.scope_id]), " is connected"]
 							: ["Google Cloud matches this configuration"],

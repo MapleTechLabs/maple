@@ -3,10 +3,8 @@ import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { Option } from "effect"
 import { traceHrefFrom } from "./peek"
-import { tableRowStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TracesSearch } from "../../../route/search"
 
@@ -15,7 +13,7 @@ import { httpSpanLabel } from "../../../ui/http-span-label"
 import { truncatedText } from "../../../ui/truncated-text"
 import { servicePills, traceStatusBadge } from "../../../ui/trace-badges"
 import { button } from "../../../ui/button"
-import { rowLink, tableCell } from "../../../ui/table"
+import { laneTableCell, rowLink, tableCell, tableRow } from "../../../ui/table"
 import { latencyValue } from "../../../ui/values"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
@@ -98,35 +96,12 @@ export const traceRow = (
 	nowMs: number,
 	state: RowState,
 ): Html =>
-	h.tr(
+	tableRow(
+		h,
 		[
-			h.Attribute(
-				"class",
-				cn(
-					tableRowStyles,
-					state.isActive && "bg-surface-strong",
-					"hover:bg-surface-sunken active:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-				),
-			),
-			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
-			h.Key(`row-${index}`),
-			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
-			h.DataAttribute("index", String(index)),
-			h.DataAttribute("slot", "table-row"),
-			h.Tabindex(0),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " "
-					? Option.some(
-							state.isMobile
-								? Message.PressedOpenRow({ index })
-								: Message.ClickedPeekRow({ index }),
-						)
-					: Option.none(),
-			),
-		],
-		[
-			tableCell(
+			laneTableCell(
 				h,
+				state.isActive,
 				[
 					h.a(
 						[
@@ -139,7 +114,7 @@ export const traceRow = (
 						[shortId(row.traceId, "trace")],
 					),
 				],
-				cn(CELL, ROW_LANE, state.isActive ? "before:bg-primary" : "before:bg-transparent"),
+				CELL,
 			),
 			rootSpanCell(h, row, index, timeZone, nowMs, state.search),
 			tableCell(
@@ -161,6 +136,26 @@ export const traceRow = (
 				h,
 				[traceStatusBadge(h, { hasError: row.hasError, httpStatusCode: row.httpStatusCode })],
 				CELL,
+			),
+		],
+		cn(
+			state.isActive && "bg-surface-strong",
+			"hover:bg-surface-sunken active:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+		),
+		[
+			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
+			h.Key(`row-${index}`),
+			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
+			h.DataAttribute("index", String(index)),
+			h.Tabindex(0),
+			h.OnKeyDownPreventDefault((key) =>
+				key === "Enter" || key === " "
+					? Option.some(
+							state.isMobile
+								? Message.PressedOpenRow({ index })
+								: Message.ClickedPeekRow({ index }),
+						)
+					: Option.none(),
 			),
 		],
 	)

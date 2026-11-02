@@ -11,7 +11,7 @@ import { miniBars } from "../../ui/mini-bars"
 import {
 	shareCell,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
@@ -116,8 +116,9 @@ const errorRow = <M>(
 	options: ToolBodyOptions<M>,
 ): Html => {
 	const share = group.count / Math.max(total, 1)
-	return h.button(
-		[h.Type("button"), h.Class(toolRowClass(false)), h.OnClick(options.onOpenGroup(group.errorType))],
+	return toolTableRow(
+		h,
+		{ onClick: options.onOpenGroup(group.errorType) },
 		[
 			h.span(
 				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2 font-mono text-xs")],
@@ -244,8 +245,9 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 }
 
 const callRow = <M>(h: HtmlBuilder<M>, call: McpCallRow, max: number, options: ToolBodyOptions<M>): Html =>
-	h.button(
-		[h.Type("button"), h.Class(toolRowClass(false)), h.OnClick(options.onOpenTrace(call.traceId))],
+	toolTableRow(
+		h,
+		{ onClick: options.onOpenTrace(call.traceId) },
 		[
 			h.span(
 				[h.Class("w-20 shrink-0 font-mono text-xs tabular-nums text-muted-foreground")],

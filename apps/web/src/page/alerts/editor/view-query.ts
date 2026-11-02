@@ -8,6 +8,7 @@ import { card } from "../../../ui/card"
 import * as Combobox from "../../../ui/combobox"
 import { chipsView } from "../../../ui/combobox-view"
 import { icon, type IconName } from "../../../ui/icon"
+import { label } from "../../../ui/label"
 import * as RadioGroup from "../../../ui/radio-group"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { stableSlice } from "../../kit/stable-slice"
@@ -144,11 +145,18 @@ const groupByItems = (model: QueryView): ReadonlyArray<string> => [
 ]
 
 /** `BuiltinRow`: a label column and the control. */
-const builtinRow = (h: H, label: string, htmlFor: string, hint: string | undefined, control: Html): Html =>
+const builtinRow = (h: H, text: string, htmlFor: string, hint: string | undefined, control: Html): Html =>
 	h.div(
 		[h.Class("grid items-start gap-1 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-3")],
 		[
-			h.label([h.Class("pt-2 text-sm text-muted-foreground"), h.For(htmlFor)], [label]),
+			label(
+				h,
+				{
+					className: "pt-2 font-normal text-sm text-muted-foreground sm:text-sm",
+					attributes: [h.For(htmlFor)],
+				},
+				[text],
+			),
 			h.div(
 				[h.Class("min-w-0 space-y-1")],
 				[

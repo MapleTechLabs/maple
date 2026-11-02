@@ -3,14 +3,15 @@ import { outcomeOf, SKIP_LABELS } from "../../../components/code-review/code-rev
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
-import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
+import { spinner } from "../../../ui/spinner"
 import {
 	ariaSort,
+	laneTableCell,
 	sortButton,
 	table,
 	tableBody,
@@ -50,17 +51,17 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 	return tableRow(
 		h,
 		[
-			tableCell(
+			laneTableCell(
 				h,
+				isSelected,
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(open, { propagation: "Stop" }),
-							h.Class(
-								"flex w-full min-w-0 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:underline",
-							),
-						],
+					pressable(
+						h,
+						{
+							className:
+								"flex w-full min-w-0 items-center gap-1.5 text-left focus-visible:ring-0 focus-visible:underline",
+							attributes: [h.OnClick(open, { propagation: "Stop" })],
+						},
 						[
 							h.span([h.Class("shrink-0 text-muted-foreground")], ["#", String(review.number)]),
 							h.span(
@@ -89,7 +90,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 						],
 					),
 				],
-				cn("px-4 py-2.5 leading-normal", rowSelectedClass(isSelected)),
+				"px-4 py-2.5 leading-normal",
 			),
 			tableCell(
 				h,
@@ -98,11 +99,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 						[h.Class(cn("inline-flex items-center gap-1.5", outcome.tone))],
 						[
 							outcome.kind === "running"
-								? icon(h, "LoaderIcon", {
-										size: 14,
-										className: spinnerStyles,
-										attributes: [h.AriaLabel("Loading"), h.Role("status")],
-									})
+								? spinner(h, undefined, 14)
 								: icon(h, OUTCOME_ICONS[outcome.kind], { size: 14 }),
 							outcome.label,
 						],

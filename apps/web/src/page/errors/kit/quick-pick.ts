@@ -1,14 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	autocompleteEmptyStyles,
-	autocompleteItemStyles,
-	autocompleteListStyles,
-} from "@maple/ui/styles/ui/autocomplete"
-import { commandEmptyStyles, commandItemStyles, commandListStyles } from "@maple/ui/styles/ui/command"
 import { Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
+import { bareInput } from "../../../ui/bare-input"
+import { commandEmpty, commandListbox, commandOption } from "../../../ui/command"
 import { kbd } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import * as Popover from "../../../ui/popover"
@@ -170,30 +166,23 @@ const row = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>, item: QuickPickItem,
 	const { model, toMessage } = options
 	const isHighlighted = model.highlighted === index
 	const isDisabled = item.isDisabled ?? false
-	return h.div(
-		[
-			...(isDisabled ? [h.AriaDisabled(true)] : []),
-			h.Class(
-				cn(
-					autocompleteItemStyles,
-					cn(
-						commandItemStyles,
-						"gap-2 rounded-md px-2 py-1.5 text-xs text-foreground data-disabled:opacity-40",
-					),
-				),
-			),
-			...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
-			...(isHighlighted ? [h.DataAttribute("highlighted", "")] : []),
-			h.DataAttribute("slot", "command-item"),
-			h.Id(optionId(model.popover.id, index)),
-			h.Role("option"),
-			...(isDisabled
-				? []
-				: [
-						h.OnMouseMove(toMessage(Message.HoveredItem({ index }))),
-						h.OnClick(toMessage(Message.ClickedItem({ value: item.value }))),
-					]),
-		],
+	return commandOption(
+		h,
+		{
+			className: "gap-2 rounded-md px-2 py-1.5 text-xs text-foreground data-disabled:opacity-40",
+			attributes: [
+				...(isDisabled ? [h.AriaDisabled(true)] : []),
+				...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
+				...(isHighlighted ? [h.DataAttribute("highlighted", "")] : []),
+				h.Id(optionId(model.popover.id, index)),
+				...(isDisabled
+					? []
+					: [
+							h.OnMouseMove(toMessage(Message.HoveredItem({ index }))),
+							h.OnClick(toMessage(Message.ClickedItem({ value: item.value }))),
+						]),
+			],
+		},
 		[
 			h.span([h.Class("flex size-4 shrink-0 items-center justify-center")], [item.icon]),
 			h.span([h.Class("min-w-0 flex-1 truncate")], [item.label]),
@@ -234,56 +223,46 @@ const content = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>): ReadonlyArray<H
 		h.div(
 			[h.Class("flex items-center gap-2 border-b border-border-subtle px-3")],
 			[
-				h.input([
-					...activeDescendant,
-					h.AriaAutocomplete("list"),
-					h.AriaControls(listId(model.popover.id)),
-					h.AriaExpanded(true),
-					h.AriaHasPopup("listbox"),
-					h.AriaLabel(options.label),
-					h.Attribute("autocapitalize", "none"),
-					h.Attribute("autocomplete", "off"),
-					h.Attribute("autocorrect", "off"),
-					h.Class(
-						"h-9 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground",
-					),
-					h.DataAttribute("popup-open", ""),
-					h.DataAttribute("pressed", ""),
-					h.Placeholder(options.placeholder),
-					h.Role("combobox"),
-					h.Attribute("spellcheck", "false"),
-					h.Value(model.query),
-					h.OnInput((value) => toMessage(Message.ChangedQuery({ value }))),
-					h.OnKeyDownPreventDefault((key) =>
-						INPUT_KEYS.has(key) && (key.length > 1 || model.query === "")
-							? Option.some(toMessage(Message.PressedInputKey({ key, items: facts })))
-							: Option.none(),
-					),
-				]),
+				bareInput(h, {
+					className: "h-9 flex-1 text-sm text-foreground placeholder:text-muted-foreground",
+					attributes: [
+						...activeDescendant,
+						h.AriaAutocomplete("list"),
+						h.AriaControls(listId(model.popover.id)),
+						h.AriaExpanded(true),
+						h.AriaHasPopup("listbox"),
+						h.AriaLabel(options.label),
+						h.Attribute("autocapitalize", "none"),
+						h.Attribute("autocomplete", "off"),
+						h.Attribute("autocorrect", "off"),
+						h.DataAttribute("popup-open", ""),
+						h.DataAttribute("pressed", ""),
+						h.Placeholder(options.placeholder),
+						h.Role("combobox"),
+						h.Attribute("spellcheck", "false"),
+						h.Value(model.query),
+						h.OnInput((value) => toMessage(Message.ChangedQuery({ value }))),
+						h.OnKeyDownPreventDefault((key) =>
+							INPUT_KEYS.has(key) && (key.length > 1 || model.query === "")
+								? Option.some(toMessage(Message.PressedInputKey({ key, items: facts })))
+								: Option.none(),
+						),
+					],
+				}),
 				kbd(h, "h-4.5 min-w-4.5 text-3xs", [options.hotkey]),
 			],
 		),
 		scrollArea(h, { idPrefix: `${model.popover.id}-scroll`, className: "size-full min-h-0" }, [
-			h.div(
+			commandListbox(
+				h,
+				{
+					className: "not-empty:p-1",
+					attributes: [...activeDescendant, h.Id(listId(model.popover.id))],
+				},
 				[
-					...activeDescendant,
-					h.Class(cn(autocompleteListStyles, cn(commandListStyles, "not-empty:p-1"))),
-					h.DataAttribute("slot", "command-list"),
-					h.Id(listId(model.popover.id)),
-					h.Role("listbox"),
-					h.Tabindex(-1),
-				],
-				[
-					h.div(
-						[
-							h.AriaAtomic(true),
-							h.AriaLive("polite"),
-							h.Class(
-								cn(autocompleteEmptyStyles, cn(commandEmptyStyles, "not-empty:py-4 text-xs")),
-							),
-							h.DataAttribute("slot", "command-empty"),
-							h.Role("status"),
-						],
+					commandEmpty(
+						h,
+						{ className: "not-empty:py-4 text-xs" },
 						visible.length === 0 ? ["No match"] : [],
 					),
 					...visible.map((item, index) => row(h, options, item, index)),

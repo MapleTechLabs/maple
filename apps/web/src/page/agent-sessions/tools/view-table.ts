@@ -23,7 +23,7 @@ import {
 	type SortState,
 	sortRows,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
@@ -207,13 +207,14 @@ const body = (h: H, inputs: ToolsTableInputs): ReadonlyArray<Html> => {
 	const linkSearch = toolDetailLinkSearch(inputs.search)
 	return sortRows(prepared, inputs.sort, (row, key) => SORT_FIELDS.get(key)?.(row)).map((row) =>
 		row.key === ""
-			? h.div([h.Key(row.key), h.Class(toolRowClass(false))], cells(h, row, inputs, maxErrorRate))
-			: h.a(
-					[
-						h.Key(row.key),
-						h.Class(toolRowClass(row.key === inputs.search.tool)),
-						h.Href(hrefOf(AppRoute.AgentSessionTool({ toolName: row.key, search: linkSearch }))),
-					],
+			? toolTableRow(h, { attributes: [h.Key(row.key)] }, cells(h, row, inputs, maxErrorRate))
+			: toolTableRow(
+					h,
+					{
+						isSelected: row.key === inputs.search.tool,
+						href: hrefOf(AppRoute.AgentSessionTool({ toolName: row.key, search: linkSearch })),
+						attributes: [h.Key(row.key)],
+					},
 					cells(h, row, inputs, maxErrorRate),
 				),
 	)

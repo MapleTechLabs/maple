@@ -1,10 +1,7 @@
-import * as SheetStyles from "@maple/ui/styles/ui/sheet"
-import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import * as AttributesView from "../../../ui/attributes/attributes-view"
 import { copyButton } from "../../../ui/copy-button"
-import { titleId } from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { icon, type IconName } from "../../../ui/icon"
 import { cappedCode } from "../../../ui/logs/log-message"
@@ -146,14 +143,7 @@ const content = (
 	timeZone: string,
 	close: ReadonlyArray<ChildAttribute>,
 ) => [
-	h.h2(
-		[
-			h.Class(cn(SheetStyles.sheetTitleStyles, "sr-only")),
-			h.DataAttribute("slot", "sheet-title"),
-			h.Id(titleId(model.dialog.id)),
-		],
-		["Log: ", log.body.slice(0, 80)],
-	),
+	DialogView.dialogTitle(h, "sheet", model.dialog.id, ["Log: ", log.body.slice(0, 80)], "sr-only"),
 	heroHeader(h, model, log, close),
 	metaStrip(h, model, log, timeZone),
 	...(showsErrorBanner(log) ? [errorBanner(h, model, log)] : []),

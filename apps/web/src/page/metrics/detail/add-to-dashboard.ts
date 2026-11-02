@@ -9,6 +9,7 @@ import { button } from "../../../ui/button"
 import * as DialogView from "../../../ui/dialog-view"
 import { errorState } from "../../../ui/error-state"
 import { input } from "../../../ui/input"
+import { pressable } from "../../../ui/pressable"
 import { defineMessageUnion } from "foldkit/message"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { trackProduct } from "../../../data/analytics"
@@ -217,15 +218,14 @@ const closedTo = (model: Model, dashboardId: string): Return => ({
 type H = HtmlBuilder<Message>
 
 const choiceRow = (h: H, dashboard: DashboardChoice): Html =>
-	h.button(
-		[
-			h.Key(dashboard.id),
-			h.Type("button"),
-			h.OnClick(Message.ClickedDashboard({ dashboardId: dashboard.id })),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedDashboard({ dashboardId: dashboard.id }),
+			className:
 				"flex w-full items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm hover:bg-accent active:bg-accent",
-			),
-		],
+			attributes: [h.Key(dashboard.id)],
+		},
 		[
 			h.span([h.Class("truncate")], [dashboard.name]),
 			h.span(

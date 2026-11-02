@@ -1,17 +1,16 @@
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { fieldErrorStyles } from "@maple/ui/styles/ui/field"
-import { tokenizeSql } from "../../../lib/sql-highlight"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import * as Tooltip from "../../../ui/tooltip"
 import { button } from "../../../ui/button"
-import { field, fieldLabel, type FieldState } from "../../../ui/field"
+import { badge } from "../../../ui/display"
+import { field, fieldErrorText, fieldLabel, type FieldState } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
 import { input } from "../../../ui/input"
+import { sqlEditor } from "../../../ui/sql-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type RawSqlState, rawSqlErrorOf } from "./raw-sql"
@@ -52,16 +51,12 @@ const header = (h: H, rawSql: RawSqlState): Html => {
 				},
 				[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
 			),
-			h.span(
-				[
-					h.Class(
-						badgeVariants({
-							variant: "outline",
-							className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
-						}),
-					),
-					h.DataAttribute("slot", "badge"),
-				],
+			badge(
+				h,
+				{
+					variant: "outline",
+					className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
+				},
 				["sql"],
 			),
 			h.span([h.Class("text-2xs text-muted-foreground")], ["ClickHouse"]),
@@ -79,42 +74,7 @@ const header = (h: H, rawSql: RawSqlState): Html => {
 }
 
 const editor = (h: H, sql: string): Html =>
-	h.div(
-		[h.Class("relative w-full text-xs font-mono leading-5")],
-		[
-			h.pre(
-				[
-					h.AriaHidden(true),
-					h.Class(
-						"pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words rounded-sm border border-transparent px-2 py-1.5 leading-5",
-					),
-				],
-				[
-					h.code(
-						[h.Class("font-mono")],
-						[
-							...tokenizeSql(sql).map((token) =>
-								h.span(token.className === undefined ? [] : [h.Class(token.className)], [
-									token.text,
-								]),
-							),
-							"\n",
-						],
-					),
-				],
-			),
-			h.textarea([
-				h.Id(SQL_TEXTAREA_ID),
-				h.AriaLabel("SQL query"),
-				h.Value(sql),
-				h.OnInput((value) => Message.ChangedSql({ value })),
-				h.Spellcheck(false),
-				h.Class(
-					"relative w-full bg-transparent text-transparent caret-foreground border border-border rounded-sm px-2 py-1.5 min-h-[200px] resize-y outline-none focus:ring-1 focus:ring-foreground/20 leading-5",
-				),
-			]),
-		],
-	)
+	sqlEditor(h, { id: SQL_TEXTAREA_ID, label: "SQL query", value: sql, onInput: (value) => Message.ChangedSql({ value }) })
 
 const chip = (h: H, token: string, className: string, trigger: ReadonlyArray<ChildAttribute>): Html =>
 	button(
@@ -239,13 +199,7 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 		...(error === null
 			? []
 			: [
-					h.div(
-						[
-							h.Class(cn(fieldErrorStyles, "font-medium")),
-							h.DataAttribute("slot", "field-error"),
-						],
-						[error],
-					),
+					fieldErrorText(h, { className: "font-medium" }, error),
 				]),
 		h.div(
 			[h.Class("space-y-3")],

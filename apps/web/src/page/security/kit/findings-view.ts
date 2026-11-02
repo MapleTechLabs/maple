@@ -1,9 +1,10 @@
 import type { SecurityAuditFinding } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
+import { pressable } from "../../../ui/pressable"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
 import { locationOf } from "./format"
@@ -161,11 +162,8 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 	const { finding } = options
 	const location = locationOf(finding.record)
 	const note = noteOf(finding)
-	const attributes: ReadonlyArray<Attribute<M>> = [
-		h.Class(
-			"flex h-10 w-full min-w-0 items-center gap-3 pr-3 pl-8 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-		),
-	]
+	const rowClass =
+		"flex h-10 w-full min-w-0 items-center gap-3 pr-3 pl-8 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 	const children = [
 		bucketIcon(h, bucketOf(finding), isUnverified(finding)),
 		h.span(
@@ -213,8 +211,8 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 		[h.Key(`${finding.targetId}/${finding.fingerprint}`), h.Class("border-b border-border-subtle")],
 		[
 			"href" in options.open
-				? h.a([h.Href(options.open.href), ...attributes], children)
-				: h.button([h.Type("button"), h.OnClick(options.open.onClick), ...attributes], children),
+				? h.a([h.Href(options.open.href), h.Class(rowClass)], children)
+				: pressable(h, { onClick: options.open.onClick, className: rowClass }, children),
 		],
 	)
 }
@@ -246,15 +244,14 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 			return h.section(
 				[h.Key(bucket), h.AriaLabel(BUCKET_LABEL[bucket])],
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.AriaExpanded(!isCollapsed),
-							h.OnClick(options.onToggle(bucket)),
-							h.Class(
+					pressable(
+						h,
+						{
+							onClick: options.onToggle(bucket),
+							className:
 								"sticky top-0 z-[1] flex h-9 w-full items-center gap-2 border-b border-border-subtle bg-surface-strong px-3 text-left backdrop-blur hover:bg-muted active:bg-muted",
-							),
-						],
+							attributes: [h.AriaExpanded(!isCollapsed)],
+						},
 						[
 							icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon", {
 								size: 12,

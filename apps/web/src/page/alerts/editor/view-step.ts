@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../../ui/heading"
 
 // `RuleStep` and the editor's shared width.
 
@@ -35,11 +36,9 @@ export const ruleStep = <M>(h: HtmlBuilder<M>, options: RuleStepOptions, childre
 							h.div(
 								[h.Class("flex items-baseline gap-3")],
 								[
-									h.h2(
-										[
-											h.Id(headingId),
-											h.Class("font-display text-lg font-medium tracking-tight text-foreground"),
-										],
+									heading(
+										h,
+										{ level: 2, variant: "title", id: headingId },
 										[
 											h.span(
 												[h.Class("mr-2.5 font-mono text-sm font-normal text-muted-foreground")],

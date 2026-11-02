@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { badge } from "../../ui/display"
@@ -13,6 +14,7 @@ import { icon } from "../../ui/icon"
 import type { IconName } from "../../ui/icons.generated"
 import { item, itemContent, itemMedia } from "../../ui/item"
 import { skeleton } from "../../ui/skeleton"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../ui/table"
 import { relativeTime } from "../kit/relative-time"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { isSelectionSaved, metricStreamOf, selectionOf } from "./aws"
@@ -351,89 +353,70 @@ const ingestBody = (
 			],
 		),
 		h.div(
-			[h.Class("w-full overflow-x-auto rounded-md border")],
+			[h.Class("w-full overflow-hidden rounded-md border")],
 			[
-				h.table(
-					[h.Class("w-full text-xs")],
-					[
-						h.thead(
-							[h.Class("bg-surface-sunken text-left text-muted-foreground")],
-							[
-								h.tr(
-									[],
-									INGEST_COLUMNS.map((column) =>
-										h.th(
-											[
-												h.Class(
-													cn(
-														"px-2.5 py-1.5 font-medium",
-														(column === "Metrics" || column === "Data points") &&
-															"text-right",
-													),
-												),
-												h.Scope("col"),
-											],
-											[column],
-										),
+				table(h, { size: "sm" }, [
+					tableHeader(
+						h,
+						[
+							tableRow(
+								h,
+								INGEST_COLUMNS.map((column) =>
+									tableHead(
+										h,
+										[column],
+										column === "Metrics" || column === "Data points" ? "text-right" : undefined,
+										[h.Scope("col")],
 									),
 								),
-							],
-						),
-						h.tbody(
-							[],
-							ingest.groups.map((group) =>
-								h.tr(
-									[h.Class("border-t align-top")],
-									[
-										h.td([h.Class("px-2.5 py-1.5 font-mono")], [group.namespace]),
-										h.td(
-											[h.Class("px-2.5 py-1.5 font-mono text-muted-foreground")],
-											[group.region ?? "unknown"],
-										),
-										h.td(
-											[h.Class("px-2.5 py-1.5 text-right tabular-nums")],
-											[formatNumber(group.metrics)],
-										),
-										h.td(
-											[h.Class("px-2.5 py-1.5 text-right tabular-nums")],
-											[formatNumber(group.data_points)],
-										),
-										h.td(
-											[h.Class("px-2.5 py-1.5 [overflow-wrap:anywhere]")],
-											[
-												h.span(
-													[h.Class("tabular-nums")],
-													[formatNumber(group.resources)],
-												),
-												h.span(
-													[h.Class("text-muted-foreground")],
-													[
-														` · ${group.sample_resources.join(", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
-													],
-												),
-											],
-										),
-										h.td(
-											[
-												h.Class(
-													"whitespace-nowrap px-2.5 py-1.5 text-muted-foreground",
-												),
-											],
-											[
-												relativeTime(h, {
-													value: group.last_point_at,
-													nowMs: model.nowMs,
-													timeZone,
-													variant: "short",
-												}),
-											],
-										),
-									],
-								),
+							),
+						],
+						{ className: "bg-surface-sunken" },
+					),
+					tableBody(
+						h,
+						ingest.groups.map((group) =>
+							tableRow(
+								h,
+								[
+									tableCell(h, [group.namespace], "font-mono"),
+									tableCell(h, [group.region ?? "unknown"], "font-mono text-muted-foreground"),
+									tableCell(h, [formatNumber(group.metrics)], "text-right tabular-nums"),
+									tableCell(h, [formatNumber(group.data_points)], "text-right tabular-nums"),
+									tableCell(
+										h,
+										[
+											h.span(
+												[h.Class("tabular-nums")],
+												[formatNumber(group.resources)],
+											),
+											h.span(
+												[h.Class("text-muted-foreground")],
+												[
+													` · ${group.sample_resources.join(", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
+												],
+											),
+										],
+										"whitespace-normal [overflow-wrap:anywhere]",
+									),
+									tableCell(
+										h,
+										[
+											relativeTime(h, {
+												value: group.last_point_at,
+												nowMs: model.nowMs,
+												timeZone,
+												variant: "short",
+											}),
+										],
+										"text-muted-foreground",
+									),
+								],
+								"align-top",
 							),
 						),
-					],
-				),
+					),
+				]),
 			],
 		),
 		...silentRegions.map((region) =>
@@ -460,7 +443,7 @@ export const ingestPanel = (
 		h.section(
 			[h.Class("flex w-full flex-col gap-2 border-t pt-3"), h.AriaLabel("What Maple receives")],
 			[
-				h.h4([h.Class("text-sm font-medium")], ["What Maple receives"]),
+				heading(h, { level: 4, variant: "subsection" }, ["What Maple receives"]),
 				...AsyncData.match(slot.data, {
 					onIdle: () => [skeleton(h, "h-16 w-full rounded-md")],
 					onLoading: () => [skeleton(h, "h-16 w-full rounded-md")],
@@ -511,8 +494,9 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 				h.div(
 					[h.Class("flex flex-wrap items-center gap-2")],
 					[
-						h.h3(
-							[h.Class("font-mono text-sm font-semibold tabular-nums")],
+						heading(
+							h,
+							{ level: 3, variant: "section", className: "font-mono tabular-nums" },
 							[connection.account_id],
 						),
 						badge(h, { variant: CONDITION_VARIANT[condition] }, [AWS_CONDITION_LABEL[condition]]),
@@ -568,8 +552,9 @@ const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[
-					h.h4(
-						[h.Class("text-sm font-medium")],
+					heading(
+						h,
+						{ level: 4, variant: "subsection" },
 						[waiting ? "Deploy the stack" : "Deploy the stack again"],
 					),
 					h.span([h.Class("ml-auto")], [methodSelect(h, model, "role")]),
@@ -599,8 +584,9 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-2")],
 						[
-							h.h4(
-								[h.Class("text-sm font-medium")],
+							heading(
+								h,
+								{ level: 4, variant: "subsection" },
 								[`Delete the stack in ${stack.accountId}`],
 							),
 							h.span(

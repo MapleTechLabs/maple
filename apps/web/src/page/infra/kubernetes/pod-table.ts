@@ -7,10 +7,10 @@ import {
 } from "../../../components/infra/pod-restarts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { laneLink } from "../../../ui/lane-link"
 import { middleTruncate } from "../../../ui/middle-truncate"
 import { skeleton } from "../../../ui/skeleton"
 import { avgPeak } from "../kit/avg-peak"
@@ -148,21 +148,23 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 	const workload = workloadOf(pod)
 	const key = podKey(pod)
 	const isActive = inputs.activeKey === key
-	return h.a(
-		[
-			h.Key(key),
-			h.Href(
-				hrefOf(
-					AppRoute.InfraKubernetesPod({
-						podName: pod.podName,
-						search: { ...inputs.timeSearch, namespace: pod.namespace || undefined },
-					}),
-				),
+	return laneLink(
+		h,
+		{
+			href: hrefOf(
+				AppRoute.InfraKubernetesPod({
+					podName: pod.podName,
+					search: { ...inputs.timeSearch, namespace: pod.namespace || undefined },
+				}),
 			),
-			h.Class(cn(ROW_LINK_CLASS, rowSelectedClass(isActive))),
-			...(isActive ? [h.DataAttribute("active", "true")] : []),
-			...(inputs.canPeek === true ? [h.DataAttribute("peek-key", key)] : []),
-		],
+			isSelected: isActive,
+			className: ROW_LINK_CLASS,
+			attributes: [
+				h.Key(key),
+				...(isActive ? [h.DataAttribute("active", "true")] : []),
+				...(inputs.canPeek === true ? [h.DataAttribute("peek-key", key)] : []),
+			],
+		},
 		[
 			h.div(
 				[h.Class("w-0 min-w-64 flex-1")],

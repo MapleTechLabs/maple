@@ -5,7 +5,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
+import { linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import { pageTitle } from "../../../ui/page-layout"
 import * as Select from "../../../ui/select"
@@ -59,13 +59,14 @@ const environmentItems = (model: Model): ReadonlyArray<SelectView.SelectEntry> =
 }
 
 const createAlert = (h: H, model: Model): Html =>
-	h.a(
-		[
-			h.AriaLabel("Create alert"),
-			h.Class(buttonVariants({ variant: "outline", size: "sm" })),
-			h.DataAttribute("slot", "button"),
-			h.Href(hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } }))),
-		],
+	linkButton(
+		h,
+		{
+			variant: "outline",
+			size: "sm",
+			href: hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } })),
+			attributes: [h.AriaLabel("Create alert")],
+		},
 		[icon(h, "BellIcon"), h.span([h.Class("hidden sm:inline")], ["Create alert"])],
 	)
 
@@ -75,14 +76,17 @@ const runsOn = (h: H, model: Model): Html => {
 	const first = links[0]
 	if (first === undefined) return null
 	const more = links.length - 1
-	return h.a(
-		[
-			h.AriaLabel(`Runs on ${first.label} ${first.name}`),
-			h.Title(links.map((link) => `${link.label}: ${link.name}`).join("\n")),
-			h.Class(buttonVariants({ variant: "outline", size: "sm" })),
-			h.DataAttribute("slot", "button"),
-			h.Href(first.href),
-		],
+	return linkButton(
+		h,
+		{
+			variant: "outline",
+			size: "sm",
+			href: first.href,
+			attributes: [
+				h.AriaLabel(`Runs on ${first.label} ${first.name}`),
+				h.Title(links.map((link) => `${link.label}: ${link.name}`).join("\n")),
+			],
+		},
 		[
 			icon(h, first.icon),
 			h.span([h.Class("hidden sm:inline")], [first.label]),

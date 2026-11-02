@@ -5,8 +5,8 @@ import { initialsFrom } from "@maple/ui/lib/initials"
 import { AGENT_ACCENT } from "@maple/ui/lib/tone"
 import { shortId as truncateId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
-import { avatarFallbackStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { avatarFallback } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { warmAvatarTone } from "../../../ui/avatar-tone"
 
@@ -88,21 +88,14 @@ export const identityAvatar = <M>(
 		identity.initials === "" ? icon(h, "UserIcon", { className: "size-[60%]" }) : identity.initials
 	// The initials show until the photo loads; photos are not loaded here yet.
 	if (identity.imageUrl !== undefined && identity.imageUrl !== null && identity.imageUrl !== "")
-		return h.span(
-			[
-				h.AriaHidden(true),
-				h.Class(cn(avatarStyles, cn(base, "ring-1 ring-border-subtle"))),
-				h.DataAttribute("slot", "avatar"),
-			],
-			[
-				h.span(
-					[
-						h.Class(cn(avatarFallbackStyles, gradient, SIZE_CLASS[size])),
-						h.DataAttribute("slot", "avatar-fallback"),
-					],
-					[mark],
-				),
-			],
+		return avatarFallback(
+			h,
+			{
+				className: cn(base, "ring-1 ring-border-subtle"),
+				fallbackClassName: cn(gradient, SIZE_CLASS[size]),
+				attributes: [h.AriaHidden(true)],
+			},
+			mark,
 		)
 	return h.span([h.AriaHidden(true), h.Class(cn(base, gradient))], [mark])
 }

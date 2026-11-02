@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 
 // The tool scope row: what the page is about, one click out of each.
 
@@ -16,18 +17,19 @@ export type ScopeRowConfig<M> = Readonly<{
 }>
 
 const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
-	h.button(
-		[
-			h.Key(`${chip.kind}:${chip.value}`),
-			h.AriaLabel(`Remove ${chip.kind} ${chip.value}`),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: onRemove,
+			label: `Remove ${chip.kind} ${chip.value}`,
+			className:
 				"inline-flex h-[22px] max-w-64 items-center gap-1.5 rounded-sm border border-primary-a4 bg-primary-a2 px-2 hover:bg-primary-a3 active:bg-primary-a3",
-			),
-			h.DataAttribute("base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.Type("button"),
-			h.OnClick(onRemove),
-		],
+			attributes: [
+				h.Key(`${chip.kind}:${chip.value}`),
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				h.DataAttribute("slot", "tooltip-trigger"),
+			],
+		},
 		[
 			h.span([h.Class("text-2xs text-muted-foreground")], [chip.kind]),
 			h.span([h.Class("truncate text-2xs text-primary")], [chip.value]),

@@ -14,6 +14,7 @@ import { separator } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { keyValue, keyValueList } from "../../../ui/key-value"
+import { pressable } from "../../../ui/pressable"
 import { truncatedText } from "../../../ui/truncated-text"
 import { detectLookup } from "../kit/detected-models"
 import type { LoadProgress, SessionData } from "./derive"
@@ -147,26 +148,24 @@ const callLane = (
 		[
 			h.span([h.AriaHidden(true), h.Class("absolute top-1/2 left-0 h-px w-full bg-border")], []),
 			...tool.events.map((event) =>
-				h.button(
-					[
-						h.Key(event.spanId),
-						h.AriaHasPopup("dialog"),
-						h.Class(
-							cn(
-								"absolute cursor-pointer rounded-2xs",
-								event.failed
-									? "top-[5px] h-3.5 bg-severity-error"
-									: "top-[7px] h-2.5 bg-chart-4",
-							),
+				pressable(
+					h,
+					{
+						onClick: openSpan(model, event.spanId),
+						className: cn(
+							"absolute rounded-2xs",
+							event.failed ? "top-[5px] h-3.5 bg-severity-error" : "top-[7px] h-2.5 bg-chart-4",
 						),
-						h.Style({
-							left: `min(${axis.fraction(event.startMs) * 100}%, 100% - 3px)`,
-							width: `max(3px, ${(event.durationMs / axis.totalMs) * 100}%)`,
-						}),
-						h.Title(callTitle(tool.name, event, sessionStartMs)),
-						h.Type("button"),
-						h.OnClick(openSpan(model, event.spanId)),
-					],
+						attributes: [
+							h.Key(event.spanId),
+							h.AriaHasPopup("dialog"),
+							h.Style({
+								left: `min(${axis.fraction(event.startMs) * 100}%, 100% - 3px)`,
+								width: `max(3px, ${(event.durationMs / axis.totalMs) * 100}%)`,
+							}),
+							h.Title(callTitle(tool.name, event, sessionStartMs)),
+						],
+					},
 					[h.span([h.Class("sr-only")], [callTitle(tool.name, event, sessionStartMs)])],
 				),
 			),
@@ -220,18 +219,16 @@ const ledgerRow = (
 				[h.Class("flex h-6 items-center gap-4")],
 				[
 					isDisclosable
-						? h.button(
-								[
-									h.AriaExpanded(isExpanded),
-									h.Class(
-										cn(
-											LEDGER_NAME,
-											"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary active:text-primary",
-										),
+						? pressable(
+								h,
+								{
+									onClick: Message.ToggledLedgerTool({ name: tool.name }),
+									className: cn(
+										LEDGER_NAME,
+										"flex items-center gap-1.5 text-left hover:text-primary active:text-primary",
 									),
-									h.Type("button"),
-									h.OnClick(Message.ToggledLedgerTool({ name: tool.name })),
-								],
+									attributes: [h.AriaExpanded(isExpanded)],
+								},
 								[
 									disclosureChevron(h, { isOpen: isExpanded, size: 9 }),
 									truncatedText(h, { text: tool.name, mono: true, className: "text-xs" }),

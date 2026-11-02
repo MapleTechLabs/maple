@@ -7,6 +7,7 @@ import {
 import { getValueHue } from "@maple/ui/lib/colors"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
+import { pressable } from "../../ui/pressable"
 import type { MeasuredNode } from "../xyflow/geometry"
 import { flowNode } from "../xyflow/view"
 import type { EffectiveGraph } from "./graph"
@@ -44,13 +45,16 @@ const box = <M>(h: HtmlBuilder<M>, label: string, hue: number, onCollapse: M): H
 				],
 				[
 					h.span([h.Class("truncate")], [label]),
-					h.button(
-						[
-							h.Type("button"),
-							h.Title(`Collapse ${label} into one node`),
-							h.OnClick(onCollapse, { propagation: "Stop" }),
-							h.Class("shrink-0 opacity-60 transition-opacity hover:opacity-100 active:opacity-100"),
-						],
+					pressable(
+						h,
+						{
+							className:
+								"shrink-0 opacity-60 transition-opacity hover:opacity-100 active:opacity-100",
+							attributes: [
+								h.Title(`Collapse ${label} into one node`),
+								h.OnClick(onCollapse, { propagation: "Stop" }),
+							],
+						},
 						[icon(h, "MinimizeIcon", { size: 10 })],
 					),
 				],

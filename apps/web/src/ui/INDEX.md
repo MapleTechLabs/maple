@@ -15,23 +15,28 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/autocomplete.ts` `autocompleteField`, `view`: Base UI `Autocomplete` (`@maple/ui/autocomplete`) on the Combobox Submodel in "autocomplete" mode: `AutocompleteInput` (input group, start addon, `Input` control) and its popup.
 - `ui/avatar-image.ts` `trackAvatarImageLoads`: `AvatarImage` drops its `AvatarFallback` once loaded.
 - `ui/avatar-tone.ts` `warmAvatarTone`: Warm tiles for initials avatars, near the primary orange, so an org or a user without an image gets the same colour wherever their avatar is drawn.
+- `ui/bare-input.ts` `bareInput`: `BareInput`: a text input with no box of its own, for a field whose box is drawn around it (a tag editor's draft beside its chips).
 - `ui/breadcrumb.ts` `breadcrumb`, `breadcrumbList`, `breadcrumbItem`, `breadcrumbLink`, `breadcrumbPage`, `breadcrumbSeparator`, `breadcrumbEllipsis`: `<BreadcrumbLink render={<Link to />}>`.
 - `ui/bubble.ts` `bubbleGroup`, `bubble`, `bubbleContent`: Port of packages/ui/src/components/ui/bubble.tsx (reactions not ported: no caller yet).
 - `ui/button.ts` `button`, `linkButton`: `<Button>`: the same class composition, attributes and loading spinner as @maple/ui.
 - `ui/calendar-view.ts` `view`: react-day-picker's DOM for `<Calendar mode="single">` (en-US): rdp-* classes, Maple's `calendarClassNames`, the same ARIA labels.
 - `ui/calendar.ts` `isoDay`, `gridWeeks`, `tabbableDay` (stateful: Model, init, update): Port of packages/ui/src/components/ui/calendar.tsx, single mode: react-day-picker's state as a Submodel.
 - `ui/card-button.ts` `cardButtonClass`, `cardButton`: `CardButton`: a whole card as one click target (template tiles, source and destination pickers, metric cards).
-- `ui/card.ts` `card`, `cardHeader`, `cardTitle`, `cardDescription`, `cardPanel`, `cardFooter`: The Card surface (styles in packages/ui/src/components/ui/card.styles.ts): rounded-md, and its parts.
+- `ui/card.ts` `card`, `cardHeader`, `cardTitle`, `cardDescription`, `cardPanel`, `cardFooter`, `cardAction`: The Card surface (styles in packages/ui/src/components/ui/card.styles.ts): rounded-md, and its parts.
 - `ui/chart-skeleton-shapes.ts` `heatmapGhost`, `hbarGhost`, `funnelGhost`, `pathsGhost`, `pieGhost`, `gaugeGhost`, `statGhost`, `dropoffGhost`: The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), markup and numbers as t...
 - `ui/chart-skeleton.ts` `chartSkeleton`: Port of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), every ghost shape.
 - `ui/chart-state.ts` `chartEmpty`, `chartError`, `chartLoading`, `chartPlotArea`: Port of `ChartLoading`, `ChartEmpty` and `ChartError` (packages/ui/src/components/charts/_shared/ chart-state.tsx), standalone (no `ChartPlotArea`): an explicit height, else the...
 - `ui/checkbox.ts` `labelId`, `view` (stateful: Model, init, update): Base UI `Checkbox`: the checked state is the Submodel; `indeterminate` stays a view input, as it is a controlled prop in @maple/ui (it overrides how the box reads, not what a cl...
+- `ui/choice-card.ts` `choiceCard`: `ChoiceCard`: a whole card that picks an option, over a visually hidden native radio or checkbox (the onboarding and connect pickers).
 - `ui/choice.ts` `labelIdOf`, `toggleKey`, `hiddenInput`: Shared by checkbox, radio, switch, select and combobox: the parts Base UI renders the same way.
-- `ui/combobox-view.ts` `dismissButton`, `inputAttributes`, `hiddenInput`, `comboboxCheckIcon`, `listPopup`, `chipsView`, `inputField`, `view`: Base UI's visually hidden "Dismiss" button for screen readers, beside the input and the list.
+- `ui/collapsible.ts` `collapsible`, `collapsibleTrigger`: `Collapsible` whose open state lives in the owner's Model: the trigger button and, while open, its panel (closed, Base UI renders no panel).
+- `ui/color-input.ts` `colorInput`: `ColorInput`: a native colour picker drawn as a small bordered swatch, reporting the picked hex colour.
+- `ui/combobox-view.ts` `dismissButton`, `inputAttributes`, `chipsInput`, `hiddenInput`, `comboboxCheckIcon`, `listPopup`, `chipsView`, `inputField`, `view`: Base UI's visually hidden "Dismiss" button for screen readers, beside the input and the list.
 - `ui/combobox.ts` `inputId`, `listId`, `itemId`, `filterItems`, `queryOf`, `visibleItems` (stateful: Model, init, update): Base UI `Combobox` (multiple, with chips) and `Autocomplete` (`@maple/ui/combobox`, `@maple/ui/autocomplete`): an input that filters a listbox.
-- `ui/command.ts` `commandTitles`, `commandInput`, `commandList`, `commandFooter`, `commandHiddenInput`: `@maple/ui/command`: the command palette's body, an inline Autocomplete (always open, first match highlighted) on the Combobox Model, inside a `command-dialog` Dialog.
+- `ui/command.ts` `commandTitles`, `commandInput`, `commandList`, `commandGroup`, `commandFooter`, `commandHiddenInput`, `commandOption`, `commandListbox`, `commandEmpty`: `@maple/ui/command`: the command palette's body, an inline Autocomplete (always open, first match highlighted) on the Combobox Model, inside a `command-dialog` Dialog.
+- `ui/compact-search-input.ts` `compactSearchInput`: `CompactSearchInput`: a 24px mono filter field (magnifier, search input, clear button) for a panel toolbar.
 - `ui/confirm-dialog.ts` `confirmDialog`: Port of `ConfirmDialog` (packages/ui/src/components/ui/confirm-dialog.tsx) over the alert-dialog Submodel.
-- `ui/context-menu-view.ts` `view`: An entry of the menu: an item (with an optional shortcut) or a separator.
+- `ui/context-menu-view.ts` `idleTrigger`, `view`: An entry of the menu: an item (with an optional shortcut) or a separator.
 - `ui/context-menu.ts` `itemId`, `subItemId`, `subPopupId` (stateful: Model, init, update): Base UI `ContextMenu` (`@maple/ui/context-menu`): a right-click on the trigger opens a menu at the pointer (fixed, side right, align start, offset 4); arrows move the highlight,...
 - `ui/copy-button.ts` `writeClipboard`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
 - `ui/copyable-field.ts` `maskKey`, `copyableField`: Port of packages/ui/src/components/ui/copyable-field.tsx.
@@ -39,15 +44,16 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailField`, `detailRailMetaRow`: Port of `DetailRail` (packages/ui/src/components/detail-rail.tsx): Group, Row and Field.
 - `ui/dialog-view.ts` `view`, `dialogHeader`, `dialogTitle`, `dialogDescription`, `dialogPanel`, `dialogFooter`, `dialogFooterHint`: `text` as runs where the JSX interpolates, so the text nodes split the same.
 - `ui/dialog.ts` `popupId`, `triggerId`, `titleId`, `descriptionId`, `open`, `close`, `isDismissedByOutsidePress` (stateful: Model, init, update): Base UI `Dialog` / `AlertDialog` as one Submodel: open state, the enter/exit transition, and a Mount that portals the popup to `<body>`, marks the page outside it, locks scroll...
-- `ui/display.ts` `kbd`, `kbdGroup`, `badge`, `separator`, `avatarFallback`: `<Kbd>`.
+- `ui/display.ts` `kbd`, `kbdGroup`, `badgeClass`, `badge`, `separator`, `avatarFallback`: `<Kbd>`.
 - `ui/dither-field.ts` `fieldAt`, `ditherLevel`, `startDitherField`: The onboarding backdrop: square pixels lit in the primary colour through an 8x8 ordered dither, spreading from the bottom-left corner.
 - `ui/dropdown-menu.ts` `menuTriggerAttributes`, `positionerStyle`, `menuPopup`, `menuGroup`, `menuLabel`, `menuItem`, `menuSeparator`, `menuShortcut`, `menuCheckableItem`, `menuRadioGroup`, `menuSubTrigger`: The Foldkit side of packages/ui/src/components/ui/dropdown-menu.tsx over Base UI's Menu DOM.
 - `ui/empty.ts` `empty`, `emptyHeader`, `emptyTitle`, `emptyDescription`, `emptyContent`, `emptyMedia`, `emptyMessage`: Port of packages/ui/src/components/ui/empty.tsx.
 - `ui/error-section.ts` `errorSectionView`: Port of `ErrorSection` (packages/ui/src/components/error-section.tsx): the error banner, its highlighted body that copies itself, the "Copy as prompt" control and the Show more...
 - `ui/error-state.ts` `failureKind`, `failureSentence`, `autoRetryMessage`, `errorState`: The error state.
 - `ui/eyebrow.ts` `withHint`, `eyebrow`: Keeps a trailing "(hint)" out of the uppercase transform; for any uppercased label.
-- `ui/field.ts` `stateOf`, `controlAttributes`, `field`, `fieldLabel`, `input`, `fieldDescription`, `fieldError` (stateful: Model, init, update): The value and focus handlers a field's control reports through.
-- `ui/filter-chip.ts` `filterChip`: `<FilterChip>`: an on/off filter toggle with an optional tone dot and trailing count.
+- `ui/field.ts` `stateOf`, `controlAttributes`, `field`, `fieldLabel`, `fieldGroupLabel`, `input`, `fieldDescription`, `fieldError`, `fieldErrorText` (stateful: Model, init, update): The value and focus handlers a field's control reports through.
+- `ui/file-input.ts` `fileInput`: `FileInput`: a hidden `<input type="file">` that a visible button opens by id; it reports the picked files.
+- `ui/filter-chip.ts` `filterChip`, `filterChipItem`: `<FilterChip>`: an on/off filter toggle with an optional tone dot and trailing count.
 - `ui/filters/active-filter-chips.ts` `activeFilterChips`: Port of `ActiveFilterChips` (packages/ui/src/components/filters/active-filter-chips.tsx).
 - `ui/filters/excluded-empty-hint.ts` `excludedEmptyHint`: Port of `ExcludedEmptyHint` (packages/ui/src/components/filters/excluded-empty-hint.tsx): why an empty list under an exclusion is empty, and the way out.
 - `ui/filters/filter-section.ts` `filterDescriptionMark`, `filterSection`, `singleCheckboxFilter`: Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
@@ -57,18 +63,20 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/filters/range-filter-section.ts` `rangeFilterSection`: Port of `RangeFilterSection` (packages/ui/src/components/filters/range-filter-section.tsx).
 - `ui/filters/range-format.ts` `parseRange`, `formatCount`, `formatUsd`, `formatSeconds`, `formatValue`, `formatCompact`, `formatRange`: copied: the parsing and formatting half of packages/ui/src/components/filters/range-filter-section.tsx (the React module also holds the component).
 - `ui/filters/range-histogram.ts` `rangeHistogram`: `RangeHistogram` (packages/ui/src/components/filters/range-filter-section.tsx): the distribution above a range's inputs.
-- `ui/form-dialog.ts` `formDialog`: Port of `FormDialog` (packages/ui/src/components/ui/form-dialog.tsx) over the dialog Submodel: a real `<form>`, so Enter in a field submits.
+- `ui/form-dialog.ts` `formDialogForm`, `formDialog`: Port of `FormDialog` (packages/ui/src/components/ui/form-dialog.tsx) over the dialog Submodel: a real `<form>`, so Enter in a field submits.
 - `ui/heading.ts` `heading`: `Heading`: an `h1`-`h4` on the dashboard's heading ramp.
 - `ui/hover-card.ts` `view` (stateful: Model, init, update): Base UI `PreviewCard` (`@maple/ui/hover-card`): opens after the pointer rests on the trigger (600 ms, or the trigger's `delay`), closes after it leaves trigger and card (300 ms)...
 - `ui/http-span-label.ts` `httpSpanLabel`: Port of `HttpSpanLabel` (packages/ui/src/components/traces/http-span-label.tsx).
 - `ui/icon-button.ts` `iconButton`: `<IconButton>`: an icon-only Button that always carries a name and, by default, a tooltip.
 - `ui/icon.ts` `icon`, `iconColor`: A generated icon with its size, class, style and attributes.
 - `ui/inline-code.ts` `inlineCodeClassName`, `inlineCode`: `InlineCode`: inline monospace for identifiers and commands inside prose.
+- `ui/inline-rename-input.ts` `inlineRenameInput`: `InlineRenameInput`: the text input that stands in for a title while it is renamed, an underline with no box.
 - `ui/input-group.ts` `inputGroup`, `inputGroupAddon`, `inputGroupText`, `inputGroupButton`, `inputGroupInput`: `<InputGroup>`: one bordered control holding addons and an unstyled input.
 - `ui/input.ts` `fieldStateAttributes`, `inputControlClassName`, `input`: Base UI's field state, which it mirrors as data attributes on every field part.
 - `ui/item.ts` `itemGroup`, `item`, `itemMedia`, `itemContent`, `itemTitle`, `itemActions`, `itemDescription`: Port of packages/ui/src/components/ui/item.tsx.
 - `ui/key-value.ts` `keyValueList`, `keyValue`: Port of packages/ui/src/components/ui/key-value.tsx.
 - `ui/label.ts` `label`: `<Label>` from @maple/ui.
+- `ui/lane-link.ts` `laneLink`: `LaneLink`: a link row that draws its own layout but carries `listRow`'s selection lane (left bar and tint), for bespoke rail and table rows that navigate.
 - `ui/list-footer.ts` `listFooter`, `loadingMoreRow`: Port of `ListFooter`, `LoadMoreButton` and `LoadingMoreRow` (packages/ui/src/components/ui/list-footer.tsx).
 - `ui/list-row.ts` `listRow`: Port of packages/ui/src/components/ui/list-row.tsx: icon + title + meta + trailing row.
 - `ui/logs/chip-card.ts` `place`, `chipCard`: Base UI PreviewCard positioning for `side="bottom" align="start"`, offsets 4, collision padding 5.
@@ -86,11 +94,13 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/marker.ts` `marker`, `markerIcon`, `markerContent`: Port of packages/ui/src/components/ui/marker.tsx: an inline event marker in a timeline or thread.
 - `ui/menu-view.ts` `itemRefs`, `view`: ENTRIES
 - `ui/menu.ts` `itemId`, `subItemId`, `subPopupId`, `subPortalId`, `itemTooltipId`, `itemTooltipTriggerId` (stateful: Model, init, update): Base UI `Menu` (`@maple/ui/dropdown-menu`): the trigger toggles it; arrows move the highlight, Enter or a click picks an item, a checkbox or radio item stays open, a submenu ope...
+- `ui/message-scroller.ts` `messageScroller`, `messageScrollerViewport`, `messageScrollerContent`, `messageScrollerItem`, `messageScrollerButton`: `MessageScroller`: a chat thread's scroll frame (root, viewport, content, keyed items) and its "Scroll to end" button; the host's Mount owns the autoscroll and shows the button.
 - `ui/message.ts` `messageGroup`, `message`, `messageAvatar`, `messageContent`, `messageFooter`, `messageHeader`: Port of packages/ui/src/components/ui/message.tsx: one chat message (avatar, header, bubbles).
 - `ui/meter.ts` `meter`, `segmentedBar`, `backdropBar`: Port of packages/ui/src/components/ui/meter.tsx: Meter, SegmentedBar and BackdropBar.
 - `ui/middle-truncate.ts` `middleTruncate`: Port of packages/ui/src/components/ui/middle-truncate.tsx: keeps the last `tail` characters visible and ellipsizes the middle.
 - `ui/mini-bars.ts` `miniBars`: Port of packages/ui/src/components/ui/mini-bars.tsx: a static bar sparkline in one <svg>.
 - `ui/native-select.ts` `nativeOption`, `nativeOptGroup`, `nativeSelect`: `<NativeSelect>`: a styled native `<select>` with the chevron overlay; uncontrolled (`defaultValue`).
+- `ui/nav-rail-row.ts` `navRailRow`: `NavRailRow`: a page's own nav rail row (the settings rail), with the app sidebar row's height, type, radius and flush 2px active lane.
 - `ui/navigation-menu.ts` `triggerIdOf`, `viewportId`, `rootId`, `navigationMenuLink`, `view` (stateful: Model, init, update): Base UI `NavigationMenu` (`@maple/ui/navigation-menu`): a trigger opens its content in one shared popup below the list (offset 8, start-aligned) on click, or after the pointer r...
 - `ui/otp-field.ts` `isComplete`, `valueOf`, `slotId`, `otpField`, `otpFieldInput`, `otpFieldSeparator` (stateful: Model, init, update): Base UI `OTPField`: one digit per slot.
 - `ui/overlay/anchored.ts` `outsidePresses`, `anchoredPopup`, `strayEscapes`: The Mount body every anchored popup shares (popover, hover card, menus, select, combobox): portal to `<body>`, Base UI's outside marking, optional scroll lock and focus moves, t...
@@ -114,23 +124,25 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/segmented-select.ts` `multiSegmentedSelect`, `segmentedSelect`: `MultiSegmentedSelect`: standalone outline toggles; a pressed one swaps its icon for a check.
 - `ui/select-view.ts` `optionsOf`, `selectLabelId`, `selectedIndexOf`, `view`: `isDisabled`: `<SelectItem disabled>`, listed but not choosable.
 - `ui/select.ts` `listId`, `itemId` (stateful: Model, init, update): Base UI `Select` (`@maple/ui/select`): the popup opens over the trigger with the selected item on the trigger's value (`alignItemWithTrigger`), or below it when that does not fit.
+- `ui/selectable-row.ts` `selectableRow`: `SelectableRow`: a bespoke row's frame (a `div`, or a link with `href`) with `listRow`'s selection lane and tint; a clickable one is a `pressable` with `selectedLane`.
 - `ui/setting-row.ts` `settingRow`: Port of packages/ui/src/components/ui/setting-row.tsx.
 - `ui/sheet.ts` `leftSheet`: `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
-- `ui/sidebar.ts` `sidebarWrapper`, `sidebarDesktop`, `sidebarHeader`, `sidebarFooter`, `sidebarContent`, `sidebarGroup`, `sidebarGroupLabel`, `sidebarGroupContent`, `sidebarGroupAction`, `sidebarSeparator`, `sidebarMenu`, `sidebarMenuItem`, `sidebarMenuBadge`, `sidebarMenuSub`, `sidebarMenuSubItem`, `isLinkActive`, `sidebarMenuButton`, `sidebarMenuSubButton`, `sidebarRail`, `sidebarInset`, `sidebarTrigger`: The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
+- `ui/sidebar.ts` `sidebarWrapper`, `sidebarDesktop`, `sidebarMobile`, `sidebarHeader`, `sidebarFooter`, `sidebarContent`, `sidebarGroup`, `sidebarGroupLabel`, `sidebarGroupContent`, `sidebarGroupAction`, `sidebarSeparator`, `sidebarMenu`, `sidebarMenuItem`, `sidebarMenuBadge`, `sidebarMenuSub`, `sidebarMenuSubItem`, `isLinkActive`, `sidebarMenuButton`, `sidebarMenuSubButton`, `sidebarRail`, `sidebarInset`, `sidebarTrigger`: The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
 - `ui/skeleton.ts` `skeleton`, `skeletonSlowNote`, `skeletonList`: Port of packages/ui/src/components/ui/skeleton.tsx.
 - `ui/spinner.ts` `spinner`: Port of packages/ui/src/components/ui/spinner.tsx: the loader glyph, spinning, as a status.
+- `ui/sql-editor.ts` `sqlEditor`: `SqlEditor`: a SQL textarea whose text is drawn, syntax-highlighted, by a `<pre>` laid under it.
 - `ui/stat-figure.ts` `statFigure`: Port of packages/ui/src/components/ui/stat-figure.tsx: a headline number with a muted unit.
 - `ui/status-dot.ts` `statusDot`: `<StatusDot>`: a static, decorative status dot.
 - `ui/switch.ts` `switchControl`, `labelId`, `view` (stateful: Model, init, update): Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox.
 - `ui/table-skeleton.ts` `tableSkeleton`: Port of packages/ui/src/components/ui/table-skeleton.tsx: the loading placeholder for row tables.
-- `ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `tableHead`, `tableCell`, `rowLink`, `ariaSort`, `sortButton`: Port of packages/ui/src/components/ui/table.tsx.
+- `ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `tableHead`, `tableCell`, `divTableHead`, `truncatedTableCell`, `laneTableCell`, `rowLink`, `ariaSort`, `sortButton`: Port of packages/ui/src/components/ui/table.tsx.
 - `ui/tabs-view.ts` `view`: Base UI's Tabs DOM: the same data attributes, roles, roving tabindex and `useId` ids.
 - `ui/tabs.ts` `tabId`, `panelId` (stateful: Model, init, update): Port of packages/ui/src/components/ui/tabs.tsx (Base UI Tabs, horizontal, manual activation): arrow keys and Home/End move the focused tab (Base UI's highlight), click/Enter/Spa...
 - `ui/text-link.ts` `textLinkClass`, `textLink`: `TextLink`: an inline action that reads as a link inside running text or a card footer, with no button box.
 - `ui/textarea.ts` `textarea`: `<Textarea>` from @maple/ui: the `textarea-control` span around Base UI's field control.
 - `ui/toast-view.ts` `region`, `anchoredRegion`, `regions`: packages/ui/src/components/ui/toast.tsx `Toasts` and `AnchoredToasts`, position "bottom-right".
 - `ui/toast.ts` `titleId`, `descriptionId`, `nextToastId`, `add`, `close`, `isExpanded` (stateful: Model, init, update): The toast manager of `@maple/ui/toast` (Base UI Toast) as a Submodel the app root owns: one list, newest first, with Base UI's limit, timeouts, measured heights and enter/exit t...
-- `ui/toggle-group.ts` `view` (stateful: Model, init, update): Base UI `ToggleGroup`: the pressed values and the roving tab stop (the composite's highlighted index).
+- `ui/toggle-group.ts` `view`, `controlledView` (stateful: Model, init, update): Base UI `ToggleGroup`: the pressed values and the roving tab stop (the composite's highlighted index).
 - `ui/toggle.ts` `togglePrimitive`, `toggle`, `segmentItemHeight` (stateful: Model, init, update): Base UI `Toggle`'s uncontrolled state (`defaultPressed`): pressed or not.
 - `ui/tooltip.ts` `view` (stateful: Model, init, update): Base UI `Tooltip` (`@maple/ui/tooltip`): opens after the pointer rests on a trigger (600 ms), closes when it leaves (no close delay), on a press of the trigger and on Escape.
 - `ui/trace-badges.ts` `traceStatusBadge`, `servicePills`, `traceIdBadge`: Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and `ServicePills` (packages/ui/src/components/service-pills.tsx).
@@ -147,7 +159,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `page/kit/connect-flow.ts` `flowColumns`, `stepCard`, `choiceTiles`, `statusRow`, `foundChips`, `flowRail`, `savedBanner`, `liveChecklist`, `whereToFind`: The parts every source's connect flow is built from: the step card, its status row, the rail beside it and the Go live checklist.
 - `page/kit/custom-range-view.ts` `view`: The custom range picker's DOM: a two-month range calendar (en-US, rdp-* classes, Maple's `calendarClassNames`), then the Start/End time fields and the actions.
 - `page/kit/custom-range.ts` `readToday`, `parseTimeInput`, `addToRange`, `appliedRange` (stateful: Model, init, update): The custom range picker: a two-month range calendar and two time inputs in the selected zone's wall clock.
-- `page/kit/dashboard-page.ts` `pageBody`, `filterRail`, `pageContent`, `pageHeader`, `dashboardPage`: The dashboard page below the shell's top bar: `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
+- `page/kit/dashboard-page.ts` `pageBody`, `filterRail`, `pageContent`, `pageHeader`, `pageScrollArea`, `dashboardPage`: The dashboard page below the shell's top bar: `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
 - `page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: `DetailHeader`'s title side and `DetailHeaderSkeleton`.
 - `page/kit/guided-setup.ts` `frameworkIconStrip`, `frameworkPicker`, `agentPromptButton`, `connectInstructions`: `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
 - `page/kit/infra-correlation/command.ts` `operationOf`: The four `*InfraTimeseries` reads the panel's charts make, through the read cache under the atom key (`requestKey(org, "<function>", { data })`), so a reopened panel reuses them.
@@ -160,6 +172,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `page/kit/locale.ts` `readLocale`, `formatExactCount`: The locale a page formats with until the browser's language has been read.
 - `page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
 - `page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown over Streamdown: laid out with Streamdown's element classes.
+- `page/kit/page-rail-sheet.ts` `pageRailSheet`: `PageLayout.FilterSidebar` / `RightSidebar` below `lg`: the page's rail in a side sheet (`<Sheet><SheetContent side>`) with an sr-only header.
 - `page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
 - `page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: `PinnedNamespaceNotice`: replaces a rail's Namespace section while the org-global pin is on.
 - `page/kit/query-builder/change.ts` `withRootOnly`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft (its `onUpdate`, `onAggregationChange` and `onDataSourceChange` callbacks), as data the host applies.

@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
 import { backdropBar } from "../../ui/meter"
 import { panel, panelBody, panelHeader } from "../../ui/panel"
+import { pressable } from "../../ui/pressable"
 import { textLink } from "../../ui/text-link"
 import { truncatedText } from "../../ui/truncated-text"
 import { errorRateValue, latencyValue } from "../../ui/values"
@@ -50,12 +51,9 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 					h.li(
 						[h.Key(row.tool)],
 						[
-							h.button(
-								[
-									h.Type("button"),
-									h.OnClick(options.onOpenTool(row.tool)),
-									h.Class(rowClass),
-								],
+							pressable(
+								h,
+								{ onClick: options.onOpenTool(row.tool), className: rowClass },
 								[
 									backdropBar(h, {
 										value: row.calls,

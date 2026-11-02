@@ -1,9 +1,8 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { tableHeadLabelStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../ui/empty"
-import { sortButton } from "../../../ui/table"
+import { divTableHead, sortButton } from "../../../ui/table"
 import type { SortDir } from "../../kit/table-sort"
 
 // `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.
@@ -33,18 +32,16 @@ export type ColumnHeadOptions<M> = Readonly<{
 /** A column head in the kit's table-head type; a sortable one is the kit `sortButton`. */
 export const columnHead = <M>(h: HtmlBuilder<M>, options: ColumnHeadOptions<M>): Html => {
 	const sort = options.sort
-	return h.div(
-		[
-			h.Class(
-				cn(
-					"flex items-center",
-					tableHeadLabelStyles,
-					options.align === "right" && "justify-end",
-					options.width,
-					options.hidden,
-				),
+	return divTableHead(
+		h,
+		{
+			className: cn(
+				"flex items-center",
+				options.align === "right" && "justify-end",
+				options.width,
+				options.hidden,
 			),
-		],
+		},
 		[
 			sort?.onSort === undefined
 				? h.span([], [options.label])

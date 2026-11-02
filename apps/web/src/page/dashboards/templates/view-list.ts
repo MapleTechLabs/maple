@@ -1,14 +1,14 @@
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
-import { truncatedTextMonoStyles, truncatedTextStyles } from "@maple/ui/styles/ui/truncated-text"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeletonList } from "../../../ui/skeleton"
+import { truncatedText } from "../../../ui/truncated-text"
 import { listSectionHeader, toolbarSearch } from "../kit/list-parts"
 import {
 	BLANK_TEMPLATE_ID,
@@ -41,20 +41,17 @@ const templateRow = (
 	isSelected: boolean,
 ): Html => {
 	const status = readiness?.missingLabel ?? null
-	return h.keyed("button")(
-		template.id,
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedTemplate({ templateId: template.id })),
-			...(isSelected ? [h.AriaCurrent("true")] : []),
-			h.Class(
-				cn(
-					"flex min-h-9 w-full items-center text-left transition-colors",
-					rowSelectedClass(isSelected),
-					!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken",
-				),
+	return pressable(
+		h,
+		{
+			onClick: Message.ClickedTemplate({ templateId: template.id }),
+			selectedLane: isSelected,
+			className: cn(
+				"flex min-h-9 w-full items-center text-left transition-colors",
+				!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken",
 			),
-		],
+			attributes: [h.Key(template.id), ...(isSelected ? [h.AriaCurrent("true")] : [])],
+		},
 		[
 			h.span(
 				[h.Class("flex min-w-0 grow items-center gap-2.5 py-2 pr-4 pl-4")],
@@ -89,19 +86,12 @@ const templateRow = (
 					...(status === null
 						? []
 						: [
-								h.span(
-									[
-										h.Class(
-											cn(
-												truncatedTextStyles,
-												truncatedTextMonoStyles,
-												"text-foreground-subtle max-w-31.5 shrink-0 text-right text-2xs",
-											),
-										),
-										h.Title(status),
-									],
-									[status],
-								),
+								truncatedText(h, {
+									text: status,
+									mono: true,
+									className:
+										"text-foreground-subtle max-w-31.5 shrink-0 text-right text-2xs",
+								}),
 							]),
 					// Last, so every count lines up on the list's right edge.
 					h.span(
@@ -311,14 +301,13 @@ export const templateList = (
 									),
 								],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID })),
-					h.Class(
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }),
+					className:
 						"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-					),
-				],
+				},
 				[
 					h.span(
 						[

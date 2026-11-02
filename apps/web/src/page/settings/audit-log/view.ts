@@ -23,8 +23,9 @@ import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { listFooter } from "../../../ui/list-footer"
-import { panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
+import { panel } from "../../../ui/panel"
 import * as Popover from "../../../ui/popover"
+import { pressable } from "../../../ui/pressable"
 import { refreshButton } from "../../../ui/refresh-button"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import * as SelectView from "../../../ui/select-view"
@@ -148,36 +149,28 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 					[h.Class("flex flex-col py-1.5")],
 					[
 						...options.map((option) =>
-							h.button(
-								[
-									h.Key(option.key),
-									h.Type("button"),
-									h.OnClick(Message.ClickedRangePreset({ value: option.key })),
-									h.Class(
-										cn(
-											"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-											option.key === activeKey
-												? "font-medium text-foreground"
-												: "text-foreground-soft",
-										),
+							pressable(
+								h,
+								{
+									onClick: Message.ClickedRangePreset({ value: option.key }),
+									className: cn(
+										"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
+										option.key === activeKey ? "font-medium text-foreground" : "text-foreground-soft",
 									),
-								],
+									attributes: [h.Key(option.key)],
+								},
 								[option.label],
 							),
 						),
 						separator(h, "horizontal", "mx-3 my-1 data-[orientation=horizontal]:w-auto"),
-						h.button(
-							[
-								h.Type("button"),
-								h.Class(
-									cn(
-										"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-										range.kind === "custom"
-											? "font-medium text-foreground"
-											: "text-muted-foreground",
-									),
+						pressable(
+							h,
+							{
+								className: cn(
+									"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
+									range.kind === "custom" ? "font-medium text-foreground" : "text-muted-foreground",
 								),
-							],
+							},
 							["Custom range…"],
 						),
 					],
@@ -305,17 +298,15 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 					),
 				],
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.AriaExpanded(isExpanded),
-							h.AriaControls(detailId),
-							h.AriaLabel(`${isExpanded ? "Hide" : "Show"} details: ${label}`),
-							h.OnClick(Message.ToggledEntry({ id: entry.id })),
-							h.Class(
+					pressable(
+						h,
+						{
+							onClick: Message.ToggledEntry({ id: entry.id }),
+							label: `${isExpanded ? "Hide" : "Show"} details: ${label}`,
+							className:
 								"focus-visible:ring-ring absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset",
-							),
-						],
+							attributes: [h.AriaExpanded(isExpanded), h.AriaControls(detailId)],
+						},
 						[],
 					),
 					h.span(
@@ -476,21 +467,17 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					),
 				],
 			),
-			h.section(
-				[
-					h.AriaBusy(isWaiting),
-					h.Class(
-						cn(
-							panelStyles,
-							panelToneStyles.default,
-							"@container",
-							// A failed first load reads like every other failure block: a dashed frame.
-							view === null && model.failure !== null && "border-dashed",
-							refreshingClass(isWaiting && view !== null),
-						),
+			panel(
+				h,
+				{
+					className: cn(
+						"@container",
+						// A failed first load reads like every other failure block: a dashed frame.
+						view === null && model.failure !== null && "border-dashed",
+						refreshingClass(isWaiting && view !== null),
 					),
-					h.DataAttribute("slot", "panel"),
-				],
+					attributes: [h.AriaBusy(isWaiting)],
+				},
 				[listBody(h, model, inputs, hasAuditLogFilters(filters))],
 			),
 			...(view !== null && isFailed && model.failure !== null

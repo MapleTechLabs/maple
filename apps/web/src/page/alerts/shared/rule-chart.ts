@@ -34,6 +34,7 @@ import { plotFrame } from "../../../charts/plot-frame"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
+import { pressable } from "../../../ui/pressable"
 import { chartEmpty, chartError, chartLoading } from "../../../ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
 import { isoMs } from "./time"
@@ -599,25 +600,23 @@ const rail = <M>(
 						[h.Class("flex h-3.5 flex-1 gap-px")],
 						cells.map((cell, i) => {
 							const isSelected = selected === i
-							return h.button(
-								[
-									h.Type("button"),
-									h.Title(cell.title),
-									h.AriaLabel(cell.title),
-									h.AriaPressed(isSelected ? "true" : "false"),
-									...(onSelect === undefined
-										? [h.Disabled(true)]
-										: [h.OnClick(onSelect(isSelected ? null : i))]),
-									h.Class(
-										cn(
-											"h-full flex-1 rounded-2xs p-0",
-											RAIL_COLOR.get(cell.status),
-											onSelect !== undefined && "cursor-pointer",
-											cell.opened && "ring-1 ring-inset ring-severity-error",
-											isSelected && "ring-2 ring-foreground ring-offset-0",
-										),
+							return pressable(
+								h,
+								{
+									label: cell.title,
+									isSelected,
+									isDisabled: onSelect === undefined,
+									onClick:
+										onSelect === undefined ? undefined : onSelect(isSelected ? null : i),
+									// A read-only rail keeps its colours: no dimming, no pointer.
+									className: cn(
+										"h-full flex-1 rounded-2xs p-0 disabled:cursor-default disabled:opacity-100",
+										RAIL_COLOR.get(cell.status),
+										cell.opened && "ring-1 ring-inset ring-severity-error",
+										isSelected && "ring-2 ring-foreground ring-offset-0",
 									),
-								],
+									attributes: [h.Title(cell.title)],
+								},
 								[],
 							)
 						}),

@@ -2,6 +2,7 @@ import type { AccountTone, CloudflareAccount } from "../../../../components/infr
 import { formatPercentColumn } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../../../../ui/pressable"
 import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
 import type * as Menu from "../../../../ui/menu"
 import * as MenuView from "../../../../ui/menu-view"
@@ -60,13 +61,12 @@ export const accountMenu = (
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.Class(heroFieldChipClass(true)),
-								h.DataAttribute("slot", "badge"),
-								...trigger,
-							],
+						pressable(
+							h,
+							{
+								className: heroFieldChipClass(true),
+								attributes: [h.DataAttribute("slot", "badge"), ...trigger],
+							},
 							heroFieldChipParts(h, {
 								label: selected === undefined ? "accounts" : "account",
 								value: selected === undefined ? `All ${accounts.length}` : selected.name,
@@ -91,15 +91,14 @@ export const accountsStrip = (
 		accounts.map((account) => {
 			const fraction = share.get(account.accountId) ?? 0
 			const count = counts.get(account.accountId)
-			return h.button(
-				[
-					h.Key(account.accountId),
-					h.Type("button"),
-					h.OnClick(Message.ClickedAccount({ accountId: account.accountId })),
-					h.Class(
+			return pressable(
+				h,
+				{
+					onClick: Message.ClickedAccount({ accountId: account.accountId }),
+					className:
 						"flex flex-1 flex-col gap-2 border-b px-4 py-3 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
-					),
-				],
+					attributes: [h.Key(account.accountId)],
+				},
 				[
 					h.span(
 						[h.Class("flex items-center gap-2")],

@@ -4,7 +4,7 @@ import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { kbdGroupStyles, kbdStyles } from "@maple/ui/styles/ui/kbd"
 import { separatorStyles } from "@maple/ui/styles/ui/separator"
 import type { VariantProps } from "class-variance-authority"
-import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, ClickOptions, Html, HtmlBuilder } from "foldkit/html"
 
 type Children = ReadonlyArray<Html | string>
 
@@ -23,32 +23,57 @@ export const kbdGroup = <Message>(
 ): Html => h.kbd([h.Class(cn(kbdGroupStyles, className)), h.DataAttribute("slot", "kbd-group")], children)
 
 export type BadgeOptions<Message = never> = VariantProps<typeof badgeVariants> &
-	Readonly<{ className?: string; attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute> }>
+	Readonly<{
+		className?: string
+		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
+		/** Renders the badge as a `<button>` (a removable filter chip). */
+		onClick?: Message
+		/** `h.OnClick` options for `onClick`, for a chip inside another click target. */
+		clickOptions?: ClickOptions
+		/** Renders the badge as a link (a chip that opens what it names). */
+		href?: string
+	}>
+
+/** The badge's classes, for a control that must look like a badge (a picker chip trigger). */
+export const badgeClass = (
+	options: VariantProps<typeof badgeVariants> & Readonly<{ className?: string }>,
+): string =>
+	cn(
+		badgeVariants({
+			className: options.className,
+			mono: options.mono ?? false,
+			pill: options.pill ?? false,
+			size: options.size,
+			variant: options.variant,
+		}),
+	)
 
 /** `<Badge>`: the same `badgeVariants` call, className folded in by cva. */
 export const badge = <Message>(
 	h: HtmlBuilder<Message>,
 	options: BadgeOptions<Message>,
 	children: Children,
-): Html =>
-	h.span(
-		[
-			h.Class(
-				cn(
-					badgeVariants({
-						className: options.className,
-						mono: options.mono ?? false,
-						pill: options.pill ?? false,
-						size: options.size,
-						variant: options.variant,
-					}),
-				),
+): Html => {
+	const attributes = [
+		h.Class(
+			cn(
+				badgeVariants({
+					className: options.className,
+					mono: options.mono ?? false,
+					pill: options.pill ?? false,
+					size: options.size,
+					variant: options.variant,
+				}),
 			),
-			h.DataAttribute("slot", "badge"),
-			...(options.attributes ?? []),
-		],
-		children,
-	)
+		),
+		h.DataAttribute("slot", "badge"),
+		...(options.attributes ?? []),
+	]
+	if (options.href !== undefined) return h.a([...attributes, h.Href(options.href)], children)
+	return options.onClick === undefined
+		? h.span(attributes, children)
+		: h.button([h.Type("button"), ...attributes, h.OnClick(options.onClick, options.clickOptions)], children)
+}
 
 /** `<Separator orientation>` (Base UI): a `role="separator"` div with its orientation attributes. */
 export const separator = <Message>(
@@ -83,14 +108,17 @@ export const avatarFallback = <Message>(
 		imageUrl?: string
 		imageLabel?: string
 		imageClassName?: string
+		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>,
-	initials: string,
+	/** Initials, or a glyph for an identity without them. */
+	initials: string | Html,
 ): Html => {
 	const imageUrl = options.imageUrl ?? ""
 	return h.span(
 		[
 			h.Class(cn(avatarStyles, imageUrl === "" ? undefined : "relative", options.className)),
 			h.DataAttribute("slot", "avatar"),
+			...(options.attributes ?? []),
 		],
 		[
 			h.span(

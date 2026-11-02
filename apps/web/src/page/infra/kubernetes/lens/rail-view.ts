@@ -3,10 +3,10 @@ import { BAR_VALUE_TONE } from "../../../../components/infra/severity-tokens"
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
+import { laneLink } from "../../../../ui/lane-link"
 import { eyebrow } from "../../../../ui/eyebrow"
 import { skeletonList } from "../../../../ui/skeleton"
 import { serviceDot } from "../../../../ui/values"
@@ -120,18 +120,17 @@ export const lensRail = <M>(
 
 const railRow = <M>(h: HtmlBuilder<M>, service: RailService, isActive: boolean, timeSearch: TimeSearch): Html => {
 	const utilization = service.avgCpuLimitUtilization
-	return h.a(
-		[
-			h.Key(service.serviceName),
-			h.Href(hrefOf(AppRoute.InfraKubernetesService({ serviceName: service.serviceName, search: timeSearch }))),
-			h.Class(
-				cn(
-					"flex h-8 items-center gap-2.5 rounded-lg px-2 transition-colors",
-					rowSelectedClass(isActive),
-					isActive ? "rounded-l-none" : "hover:bg-surface-sunken active:bg-surface-sunken",
-				),
+	return laneLink(
+		h,
+		{
+			href: hrefOf(AppRoute.InfraKubernetesService({ serviceName: service.serviceName, search: timeSearch })),
+			isSelected: isActive,
+			className: cn(
+				"flex h-8 items-center gap-2.5 rounded-lg px-2 transition-colors",
+				isActive ? "rounded-l-none" : "hover:bg-surface-sunken active:bg-surface-sunken",
 			),
-		],
+			attributes: [h.Key(service.serviceName)],
+		},
 		[
 			serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
 			h.span(

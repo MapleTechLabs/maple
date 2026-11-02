@@ -1,5 +1,6 @@
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import type { Keyed } from "../../data/keyed"
 import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
@@ -48,7 +49,7 @@ export const connectedIntegrationCard = (
 					[
 						h.div(
 							[h.Class("flex flex-wrap items-center gap-2")],
-							[h.h3([h.Class("text-sm font-semibold")], [options.title]), options.badge],
+							[heading(h, { level: 3, variant: "section" }, [options.title]), options.badge],
 						),
 						h.p([h.Class("text-xs text-muted-foreground")], options.summary),
 						...(options.notice === null ? [] : [options.notice]),

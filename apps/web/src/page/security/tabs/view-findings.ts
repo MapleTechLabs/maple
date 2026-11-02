@@ -5,6 +5,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
+import { label } from "../../../ui/label"
 import { searchInput } from "../../../ui/search-input"
 import * as SelectView from "../../../ui/select-view"
 import * as Select from "../../../ui/select"
@@ -114,11 +115,12 @@ const toolbar = (
 							(message) => Message.GotTargetSelectMessage({ message }),
 						),
 					]),
-			h.label(
-				[
-					h.Id("security-show-rejected-label"),
-					h.Class("flex items-center gap-2 text-xs text-muted-foreground"),
-				],
+			label(
+				h,
+				{
+					className: "flex items-center gap-2 text-xs font-normal text-muted-foreground sm:text-xs",
+					attributes: [h.Id("security-show-rejected-label")],
+				},
 				[
 					...switchControl(h, {
 						id: "security-show-rejected",

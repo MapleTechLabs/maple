@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
+import { iconButton } from "../../../ui/icon-button"
 import { highlightedText } from "../../../ui/logs/highlight"
 import * as Popover from "../../../ui/popover"
 import { Message } from "./message"
@@ -108,15 +109,16 @@ export const searchHelp = (h: HtmlBuilder<Message>, model: Popover.Model): Html 
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.AriaLabel("What you can search for"),
-								h.Class(
-									"cursor-pointer rounded-sm text-foreground-subtle hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:text-foreground",
-								),
-								...trigger,
-							],
+						iconButton(
+							h,
+							{
+								label: "What you can search for",
+								size: "icon-2xs",
+								hasTooltip: false,
+								className:
+									"text-foreground-subtle hover:text-foreground active:text-foreground data-[popup-open]:text-foreground",
+								attributes: trigger,
+							},
 							[icon(h, "CircleInfoIcon", { size: 12 })],
 						),
 					),

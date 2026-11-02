@@ -1,6 +1,7 @@
 import type { LinearIntegrationStatus } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { errorState } from "../../ui/error-state"
@@ -83,7 +84,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 						h.div(
 							[h.Class("flex items-center gap-2")],
 							[
-								h.h3([h.Class("text-sm font-semibold")], ["Linear"]),
+								heading(h, { level: 3, variant: "section" }, ["Linear"]),
 								status.revoked
 									? badge(h, { variant: "warn" }, ["Revoked"])
 									: badge(h, { variant: "ok" }, ["Connected"]),

@@ -18,6 +18,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { button } from "../../../ui/button"
+import { pressable } from "../../../ui/pressable"
 import { icon } from "../../../ui/icon"
 import { tableCell, tableRow } from "../../../ui/table"
 import { truncatedText } from "../../../ui/truncated-text"
@@ -161,14 +162,13 @@ const endpointRow = (
 						[h.Class("flex min-w-0 items-center gap-3")],
 						[
 							// The row's click opens the drawer; this button is its keyboard and screen-reader trigger.
-							h.button(
-								[
-									h.Type("button"),
-									h.Class("sr-only"),
-									h.AriaHasPopup("dialog"),
-									h.AriaExpanded(isSelected),
-									h.AriaLabel(`Open ${endpoint.spanName}`),
-								],
+							pressable(
+								h,
+								{
+									label: `Open ${endpoint.spanName}`,
+									className: "sr-only",
+									attributes: [h.AriaHasPopup("dialog"), h.AriaExpanded(isSelected)],
+								},
 								[],
 							),
 							methodLabel(

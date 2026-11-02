@@ -8,6 +8,7 @@ import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { firstLine, previewOf } from "./clamped-text"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -266,13 +267,13 @@ const systemMessageRow = (h: H, model: Model, message: SpanMessage, key: string)
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
 	const text = collapsedText(message.parts)
 	return panel(h, { tone: "muted", className: "border-border-subtle" }, [
-		h.button(
-			[
-				h.AriaExpanded(isOpen),
-				h.Class("flex w-full cursor-pointer items-center gap-2 px-2.5 py-2 text-left"),
-				h.Type("button"),
-				h.OnClick(Message.ToggledRow({ key })),
-			],
+		pressable(
+			h,
+			{
+				onClick: Message.ToggledRow({ key }),
+				className: "flex w-full items-center gap-2 px-2.5 py-2 text-left",
+				attributes: [h.AriaExpanded(isOpen)],
+			},
 			[
 				icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
 					size: 12,

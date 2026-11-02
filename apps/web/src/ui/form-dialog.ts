@@ -35,6 +35,14 @@ export type FormDialogOptions<M> = Readonly<{
 	fields: ReadonlyArray<Html>
 }>
 
+/** The `<form>` a `FormDialog` body sits in, for a dialog that draws its own header and footer. */
+export const formDialogForm = <M>(
+	h: HtmlBuilder<M>,
+	onSubmit: M | undefined,
+	children: ReadonlyArray<Html>,
+): Html =>
+	h.form([h.Class(formDialogFormStyles), ...(onSubmit === undefined ? [] : [h.OnSubmit(onSubmit)])], children)
+
 export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>): Html => {
 	const isPending = options.isPending ?? false
 	const id = options.model.id

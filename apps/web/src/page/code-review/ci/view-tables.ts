@@ -4,13 +4,13 @@ import { formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { TONE_SOFT, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { panel, panelHeader } from "../../../ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { pressable } from "../../../ui/pressable"
+import { laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { ciResultBadge, traceKept } from "../kit/parts"
 import { listRelativeTime, relativeTime } from "../../kit/relative-time"
@@ -105,18 +105,18 @@ const workflowRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(
+			laneTableCell(
 				h,
+				isActive,
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.AriaPressed(String(isActive)),
-							h.OnClick(select, { propagation: "Stop" }),
-							h.Class(
-								"flex w-full min-w-0 items-center gap-2 text-left focus-visible:underline focus-visible:outline-none",
-							),
-						],
+					pressable(
+						h,
+						{
+							isSelected: isActive,
+							className:
+								"flex w-full min-w-0 items-center gap-2 text-left focus-visible:underline focus-visible:ring-0",
+							attributes: [h.OnClick(select, { propagation: "Stop" })],
+						},
 						[
 							h.span([h.Class("truncate font-medium"), h.Title(row.pipeline)], [row.pipeline]),
 							...(row.red
@@ -140,11 +140,7 @@ const workflowRow = (
 					),
 					...(row.red ? [redStreakLine(h, row.red, time)] : []),
 				],
-				cn(
-					"px-4 py-2.5 leading-normal",
-					ROW_LANE,
-					isActive ? "before:bg-primary" : "before:bg-transparent",
-				),
+				"px-4 py-2.5 leading-normal",
 			),
 			tableCell(h, [formatNumber(row.runs)], "px-3 text-right tabular-nums"),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),

@@ -1,10 +1,17 @@
 import type { ErrorIssueSampleTrace } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
@@ -49,14 +56,13 @@ const occurrenceRow = <M>(
 					],
 				),
 			]),
-			tableCell(
+			truncatedTableCell(
 				h,
 				[
 					truncatedText(h, { text: trace.exceptionMessage }, [
 						trace.exceptionMessage.split("\n", 1)[0] ?? "",
 					]),
 				],
-				truncatedCellStyles,
 			),
 			tableCell(h, [
 				h.a(

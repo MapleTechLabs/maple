@@ -12,7 +12,6 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../ui/empty"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
@@ -117,7 +116,6 @@ const comparisonTable = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, bas
 					tableHead(h, [mono(h, baselineSha)], "text-right"),
 					tableHead(h, ["Change"], "pr-4 text-right"),
 				],
-				eyebrowVariants(),
 			),
 		]),
 		tableBody(

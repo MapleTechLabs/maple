@@ -1,9 +1,7 @@
 import { docsUrl } from "../../../lib/docs"
-import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData, Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
+import { button, linkButton } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
 import * as DialogView from "../../../ui/dialog-view"
 import { icon } from "../../../ui/icon"
@@ -177,23 +175,19 @@ const content = (h: H, model: Model, close: ReadonlyArray<ChildAttribute>): Read
 	]),
 	DialogView.dialogFooter(h, "dialog", [
 		button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
-		h.a(
-			[
-				h.Href(
-					docsUrl(
-						model.tabs.selected === "docker"
-							? "docker"
-							: model.tabs.selected === "hosts"
-								? "hosts"
-								: "kubernetes",
-					),
+		linkButton(
+			h,
+			{
+				variant: "outline",
+				href: docsUrl(
+					model.tabs.selected === "docker"
+						? "docker"
+						: model.tabs.selected === "hosts"
+							? "hosts"
+							: "kubernetes",
 				),
-				h.Target("_blank"),
-				h.Rel("noopener noreferrer"),
-				h.AriaLabel("View docs"),
-				h.Class(cn(buttonVariants({ variant: "outline" }))),
-				h.DataAttribute("slot", "button"),
-			],
+				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer"), h.AriaLabel("View docs")],
+			},
 			["View docs"],
 		),
 	]),

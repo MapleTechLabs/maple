@@ -344,9 +344,9 @@ const urlBar = (h: H, urlInitial: string): Html =>
 			h.div(
 				[h.Class("flex items-center gap-1.5"), h.AriaHidden(true)],
 				[
-					h.span([h.Class("size-3 rounded-full bg-[#ff5f57]")], []),
-					h.span([h.Class("size-3 rounded-full bg-[#febc2e]")], []),
-					h.span([h.Class("size-3 rounded-full bg-[#28c840]")], []),
+					h.span([h.Class("size-3 rounded-full bg-window-dot-close")], []),
+					h.span([h.Class("size-3 rounded-full bg-window-dot-minimize")], []),
+					h.span([h.Class("size-3 rounded-full bg-window-dot-zoom")], []),
 				],
 			),
 			h.div(

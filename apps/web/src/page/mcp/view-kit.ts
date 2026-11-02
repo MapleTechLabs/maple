@@ -1,14 +1,14 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { errorRate } from "@maple/web-data/lib/tool-analytics"
 import { Option, Record } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../charts/chart"
 import type { ThemeColors } from "../../charts/theme-colors"
 import { chartEmpty } from "../../ui/chart-state"
+import { badge } from "../../ui/display"
+import { eyebrow } from "../../ui/eyebrow"
 import { icon, type IconName } from "../../ui/icon"
 import { panelHeader } from "../../ui/panel"
 import { relativeTime } from "../kit/relative-time"
@@ -306,7 +306,7 @@ export const kindTag = <M>(h: HtmlBuilder<M>, kind: McpClientKind): ReadonlyArra
 
 /** `error.type` as a pill, in the tone Agent Sessions gives tool failures. */
 export const errorTypeChip = <M>(h: HtmlBuilder<M>, errorType: string): Html =>
-	h.span([h.Class(cn(badgeVariants({ pill: true, size: "xs", mono: true }), TOOL_CHIP))], [errorType])
+	badge(h, { pill: true, size: "xs", mono: true, className: TOOL_CHIP }, [errorType])
 
 /** An unknown zone throws in the constructor; the clock then reads as the empty value. */
 const clockFormatter = Option.liftThrowable(
@@ -333,7 +333,7 @@ export const mcpScopeRow = <M>(h: HtmlBuilder<M>, scope: string, count: string, 
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[
-					h.span([h.Class(eyebrowVariants({ variant: "mono" }))], ["Scope"]),
+					eyebrow(h, { variant: "mono" }, ["Scope"]),
 					h.span([h.Class("text-2xs text-foreground-subtle")], [scope]),
 				],
 			),

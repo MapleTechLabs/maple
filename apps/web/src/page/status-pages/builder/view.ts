@@ -15,6 +15,7 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton } from "../../../ui/skeleton"
+import { heading } from "../../../ui/heading"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
@@ -211,8 +212,9 @@ const previewPanel = (h: H, model: Model): Html =>
 					h.div(
 						[h.Class("flex items-center gap-2")],
 						[
-							h.h2(
-								[h.Id("status-page-builder-preview"), h.Class("text-sm font-medium")],
+							heading(
+								h,
+								{ level: 2, variant: "subsection", id: "status-page-builder-preview" },
 								["Preview"],
 							),
 							h.span(

@@ -1,5 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,7 +8,7 @@ import { formDialog } from "../../../../ui/form-dialog"
 import { icon } from "../../../../ui/icon"
 import * as Menu from "../../../../ui/menu"
 import { rowActionsMenu } from "../../../../ui/row-actions-menu"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../../ui/table"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "../../../../ui/table"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
@@ -33,7 +31,7 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 	return tableRow(
 		h,
 		[
-			tableCell(
+			truncatedTableCell(
 				h,
 				[
 					h.div(
@@ -50,7 +48,6 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 						],
 					),
 				],
-				cn(truncatedCellStyles),
 			),
 			tableCell(h, [formatDate(passkey.createdAtMs)], "text-muted-foreground text-xs"),
 			tableCell(

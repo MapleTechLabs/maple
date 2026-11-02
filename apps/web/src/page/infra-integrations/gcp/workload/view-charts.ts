@@ -15,12 +15,12 @@ import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { panel } from "../../../../ui/panel"
 import * as Chart from "../../../../charts/chart"
 import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
 import type { ThemeColors } from "../../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
 import { icon } from "../../../../ui/icon"
-import { panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
 import { LINKED_CURSOR_STYLE } from "../../../../charts/linked-cursor"
 import { seriesLegend } from "../../../kit/series-legend"
@@ -80,13 +80,9 @@ export const correlationStrips = (
 ): Html => {
 	const strips = gcpWorkloadStrips(service, points, range, maxConnections)
 	const xDomain = gcpStripDomain(points, range.bucketSeconds)
-	return h.section(
-		[
-			h.Class(cn(panelStyles, panelToneStyles.default, "block")),
-			h.DataAttribute("slot", "panel"),
-			h.Style(LINKED_CURSOR_STYLE),
-			h.OnMount(MountLinkedCursor()),
-		],
+	return panel(
+		h,
+		{ className: "block", attributes: [h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())] },
 		strips.map((strip, index) => {
 			const { spec, info } = InfraMetricChart.infraMetricModel({
 				rows: strip.rows,

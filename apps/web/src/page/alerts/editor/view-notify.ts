@@ -10,6 +10,7 @@ import { middleTruncate } from "../../../ui/middle-truncate"
 import { panel } from "../../../ui/panel"
 import { destinationProvider, destinationTypesFor, providerLogo, type ProviderLogoOptions } from "../shared/providers"
 import { menuIdOf } from "./dest-steps"
+import { pressable } from "../../../ui/pressable"
 import { waitingFor } from "../shared/chat-connect"
 import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
@@ -175,19 +176,16 @@ const addMenu = (
 				h.span(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.Class(
-									cn(
-										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-										// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
-										menu.isOpen && "border-b border-border-subtle",
-									),
+						pressable(
+							h,
+							{
+								className: cn(
+									"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
+									// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
+									menu.isOpen && "border-b border-border-subtle",
 								),
-								h.DataAttribute("slot", "dropdown-menu-trigger"),
-								...trigger,
-							],
+								attributes: [h.DataAttribute("slot", "dropdown-menu-trigger"), ...trigger],
+							},
 							[
 								icon(h, "PlusIcon", { size: 14 }),
 								waiting === undefined ? "Add destination" : `Finish connecting ${waiting.name} in the other window…`,

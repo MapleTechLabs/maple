@@ -1,6 +1,6 @@
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { collapsible } from "../../../ui/collapsible"
 import { copyableField } from "../../../ui/copyable-field"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
@@ -98,64 +98,37 @@ const scopeRow = (h: H, family: (typeof SCOPE_FAMILY_ROWS)[number]): Html =>
 	)
 
 const scopes = (h: H, isOpen: boolean): Html =>
-	h.div(
-		[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+	collapsible(
+		h,
+		{
+			isOpen,
+			onToggle: Message.ToggledScopes(),
+			panelId: "keys-scopes-panel",
+			triggerClassName:
+				"group/scopes hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 px-4 py-3 text-left",
+			trigger: [
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className:
+						"text-muted-foreground shrink-0 transition-transform group-data-[panel-open]/scopes:rotate-90",
+				}),
+				h.span([h.Class("text-sm font-medium")], ["Scopes"]),
+				h.span(
+					[h.Class("text-muted-foreground text-sm")],
+					[String(SCOPE_FAMILY_ROWS.length), " resource families"],
+				),
+				h.span([h.Class("flex-1")], []),
+				h.span(
+					[h.Class("text-muted-foreground hidden text-2xs md:block")],
+					["Read or write per family. A key without scopes has full access."],
+				),
+			],
+		},
 		[
-			h.button(
-				[
-					...(isOpen ? [h.AriaControls("keys-scopes-panel")] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class(
-						"group/scopes hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 px-4 py-3 text-left",
-					),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ToggledScopes()),
-				],
-				[
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className:
-							"text-muted-foreground shrink-0 transition-transform group-data-[panel-open]/scopes:rotate-90",
-					}),
-					h.span([h.Class("text-sm font-medium")], ["Scopes"]),
-					h.span(
-						[h.Class("text-muted-foreground text-sm")],
-						[String(SCOPE_FAMILY_ROWS.length), " resource families"],
-					),
-					h.span([h.Class("flex-1")], []),
-					h.span(
-						[h.Class("text-muted-foreground hidden text-2xs md:block")],
-						["Read or write per family. A key without scopes has full access."],
-					),
-				],
+			h.div(
+				[h.Class("divide-y border-t")],
+				SCOPE_FAMILY_ROWS.map((family) => scopeRow(h, family)),
 			),
-			...(isOpen
-				? [
-						h.div(
-							[
-								h.Class(collapsiblePanelStyles),
-								h.DataAttribute("open", ""),
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id("keys-scopes-panel"),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-									"animation-name": "none",
-								}),
-							],
-							[
-								h.div(
-									[h.Class("divide-y border-t")],
-									SCOPE_FAMILY_ROWS.map((family) => scopeRow(h, family)),
-								),
-							],
-						),
-					]
-				: []),
 		],
 	)
 

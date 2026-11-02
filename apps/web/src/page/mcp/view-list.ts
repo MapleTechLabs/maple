@@ -8,7 +8,7 @@ import {
 	errorTone,
 	shareCell,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
@@ -43,8 +43,9 @@ const serverRow = <M>(
 	options: ListBodyOptions<M>,
 ): Html => {
 	const rate = errorRate(row)
-	return h.button(
-		[h.Type("button"), h.Class(toolRowClass(false)), h.OnClick(options.onOpenServer(row.service))],
+	return toolTableRow(
+		h,
+		{ onClick: options.onOpenServer(row.service) },
 		[
 			h.span(
 				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],

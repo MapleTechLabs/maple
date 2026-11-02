@@ -2,7 +2,9 @@ import { formatCost, type SessionTurn, tokenFlowLabel, type TranscriptRow } from
 import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { Message } from "./message"
 import { clockOf, indentLanes, META, row } from "./transcript-shell"
 import { failedBadge } from "./view-kit"
@@ -36,23 +38,22 @@ export const turnChapter = (
 	]
 		.filter((part) => part !== undefined)
 		.join(" · ")
-	return h.h3(
-		[h.Class("mt-7 flex items-center px-2 pb-1 font-normal text-base")],
+	return heading(
+		h,
+		{ level: 3, variant: "subsection", className: "mt-7 flex items-center px-2 pb-1" },
 		[
 			...indentLanes(h, chapter.depth),
-			h.button(
-				[
-					h.AriaExpanded(!isCollapsed),
-					h.Class(
-						cn(
-							"group/turn flex min-w-0 max-w-[924px] flex-1 cursor-pointer items-center gap-2.5 rounded-xs text-left",
-							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-						),
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledTurn({ turnId: turn.id }),
+					// The chapter's own spans set their type; the weight they inherit stays normal.
+					className: cn(
+						"group/turn flex min-w-0 max-w-[924px] flex-1 items-center gap-2.5 rounded-xs text-left font-normal",
+						"focus-visible:ring-ring focus-visible:ring-inset",
 					),
-					h.Title(detail),
-					h.Type("button"),
-					h.OnClick(Message.ToggledTurn({ turnId: turn.id })),
-				],
+					attributes: [h.AriaExpanded(!isCollapsed), h.Title(detail)],
+				},
 				[
 					...(isCollapsed ? [] : [rule(h)]),
 					isCollapsed

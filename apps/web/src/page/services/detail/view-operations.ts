@@ -1,7 +1,6 @@
 import { formatRate } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"
@@ -10,7 +9,7 @@ import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHeader, tableRow } from "../../../ui/table"
 import { errorRateValue, latencyValue } from "../../../ui/values"
 import { callsPerSecond, windowSeconds } from "./derive"
@@ -40,13 +39,10 @@ const toSparkline = (message: Chart.Message) => Message.GotChartMessage({ chartI
 const loadingState = (h: H): Html =>
 	panel(h, {}, [
 		...tableSkeletonHead(h, "Operations"),
-		h.div(
-			[
-				h.AriaBusy(true),
-				h.Class(cn(skeletonListStyles, skeletonListGapStyles.px, "gap-0")),
-				h.DataAttribute("slot", "skeleton-list"),
-			],
-			Array.from({ length: 10 }, () =>
+		skeletonList(h, {
+			rows: 10,
+			className: "gap-0",
+			renderRow: () =>
 				h.div(
 					[h.Class("flex h-11 items-center gap-3 border-b px-4 last:border-b-0")],
 					[
@@ -57,8 +53,7 @@ const loadingState = (h: H): Html =>
 						skeleton(h, "hidden h-5 w-24 md:block"),
 					],
 				),
-			),
-		),
+		}),
 	])
 
 const operationRow = (

@@ -10,6 +10,8 @@ import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { segmentedSelect } from "../../../ui/segmented-select"
+import { heading } from "../../../ui/heading"
+import { label } from "../../../ui/label"
 import { relativeTime } from "../../kit/relative-time"
 import {
 	closingStatus,
@@ -66,12 +68,15 @@ const frame = (
 						[h.Class("flex min-w-0 max-w-full flex-col gap-1")],
 						[
 							eyebrow(h, {}, [options.kind]),
-							h.h2(
-								[
-									h.Id(PANEL_TITLE_ID),
-									h.Tabindex(-1),
-									h.Class("truncate text-sm font-medium outline-none"),
-								],
+							heading(
+								h,
+								{
+									level: 2,
+									variant: "subsection",
+									id: PANEL_TITLE_ID,
+									className: "truncate outline-none",
+									attributes: [h.Tabindex(-1)],
+								},
 								[options.title],
 							),
 							...(options.status === undefined ? [] : [options.status]),
@@ -189,8 +194,12 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 						],
 						onInput: (value) => Message.PickedComponentField({ field: "manualStatus", value }),
 					}),
-					h.label(
-						[h.Id(Checkbox.labelId(uptimeId)), h.Class("flex items-center gap-2 text-sm")],
+					label(
+						h,
+						{
+							className: "flex font-normal text-sm sm:text-sm",
+							attributes: [h.Id(Checkbox.labelId(uptimeId))],
+						},
 						[
 							...Checkbox.view(h, {
 								// The stored value, shown as is; it only takes effect once a monitor drives the component.
@@ -478,12 +487,12 @@ const componentChecklist = (h: H, model: Model): Html => {
 						[h.Class("flex flex-col gap-2")],
 						components.map((component) => {
 							const inputId = `status-page-incident-component-${component.id}`
-							return h.label(
-								[
-									h.Key(component.id),
-									h.Class("flex items-center gap-2 text-sm"),
-									h.Id(Checkbox.labelId(inputId)),
-								],
+							return label(
+								h,
+								{
+									className: "flex font-normal text-sm sm:text-sm",
+									attributes: [h.Key(component.id), h.Id(Checkbox.labelId(inputId))],
+								},
 								[
 									...Checkbox.view(h, {
 										model: {

@@ -15,6 +15,7 @@ import { errorState } from "../../../ui/error-state"
 import { keyValue, keyValueList } from "../../../ui/key-value"
 import { backdropBar } from "../../../ui/meter"
 import { panel, panelHeader } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
 import { metricTypeBadge } from "../shared"
@@ -119,15 +120,14 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 			return h.div(
 				[h.Class("space-y-1")],
 				rows.map((row) =>
-					h.button(
-						[
-							h.Key(row.name),
-							h.Type("button"),
-							h.Class(
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedBreakdownValue({ groupBy: filterKey, value: row.name }),
+							className:
 								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left hover:bg-accent active:bg-accent",
-							),
-							h.OnClick(Message.ClickedBreakdownValue({ groupBy: filterKey, value: row.name })),
-						],
+							attributes: [h.Key(row.name)],
+						},
 						[
 							backdropBar(h, {
 								value: row.value,

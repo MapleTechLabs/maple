@@ -5,9 +5,15 @@ import { icon } from "./icon"
 
 // Port of packages/ui/src/components/ui/spinner.tsx: the loader glyph, spinning, as a status.
 
-export const spinner = <M>(h: HtmlBuilder<M>, className?: string, size?: number): Html =>
+export const spinner = <M>(
+	h: HtmlBuilder<M>,
+	className?: string,
+	size?: number,
+	/** Leave it in the accessibility tree: the only loading cue in a menu that has no other status. */
+	isAnnounced = false,
+): Html =>
 	icon(h, "LoaderIcon", {
 		size,
 		className: cn(spinnerStyles, className),
-		attributes: [h.AriaHidden(true), h.AriaLabel("Loading"), h.Role("status")],
+		attributes: [...(isAnnounced ? [] : [h.AriaHidden(true)]), h.AriaLabel("Loading"), h.Role("status")],
 	})

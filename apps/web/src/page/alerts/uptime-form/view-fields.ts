@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
@@ -121,7 +122,7 @@ const section = (h: H, title: string, hint: string | undefined, children: Readon
 			h.div(
 				[h.Class("flex flex-col gap-0.5 sm:pt-2")],
 				[
-					h.h3([h.Class("text-sm font-medium")], [title]),
+					heading(h, { level: 3, variant: "subsection" }, [title]),
 					...(hint === undefined ? [] : [h.p([h.Class("text-xs text-muted-foreground")], [hint])]),
 				],
 			),

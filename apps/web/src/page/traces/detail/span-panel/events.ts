@@ -1,5 +1,7 @@
 import { describeSpanEvent, formatEventOffset } from "../../../../lib/traces/span-events"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { collapsibleTrigger } from "../../../../ui/collapsible"
+import { heading } from "../../../../ui/heading"
 import { icon } from "../../../../ui/icon"
 import { keyValue, keyValueList } from "../../../../ui/key-value"
 import { copyButton, statusOf } from "./copy"
@@ -52,19 +54,14 @@ const stackTrace = (h: H, model: Model, eventId: string, stacktrace: string): Ht
 			h.div(
 				[h.Class("flex items-center gap-1")],
 				[
-					h.button(
-						[
-							h.AriaDisabled(false),
-							h.AriaExpanded(isOpen),
-							h.Class(
+					collapsibleTrigger(
+						h,
+						{
+							isOpen,
+							onToggle: Message.ToggledCollapsible({ id }),
+							className:
 								"group flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
-							),
-							...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-							h.DataAttribute("slot", "collapsible-trigger"),
-							h.Tabindex(0),
-							h.Type("button"),
-							h.OnClick(Message.ToggledCollapsible({ id })),
-						],
+						},
 						[
 							icon(h, "ChevronRightIcon", {
 								size: 10,
@@ -161,10 +158,7 @@ export const spanEventsSection = (h: H, model: Model, events: ReadonlyArray<Span
 		: h.div(
 				[h.Class("space-y-1")],
 				[
-					h.h4(
-						[h.Class("text-xs font-medium text-muted-foreground")],
-						["Events (", String(events.length), ")"],
-					),
+					heading(h, { level: 4, variant: "label" }, ["Events (", String(events.length), ")"]),
 					h.ul(
 						[h.Class("divide-y rounded-md border")],
 						events.map((event, index) => eventRow(h, model, event, index)),

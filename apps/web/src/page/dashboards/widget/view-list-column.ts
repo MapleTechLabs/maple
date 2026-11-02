@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
+import { pressable } from "../../../ui/pressable"
 import type { ListColumn } from "./editor-state"
 import { GRIP_ATTRIBUTE, ROW_ATTRIBUTE } from "./list-column-drag"
 import { Message } from "./message"
@@ -37,12 +38,12 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 			.filter((field) => !column.field || field.toLowerCase().includes(column.field.toLowerCase()))
 			.slice(0, 20)
 			.map((field) =>
-				h.button(
-					[
-						h.Type("button"),
-						h.Class("w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate"),
-						h.OnMouseDown(product(ProductEdit.PickedListField({ index, field }))),
-					],
+				pressable(
+					h,
+					{
+						className: "w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate",
+						attributes: [h.OnMouseDown(product(ProductEdit.PickedListField({ index, field })))],
+					},
 					[field],
 				),
 			),
@@ -60,22 +61,23 @@ export const listColumnRow = (
 	h.div(
 		[h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"), h.DataAttribute(ROW_ATTRIBUTE, "")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.DataAttribute(GRIP_ATTRIBUTE, ""),
-					h.AriaLabel(`Reorder ${column.header || column.field || `column ${index + 1}`}`),
-					h.Class(
+			pressable(
+				h,
+				{
+					label: `Reorder ${column.header || column.field || `column ${index + 1}`}`,
+					className:
 						"shrink-0 cursor-grab touch-none text-foreground-faint hover:text-muted-foreground active:text-muted-foreground active:cursor-grabbing",
-					),
-					h.OnKeyDownPreventDefault((key) =>
-						key === "ArrowUp"
-							? Option.some(product(ProductEdit.MovedListColumn({ index, delta: -1 })))
-							: key === "ArrowDown"
-								? Option.some(product(ProductEdit.MovedListColumn({ index, delta: 1 })))
-								: Option.none(),
-					),
-				],
+					attributes: [
+						h.DataAttribute(GRIP_ATTRIBUTE, ""),
+						h.OnKeyDownPreventDefault((key) =>
+							key === "ArrowUp"
+								? Option.some(product(ProductEdit.MovedListColumn({ index, delta: -1 })))
+								: key === "ArrowDown"
+									? Option.some(product(ProductEdit.MovedListColumn({ index, delta: 1 })))
+									: Option.none(),
+						),
+					],
+				},
 				[icon(h, "GripDotsIcon", { size: 14 })],
 			),
 			h.div(

@@ -1,6 +1,7 @@
 import type { ChatConnectorId } from "@maple/domain/primitives"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
 import { item, itemContent, itemMedia } from "../../ui/item"
@@ -84,8 +85,9 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 							h.div(
 								[h.Class("flex items-center gap-2")],
 								[
-									h.h3(
-										[h.Class("min-w-0 text-sm font-semibold [overflow-wrap:anywhere]")],
+									heading(
+										h,
+										{ level: 3, variant: "section", className: "min-w-0 [overflow-wrap:anywhere]" },
 										[workspace.name],
 									),
 									h.span(

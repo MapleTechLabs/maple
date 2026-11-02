@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
 // `Pressable`: a click target that draws its own look (a timeline lane, a chart bar, a colour
@@ -15,6 +16,8 @@ export type PressableOptions<M> = Readonly<{
 	/** Sets `aria-pressed`, for a target that toggles. */
 	isSelected?: boolean
 	isDisabled?: boolean
+	/** A bespoke row's selection lane (left bar and tint, as `listRow`); `false` keeps the lane clear. */
+	selectedLane?: boolean
 	/** `aria-label`, for a target without readable text. */
 	label?: string
 	className?: string
@@ -29,7 +32,13 @@ export const pressable = <M>(
 	h.button(
 		[
 			h.Type(options.type ?? "button"),
-			h.Class(cn(BASE, options.className)),
+			h.Class(
+				cn(
+					BASE,
+					options.selectedLane !== undefined && rowSelectedClass(options.selectedLane),
+					options.className,
+				),
+			),
 			h.DataAttribute("slot", "pressable"),
 			...(options.onClick === undefined ? [] : [h.OnClick(options.onClick)]),
 			...(options.isSelected === undefined ? [] : [h.AriaPressed(options.isSelected ? "true" : "false")]),
