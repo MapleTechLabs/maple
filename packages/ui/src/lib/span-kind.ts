@@ -1,8 +1,7 @@
 // Span-kind and span-status presentation — the single copies of two small maps
 // that were previously duplicated across every trace tooltip and detail panel
 // (web, local-ui, mobile, and twice inside this package). Kept dependency-free
-// so non-DOM consumers (mobile) can import it; `span-category.ts` re-exports
-// SPAN_KIND_LABELS for its existing importers.
+// so non-DOM consumers (mobile) can import it.
 
 /**
  * Canonical span kinds. Both the managed warehouse and local chDB store the short spelling

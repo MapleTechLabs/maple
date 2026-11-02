@@ -3,39 +3,44 @@
  *
  * Pure string utilities only (no browser/node globals at module scope), so this
  * file is safe to import from both the build-time index endpoint
- * (`pages/docs/search-index.json.ts`) and the client island (`DocsSearch.tsx`).
+ * (`pages/docs/search-index.json.ts`) and the client island (`DocsSearch.ts`).
  */
 
-export interface SearchSection {
-	heading: string
-	/** Heading id Astro rendered, so `url#anchor` lands on the section. */
-	anchor: string
-	text: string
-}
+import { Schema } from "effect"
 
-export interface SearchDoc {
+export const SearchSection = Schema.Struct({
+	heading: Schema.String,
+	/** Heading id Astro rendered, so `url#anchor` lands on the section. */
+	anchor: Schema.String,
+	text: Schema.String,
+})
+export type SearchSection = typeof SearchSection.Type
+
+export const SearchDoc = Schema.Struct({
 	/** Collection entry id, e.g. `guides/instrumentation-node`. */
-	id: string
+	id: Schema.String,
 	/** Destination route, e.g. `/docs/guides/instrumentation-node`. */
-	url: string
-	title: string
-	description: string
-	group: string
-	sdk?: string
+	url: Schema.String,
+	title: Schema.String,
+	description: Schema.String,
+	group: Schema.String,
+	sdk: Schema.optionalKey(Schema.String),
 	/** Key into `SearchIndexPayload.icons`. */
-	icon?: string
+	icon: Schema.optionalKey(Schema.String),
 	/** Plain text before the first H2. */
-	intro: string
+	intro: Schema.String,
 	/** One entry per H2/H3; deeper headings fold into their parent section. */
-	sections: SearchSection[]
-}
+	sections: Schema.Array(SearchSection),
+})
+export type SearchDoc = typeof SearchDoc.Type
 
 /** Body of `/docs/search-index.json`. */
-export interface SearchIndexPayload {
-	docs: SearchDoc[]
+export const SearchIndexPayload = Schema.Struct({
+	docs: Schema.Array(SearchDoc),
 	/** Prerendered SVG markup, keyed `sdk:<id>`, `mark:<id>` or `group:<name>`. */
-	icons: Record<string, string>
-}
+	icons: Schema.Record(Schema.String, Schema.String),
+})
+export type SearchIndexPayload = typeof SearchIndexPayload.Type
 
 /** One searchable row: a whole page (intro) or one of its sections. */
 export interface SearchRecord {

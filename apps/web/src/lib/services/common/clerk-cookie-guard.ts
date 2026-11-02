@@ -24,23 +24,9 @@
  * `__clerk_db_jwt`) never leak across environments and are left alone.
  */
 
-const CLIENT_UAT_PREFIX = "__client_uat"
+import { computeClerkCookieSuffix } from "@maple/domain/clerk-js-url"
 
-/**
- * Clerk's per-instance cookie suffix: base64url(sha1(publishableKey)),
- * first 8 chars — mirrors `getCookieSuffix` in @clerk/shared.
- */
-export async function computeClerkCookieSuffix(
-	publishableKey: string,
-	subtle: SubtleCrypto = globalThis.crypto.subtle,
-): Promise<string> {
-	const digest = await subtle.digest("SHA-1", new TextEncoder().encode(publishableKey))
-	const bytes = Array.from(new Uint8Array(digest))
-	return btoa(String.fromCharCode(...bytes))
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.substring(0, 8)
-}
+const CLIENT_UAT_PREFIX = "__client_uat"
 
 /**
  * Given all visible cookie names, return the `__client_uat*` cookies that do

@@ -6,10 +6,10 @@ import TableOfContents from "../components/TableOfContents.astro";
 import DocsPrevNext from "../components/docs/DocsPrevNext.astro";
 import DocsMobileNav from "../components/docs/DocsMobileNav.astro";
 import DocsSectionNav from "../components/docs/DocsSectionNav.astro";
-import DocsSearch from "../components/docs/DocsSearch.tsx";
+import { DocsSearch } from "../components/docs/DocsSearch";
 import { getGitHubStars } from "../lib/github-stars";
-import { GithubStarButton } from "../components/GithubStarButton";
-import { MapleMark } from "@maple/ui/components/icons/maple-mark";
+import GithubStarButton from "../components/GithubStarButton.astro";
+import Icon from "../components/Icon.astro";
 
 interface Props {
     title: string;
@@ -88,14 +88,14 @@ const metaDescription = description.replaceAll("`", "");
         <header class="fixed top-0 left-0 right-0 z-50 border-b border-border bg-bg/95 backdrop-blur-md">
             <div class="flex h-14 items-center gap-5 px-4 sm:px-6">
                 <a href="/" class="flex items-center gap-2 text-fg transition-colors hover:text-primary">
-                    <MapleMark size={20} className="text-primary shrink-0" />
+                    <Icon name="MapleMark" size={20} class="text-primary shrink-0" />
                     <span class="text-[15px] font-semibold tracking-[-0.01em]">Maple</span>
                 </a>
                 <span class="h-4 w-px bg-border" aria-hidden="true"></span>
                 <a href="/docs" class="text-[14px] text-fg-muted transition-colors hover:text-fg">Docs</a>
                 <div class="ml-auto flex items-center gap-2.5">
                     <DocsSearch client:idle />
-                    <GithubStarButton stars={stars} className="hidden sm:inline-flex" />
+                    <GithubStarButton stars={stars} class="hidden sm:inline-flex" />
                     <a
                         href="https://app.maple.dev"
                         class="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-xs font-medium text-fg-muted transition-colors hover:border-fg-muted/40 hover:text-fg"

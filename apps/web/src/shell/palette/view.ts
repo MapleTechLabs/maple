@@ -8,6 +8,7 @@ import {
 	commandHiddenInput,
 	commandInput,
 	commandList,
+	MeasureCommandList,
 } from "@maple/views/ui/command"
 import type * as Dialog from "@maple/views/ui/dialog"
 import { view as dialogView } from "@maple/views/ui/dialog-view"
@@ -16,7 +17,6 @@ import { icon } from "@maple/views/ui/icon"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { serviceDot } from "@maple/views/ui/values"
 import { type Glyph, groupEntries, type PaletteEntry } from "./entries"
-import { MeasurePaletteList } from "./command"
 import { Message, type Model } from "./model"
 import { type Context, shownEntries } from "./update"
 import { typographyClass } from "@maple/views/ui/typography"
@@ -108,7 +108,7 @@ export const paletteView = <M>(
 							onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
 							empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
 							viewportAttributes: [
-								h.OnMount(Mount.mapMessage(MeasurePaletteList(), toMessage)),
+								h.OnMount(Mount.mapMessage(MeasureCommandList(), () => toMessage(Message.CompletedMeasureList()))),
 							],
 							hasMeasuredScrollbar: true,
 						}),
