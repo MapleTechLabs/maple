@@ -1121,6 +1121,10 @@ export const errorEventsMv = defineMaterializedView("error_events_mv", {
 	description:
 		"Materializes per-occurrence error events from traces. Unwraps the first OTel exception event (falling back to exception.* / error.* span attributes) and computes a cityHash64 FingerprintHash for issue grouping.",
 	datasource: errorEvents,
+	// A fingerprint change must never replay `traces` into this 90-day target: that
+	// drops the 60 days `traces` no longer holds and re-keys every stored occurrence.
+	// `alter` swaps the view query in place; stored rows keep their hashes.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "error_events_mv_node",
@@ -1141,6 +1145,8 @@ export const errorEventsByTimeMv = defineMaterializedView("error_events_by_time_
 	description:
 		"Time-ordered copy of error_events_mv's projection, written to error_events_by_time (sorted by OrgId, Timestamp, FingerprintHash) for recent-window error scans.",
 	datasource: errorEventsByTime,
+	// Same as error_events_mv: a rebuild would drop history and re-key stored rows.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "error_events_by_time_mv_node",
