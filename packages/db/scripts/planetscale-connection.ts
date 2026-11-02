@@ -15,7 +15,10 @@
  */
 import { spawnSync } from "node:child_process"
 import * as Predicate from "effect/Predicate"
+import { Option, Schema } from "effect"
 import { DB_ACCESS_ROLES, type DbAccess } from "../src/roles"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const FAILURE = 1
 
@@ -99,14 +102,10 @@ const createCredential = (database: string, branch: string, access: DbAccess): C
 	if (result.exitCode !== 0) {
 		fail(`Could not mint a role for ${database}/${branch} — check PLANETSCALE_ORG + auth`)
 	}
-	let parsed: Record<string, unknown>
-	try {
-		const value: unknown = JSON.parse(result.stdout)
-		if (!Predicate.isObject(value)) throw new TypeError("role response is not an object")
-		parsed = value
-	} catch {
-		return fail("Could not parse `pscale role create --format json` output")
-	}
+	const value = Option.getOrUndefined(decodeJson(result.stdout))
+	const parsed: Record<string, unknown> = Predicate.isObject(value)
+		? value
+		: fail("Could not parse `pscale role create --format json` output")
 	const pick = (...keys: string[]): string | undefined => {
 		for (const key of keys) {
 			const value = parsed[key]

@@ -76,7 +76,7 @@
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/platform-node": "catalog:effect",
 		"@effect/sql-pg": "4.1.0",
-		"@effect/tsgo": "0.63.0",
+		"@effect/tsgo": "0.64.1",
 		"@effect/vitest": "catalog:effect",
 		"@maple-dev/changesets": "0.1.0",
 		"@maple-dev/effect-orm": "0.8.0",

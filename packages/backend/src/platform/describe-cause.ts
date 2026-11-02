@@ -1,11 +1,13 @@
-import { Cause, Option } from "effect"
+import { Cause, Option, Schema } from "effect"
+
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 /** Render an unknown nested cause for logs and serialized persistence errors. */
 export const describeCause = (cause: unknown): string | undefined => {
 	if (cause == null) return undefined
 	if (cause instanceof Error) return cause.stack ?? cause.message
 	if (typeof cause === "string") return cause
-	return Option.liftThrowable(() => JSON.stringify(cause))().pipe(Option.getOrElse(() => String(cause)))
+	return encodeJson(cause).pipe(Option.getOrElse(() => String(cause)))
 }
 
 /**

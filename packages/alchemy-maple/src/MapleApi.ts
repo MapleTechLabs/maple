@@ -187,7 +187,8 @@ export const make = Effect.gen(function* () {
 						),
 					)
 				}
-				return yield* Effect.fail(yield* errorFromResponse(response.status, text))
+				const error = yield* errorFromResponse(response.status, text)
+				return yield* Effect.fail(error)
 			}).pipe(
 				Effect.catchIf(isMapleApiResponseError, (error) =>
 					canAutomaticallyRetry && error.error.retryable && attempt < 6

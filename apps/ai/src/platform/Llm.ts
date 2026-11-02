@@ -819,11 +819,11 @@ export const layerFindingEmbedder = (
 			model,
 			embed: (inputs: ReadonlyArray<string>) =>
 				embeddings.embedMany(inputs).pipe(
-					Effect.map((response) => response.embeddings.map((embedding) => embedding.vector)),
-					Effect.mapError(
-						(error) =>
+					Effect.mapBoth({
+						onSuccess: (response) => response.embeddings.map((embedding) => embedding.vector),
+						onFailure: (error) =>
 							new PrReviewEmbeddingError({ message: error.message, model, cause: error }),
-					),
+					}),
 				),
 		})),
 	).pipe(

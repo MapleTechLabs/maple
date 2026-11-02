@@ -11,6 +11,7 @@ import { Effect, Option } from "effect"
 
 /** Run a throwing synchronous call, `None` if it threw. */
 export const trySync = <A>(thunk: () => A): Option.Option<A> =>
+	// oxlint-disable-next-line effecttsgo/effect-try-without-catch -- customer-facing SDK, keeps Schema out of the bundle
 	Effect.runSync(Effect.option(Effect.try(thunk)))
 
 /** Run a throwing synchronous call, `undefined` if it threw. */

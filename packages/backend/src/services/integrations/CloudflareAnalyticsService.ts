@@ -239,6 +239,7 @@ const floorToBucket = (ms: number) => ms - (ms % BUCKET_MS)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** Synthetic actor stamped on rows the poller writes on the org's behalf (ingest keys, state). */
 const SYSTEM_USER_ID = decodeUserIdSync("system-cloudflare-analytics")
@@ -334,16 +335,17 @@ const httpDataset: DatasetDef = {
 	selection: httpSelection,
 	mapNode: (node, target) =>
 		decodeHttpZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("HTTP")),
-			Effect.map((decoded) =>
-				mapHttpGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					groups: decoded.groups ?? [],
-					latency: decoded.latency ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("HTTP"),
+				onSuccess: (decoded) =>
+					mapHttpGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						groups: decoded.groups ?? [],
+						latency: decoded.latency ?? [],
+					}),
+			}),
 		),
 	settingsNode: httpZoneSettingsNode,
 }
@@ -366,16 +368,17 @@ const httpPathsDataset: DatasetDef = {
 	selection: httpPathsSelection,
 	mapNode: (node, target) =>
 		decodeHttpPathsZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("HTTP paths")),
-			Effect.map((decoded) =>
-				mapHttpPathGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					groups: decoded.paths ?? [],
-					errors: decoded.pathErrors ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("HTTP paths"),
+				onSuccess: (decoded) =>
+					mapHttpPathGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						groups: decoded.paths ?? [],
+						errors: decoded.pathErrors ?? [],
+					}),
+			}),
 		),
 	settingsNode: httpZoneSettingsNode,
 }
@@ -390,16 +393,17 @@ const httpDimensionsDataset: DatasetDef = {
 	selection: httpDimensionsSelection,
 	mapNode: (node, target) =>
 		decodeHttpDimensionsZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("HTTP dimensions")),
-			Effect.map((decoded) =>
-				mapHttpDimensionGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					countries: decoded.countryAgg ?? [],
-					clients: decoded.clientAgg ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("HTTP dimensions"),
+				onSuccess: (decoded) =>
+					mapHttpDimensionGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						countries: decoded.countryAgg ?? [],
+						clients: decoded.clientAgg ?? [],
+					}),
+			}),
 		),
 	settingsNode: httpZoneSettingsNode,
 }
@@ -413,15 +417,16 @@ const workersDataset: DatasetDef = {
 	selection: workersSelection,
 	mapNode: (node, target) =>
 		decodeWorkersAccountNode(node).pipe(
-			Effect.mapError(() => decodeError("workers")),
-			Effect.map((decoded) =>
-				mapWorkersGroups({
-					orgId: target.orgId,
-					accountId: target.accountId,
-					groups: decoded.invocations ?? [],
-					liveScripts: target.liveScripts,
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("workers"),
+				onSuccess: (decoded) =>
+					mapWorkersGroups({
+						orgId: target.orgId,
+						accountId: target.accountId,
+						groups: decoded.invocations ?? [],
+						liveScripts: target.liveScripts,
+					}),
+			}),
 		),
 	settingsNode: (decoded) => decoded.viewer.accounts?.[0]?.settings?.workersInvocationsAdaptive ?? null,
 }
@@ -437,15 +442,16 @@ const firewallDataset: DatasetDef = {
 	selection: firewallSelection,
 	mapNode: (node, target) =>
 		decodeFirewallZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("firewall")),
-			Effect.map((decoded) =>
-				mapFirewallGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					groups: decoded.firewall ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("firewall"),
+				onSuccess: (decoded) =>
+					mapFirewallGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						groups: decoded.firewall ?? [],
+					}),
+			}),
 		),
 	settingsNode: (decoded, row) => {
 		const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
@@ -462,15 +468,16 @@ const dnsDataset: DatasetDef = {
 	selection: dnsSelection,
 	mapNode: (node, target) =>
 		decodeDnsZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("DNS")),
-			Effect.map((decoded) =>
-				mapDnsGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					groups: decoded.dns ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("DNS"),
+				onSuccess: (decoded) =>
+					mapDnsGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						groups: decoded.dns ?? [],
+					}),
+			}),
 		),
 	settingsNode: (decoded, row) => {
 		const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
@@ -487,14 +494,15 @@ const queueBacklogDataset: DatasetDef = {
 	selection: queueBacklogSelection,
 	mapNode: (node, target) =>
 		decodeQueueBacklogAccountNode(node).pipe(
-			Effect.mapError(() => decodeError("queue backlog")),
-			Effect.map((decoded) =>
-				mapQueueBacklogGroups({
-					orgId: target.orgId,
-					accountId: target.accountId,
-					groups: decoded.queueBacklog ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("queue backlog"),
+				onSuccess: (decoded) =>
+					mapQueueBacklogGroups({
+						orgId: target.orgId,
+						accountId: target.accountId,
+						groups: decoded.queueBacklog ?? [],
+					}),
+			}),
 		),
 	settingsNode: (decoded) => decoded.viewer.accounts?.[0]?.settings?.queueBacklogAdaptiveGroups ?? null,
 }
@@ -508,14 +516,15 @@ const queueConsumersDataset: DatasetDef = {
 	selection: queueConsumersSelection,
 	mapNode: (node, target) =>
 		decodeQueueConsumersAccountNode(node).pipe(
-			Effect.mapError(() => decodeError("queue consumers")),
-			Effect.map((decoded) =>
-				mapQueueConsumersGroups({
-					orgId: target.orgId,
-					accountId: target.accountId,
-					groups: decoded.queueConsumers ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("queue consumers"),
+				onSuccess: (decoded) =>
+					mapQueueConsumersGroups({
+						orgId: target.orgId,
+						accountId: target.accountId,
+						groups: decoded.queueConsumers ?? [],
+					}),
+			}),
 		),
 	settingsNode: (decoded) =>
 		decoded.viewer.accounts?.[0]?.settings?.queueConsumerMetricsAdaptiveGroups ?? null,
@@ -530,15 +539,16 @@ const durableObjectsDataset: DatasetDef = {
 	selection: durableObjectsSelection,
 	mapNode: (node, target) =>
 		decodeDurableObjectsAccountNode(node).pipe(
-			Effect.mapError(() => decodeError("durable objects")),
-			Effect.map((decoded) =>
-				mapDurableObjectsGroups({
-					orgId: target.orgId,
-					accountId: target.accountId,
-					groups: decoded.durableObjects ?? [],
-					liveScripts: target.liveScripts,
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("durable objects"),
+				onSuccess: (decoded) =>
+					mapDurableObjectsGroups({
+						orgId: target.orgId,
+						accountId: target.accountId,
+						groups: decoded.durableObjects ?? [],
+						liveScripts: target.liveScripts,
+					}),
+			}),
 		),
 	settingsNode: (decoded) =>
 		decoded.viewer.accounts?.[0]?.settings?.durableObjectsInvocationsAdaptiveGroups ?? null,
@@ -1742,7 +1752,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 									const settings = dataset.settingsNode(decoded, row)
 									if (settings === undefined) continue
 									const set: StateRowSet = {
-										settingsJson: settings == null ? null : JSON.stringify(settings),
+										settingsJson: settings == null ? null : encodeJsonSync(settings),
 										settingsFetchedAt: now,
 										quantilesAvailable: quantilesFromAvailableFields(
 											settings,
@@ -2349,7 +2359,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					} else {
 						liveScripts = new Set(scriptsResult.success.items)
 						yield* updateRows([anchor.id], {
-							liveScriptsJson: JSON.stringify(scriptsResult.success.items),
+							liveScriptsJson: encodeJsonSync(scriptsResult.success.items),
 							updatedAt: now,
 						})
 					}
@@ -2816,13 +2826,14 @@ export class CloudflareAnalyticsService extends Context.Service<
 			}))
 			const stateRows = pollable.length === 0 ? [] : yield* loadStateRows(orgId)
 			const grantCap = grantCapOf(stateRows)
+			const planNow = pollable.length === 0 ? 0 : yield* Clock.currentTimeMillis
 			const plan =
 				pollable.length === 0
 					? []
 					: planAccountBudgets(
 							pollable.map((account) => account.accountId),
 							stateRows,
-							yield* Clock.currentTimeMillis,
+							planNow,
 							grantCap,
 						)
 			const sourceId = stampedSourceId(linkedSource)
@@ -2851,7 +2862,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 						reportedAt,
 					)
 				: undefined
-			const outcome = sourcePollOutcome(summaries, yield* Ref.get(orgRefusal), resources)
+			const refusal = yield* Ref.get(orgRefusal)
+			const outcome = sourcePollOutcome(summaries, refusal, resources)
 			if (outcome !== null) yield* reportTick(linkedSource, outcome, reportedAt)
 			if (summaries.length === 0) {
 				yield* Effect.annotateCurrentSpan("maple.cloudflare.skip_reason", "not connected")

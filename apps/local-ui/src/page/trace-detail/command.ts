@@ -6,6 +6,7 @@ import { readCached, recordCached, cachedAs, withCache } from "../../data/cached
 import { traceCacheKey, traceFromCached, traceToCached } from "./cache"
 import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
+import { writeClipboard } from "../../lib/clipboard"
 import { fetchSpanDetail, fetchSpanLogs, fetchTrace } from "./fetch"
 import { Message } from "./message"
 
@@ -69,7 +70,7 @@ export const WriteClipboard = Command.define("WriteLocalSpanClipboard", {
 	args: { id: Schema.String, text: Schema.String, generation: Schema.Number },
 	messages: [Message.CompletedWriteClipboard],
 	execute: ({ id, text, generation }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
+		writeClipboard(text).pipe(
 			Effect.as(true),
 			Effect.orElseSucceed(() => false),
 			Effect.map((isOk) => Message.CompletedWriteClipboard({ id, generation, isOk })),

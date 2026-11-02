@@ -134,22 +134,19 @@ export default ChatBot.make(
 		return { fetch: app }
 	}).pipe(
 		// The init is the entry point: the cron source needs the host Worker.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			Layer.mergeAll(
-				// The socket DO's activation yields the relay namespace, so it builds on it. The relay's
-				// yields maple-ai's chat namespace, bound cross-script: mentions become turns on it.
-				ConnectorSocketLive.pipe(
-					Layer.provideMerge(ConnectorRelayLive),
-					Layer.provide(BoundChatSessions.layer),
-				),
-				Cloudflare.Hyperdrive.ConnectBinding,
-				Cloudflare.Workers.CronEventSourceLive,
-				WorkerTelemetry({
-					serviceName: "maple-chat-bot",
-					anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
-				}),
+		Effect.provide([
+			// The socket DO's activation yields the relay namespace, so it builds on it. The relay's
+			// yields maple-ai's chat namespace, bound cross-script: mentions become turns on it.
+			ConnectorSocketLive.pipe(
+				Layer.provideMerge(ConnectorRelayLive),
+				Layer.provide(BoundChatSessions.layer),
 			),
-		),
+			Cloudflare.Hyperdrive.ConnectBinding,
+			Cloudflare.Workers.CronEventSourceLive,
+			WorkerTelemetry({
+				serviceName: "maple-chat-bot",
+				anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+			}),
+		]),
 	),
 )

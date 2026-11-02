@@ -11,6 +11,8 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { Schema } from "effect"
 
+const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+
 const root = join(import.meta.dir, "..")
 const baselineFile = join(root, "scripts/oxlint-plugins/ui-kit-baseline.json")
 const allowIncrease = process.argv.includes("--allow-increase")
@@ -72,7 +74,7 @@ const sorted = Object.fromEntries(
 		Object.fromEntries(Object.entries(counts[rule]).sort(([a], [b]) => a.localeCompare(b))),
 	]),
 )
-writeFileSync(baselineFile, `${JSON.stringify(sorted, null, "\t")}\n`)
+writeFileSync(baselineFile, `${encodeJsonTabbed(sorted)}\n`)
 
 const total = (record: typeof Baseline.Type) =>
 	Object.values(record).reduce((sum, files) => sum + Object.values(files).reduce((a, b) => a + b, 0), 0)

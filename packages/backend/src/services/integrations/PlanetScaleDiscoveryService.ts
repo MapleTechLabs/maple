@@ -392,7 +392,8 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 				}
 			}
 			const now = yield* Clock.currentTimeMillis
-			const cached = Option.getOrUndefined(HashMap.get(yield* Ref.get(cache), row.id))
+			const cacheMap = yield* Ref.get(cache)
+			const cached = Option.getOrUndefined(HashMap.get(cacheMap, row.id))
 			if (cached && now - cached.fetchedAt < DISCOVERY_TTL_MS) {
 				return cached.entries
 			}

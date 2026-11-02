@@ -1440,7 +1440,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				return yield* dbExecute((db) =>
 					Effect.gen(function* () {
 						const page = yield* findPage(db, orgId, pageId)
-						return toConfig(page, yield* selectComponents(db, orgId, pageId))
+						const pageComponents = yield* selectComponents(db, orgId, pageId)
+						return toConfig(page, pageComponents)
 					}),
 				)
 			})
@@ -1615,9 +1616,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							if (hasStatusPageConfigChanges({ fields, created, updated, deleted, reordered }))
 								yield* bumpPage(db, orgId, pageId)
 							const page = yield* findPage(db, orgId, pageId)
+							const pageComponents = yield* selectComponents(db, orgId, pageId)
 							return {
 								previous,
-								config: toConfig(page, yield* selectComponents(db, orgId, pageId)),
+								config: toConfig(page, pageComponents),
 								changes: { fields, created, updated, deleted, reordered },
 							}
 						}),

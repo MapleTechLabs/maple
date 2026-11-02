@@ -87,7 +87,9 @@ const initialState: GatewayState = { awaitingAck: false }
 
 const reconnect: SocketDirective = { _tag: "reconnect", closeCode: RECONNECT_CLOSE_CODE }
 
-const frame = (op: number, d: unknown): string => JSON.stringify({ op, d })
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+const frame = (op: number, d: unknown): string => encodeJson({ op, d })
 
 const heartbeatFrame = (state: GatewayState): string => frame(OP.heartbeat, state.sequence ?? null)
 

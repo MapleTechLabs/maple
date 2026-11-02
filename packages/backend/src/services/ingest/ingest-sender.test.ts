@@ -47,13 +47,11 @@ const send = (fetch: typeof fetch) =>
 				label: "Test metrics",
 			}),
 		),
-		Effect.provide(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				Layer.succeed(FetchHttpClient.Fetch, fetch),
-				Env.layer.pipe(Layer.provide(config)),
-			),
-		),
+		Effect.provide([
+			FetchHttpClient.layer,
+			Layer.succeed(FetchHttpClient.Fetch, fetch),
+			Env.layer.pipe(Layer.provide(config)),
+		]),
 	)
 
 describe("makeIngestSender", () => {

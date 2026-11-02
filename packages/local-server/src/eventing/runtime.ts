@@ -324,7 +324,8 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 				!(yield* store.hasStagedSourceKind(TENANT_ID, sourceKind))
 			)
 				return emptyEvaluation()
-			const acceptedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
+			const acceptedAtMs = yield* Clock.currentTimeMillis
+			const acceptedAt = new Date(acceptedAtMs).toISOString()
 			const [elapsed, normalization] = yield* Effect.timed(
 				Effect.exit(
 					signal === "logs"

@@ -98,6 +98,7 @@ export interface StatusPageStoreApi {
 export const STATUS_PAGE_KV_LIST_LIMIT = 1000
 
 const decodePageId = Schema.decodeUnknownOption(StatusPageId)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** The page and entry ids in an `overlay:<page>:<entry>` key. */
 export const parseOverlayKey = (
@@ -193,7 +194,7 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 			],
 			{ concurrency: 3, discard: true },
 		),
-	putHeartbeat: (heartbeat) => backend.kvPut(StatusPageKeys.heartbeat, JSON.stringify(heartbeat)),
+	putHeartbeat: (heartbeat) => backend.kvPut(StatusPageKeys.heartbeat, encodeJson(heartbeat)),
 	listKeys: (prefix, maxPages) => listFrom(backend, prefix, null, [], maxPages),
 	readOverlayEntry: (key) =>
 		backend.kvGet(key).pipe(

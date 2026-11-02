@@ -129,7 +129,8 @@ const make: Effect.Effect<
 
 	// Present only inside a Worker isolate; absent in tests and local runs, where
 	// the enqueue records `no_binding` rather than silently degrading.
-	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
+	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
+	const chatSessions = Option.getOrUndefined(chatSessionsOption)
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,

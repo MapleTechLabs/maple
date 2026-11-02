@@ -152,17 +152,16 @@ describe("dashboard view", () => {
 			ready(),
 			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(withSparkline) }),
 		).model
-		const revealed = pageUpdate(entered, Message.RevealedWidget({ widgetId: "total-errors" })).model
-		const statKey = Object.keys(revealed.requests)[0] ?? ""
+		const revealed = pageUpdate(entered, Message.RevealedWidget({ widgetId: "total-errors" }))
+		// The sparkline does not wait for the stat's value: both are asked for in one pass.
+		expect(names(revealed.commands)).toEqual([FetchWidget.name, FetchWidget.name])
+		const [statKey = "", sparkKey = ""] = Object.keys(revealed.model.requests)
 		const answer = (model: Model, key: string) =>
 			pageUpdate(
 				model,
 				Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [{ totalErrors: 5 }] }) }),
 			)
-		const withStat = answer(revealed, statKey)
-		expect(names(withStat.commands)).toEqual([FetchWidget.name])
-		const sparkKey = Object.keys(withStat.model.requests).find((key) => key !== statKey) ?? ""
-		const settled = answer(withStat.model, sparkKey).model
+		const settled = answer(answer(revealed.model, statKey).model, sparkKey).model
 		const ticked = pageUpdate(settled, Message.TickedAutoRefresh()).model
 		const refreshed = pageUpdate(ticked, Message.CompletedReadClock({ nowMs: NOW + 60_000 }))
 		expect(names(refreshed.commands)).toEqual([FetchWidget.name, FetchWidget.name])

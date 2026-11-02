@@ -575,7 +575,8 @@ const executeRawLocalQuery = Effect.fn("WarehouseExecutor.rawQuery", { kind: "cl
 		"query.context": "cli.rawQuery",
 	})
 	// This span is the database span; the request underneath adds no `http.client` span.
-	const http = warehouseHttpClient(yield* HttpClient.HttpClient)
+	const baseHttp = yield* HttpClient.HttpClient
+	const http = warehouseHttpClient(baseHttp)
 	const rows = yield* executeLocalQuery(sql, baseUrl).pipe(
 		Effect.provideService(HttpClient.HttpClient, http),
 		Effect.mapError((error) => mapWarehouseError("rawQuery", localDriverError(error))),
@@ -614,8 +615,10 @@ const expandLocalMacros = (sql: string, range: Range) =>
 		granularitySeconds: computeBucketSecondsForRange(range.startTime, range.endTime, "rawSql"),
 		workload: "interactive",
 	}).pipe(
-		Effect.map((prepared) => prepared.sql),
-		Effect.mapError((error) => new CliUsageError({ message: `SQL rejected: ${error.message}` })),
+		Effect.mapBoth({
+			onSuccess: (prepared) => prepared.sql,
+			onFailure: (error) => new CliUsageError({ message: `SQL rejected: ${error.message}` }),
+		}),
 	)
 
 /**

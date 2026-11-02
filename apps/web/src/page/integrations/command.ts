@@ -214,11 +214,11 @@ export const LoadSession = Command.define("LoadIntegrationsSession", {
 
 /** `useMapleCustomer` (`billingCustomerAtom`). */
 export const LoadCustomer = Command.define("LoadIntegrationsCustomer", {
-	args: Args,
+	args: { key: Schema.String, orgId: Schema.String },
 	messages: [Message.CompletedLoadCustomer],
-	execute: ({ key }) =>
+	execute: ({ key, orgId }) =>
 		Effect.gen(function* () {
-			return yield* (yield* BillingCustomerCache).get()
+			return yield* (yield* BillingCustomerCache).get({ orgId })
 		}).pipe(
 			settle,
 			Effect.map((result) => Message.CompletedLoadCustomer({ key, result })),

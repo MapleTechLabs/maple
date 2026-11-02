@@ -10,6 +10,10 @@
  * The script refuses to run against anything but a development instance
  * (`sk_test_…`), so it cannot mint a session for a real user on a live one.
  */
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const CLERK_API = "https://api.clerk.com/v1"
 
 const DEFAULT_EMAIL = "david+clerk_test@gmail.com"
@@ -59,7 +63,7 @@ if (!user) {
 
 const ticket = (await clerkFetch("/sign_in_tokens", {
 	method: "POST",
-	body: JSON.stringify({ user_id: user.id, expires_in_seconds: TICKET_TTL_SECONDS }),
+	body: encodeJson({ user_id: user.id, expires_in_seconds: TICKET_TTL_SECONDS }),
 })) as { token: string }
 
 // Both shapes of local web: the portless stack (`bun dev`) and the raw Vite

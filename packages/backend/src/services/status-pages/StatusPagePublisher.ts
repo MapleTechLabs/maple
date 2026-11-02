@@ -2,7 +2,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { StatusPageCleanups, StatusPages } from "@maple/db/tables"
 import type { StatusPageCleanupRow } from "@maple/db/tables"
 import type { StatusPageId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer } from "effect"
+import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { bumpPage } from "./outbox"
@@ -51,6 +51,10 @@ export interface StatusPagePublisherApi {
 		nowMs: number,
 	) => Effect.Effect<void, StatusPagePublishDbError | StatusPageStoreError>
 }
+
+// Encoding a built snapshot cannot fail; a failure is a defect, as the old JSON.stringify was.
+const encodeJson = (value: unknown) =>
+	Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(value).pipe(Effect.orDie)
 
 const toHex = (buffer: ArrayBuffer) =>
 	Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("")
@@ -112,11 +116,13 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				// The read revision, not the build's: a bump during the build republishes next sweep.
 				const revision = current.revision
 				// What a visitor sees: a bump or a stale republish with no visible change writes nothing.
-				const hash = yield* sha256Hex(JSON.stringify({ ...snapshot, generatedAt: 0, revision: 0 }))
+				const contentJson = yield* encodeJson({ ...snapshot, generatedAt: 0, revision: 0 })
+				const hash = yield* sha256Hex(contentJson)
 				const written = hash !== current.publishedHash
 				const routes = { slug: snapshot.page.slug, hostnames: [] }
 				if (written) {
-					yield* store.putSnapshot(pageId, JSON.stringify(snapshot)).pipe(
+					const snapshotJson = yield* encodeJson(snapshot)
+					yield* store.putSnapshot(pageId, snapshotJson).pipe(
 						Effect.andThen(store.putRoutes(pageId, routes)),
 						Effect.catch((error) => recordFailure(pageId, nowMs, error)),
 					)

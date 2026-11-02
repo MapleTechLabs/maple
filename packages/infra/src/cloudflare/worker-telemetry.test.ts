@@ -35,25 +35,23 @@ describe("MapleHttpTracingLive", () => {
 			assert.isFalse(attributes?.has("http.request.header.authorization"))
 			assert.isFalse(attributes?.has("http.response.header.set-cookie"))
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					FetchHttpClient.layer.pipe(
-						Layer.provide(
-							Layer.succeed(
-								FetchHttpClient.Fetch,
-								async () =>
-									new Response("ok", {
-										headers: {
-											"x-ratelimit-remaining": "9",
-											"set-cookie": "session=secret",
-										},
-									}),
-							),
+			Effect.provide([
+				FetchHttpClient.layer.pipe(
+					Layer.provide(
+						Layer.succeed(
+							FetchHttpClient.Fetch,
+							async () =>
+								new Response("ok", {
+									headers: {
+										"x-ratelimit-remaining": "9",
+										"set-cookie": "session=secret",
+									},
+								}),
 						),
 					),
-					MapleHttpTracingLive,
 				),
-			),
+				MapleHttpTracingLive,
+			]),
 		),
 	)
 })

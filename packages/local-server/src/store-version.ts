@@ -13,6 +13,7 @@ import { Effect, Schema, SchemaGetter } from "effect"
 import { CHDB_VERSION } from "./version"
 import { Digest64, Fingerprint16, IsoOrUnknown } from "./identity-schema"
 import { durableRemove, durableRenameSync, durableWrite, durableWriteFileSync } from "./durable-files"
+import { decodeJsonSync, encodeJsonPretty } from "./json"
 
 export const STORE_MARKER_FORMAT_VERSION = 2 as const
 
@@ -324,7 +325,7 @@ export const readMarkerState = (dataDir: string): MarkerReadState => {
 	const path = storeMarkerPath(dataDir)
 	if (!existsSync(path)) return { kind: "missing" }
 	try {
-		return { kind: "valid", marker: parseMarker(JSON.parse(readFileSync(path, "utf8")) as unknown) }
+		return { kind: "valid", marker: parseMarker(decodeJsonSync(readFileSync(path, "utf8"))) }
 	} catch (error) {
 		return { kind: "malformed", message: error instanceof Error ? error.message : String(error) }
 	}
@@ -411,7 +412,7 @@ export const ensureStoreMarkerDurable = async (
 				? { lastMigration: options.lastMigration }
 				: undefined),
 		}
-		await durableWrite(storeMarkerPath(dataDir), `${JSON.stringify(updated, null, 2)}\n`)
+		await durableWrite(storeMarkerPath(dataDir), `${encodeJsonPretty(updated)}\n`)
 		return updated
 	}
 
@@ -425,7 +426,7 @@ export const ensureStoreMarkerDurable = async (
 		activation: options.activation,
 		lastMigration: options.lastMigration,
 	})
-	await durableWrite(storeMarkerPath(dataDir), `${JSON.stringify(created, null, 2)}\n`)
+	await durableWrite(storeMarkerPath(dataDir), `${encodeJsonPretty(created)}\n`)
 	return created
 }
 

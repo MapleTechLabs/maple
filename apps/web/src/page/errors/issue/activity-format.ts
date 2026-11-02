@@ -1,7 +1,9 @@
 import type { ErrorIssueEventDocument } from "@maple/domain/http"
 import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Schema } from "effect"
+
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 // The issue timeline's vocabulary: labels, dots, payload text.
 
@@ -91,7 +93,7 @@ export const payloadString = (value: unknown): string | null => {
 	if (value === null || value === undefined) return null
 	if (typeof value === "string") return value
 	if (typeof value === "number" || typeof value === "boolean") return String(value)
-	return JSON.stringify(value) ?? null
+	return Option.getOrNull(encodeJsonOption(value))
 }
 
 /** "6 hours", "3 days": a duration a person would say out loud. */

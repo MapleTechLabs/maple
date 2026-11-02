@@ -1134,7 +1134,10 @@ export class SupabaseConnectionService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			// Drains go before the revoke, which ends the access token their deletes need.
 			const existing = yield* loadConnection(orgId)
-			if (existing !== null) yield* retireDrains(orgId, yield* loadProjects(existing.id), now)
+			if (existing !== null) {
+				const projects = yield* loadProjects(existing.id)
+				yield* retireDrains(orgId, projects, now)
+			}
 			// Revoke next: it needs the stored refresh token.
 			const grant = yield* oauth.disconnect(orgId)
 			// The connection's source goes with it, and its projects through the cascade.

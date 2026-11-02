@@ -512,9 +512,8 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("update", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const updatedAt = asIsoDateTime(
-							new Date(yield* Clock.currentTimeMillis).toISOString(),
-						)
+						const now = yield* Clock.currentTimeMillis
+						const updatedAt = asIsoDateTime(new Date(now).toISOString())
 						// Capture the pre-state the mutate callback already reads, for the diff.
 						const previous = yield* Ref.make(Option.none<DashboardDocument>())
 						const dashboard = yield* persistence.mutate(
@@ -531,7 +530,8 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								)
 							},
 						)
-						const changes = Option.match(yield* Ref.get(previous), {
+						const previousDashboard = yield* Ref.get(previous)
+						const changes = Option.match(previousDashboard, {
 							onNone: () => undefined,
 							onSome: (before) =>
 								dashboardAuditDiff(payload, toV2Dashboard(before), toV2Dashboard(dashboard)),

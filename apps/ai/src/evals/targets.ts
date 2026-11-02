@@ -6,7 +6,12 @@
  * dispatcher would make of it. Expectations list every acceptable answer (BFCL's per-argument
  * value lists), and a call anywhere in the trajectory can satisfy them, not only the first.
  */
+import { Option, Schema } from "effect"
 import { readToolCall } from "../mcp/tools/registry"
+
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+/** `JSON.stringify` for a message: a value with no JSON form reads as `String(value)`. */
+const showJson = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
 export type Scalar = string | number | boolean
 
@@ -96,11 +101,11 @@ const callMatches = (expectation: CallExpectation, observed: ObservedCall): bool
 
 const describeExpectation = (expectation: CallExpectation): string =>
 	`${expectation.tool}(${Object.entries(expectation.args ?? {})
-		.map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+		.map(([key, value]) => `${key}=${showJson(value)}`)
 		.join(", ")})`
 
 export const describeCall = (observed: ObservedCall): string =>
-	`${observed.tool}(${JSON.stringify(observed.args)})${observed.invalid ? " [invalid]" : ""}${observed.isError ? " [error]" : ""}`
+	`${observed.tool}(${showJson(observed.args)})${observed.invalid ? " [invalid]" : ""}${observed.isError ? " [error]" : ""}`
 
 export const runCheck = (
 	check: Check,
@@ -143,7 +148,7 @@ export const runCheck = (
 				detail:
 					hit !== undefined
 						? `answer names "${hit}"`
-						: `answer names none of ${JSON.stringify(check.anyOf)}`,
+						: `answer names none of ${showJson(check.anyOf)}`,
 			}
 		}
 	}

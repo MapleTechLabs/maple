@@ -434,10 +434,12 @@ const firstOrFail = <A>(rows: ReadonlyArray<A>, message: string) =>
 
 const toStoreError = makePersistenceErrorMapper(AuditStoreError, "Security audit store operation failed")
 
+const quoteJson = Schema.encodeSync(Schema.fromJsonString(Schema.String))
+
 const decodeRunId = (raw: string) =>
 	Schema.decodeUnknownEffect(SecurityAuditRunId)(raw).pipe(
 		Effect.mapError(
-			() => new AuditStoreError({ message: `Invalid security audit run id: ${JSON.stringify(raw)}` }),
+			() => new AuditStoreError({ message: `Invalid security audit run id: ${quoteJson(raw)}` }),
 		),
 	)
 

@@ -92,7 +92,8 @@ export const changedPaths = (
 					Effect.flatMap(complete),
 					Effect.flatMap(counted),
 				)
-				const nested = yield* Effect.forEach(yield* subdirectories(dir), walk)
+				const children = yield* subdirectories(dir)
+				const nested = yield* Effect.forEach(children, walk)
 				return [...own, ...nested.flat()]
 			})
 

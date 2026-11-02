@@ -19,6 +19,8 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr, Option, Schema } from "effect"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /**
  * Attach only when the new fingerprint's breach onset falls within this span
  * of the incident's own onset (or latest reopen) — co-onset on the same
@@ -94,7 +96,7 @@ export function parseFingerprints(row: IncidentFingerprintSource): IncidentFinge
 }
 
 export const serializeFingerprints = (entries: ReadonlyArray<IncidentFingerprintEntry>): string =>
-	JSON.stringify(entries)
+	encodeJson(entries)
 
 /**
  * Insert or update one fingerprint's entry. New entries beyond the cap are

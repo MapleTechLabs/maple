@@ -47,8 +47,7 @@ const localChdbClient = (baseUrl: string, http: HttpClient.HttpClient): Warehous
 		Effect.gen(function* () {
 			const startedAtMs = yield* Clock.currentTimeMillis
 			return yield* executeLocalQuery(statement.text, baseUrl).pipe(
-				Effect.map((data) => ({ data })),
-				Effect.mapError(localDriverError),
+				Effect.mapBoth({ onSuccess: (data) => ({ data }), onFailure: localDriverError }),
 				Effect.ensuring(
 					Clock.currentTimeMillis.pipe(
 						Effect.map((nowMs) =>

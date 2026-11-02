@@ -5,6 +5,7 @@ import { GetDashboardOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { dashboardNotFound, toMcpDashboardError } from "../lib/dashboard-mutations"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -88,7 +89,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 					),
 					doc.code(
 						"json",
-						[JSON.stringify(header), ...widgets.map((w) => JSON.stringify(w))].join("\n"),
+						[stringifyJson(header), ...widgets.map((w) => stringifyJson(w))].join("\n"),
 					),
 				],
 				next: dashboard.widgets

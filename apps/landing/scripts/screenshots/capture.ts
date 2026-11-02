@@ -8,7 +8,7 @@
  * `bun run dev:signin`), renders at 2x, and writes webp via `cwebp`.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, DateTime, Effect, FileSystem, Layer, Option, Schema } from "effect"
+import { Console, DateTime, Effect, FileSystem, Option, Schema } from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -64,6 +64,10 @@ const pw = <A>(message: string, run: () => Promise<A>, shot?: string) =>
 
 const ClerkUsers = Schema.Array(Schema.Struct({ id: Schema.String }))
 const ClerkTicket = Schema.Struct({ token: Schema.String })
+const encodeTicketRequest = Schema.encodeEffect(
+	Schema.fromJsonString(Schema.Struct({ user_id: Schema.String, expires_in_seconds: Schema.Number })),
+)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const mintTicket = Effect.fn("capture.mintTicket")(
 	function* (email: string) {
@@ -85,13 +89,11 @@ const mintTicket = Effect.fn("capture.mintTicket")(
 			)
 		const user = users[0]
 		if (!user) return yield* new CaptureError({ message: `no Clerk user ${email}` })
+		const ticketRequest = yield* encodeTicketRequest({ user_id: user.id, expires_in_seconds: 600 })
 		const ticket = yield* client
 			.execute(
 				HttpClientRequest.post("https://api.clerk.com/v1/sign_in_tokens").pipe(
-					HttpClientRequest.bodyText(
-						JSON.stringify({ user_id: user.id, expires_in_seconds: 600 }),
-						"application/json",
-					),
+					HttpClientRequest.bodyText(ticketRequest, "application/json"),
 				),
 			)
 			.pipe(
@@ -146,7 +148,7 @@ const shotUrl = (base: string, shot: Shot, anchor: number) => {
 	const url = new URL(shot.route, base)
 	for (const [key, value] of Object.entries(shot.search ?? {})) {
 		// TanStack Router reads non-string search values as JSON.
-		url.searchParams.set(key, typeof value === "string" ? value : JSON.stringify(value))
+		url.searchParams.set(key, typeof value === "string" ? value : encodeJson(value))
 	}
 	// Dev-only plan-gate bypass: the demo org never went through billing onboarding.
 	url.searchParams.set("quota_preview", "1")
@@ -275,7 +277,6 @@ const command = Command.make(
 ).pipe(Command.withDescription("Capture landing screenshots from the seeded local stack"))
 
 Command.run(command, { version: "1.0.0" }).pipe(
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(Layer.mergeAll(FetchHttpClient.layer, NodeServices.layer)),
+	Effect.provide([FetchHttpClient.layer, NodeServices.layer]),
 	NodeRuntime.runMain,
 )
