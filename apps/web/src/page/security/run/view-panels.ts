@@ -73,6 +73,11 @@ const unitRow = (h: H, unit: SecurityAuditUnit): Html =>
 											[unitContext(unit)],
 										),
 									]),
+							// Phones drop the results column, so the result rides under the unit.
+							h.span(
+								[h.Class("truncate text-xs text-muted-foreground sm:hidden")],
+								[resultText(unit)],
+							),
 						],
 					),
 				],

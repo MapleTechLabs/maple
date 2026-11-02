@@ -171,9 +171,11 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 						id: ids.control,
 						attributes: [
 							h.Placeholder(
-								picked === "open" && finding.status !== "open"
-									? "Why is this being reopened?"
-									: "Why is this being dismissed or accepted?",
+								picked !== "open"
+									? "Why is this being dismissed or accepted?"
+									: finding.status === "open"
+										? "Pick Dismiss or Accept risk, then say why"
+										: "Why is this being reopened?",
 							),
 							h.AriaLabelledBy(ids.label),
 							h.AriaDescribedBy(reasonError === null ? (ids.description ?? "") : ids.error),
