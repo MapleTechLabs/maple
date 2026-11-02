@@ -189,6 +189,29 @@ describe("ResultReporter", () => {
 			}).pipe(Effect.provide(reporterLayer(harness)))
 		}),
 	)
+
+	it.effect("errors the shutdown flush span when the flush drops results", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			const tracer = makeCapturingTracer()
+			let calls = 0
+			// The first POST hangs; the API refuses the shutdown flush.
+			harness.reportImpl = () =>
+				calls++ === 0
+					? Effect.never
+					: Effect.fail(new ApiRequestError({ message: "bad request", status: 400 }))
+			yield* Effect.gen(function* () {
+				const reporter = yield* ResultReporter
+				yield* reporter.record(report(1))
+				const fiber = yield* Effect.forkChild(reporter.run)
+				yield* TestClock.adjust(Duration.millis(0))
+
+				yield* Fiber.interrupt(fiber)
+				const flushes = endedSpansNamed(tracer.ended, "ResultReporter.shutdown_flush")
+				assert.isTrue(flushes.length > 0 && Exit.isFailure(flushes[0]!.exit))
+			}).pipe(Effect.provide(Layer.merge(reporterLayer(harness), tracer.layer)))
+		}),
+	)
 })
 
 describe("UptimeReporter", () => {

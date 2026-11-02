@@ -36,11 +36,13 @@ export const makeBatchReporter = <A>(options: {
 	readonly gauge: Metric.Gauge<number>
 	/** Span around one batch's delivery, retries included: it errors only if the batch is dropped. */
 	readonly spanName: string
+	/** Span around the shutdown flush: it errors if the flush drops results. */
+	readonly shutdownSpanName: string
 	/** Plural noun for log lines, e.g. `scrape results`. */
 	readonly noun: string
 }): Effect.Effect<BatchReporterApi<A>> =>
 	Effect.gen(function* () {
-		const { deliver, gauge, noun, spanName } = options
+		const { deliver, gauge, noun, spanName, shutdownSpanName } = options
 		const queue = yield* Queue.sliding<A>(MAX_BUFFERED_RESULTS)
 
 		// The batch under delivery has left the queue but is still undelivered.
@@ -57,7 +59,7 @@ export const makeBatchReporter = <A>(options: {
 			}).pipe(
 				Effect.timeout(FINAL_FLUSH_TIMEOUT),
 				// Anything this fails to deliver is dropped, so the span errors.
-				Effect.withSpan(`${spanName}.shutdown_flush`),
+				Effect.withSpan(shutdownSpanName),
 				Effect.catch((error) =>
 					Effect.logWarning(`Dropped unreported ${noun} on shutdown`).pipe(
 						Effect.annotateLogs({ error: error.message }),
@@ -102,6 +104,7 @@ export class ResultReporter extends Context.Service<ResultReporter, ResultReport
 				deliver: api.reportResults,
 				gauge: bufferedResults,
 				spanName: "ResultReporter.deliver",
+				shutdownSpanName: "ResultReporter.shutdown_flush",
 				noun: "scrape results",
 			})
 		}),
@@ -120,6 +123,7 @@ export class UptimeReporter extends Context.Service<UptimeReporter, BatchReporte
 				deliver: api.reportUptimeResults,
 				gauge: bufferedUptimeResults,
 				spanName: "UptimeReporter.deliver",
+				shutdownSpanName: "UptimeReporter.shutdown_flush",
 				noun: "uptime check results",
 			})
 		}),
