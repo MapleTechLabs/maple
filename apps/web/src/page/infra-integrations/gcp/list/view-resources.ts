@@ -18,7 +18,7 @@ import {
 	ROW_LINK_CLASS,
 } from "../../../infra/kit/data-table"
 import { listToolbar, toolbarCount } from "../../../kit/list-toolbar"
-import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import type { Resources } from "../data"
 import { gcpMessage } from "../gcp-message"
 import { Message, type Model } from "./model"

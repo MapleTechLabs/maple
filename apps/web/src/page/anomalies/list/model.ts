@@ -5,7 +5,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { AnomaliesSearch } from "../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as Tabs from "@maple/views/ui/tabs"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 
 // `/anomalies`.
 

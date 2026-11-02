@@ -43,7 +43,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (rows.length === 0)
-			return activeFilterCount === 0 && Option.exists(tracesPresence, (presence) => presence.status === "present")
+			return activeFilterCount === 0 && tracesPresence.status === "present"
 				? emptyNotice(h, {
 						icon: icon(h, "CircleWarningIcon"),
 						title: "No errors in this range",
@@ -57,7 +57,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						onClearFilters: Message.ClickedClearFilters(),
 						range,
 						onWidenRange: Message.ClickedWidenRange(),
-						maybePresence: tracesPresence,
+						presence: tracesPresence,
 						nowMs: inputs.presenceNowMs,
 						guide: { id: "errors-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 					})

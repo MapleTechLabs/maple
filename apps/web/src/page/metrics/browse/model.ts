@@ -6,7 +6,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { MetricsSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { MetricRow } from "../shared"
 

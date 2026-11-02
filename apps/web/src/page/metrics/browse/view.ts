@@ -12,7 +12,7 @@ import { type SelectEntry, type SelectOption, view as selectView } from "@maple/
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar } from "../../kit/list-toolbar"
-import { presenceOf } from "../../kit/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"

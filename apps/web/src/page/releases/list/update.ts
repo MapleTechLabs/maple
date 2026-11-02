@@ -11,7 +11,7 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReleasesReloadSpin,

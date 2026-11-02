@@ -7,7 +7,7 @@ import { TimeWindow } from "../../data/time-range"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
-import { SignalPresences } from "../kit/signal-presence"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
 import {

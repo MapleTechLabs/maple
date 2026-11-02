@@ -20,7 +20,7 @@ import { scrollArea } from "@maple/views/ui/scroll-area"
 import type { ScopedRows } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { detailPanelHeader, edgeRow, metricTile, metricValue, sampled } from "./view-panel-kit"
+import { detailPanelHeader, edgeRow, metricTile, metricValue, sampled } from "@maple/views/service-map/panel/kit"
 import {
 	failureAlert,
 	hyperdriveSection,

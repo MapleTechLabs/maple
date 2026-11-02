@@ -31,7 +31,7 @@ const NOW = Date.parse("2026-10-01T12:00:30Z")
 
 const inputs: PageViewInputs = {
 	context,
-	presenceOf: () => Option.none(),
+	presenceOf: () => ({ status: "unknown", lastSeenMs: null }),
 	presenceNowMs: NOW,
 	clockMs: 0,
 	hasNewDataSince: () => false,

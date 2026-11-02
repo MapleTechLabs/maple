@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
-import { presenceOf } from "../kit/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { docsLink, signalEmptyState } from "../kit/signal-empty-state"
 import type { Message } from "./message"
 import type { Model } from "./model"

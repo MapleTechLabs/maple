@@ -15,7 +15,8 @@ import { panel } from "@maple/views/ui/panel"
 import { refreshButton } from "@maple/views/ui/refresh-button"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
-import { docsLink, emptyActions } from "../../kit/signal-empty-state"
+import { docsLink } from "../../kit/signal-empty-state"
+import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { settingsSection, settingsSections } from "../kit/section"
 import {
 	type HealthSegment,

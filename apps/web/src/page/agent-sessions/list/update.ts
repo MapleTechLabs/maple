@@ -8,7 +8,7 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { formatCompact, parseRange, type RangeUnit } from "@maple/views/ui/filters/range-format"
 import { HistogramMessage } from "@maple/views/ui/filters/range-histogram"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { missingDetection } from "../kit/detected-models"
 import { emptyWindow } from "../kit/virtualize"
 import {

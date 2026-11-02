@@ -16,7 +16,7 @@ import { type SelectEntry, view as selectView } from "@maple/views/ui/select-vie
 import type { PageViewInputs } from "../../contract"
 import { seriesTokens } from "../kit/analytics-panel"
 import { filtersView } from "../kit/filters-view"
-import { filteredEmpty } from "../../kit/signal-empty-state"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { codeReviewLayout } from "../kit/layout"
 import { sectionHeading } from "../../kit/section-heading"

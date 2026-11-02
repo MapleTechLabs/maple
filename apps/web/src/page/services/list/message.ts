@@ -9,7 +9,7 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { CommitDetail, CommitFailure } from "../../kit/commit-card"
-import { SignalPresences } from "../../kit/signal-presence"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { IncidentCause, LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
 

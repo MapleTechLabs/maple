@@ -12,7 +12,8 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"
 import { PACKAGE_TAB_VALUES, SETUP_TAB_VALUES } from "../kit/guided-setup"
 import { loadSources, sourcesListKey } from "../sources/kit/data"
-import { loadSignalPresences, SignalPresenceData, SignalPresences } from "../kit/signal-presence"
+import { loadSignalPresences } from "../kit/signal-presence"
+import { SignalPresenceData, SignalPresences } from "@maple/views/data/signal-presence"
 
 // The connect step's state: the ingest key for the coding-agent prompt and SDK snippets, whether data
 // is arriving, and which picked providers are already connected. All of it is re-read while the step shows.

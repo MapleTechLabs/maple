@@ -11,7 +11,7 @@ import { AppRoute, hrefOf } from "../../route"
 import type { HomeSearch } from "../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
-import { SignalPresenceData } from "../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	DEFAULT_HINT,

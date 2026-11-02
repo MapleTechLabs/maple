@@ -1,4 +1,3 @@
-import { Option } from "effect"
 import { click, expect as expectView, expectOutMessage, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
@@ -21,7 +20,7 @@ const contextAt = (search: string): PageContext => ({
 const context = contextAt("")
 const inputs: PageViewInputs = {
 	context,
-	presenceOf: () => Option.some({ signal: "traces", status: "absent", lastSeenMs: null }),
+	presenceOf: () => ({ status: "absent", lastSeenMs: null }),
 	presenceNowMs: NOW,
 	clockMs: 0,
 	hasNewDataSince: () => false,

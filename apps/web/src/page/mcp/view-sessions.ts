@@ -21,7 +21,7 @@ import {
 	toolTableFooter,
 	toolTableHead,
 } from "../agent-sessions/tools-kit/table"
-import { filteredEmpty } from "../kit/signal-empty-state"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import {
 	attr,

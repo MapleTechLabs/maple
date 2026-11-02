@@ -140,6 +140,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/sheet.ts` `leftSheet`: `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
 - `packages/views/src/ui/side-panel.ts` `sidePanelFrame`: A detail side panel's frame (span, service, database): a full-height clipped column on the page background.
 - `packages/views/src/ui/sidebar.ts` `sidebarWrapper`, `sidebarDesktop`, `sidebarMobile`, `sidebarHeader`, `sidebarFooter`, `sidebarContent`, `sidebarGroup`, `sidebarGroupLabel`, `sidebarGroupContent`, `sidebarGroupAction`, `sidebarSeparator`, `sidebarMenu`, `sidebarMenuItem`, `sidebarMenuBadge`, `sidebarMenuSub`, `sidebarMenuSubItem`, `isLinkActive`, `sidebarMenuButton`, `sidebarMenuSubButton`, `sidebarRail`, `sidebarInset`, `sidebarTrigger`: The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
+- `packages/views/src/ui/signal-empty-state.ts` `emptyActions`, `filteredEmpty`, `presenceLoading`, `signalEmptyState`: `SignalEmptyState` and `FilteredEmpty`.
 - `packages/views/src/ui/skeleton.ts` `skeleton`, `skeletonSlowNote`, `skeletonList`, `skeletonBlock`, `skeletonMeterClass`, `skeletonMeter`, `skeletonSwitchClass`, `skeletonSwitch`, `skeletonLine`: Port of packages/ui/src/components/ui/skeleton.tsx.
 - `packages/views/src/ui/spaced.ts` `spacedClass`, `spaced`: `Spaced`: a block whose children stack with `space-y-*` margins (not a flex column), usually a row's text column that fills the free width and lets its lines truncate.
 - `packages/views/src/ui/spinner.ts` `spinner`: Port of packages/ui/src/components/ui/spinner.tsx: the loader glyph, spinning, as a status.
@@ -208,8 +209,8 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/series-legend.ts` `seriesLegend`
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
 - `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: `SheetDetailHeader`: a detail sheet's eyebrow kind, title, screen-reader description and meta row.
-- `apps/web/src/page/kit/signal-empty-state.ts` `docsLink`, `emptyActions`, `filteredEmpty`, `presenceLoading`, `signalEmptyState`: `SignalEmptyState`, `FilteredEmpty` and `DocsLink`/`EmptyActions`.
-- `apps/web/src/page/kit/signal-presence.ts` `loadSignalPresences`, `presenceOf`: Signal presence over `telemetrySignalsAtom`.
+- `apps/web/src/page/kit/signal-empty-state.ts` `docsLink`, `signalEmptyState`: The dashboard's copy for `SignalEmptyState`: where each signal comes from, and the setup page and guides it links.
+- `apps/web/src/page/kit/signal-presence.ts` `loadSignalPresences`: Signal presence over `telemetrySignalsAtom`.
 - `apps/web/src/page/kit/stable-slice.ts` `stableSlice`: A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on it skips the renders that change nothing the view reads.
 - `apps/web/src/page/kit/stat-rail.ts` `statRail`, `statRailItem`, `statRailItemSkeleton`, `statRailLoading`: `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`.
 - `apps/web/src/page/kit/table-sort.ts` `sortStateOf`, `nextSort`, `compareValues`, `sortRows`, `sortRowsByField`, `sortRowsBy`: The click-to-sort state as Model data, and the comparator.

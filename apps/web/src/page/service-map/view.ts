@@ -30,7 +30,10 @@ import { databasePanel } from "./view-db-panel"
 import { serviceMapEmptyState } from "./view-empty"
 import type * as Scene3d from "./scene3d"
 import { scene3dView } from "./view-scene3d"
-import { servicePanel } from "./view-service-panel"
+import { servicePanel } from "@maple/views/service-map/panel/service-panel"
+import { infrastructureTab } from "./view-service-infra"
+import { pickTimeSearch } from "../infra/kit/view-tabs"
+import { AppRoute, hrefOf } from "../../route"
 import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
@@ -96,6 +99,38 @@ const headerActions = (h: H, model: Model): Html => {
 
 const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message })
 
+/** The shared service panel, with the Infrastructure tab only the dashboard can back. */
+const serviceDetail = (
+	h: H,
+	model: Model,
+	rows: ScopedRows,
+	durationSeconds: number,
+	map: ServiceMap.Model,
+	serviceId: string,
+): Html => {
+	const workloads = rows.workloads.filter((workload) => workload.serviceName === serviceId)
+	const runtimes = rows.runtimes.filter((runtime) => runtime.serviceName === serviceId)
+	return servicePanel(h, {
+		serviceId,
+		map,
+		overviews: rows.overviews,
+		edges: rows.edges,
+		platform: rows.platforms.find((row) => row.serviceName === serviceId)?.platform,
+		durationSeconds,
+		dbEdges: rows.dbEdges,
+		serviceHref: (serviceName) => hrefOf(AppRoute.Service({ serviceName, search: {} })),
+		// Span scope: most services never own a trace's root span.
+		tracesHref: hrefOf(AppRoute.Traces({ search: { services: [serviceId], rootOnly: false } })),
+		toMapMessage: toMap,
+		infrastructure: {
+			tabs: model.serviceTabs,
+			toTabsMessage: (message) => Message.GotServiceTabsMessage({ message }),
+			count: workloads.length + runtimes.length,
+			content: () => infrastructureTab(h, workloads, runtimes, pickTimeSearch(model.search)),
+		},
+	})
+}
+
 /** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
 const detailPanel =
 	(
@@ -107,13 +142,7 @@ const detailPanel =
 		timeZone: string,
 	) =>
 	(selectedId: string): Html => {
-		if (!selectedId.startsWith(DB_NODE_PREFIX))
-			return servicePanel(h, model, {
-				serviceId: selectedId,
-				rows,
-				durationSeconds,
-				colorMode: map.colorMode,
-			})
+		if (!selectedId.startsWith(DB_NODE_PREFIX)) return serviceDetail(h, model, rows, durationSeconds, map, selectedId)
 		const node = map.source.rawNodes.find((candidate) => candidate.id === selectedId)
 		return databasePanel(h, model, {
 			nodeId: selectedId,

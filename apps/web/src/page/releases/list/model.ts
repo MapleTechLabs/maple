@@ -7,7 +7,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ReleasesSearch } from "../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // `/releases`.

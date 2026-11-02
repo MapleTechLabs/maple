@@ -32,7 +32,7 @@ const emptyState = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInput
 		onClearFilters: Message.ClickedClearFilters(),
 		range: rangeOf(inputs.context),
 		onWidenRange: Message.ClickedWidenRange(),
-		maybePresence: inputs.presenceOf("logs"),
+		presence: inputs.presenceOf("logs"),
 		nowMs: inputs.presenceNowMs,
 		guide: { id: "logs-empty", endpoint: inputs.context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 	})

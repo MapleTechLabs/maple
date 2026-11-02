@@ -24,7 +24,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
 import { signalEmptyState } from "../../kit/signal-empty-state"
-import { presenceOf } from "../../kit/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import {
 	baselineDelta,
 	baselineKey,

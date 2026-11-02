@@ -10,7 +10,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as QuickPick from "../kit/quick-pick"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 
 // The errors list.
 

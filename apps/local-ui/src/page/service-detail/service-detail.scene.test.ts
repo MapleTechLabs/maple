@@ -1,5 +1,4 @@
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
-import { Option } from "effect"
 import { click, expect as expectView, expectOutMessage, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
@@ -18,7 +17,7 @@ const context: PageContext = {
 	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 }
-const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, clockMs: 0, hasNewDataSince: () => false }
+const inputs: PageViewInputs = { context, presenceOf: () => ({ status: "unknown", lastSeenMs: null }), presenceNowMs: NOW, clockMs: 0, hasNewDataSince: () => false }
 const view = withViewInputs(pageView, inputs)()
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
