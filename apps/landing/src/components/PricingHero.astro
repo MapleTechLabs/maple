@@ -10,9 +10,9 @@
  *
  * Every number comes from `getOffer()`; nothing here is typed by hand.
  */
-import { buttonVariants } from "@maple/ui/components/ui/button";
+import { buttonVariants } from "@maple/ui/styles/ui/button";
 import * as m from "../paraglide/messages.js";
-import { HeroCta } from "./HeroCta";
+import HeroCta from "./HeroCta.astro";
 import PixelIcon from "./icons/PixelIcon.astro";
 import RegionChip from "./RegionChip.astro";
 import { getOffer, isUsageCredit, money, rateBlock, rateLabel, volume, type Allotment } from "../lib/pricing-offer";
@@ -107,7 +107,7 @@ const RETENTION_DAYS = 30;
 		</ul>
 
 		<div class="mt-8 flex flex-wrap items-center gap-3">
-			<HeroCta client:load className={buttonVariants({ size: "lg" })} />
+			<HeroCta class={buttonVariants({ size: "lg" })} />
 			<a href="#calculator" class={buttonVariants({ variant: "outline", size: "lg" })}>
 				{m.pricing_hero_estimate()}
 			</a>
