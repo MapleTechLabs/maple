@@ -16,8 +16,8 @@ import {
 	emptyMedia,
 	emptyTitle,
 } from "@maple/views/ui/empty"
-import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
+import { listFooter } from "@maple/views/ui/list-footer"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { pressable } from "@maple/views/ui/pressable"
 import * as Select from "@maple/views/ui/select"
@@ -49,6 +49,7 @@ import {
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { vstack } from "@maple/views/ui/stack"
 
 // The findings table: one row per advisory on a package in a lockfile, worst first as the server
 // sorts them, under a status and a repository filter.
@@ -79,12 +80,12 @@ export const versionsLabel = (finding: DependencyFindingView): string =>
 		? finding.packageName
 		: `${finding.packageName}@${finding.versions.join(", ")}`
 
-const item = (value: string, label: string): SelectView.SelectEntry => ({
+export const item = (value: string, label: string): SelectView.SelectEntry => ({
 	_tag: "Item",
 	item: { value, label },
 })
 
-const filterSelect = (
+export const filterSelect = (
 	h: H,
 	select: Select.Model,
 	entries: ReadonlyArray<SelectView.SelectEntry>,
@@ -109,19 +110,11 @@ const filterSelect = (
 		toParentMessage: wrap,
 	})
 
-const toolbar = (
-	h: H,
-	model: Model,
-	findings: ReadonlyArray<DependencyFindingView>,
-	repositories: ReadonlyArray<DependencyScanRepository>,
-): Html => {
+const toolbar = (h: H, model: Model, findings: ReadonlyArray<DependencyFindingView>): Html => {
 	const statusLabel = (value: string) =>
 		STATUS_FILTER_LABEL[STATUS_FILTERS.find((status) => status === value) ?? "open"]
-	const repositoryLabel = (value: string) =>
-		repositories.find((repository) => repository.id === value)?.fullName ?? "All repositories"
 	return listToolbar(h, {
 		framed: true,
-		leading: heading(h, { level: 2, variant: "subsection", className: "px-1" }, ["Vulnerable packages"]),
 		trailing: [
 			filterSelect(
 				h,
@@ -136,22 +129,6 @@ const toolbar = (
 				statusLabel,
 				(message) => Message.GotStatusSelectMessage({ message }),
 			),
-			// One repository needs no repository filter.
-			...(repositories.length < 2
-				? []
-				: [
-						filterSelect(
-							h,
-							model.repositorySelect,
-							[
-								item("all", "All repositories"),
-								...repositories.map((repository) => item(repository.id, repository.fullName)),
-							],
-							"Repository",
-							repositoryLabel,
-							(message) => Message.GotRepositorySelectMessage({ message }),
-						),
-					]),
 		],
 	})
 }
@@ -222,7 +199,7 @@ const productionCell = (
  * Said when findings cannot be tied to what runs: no service reports the commit it was built from,
  * or none of those commits belongs to a connected repository.
  */
-const productionHint = (h: H, production: DependencyProductionCoverage): ReadonlyArray<Html> => {
+export const productionHint = (h: H, production: DependencyProductionCoverage): ReadonlyArray<Html> => {
 	const text = !production.available
 		? "Production traffic could not be read, so findings are ranked by severity alone."
 		: production.runningServices === 0
@@ -242,12 +219,26 @@ const findingRow = (
 	clock: Clock,
 	production: DependencyProductionCoverage,
 	scans: ReadonlyMap<string, ProductionScanState>,
+	showRepository: boolean,
 ): Html => {
 	const open = Message.ClickedFinding({ findingId: finding.id })
 	return tableRow(
 		h,
 		[
-			laneTableCell(h, isSelected, [advisorySeverityBadge(h, finding.severity)], "w-24"),
+			// A set-aside finding says so under its severity: the time column folds away beside the list.
+			laneTableCell(
+				h,
+				isSelected,
+				[
+					vstack(h, { gap: "1", align: "start" }, [
+						advisorySeverityBadge(h, finding.severity),
+						...(finding.status === "open"
+							? []
+							: [badge(h, { variant: "meta" }, [STATUS_FILTER_LABEL[finding.status]])]),
+					]),
+				],
+				"w-24",
+			),
 			tableCell(h, [
 				pressable(
 					h,
@@ -289,15 +280,20 @@ const findingRow = (
 					h.span(
 						[h.Class("flex min-w-0 max-w-64 flex-col")],
 						[
-							typography(
-								h,
-								{
-									size: "sm",
-									truncate: true,
-									attributes: [h.Title(finding.repositoryFullName)],
-								},
-								[repositoryName(h, finding.repositoryFullName)],
-							),
+							// Scoped to one repository, every row would repeat its name.
+							...(showRepository
+								? [
+										typography(
+											h,
+											{
+												size: "sm",
+												truncate: true,
+												attributes: [h.Title(finding.repositoryFullName)],
+											},
+											[repositoryName(h, finding.repositoryFullName)],
+										),
+									]
+								: []),
 							middleTruncate(h, {
 								text: finding.lockfilePath,
 								tail: Math.min(24, finding.lockfilePath.length),
@@ -312,13 +308,6 @@ const findingRow = (
 			tableCell(
 				h,
 				[
-					...(finding.status === "open"
-						? []
-						: [
-								badge(h, { variant: "meta", className: "mr-2" }, [
-									STATUS_FILTER_LABEL[finding.status],
-								]),
-							]),
 					relativeTime(h, {
 						value: finding.createdAt,
 						nowMs: clock.nowMs,
@@ -332,7 +321,7 @@ const findingRow = (
 						}),
 					}),
 				],
-				cn("whitespace-nowrap text-right", WIDE_COLUMN),
+				cn("whitespace-nowrap text-right", ROOMY_COLUMN),
 			),
 		],
 		clickableRowClass(isSelected),
@@ -347,6 +336,7 @@ const findingsTable = (
 	clock: Clock,
 	production: DependencyProductionCoverage,
 	scans: ReadonlyMap<string, ProductionScanState>,
+	showRepository: boolean,
 ): Html =>
 	table(h, { ariaLabel: "Vulnerable packages" }, [
 		tableHeader(h, [
@@ -357,14 +347,14 @@ const findingsTable = (
 				tableHead(h, ["In production"], WIDE_COLUMN),
 				tableHead(h, ["Fixed in"]),
 				tableHead(h, ["Relation"], ROOMY_COLUMN),
-				tableHead(h, ["Location"], "hidden lg:table-cell"),
-				tableHead(h, ["First seen"], cn("text-right", WIDE_COLUMN)),
+				tableHead(h, [showRepository ? "Location" : "Lockfile"], "hidden lg:table-cell"),
+				tableHead(h, ["First seen"], cn("text-right", ROOMY_COLUMN)),
 			]),
 		]),
 		tableBody(
 			h,
 			rows.map((finding) =>
-				findingRow(h, finding, finding.id === selectedId, clock, production, scans),
+				findingRow(h, finding, finding.id === selectedId, clock, production, scans, showRepository),
 			),
 		),
 	])
@@ -373,13 +363,13 @@ const packagesChecked = (repositories: ReadonlyArray<DependencyScanRepository>):
 	repositories.reduce((sum, repository) => sum + (repository.latestScan?.packageCount ?? 0), 0)
 
 /** A repository is only clean when its latest scan completed whole and read every lockfile it found. */
-const readEverything = (repository: DependencyScanRepository): boolean =>
+export const readEverything = (repository: DependencyScanRepository): boolean =>
 	repository.latestScan?.status === "completed" &&
 	repository.latestScan.error === null &&
 	repository.latestScan.lockfiles.every((lockfile) => lockfile.status === "parsed")
 
 /** Scanned and nothing open: a calm line, not an alarm. */
-const cleanState = (h: H, repositories: ReadonlyArray<DependencyScanRepository>): Html =>
+export const cleanState = (h: H, repositories: ReadonlyArray<DependencyScanRepository>): Html =>
 	empty(
 		h,
 		[
@@ -408,9 +398,24 @@ export const findingsSection = (
 	const status = statusFilterOf(model)
 	const repositoryId = repositoryFilterOf(model)
 	const rows = filteredFindings(findings, status, repositoryId)
+	const footer = listFooter(h, {
+		shown: Math.min(rows.length, model.shownRows),
+		total: rows.length,
+		noun: "findings",
+		hasMore: rows.length > model.shownRows,
+		onLoadMore: Message.ClickedShowMoreRows(),
+	})
 	const content =
 		rows.length > 0
-			? findingsTable(h, rows, model.selectedId, clock, production, productionScanStates(repositories))
+			? findingsTable(
+					h,
+					rows.slice(0, model.shownRows),
+					model.selectedId,
+					clock,
+					production,
+					productionScanStates(repositories),
+					repositoryId === null,
+				)
 			: // Clean only when every repository's latest scan read its lockfiles; a failed or missing one is not a clean bill.
 				status === "open" && repositoryId === null && repositories.every(readEverything)
 				? cleanState(h, repositories)
@@ -430,6 +435,11 @@ export const findingsSection = (
 	return borderedBox(
 		h,
 		{ as: "section", overflow: "hidden", card: true, attributes: [h.AriaLabel("Vulnerable packages")] },
-		[toolbar(h, model, findings, repositories), ...productionHint(h, production), content],
+		[
+			toolbar(h, model, findings),
+			...productionHint(h, production),
+			content,
+			...(rows.length > 0 && footer !== null ? [footer] : []),
+		],
 	)
 }

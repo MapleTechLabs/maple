@@ -49,6 +49,8 @@ import {
 	cleanRepositoriesOf,
 	FINDING_IDS,
 	findingsOf as dependencyFindingsOf,
+	largeOrgOf,
+	manyRepositoriesOf,
 	neverScannedOf,
 	noFindings,
 	noRepositories,
@@ -87,6 +89,13 @@ export const SCENARIOS = [
 	"dependencies",
 	"dependencies-finding",
 	"dependencies-repository",
+	"dependencies-advisories",
+	"dependencies-repository-advisories",
+	"dependencies-many",
+	"dependencies-large",
+	"dependencies-large-advisories",
+	"dependencies-large-repository",
+	"dependencies-repositories",
 	"dependencies-clean",
 	"dependencies-never-scanned",
 	"dependencies-no-github",
@@ -537,6 +546,32 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 			}
 		case "dependencies-repository":
 			return { _tag: "Dependencies", step: populatedDependencies(nowMs, [], { repo: PAYMENTS_ID }) }
+		case "dependencies-advisories":
+			return { _tag: "Dependencies", step: populatedDependencies(nowMs, [], { view: "advisories" }) }
+		case "dependencies-repository-advisories":
+			return {
+				_tag: "Dependencies",
+				step: populatedDependencies(nowMs, [], { repo: PAYMENTS_ID, view: "advisories" }),
+			}
+		case "dependencies-many":
+			return { _tag: "Dependencies", step: dependencies(nowMs, manyRepositoriesOf(nowMs)) }
+		case "dependencies-large":
+			return { _tag: "Dependencies", step: dependencies(nowMs, largeOrgOf(nowMs, 300)) }
+		case "dependencies-large-repository":
+			// acme/notifications-188, the riskiest of the 300.
+			return {
+				_tag: "Dependencies",
+				step: dependencies(nowMs, largeOrgOf(nowMs, 300), [], {
+					repo: "a0000000-0000-4000-8000-0000000000bc",
+				}),
+			}
+		case "dependencies-large-advisories":
+			return {
+				_tag: "Dependencies",
+				step: dependencies(nowMs, largeOrgOf(nowMs, 300), [], { view: "advisories" }),
+			}
+		case "dependencies-repositories":
+			return { _tag: "Dependencies", step: populatedDependencies(nowMs, [], { view: "repositories" }) }
 		case "dependencies-clean":
 			return {
 				_tag: "Dependencies",
