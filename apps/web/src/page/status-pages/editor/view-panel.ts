@@ -10,6 +10,8 @@ import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { segmentedSelect } from "../../../ui/segmented-select"
+import { heading } from "../../../ui/heading"
+import { label } from "../../../ui/label"
 import { relativeTime } from "../../kit/relative-time"
 import {
 	closingStatus,
@@ -31,6 +33,8 @@ import type { Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { ADD_PICKER_ID, PANEL_TITLE_ID } from "./update-components"
 import { UPDATE_BODY_ID } from "./update-incidents"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // The side panel: one component (saved as you go), one incident, the composer, or Add component.
 
@@ -66,12 +70,15 @@ const frame = (
 						[h.Class("flex min-w-0 max-w-full flex-col gap-1")],
 						[
 							eyebrow(h, {}, [options.kind]),
-							h.h2(
-								[
-									h.Id(PANEL_TITLE_ID),
-									h.Tabindex(-1),
-									h.Class("truncate text-sm font-medium outline-none"),
-								],
+							heading(
+								h,
+								{
+									level: 2,
+									variant: "subsection",
+									id: PANEL_TITLE_ID,
+									className: "truncate outline-none",
+									attributes: [h.Tabindex(-1)],
+								},
 								[options.title],
 							),
 							...(options.status === undefined ? [] : [options.status]),
@@ -105,7 +112,7 @@ const saveIndicator = (h: H, model: Model): Html =>
 			h.Class(
 				model.componentSave === "failed"
 					? "font-mono text-xs text-destructive-foreground"
-					: "font-mono text-xs text-muted-foreground",
+					: typographyClass({ size: "xs", tone: "muted", mono: true }),
 			),
 		],
 		[SAVE_LABEL[model.componentSave]],
@@ -130,89 +137,89 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 		[
 			...(isReadOnly
 				? [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							["Only org admins can change components."],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Only org admins can change components.",
+						]),
 					]
 				: []),
-			h.div(
-				[h.Class("flex flex-col gap-4")],
-				[
-					textField(h, {
-						id: "status-page-panel-name",
-						label: "Shown as",
-						value: form.name,
-						isDisabled: isReadOnly,
-						error: form.name.trim() === "" ? "Add a name." : null,
-						onInput: (value) => Message.ChangedComponentField({ field: "name", value }),
-						onBlur: Message.CommittedComponent(),
-					}),
-					textField(h, {
-						id: "status-page-panel-group",
-						label: "Group",
-						value: form.group,
-						placeholder: "None",
-						hint: "Components with one group are listed under it.",
-						isDisabled: isReadOnly,
-						onInput: (value) => Message.ChangedComponentField({ field: "group", value }),
-						onBlur: Message.CommittedComponent(),
-					}),
-					selectField(h, {
-						id: "status-page-panel-monitor",
-						label: "Driven by",
-						value: form.monitorId,
-						isDisabled: isReadOnly,
-						entries: [
-							{ value: "", label: "No monitor" },
-							...monitorsOf(model).map((monitor) => ({
-								value: monitor.id,
-								label: monitor.name,
-							})),
-						],
-						onInput: (value) => Message.PickedComponentField({ field: "monitorId", value }),
-					}),
-					selectField(h, {
-						id: "status-page-panel-status",
-						label: "Override status",
-						value: form.manualStatus,
-						isDisabled: isReadOnly,
-						hint: hasMonitor
-							? "Automatic follows the monitor and open incidents."
-							: "Automatic follows open incidents.",
-						entries: [
-							{ value: "", label: "Automatic" },
-							...COMPONENT_STATUS_OPTIONS.map((value) => ({
-								value,
-								label: COMPONENT_STATUS_LABEL[value],
-							})),
-						],
-						onInput: (value) => Message.PickedComponentField({ field: "manualStatus", value }),
-					}),
-					h.label(
-						[h.Id(Checkbox.labelId(uptimeId)), h.Class("flex items-center gap-2 text-sm")],
-						[
-							...Checkbox.view(h, {
-								// The stored value, shown as is; it only takes effect once a monitor drives the component.
-								model: { isChecked: form.showUptime },
-								toParentMessage: () => Message.ToggledComponentUptime(),
-								id: `${uptimeId}-root`,
-								inputId: uptimeId,
-								isDisabled: isReadOnly || !hasMonitor,
-							}),
-							h.span([], ["Show uptime bars"]),
-						],
-					),
-					...(hasMonitor
-						? []
-						: [
-								h.p(
-									[h.Class("-mt-2 text-xs text-muted-foreground")],
-									["Uptime bars need a monitor."],
-								),
-							]),
-				],
-			),
+			vstack(h, { gap: "4" }, [
+				textField(h, {
+					id: "status-page-panel-name",
+					label: "Shown as",
+					value: form.name,
+					isDisabled: isReadOnly,
+					error: form.name.trim() === "" ? "Add a name." : null,
+					onInput: (value) => Message.ChangedComponentField({ field: "name", value }),
+					onBlur: Message.CommittedComponent(),
+				}),
+				textField(h, {
+					id: "status-page-panel-group",
+					label: "Group",
+					value: form.group,
+					placeholder: "None",
+					hint: "Components with one group are listed under it.",
+					isDisabled: isReadOnly,
+					onInput: (value) => Message.ChangedComponentField({ field: "group", value }),
+					onBlur: Message.CommittedComponent(),
+				}),
+				selectField(h, {
+					id: "status-page-panel-monitor",
+					label: "Driven by",
+					value: form.monitorId,
+					isDisabled: isReadOnly,
+					entries: [
+						{ value: "", label: "No monitor" },
+						...monitorsOf(model).map((monitor) => ({
+							value: monitor.id,
+							label: monitor.name,
+						})),
+					],
+					onInput: (value) => Message.PickedComponentField({ field: "monitorId", value }),
+				}),
+				selectField(h, {
+					id: "status-page-panel-status",
+					label: "Override status",
+					value: form.manualStatus,
+					isDisabled: isReadOnly,
+					hint: hasMonitor
+						? "Automatic follows the monitor and open incidents."
+						: "Automatic follows open incidents.",
+					entries: [
+						{ value: "", label: "Automatic" },
+						...COMPONENT_STATUS_OPTIONS.map((value) => ({
+							value,
+							label: COMPONENT_STATUS_LABEL[value],
+						})),
+					],
+					onInput: (value) => Message.PickedComponentField({ field: "manualStatus", value }),
+				}),
+				label(
+					h,
+					{
+						className: "flex font-normal text-sm sm:text-sm",
+						attributes: [h.Id(Checkbox.labelId(uptimeId))],
+					},
+					[
+						...Checkbox.view(h, {
+							// The stored value, shown as is; it only takes effect once a monitor drives the component.
+							model: { isChecked: form.showUptime },
+							toParentMessage: () => Message.ToggledComponentUptime(),
+							id: `${uptimeId}-root`,
+							inputId: uptimeId,
+							isDisabled: isReadOnly || !hasMonitor,
+						}),
+						h.span([], ["Show uptime bars"]),
+					],
+				),
+				...(hasMonitor
+					? []
+					: [
+							h.p(
+								[h.Class("-mt-2 text-xs text-muted-foreground")],
+								["Uptime bars need a monitor."],
+							),
+						]),
+			]),
 			...failureAlert(h, "Couldn't save the component", model.componentFailure),
 			...(isReadOnly
 				? []
@@ -332,62 +339,59 @@ const incidentActions = (h: H, model: Model, incident: V2StatusPageIncident): Re
 	!isOpenIncident(incident) || model.updateForm !== null
 		? []
 		: [
-				h.div(
-					[h.Class("flex flex-wrap gap-2")],
-					[
-						...(incident.published
-							? []
-							: [
-									button(
-										h,
-										{
-											size: "sm",
-											isLoading: model.publishingIncidentIds.includes(incident.id),
-											attributes: [
-												h.OnClick(
-													Message.ClickedPublishIncident({
-														incidentId: incident.id,
-													}),
-												),
-											],
-										},
-										["Publish"],
-									),
-								]),
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								attributes: [
-									h.OnClick(
-										Message.ClickedPostUpdate({
-											incidentId: incident.id,
-											isResolving: false,
-										}),
-									),
-								],
-							},
-							["Post update"],
-						),
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								attributes: [
-									h.OnClick(
-										Message.ClickedPostUpdate({
-											incidentId: incident.id,
-											isResolving: true,
-										}),
-									),
-								],
-							},
-							[incident.kind === "incident" ? "Resolve" : "Complete"],
-						),
-					],
-				),
+				hstack(h, { gap: "2", align: "stretch", wrap: true }, [
+					...(incident.published
+						? []
+						: [
+								button(
+									h,
+									{
+										size: "sm",
+										isLoading: model.publishingIncidentIds.includes(incident.id),
+										attributes: [
+											h.OnClick(
+												Message.ClickedPublishIncident({
+													incidentId: incident.id,
+												}),
+											),
+										],
+									},
+									["Publish"],
+								),
+							]),
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							attributes: [
+								h.OnClick(
+									Message.ClickedPostUpdate({
+										incidentId: incident.id,
+										isResolving: false,
+									}),
+								),
+							],
+						},
+						["Post update"],
+					),
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							attributes: [
+								h.OnClick(
+									Message.ClickedPostUpdate({
+										incidentId: incident.id,
+										isResolving: true,
+									}),
+								),
+							],
+						},
+						[incident.kind === "incident" ? "Resolve" : "Complete"],
+					),
+				]),
 			]
 
 export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident, time: TimeInputs): Html => {
@@ -400,66 +404,53 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 		{
 			kind: incident.kind === "incident" ? "Incident" : "Maintenance",
 			title: incident.title,
-			status: h.div(
-				[h.Class("flex flex-wrap items-center gap-1.5")],
-				[
-					badge(h, { variant: isOpenIncident(incident) ? "info" : "muted" }, [
-						INCIDENT_STATUS_LABEL[incident.status],
-					]),
-					...(incident.kind === "incident"
-						? [
-								badge(h, { variant: IMPACT_TONE[incident.impact] }, [
-									`${IMPACT_LABEL[incident.impact]} impact`,
-								]),
-							]
-						: []),
-					...(incident.published ? [] : [badge(h, { variant: "meta" }, ["Draft, not public"])]),
-				],
-			),
+			status: hstack(h, { gap: "1.5", wrap: true }, [
+				badge(h, { variant: isOpenIncident(incident) ? "info" : "muted" }, [
+					INCIDENT_STATUS_LABEL[incident.status],
+				]),
+				...(incident.kind === "incident"
+					? [
+							badge(h, { variant: IMPACT_TONE[incident.impact] }, [
+								`${IMPACT_LABEL[incident.impact]} impact`,
+							]),
+						]
+					: []),
+				...(incident.published ? [] : [badge(h, { variant: "meta" }, ["Draft, not public"])]),
+			]),
 		},
 		[
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				[
-					names.length === 0 ? "No components named" : names.join(", "),
-					...(window === null ? [] : [` · ${window}`]),
-				],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				names.length === 0 ? "No components named" : names.join(", "),
+				...(window === null ? [] : [` · ${window}`]),
+			]),
 			...incidentActions(h, model, incident),
 			...updateForm(h, model),
-			h.section(
-				[h.AriaLabel("Updates"), h.Class("flex flex-col gap-2")],
-				[
-					eyebrow(h, { as: "h3" }, ["Updates"]),
-					h.ol(
-						[h.Class("flex flex-col gap-3")],
-						incident.updates.map((update) =>
-							h.li(
-								[h.Key(update.id), h.Class("flex flex-col gap-1 border-l pl-3")],
-								[
-									h.p(
-										[h.Class("text-xs text-muted-foreground")],
-										[
-											h.span(
-												[h.Class("font-medium text-foreground")],
-												[INCIDENT_STATUS_LABEL[update.status]],
-											),
-											" · ",
-											relativeTime(h, {
-												value: update.created_at,
-												nowMs: time.nowMs,
-												timeZone: time.timeZone,
-												tooltip: "title",
-											}),
-										],
-									),
-									h.p([h.Class("text-sm whitespace-pre-wrap")], [update.body]),
-								],
-							),
+			vstack(h, { gap: "2", as: "section", attributes: [h.AriaLabel("Updates")] }, [
+				eyebrow(h, { as: "h3" }, ["Updates"]),
+				h.ol(
+					[h.Class(vstackClass({ gap: "3" }))],
+					incident.updates.map((update) =>
+						h.li(
+							[h.Key(update.id), h.Class("flex flex-col gap-1 border-l pl-3")],
+							[
+								typography(h, { size: "xs", tone: "muted", as: "p" }, [
+									typography(h, { tone: "foreground", weight: "medium" }, [
+										INCIDENT_STATUS_LABEL[update.status],
+									]),
+									" · ",
+									relativeTime(h, {
+										value: update.created_at,
+										nowMs: time.nowMs,
+										timeZone: time.timeZone,
+										tooltip: "title",
+									}),
+								]),
+								h.p([h.Class("text-sm whitespace-pre-wrap")], [update.body]),
+							],
 						),
 					),
-				],
-			),
+				),
+			]),
 		],
 	)
 }
@@ -469,21 +460,22 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 const componentChecklist = (h: H, model: Model): Html => {
 	const components = componentsOf(model)
 	return h.fieldset(
-		[h.Class("flex flex-col gap-1.5")],
+		[h.Class(vstackClass({ gap: "1.5" }))],
 		[
 			h.legend([h.Class("mb-1.5 text-xs text-muted-foreground")], ["Affected components"]),
 			components.length === 0
-				? h.p([h.Class("text-xs text-muted-foreground")], ["The page has no components yet."])
-				: h.div(
-						[h.Class("flex flex-col gap-2")],
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, ["The page has no components yet."])
+				: vstack(
+						h,
+						{ gap: "2" },
 						components.map((component) => {
 							const inputId = `status-page-incident-component-${component.id}`
-							return h.label(
-								[
-									h.Key(component.id),
-									h.Class("flex items-center gap-2 text-sm"),
-									h.Id(Checkbox.labelId(inputId)),
-								],
+							return label(
+								h,
+								{
+									className: "flex font-normal text-sm sm:text-sm",
+									attributes: [h.Key(component.id), h.Id(Checkbox.labelId(inputId))],
+								},
 								[
 									...Checkbox.view(h, {
 										model: {
@@ -512,7 +504,7 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 			[
 				h.AriaLabelledBy(PANEL_TITLE_ID),
 				h.OnSubmit(Message.SubmittedIncident()),
-				h.Class("flex flex-col gap-4"),
+				h.Class(vstackClass({ gap: "4" })),
 			],
 			[
 				segmentedSelect(h, {
@@ -588,24 +580,21 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 						: "We are looking into elevated error rates on the API.",
 					onInput: (value) => Message.ChangedIncidentField({ field: "body", value }),
 				}),
-				h.div(
-					[h.Class("flex flex-col gap-1.5")],
-					[
-						h.span([h.Class("text-xs text-muted-foreground")], ["Visibility"]),
-						segmentedSelect(h, {
-							ariaLabel: "Visibility",
-							size: "sm",
-							className: "self-start",
-							value: form.isPublished ? "publish" : "draft",
-							onChange: (value) =>
-								Message.PickedIncidentPublished({ isPublished: value === "publish" }),
-							options: [
-								{ value: "publish", label: "Publish now" },
-								{ value: "draft", label: "Save as draft" },
-							],
-						}),
-					],
-				),
+				vstack(h, { gap: "1.5" }, [
+					typography(h, { size: "xs", tone: "muted" }, ["Visibility"]),
+					segmentedSelect(h, {
+						ariaLabel: "Visibility",
+						size: "sm",
+						className: "self-start",
+						value: form.isPublished ? "publish" : "draft",
+						onChange: (value) =>
+							Message.PickedIncidentPublished({ isPublished: value === "publish" }),
+						options: [
+							{ value: "publish", label: "Publish now" },
+							{ value: "draft", label: "Save as draft" },
+						],
+					}),
+				]),
 				...failureAlert(
 					h,
 					isMaintenance ? "Couldn't schedule it" : "Couldn't open the incident",
@@ -614,7 +603,7 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 				h.div(
 					[h.Class("flex items-center justify-between gap-3 border-t pt-4")],
 					[
-						h.p([h.Class("text-xs text-muted-foreground")], [issues[0] ?? ""]),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [issues[0] ?? ""]),
 						button(
 							h,
 							{

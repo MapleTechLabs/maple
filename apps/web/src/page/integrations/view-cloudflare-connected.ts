@@ -28,6 +28,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { workersCard, zoneBoard } from "./view-cloudflare-board"
 import { zonesDialog } from "./view-cloudflare-zones"
+import { typography, typographyClass } from "../../ui/typography"
+import { vstack } from "../../ui/stack"
 
 // The connected `CloudflareAccountCard` and `CloudflareStatCards`.
 
@@ -56,12 +58,12 @@ const accountsStrip = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Ht
 								[
 									truncatedText(h, {
 										text: account.accountName ?? account.accountId,
-										className: "text-sm font-medium",
+										className: typographyClass({ size: "sm", weight: "medium" }),
 									}),
 									truncatedText(h, {
 										text: account.accountId,
 										mono: true,
-										className: "text-2xs text-muted-foreground",
+										className: typographyClass({ size: "2xs", tone: "muted" }),
 									}),
 								],
 								"gap-0",
@@ -74,10 +76,9 @@ const accountsStrip = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Ht
 										: !account.analyticsCapable
 											? [badge(h, { variant: "warn" }, ["Needs updated access"])]
 											: []),
-									h.span(
-										[h.Class("text-xs text-muted-foreground")],
-										[countLabel(account.zoneCount, "zone")],
-									),
+									typography(h, { size: "xs", tone: "muted" }, [
+										countLabel(account.zoneCount, "zone"),
+									]),
 								],
 								"gap-1.5",
 							),
@@ -215,47 +216,43 @@ export const cloudflareConnected = (
 	const hasReadout = status.zones.length > 0 || hasWorkers || (usage !== null && usage.services.length > 0)
 	const phaseBanner = banner === null && phase !== null ? ingestBanner(h, phase) : null
 	const strip = accountsStrip(h, connectedAccountsOf(status))
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			...(strip === null ? [] : [strip]),
-			...(phaseBanner === null ? [] : [phaseBanner]),
-			...(hasReadout
-				? [
-						...(usageFailed ? [] : [statCards(h, usage)]),
-						...(zones.length === 0 && banner !== null ? [banner] : []),
-						h.div(
-							[h.Class("flex flex-col gap-4 lg:flex-row lg:items-start")],
-							[
-								...(zones.length > 0
-									? [zoneBoard(h, model, zones, usage !== null, banner, "min-w-0 flex-1")]
-									: []),
-								...(hasWorkers
-									? [
-											workersCard(
-												h,
-												model,
-												workerEntryOf(status, usage),
-												workerServices,
-												usage !== null,
-											),
-										]
-									: []),
-							],
-						),
-					]
-				: [
-						...(banner === null ? [] : [banner]),
-						...(banner !== null || phase === null
-							? [
-									h.p(
-										[h.Class("text-xs text-muted-foreground")],
-										["Your zones and Workers will appear here once collection starts."],
-									),
-								]
-							: []),
-					]),
-			zonesDialog(h, model),
-		],
-	)
+	return vstack(h, { gap: "4" }, [
+		...(strip === null ? [] : [strip]),
+		...(phaseBanner === null ? [] : [phaseBanner]),
+		...(hasReadout
+			? [
+					...(usageFailed ? [] : [statCards(h, usage)]),
+					...(zones.length === 0 && banner !== null ? [banner] : []),
+					h.div(
+						[h.Class("flex flex-col gap-4 lg:flex-row lg:items-start")],
+						[
+							...(zones.length > 0
+								? [zoneBoard(h, model, zones, usage !== null, banner, "min-w-0 flex-1")]
+								: []),
+							...(hasWorkers
+								? [
+										workersCard(
+											h,
+											model,
+											workerEntryOf(status, usage),
+											workerServices,
+											usage !== null,
+										),
+									]
+								: []),
+						],
+					),
+				]
+			: [
+					...(banner === null ? [] : [banner]),
+					...(banner !== null || phase === null
+						? [
+								typography(h, { size: "xs", tone: "muted", as: "p" }, [
+									"Your zones and Workers will appear here once collection starts.",
+								]),
+							]
+						: []),
+				]),
+		zonesDialog(h, model),
+	])
 }

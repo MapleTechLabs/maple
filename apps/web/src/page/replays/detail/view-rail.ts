@@ -5,12 +5,6 @@ import { formatClock } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { toggleVariants } from "@maple/ui/styles/ui/toggle"
-import {
-	toggleGroupConnectedStyles,
-	toggleGroupHorizontalStyles,
-	toggleGroupStyles,
-} from "@maple/ui/styles/ui/toggle-group"
 import { AsyncData } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -22,14 +16,19 @@ import { icon, type IconName } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
 import { meter } from "../../../ui/meter"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
-import { togglePrimitive } from "../../../ui/toggle"
+import { textLink } from "../../../ui/text-link"
+import * as ToggleGroup from "../../../ui/toggle-group"
 import { MARKER_SOFT, MARKER_TEXT } from "../kit/replay-meta"
 import { realOffsetFrom } from "./derive"
 import { Message } from "./message"
 import type { EventFilter, EventRow, Model, RailTab, ReplayDetail, TraceSummary } from "./model"
 import { sessionTab } from "./view-session"
 import { noLinkedTraces } from "./view-timeline"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
+import { scrollRegion } from "../../../ui/scroll-region"
 
 // The session rail: Events, Traces and Session tabs.
 // TODO(rail-virtualize): the event list renders every row; long sessions should virtualize.
@@ -154,20 +153,20 @@ const filterButton = (
 	}>,
 	children: ReadonlyArray<Html>,
 ): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.PickedEventFilter({ filter: config.filter })),
-			h.AriaPressed(String(config.isActive)),
-			h.AriaLabel(`${FILTER_LABELS[config.filter]} (${config.count})`),
-			h.Class(
-				cn(
-					"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors",
-					config.isActive ? config.selected : cn(config.tone, "hover:bg-surface-sunken active:bg-surface-sunken"),
-					config.count === 0 && !config.isActive && "text-muted-foreground opacity-45",
-				),
+	pressable(
+		h,
+		{
+			onClick: Message.PickedEventFilter({ filter: config.filter }),
+			isSelected: config.isActive,
+			label: `${FILTER_LABELS[config.filter]} (${config.count})`,
+			className: cn(
+				"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors",
+				config.isActive
+					? config.selected
+					: cn(config.tone, "hover:bg-surface-sunken active:bg-surface-sunken"),
+				config.count === 0 && !config.isActive && "text-muted-foreground opacity-45",
 			),
-		],
+		},
 		[...children, h.span([h.Class("font-mono text-3xs tabular-nums")], [String(config.count)])],
 	)
 
@@ -190,7 +189,7 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 					tone: "text-muted-foreground",
 					selected: "bg-muted text-foreground",
 				},
-				[h.span([h.Class("text-2xs font-medium")], ["All"])],
+				[typography(h, { size: "2xs", weight: "medium" }, ["All"])],
 			),
 			...KIND_FILTERS.map((filter) =>
 				filterButton(
@@ -319,14 +318,14 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 						),
 					]
 				: []),
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ClickedEvent({ index, timestamp: ev.timestamp })),
-					h.AriaExpanded(isOpen),
-					h.Class("flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken"),
-					h.Title("Seek replay to this moment"),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedEvent({ index, timestamp: ev.timestamp }),
+					className:
+						"flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+					attributes: [h.AriaExpanded(isOpen), h.Title("Seek replay to this moment")],
+				},
 				[
 					h.span(
 						[h.Class("w-[30px] shrink-0 text-3xs tabular-nums text-muted-foreground")],
@@ -349,10 +348,9 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 							),
 							...(visual.trail
 								? [
-										h.span(
-											[h.Class("shrink-0 text-3xs text-muted-foreground")],
-											[visual.trail],
-										),
+										typography(h, { size: "3xs", tone: "muted", className: "shrink-0" }, [
+											visual.trail,
+										]),
 									]
 								: []),
 						],
@@ -424,34 +422,26 @@ const eventsTab = (h: H, model: RailView): Html =>
 		onData: (events) => {
 			const filter = model.eventFilter
 			const rows = filter === "all" ? events : events.filter((ev) => ev.type === filter)
-			return h.div(
-				[h.Class("flex min-h-0 flex-1 flex-col")],
-				[
-					filterBar(h, model, events),
-					rows.length === 0
-						? h.div(
-								[
-									h.Class(
-										"grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground",
-									),
-								],
-								[
-									`No ${filter === "all" ? "events" : FILTER_LABELS[filter].toLowerCase()} in this session.`,
-								],
-							)
-						: h.div(
-								[h.Class("min-h-0 flex-1 overflow-y-auto")],
-								[
-									h.ul(
-										[h.Class("relative divide-y divide-border font-mono text-xs")],
-										rows.map((ev, index) =>
-											eventLine(h, model, ev, index, filter === "network"),
-										),
-									),
-								],
+			return vstack(h, { grow: true, className: "min-h-0" }, [
+				filterBar(h, model, events),
+				rows.length === 0
+					? h.div(
+							[
+								h.Class(
+									"grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground",
+								),
+							],
+							[
+								`No ${filter === "all" ? "events" : FILTER_LABELS[filter].toLowerCase()} in this session.`,
+							],
+						)
+					: scrollRegion(h, {}, [
+							h.ul(
+								[h.Class("relative divide-y divide-border font-mono text-xs")],
+								rows.map((ev, index) => eventLine(h, model, ev, index, filter === "network")),
 							),
-				],
-			)
+						]),
+			])
 		},
 	})
 
@@ -479,42 +469,39 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 						),
 					]
 				: []),
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
-				[
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(Message.RequestedSeekToTimestamp({ timestamp: summary.startTime })),
-							h.Class(
-								"w-10 shrink-0 text-left font-mono text-xs tabular-nums text-muted-foreground hover:text-foreground active:text-foreground",
-							),
-						],
-						[clockAt(model, summary.startTime)],
+			hstack(h, { gap: "2.5" }, [
+				textLink(
+					h,
+					{
+						tone: "muted",
+						isMono: true,
+						onClick: Message.RequestedSeekToTimestamp({ timestamp: summary.startTime }),
+						className: "w-10 shrink-0 text-left text-xs tabular-nums",
+					},
+					[clockAt(model, summary.startTime)],
+				),
+				httpSpanLabel(h, {
+					spanName: summary.rootSpanName || "trace",
+					spanAttributes: parseAttributes(summary.rootSpanAttributes),
+					spanKind: summary.rootSpanKind,
+					className: "min-w-0 flex-1",
+					textClassName: cn(
+						typographyClass({ size: "xs", weight: "medium", truncate: true }),
+						isError ? "text-severity-error" : "text-foreground",
 					),
-					httpSpanLabel(h, {
-						spanName: summary.rootSpanName || "trace",
-						spanAttributes: parseAttributes(summary.rootSpanAttributes),
-						spanKind: summary.rootSpanKind,
-						className: "min-w-0 flex-1",
-						textClassName: cn(
-							"truncate text-xs font-medium",
-							isError ? "text-severity-error" : "text-foreground",
+				}),
+				h.span(
+					[
+						h.Class(
+							cn(
+								"shrink-0 font-mono text-2xs tabular-nums",
+								isError ? "font-semibold text-severity-error" : "text-muted-foreground",
+							),
 						),
-					}),
-					h.span(
-						[
-							h.Class(
-								cn(
-									"shrink-0 font-mono text-2xs tabular-nums",
-									isError ? "font-semibold text-severity-error" : "text-muted-foreground",
-								),
-							),
-						],
-						[formatNetDuration(Math.round(summary.durationMs))],
-					),
-				],
-			),
+					],
+					[formatNetDuration(Math.round(summary.durationMs))],
+				),
+			]),
 			h.div(
 				[h.Class("flex items-center gap-2 pl-[50px]")],
 				[
@@ -579,35 +566,18 @@ const tracesTab = (h: H, model: RailView, traceIds: ReadonlyArray<string>): Html
 							),
 			})
 
-const railTabItem = (h: H, model: RailView, tab: RailTab, label: string, count?: number): Html =>
-	togglePrimitive(
-		h,
-		{
-			isPressed: model.railTab === tab,
-			onClick: Message.PickedRailTab({ tab }),
-			className: cn(
-				toggleVariants({ size: "sm", variant: "default" }),
-				"h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground active:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs",
-			),
-			slot: "toggle",
-			attributes: [
-				h.AriaDisabled(false),
-				h.DataAttribute("size", "sm"),
-				h.DataAttribute("variant", "default"),
-			],
-		},
-		[
-			label,
-			...(count === undefined
-				? []
-				: [
-						h.span(
-							[h.Class("font-mono text-3xs tabular-nums text-muted-foreground")],
-							[String(count)],
-						),
-					]),
-		],
-	)
+const railTabItem = (
+	model: RailView,
+	tab: RailTab,
+	children: ReadonlyArray<Html | string>,
+): ToggleGroup.ControlledToggleGroupItem<Message> => ({
+	isPressed: model.railTab === tab,
+	onClick: Message.PickedRailTab({ tab }),
+	children,
+})
+
+const tabCount = (h: H, count: number): Html =>
+	h.span([h.Class("font-mono text-3xs tabular-nums text-muted-foreground")], [String(count)])
 
 const railSlot = createLazy()
 
@@ -629,28 +599,17 @@ const railView = (h: H, model: RailView, session: ReplayDetail): Html =>
 			h.div(
 				[h.Class("flex shrink-0 items-center border-b border-border px-2 py-1.5")],
 				[
-					h.div(
-						[
-							h.Role("group"),
-							h.AriaLabel("Rail section"),
-							h.Class(
-								cn(
-									toggleGroupStyles,
-									toggleGroupHorizontalStyles,
-									toggleGroupConnectedStyles,
-								),
-							),
-							h.DataAttribute("orientation", "horizontal"),
-							h.DataAttribute("size", "sm"),
-							h.DataAttribute("slot", "toggle-group"),
-							h.DataAttribute("variant", "default"),
+					ToggleGroup.controlledView(h, {
+						label: "Rail section",
+						size: "sm",
+						itemClassName:
+							"h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground active:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs",
+						items: [
+							railTabItem(model, "events", ["Events"]),
+							railTabItem(model, "traces", ["Traces", tabCount(h, session.traceIds.length)]),
+							railTabItem(model, "session", ["Session"]),
 						],
-						[
-							railTabItem(h, model, "events", "Events"),
-							railTabItem(h, model, "traces", "Traces", session.traceIds.length),
-							railTabItem(h, model, "session", "Session"),
-						],
-					),
+					}),
 				],
 			),
 			model.railTab === "events"

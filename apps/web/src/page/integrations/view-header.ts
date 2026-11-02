@@ -9,6 +9,8 @@ import { cardStatusOf, HEALTH_TONE, overviewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { entryPlate } from "./view-entry"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../ui/stack"
 
 // `IntegrationHeader`.
 
@@ -39,73 +41,72 @@ export const integrationHeader = (
 			: [connected.stateLabel, connected.context, connected.lastSyncLabel]
 					.filter((part): part is string => part !== null && part !== "")
 					.join(" · ")
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-x-3 gap-y-2")],
-		[
-			iconButton(
-				h,
-				{
-					label: "Back to integrations",
-					attributes: [h.OnClick(Message.ClickedIntegration({ integration: null }))],
-				},
-				[icon(h, "ArrowLeftIcon")],
-			),
-			entryPlate(h, entry, { size: 18, plateClassName: "size-9 rounded-lg" }),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							pageTitle(h, { title: entry.name, className: "min-w-0" }, [entry.name]),
-							...(connected === null && status !== null
-								? [badge(h, { variant: status.variant }, [status.label])]
-								: []),
-						],
-					),
-					...(connected !== null && slots.statusLine !== undefined
-						? [slots.statusLine]
-						: connected !== null && statusLine !== null && statusLine !== ""
-							? [
-									h.div(
-										[h.Class("flex items-center gap-1.5")],
-										[
-											statusDot(h, { tone: HEALTH_TONE[connected.health] }),
-											h.span(
-												[
-													h.Class("truncate text-xs text-muted-foreground"),
-													h.Title(statusLine),
-												],
-												[statusLine],
-											),
-										],
-									),
-								]
-							: []),
-				],
-			),
-			h.div(
-				[h.Class("ml-auto flex shrink-0 basis-full items-center justify-end gap-3 sm:basis-auto")],
-				[
-					...(entry.docsUrl !== undefined
-						? [
-								h.a(
-									[
-										h.Href(entry.docsUrl),
-										h.Target("_blank"),
-										h.Rel("noreferrer"),
-										h.Class(
-											"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-										),
-									],
-									["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],
+	return hstack(h, { wrap: true, className: "gap-x-3 gap-y-2" }, [
+		iconButton(
+			h,
+			{
+				label: "Back to integrations",
+				attributes: [h.OnClick(Message.ClickedIntegration({ integration: null }))],
+			},
+			[icon(h, "ArrowLeftIcon")],
+		),
+		entryPlate(h, entry, { size: 18, plateClassName: "size-9 rounded-lg" }),
+		vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+			hstack(h, { gap: "2", shrink: true }, [
+				pageTitle(h, { title: entry.name, className: "min-w-0" }, [entry.name]),
+				...(connected === null && status !== null
+					? [badge(h, { variant: status.variant }, [status.label])]
+					: []),
+			]),
+			...(connected !== null && slots.statusLine !== undefined
+				? [slots.statusLine]
+				: connected !== null && statusLine !== null && statusLine !== ""
+					? [
+							hstack(h, { gap: "1.5" }, [
+								statusDot(h, { tone: HEALTH_TONE[connected.health] }),
+								typography(
+									h,
+									{
+										size: "xs",
+										tone: "muted",
+										truncate: true,
+										attributes: [h.Title(statusLine)],
+									},
+									[statusLine],
 								),
-							]
-						: []),
-					...(connected !== null ? (slots.actions ?? []) : []),
-					...(overview?.kind === "available" && slots.connect !== undefined ? [slots.connect] : []),
-				],
-			),
-		],
-	)
+							]),
+						]
+					: []),
+		]),
+		h.div(
+			[h.Class("ml-auto flex shrink-0 basis-full items-center justify-end gap-3 sm:basis-auto")],
+			[
+				...(entry.docsUrl !== undefined
+					? [
+							h.a(
+								[
+									h.Href(entry.docsUrl),
+									h.Target("_blank"),
+									h.Rel("noreferrer"),
+									h.Class(
+										hstackClass({
+											gap: "1",
+											inline: true,
+											className: typographyClass({
+												size: "xs",
+												tone: "muted",
+												hoverTone: "foreground",
+											}),
+										}),
+									),
+								],
+								["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],
+							),
+						]
+					: []),
+				...(connected !== null ? (slots.actions ?? []) : []),
+				...(overview?.kind === "available" && slots.connect !== undefined ? [slots.connect] : []),
+			],
+		),
+	])
 }

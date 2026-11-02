@@ -7,13 +7,15 @@ import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
 import { badge } from "../../../ui/display"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography } from "../../../ui/typography"
+import { hstackClass, vstack } from "../../../ui/stack"
 
 // Small pieces the Code Review tabs share: the sheet `Section`, `BulletList`, `CiResultBadge` and
 // `TraceLink`.
 
 /** The sheet's `Section`. */
 export const section = <M>(h: HtmlBuilder<M>, title: string, children: ReadonlyArray<Html>): Html =>
-	h.section([h.Class("flex flex-col gap-2.5")], [sectionHeading(h, { title, as: "h3" }), ...children])
+	vstack(h, { gap: "2.5", as: "section" }, [sectionHeading(h, { title, as: "h3" }), ...children])
 
 export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): Html =>
 	h.ul(
@@ -28,12 +30,10 @@ export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): 
 /** A run's result; a rerun says which attempt it was. */
 export const ciResultBadge = <M>(h: HtmlBuilder<M>, result: string, attempt = 1, className?: string): Html =>
 	h.span(
-		[h.Class(cn("inline-flex items-center gap-1.5", className))],
+		[h.Class(cn(hstackClass({ gap: "1.5", inline: true }), className))],
 		[
 			badge(h, { size: "sm", className: TONE_SOFT[ciResultTone(result)] }, [ciResultLabel(result)]),
-			...(attempt > 1
-				? [h.span([h.Class("text-xs text-muted-foreground")], [`attempt ${attempt}`])]
-				: []),
+			...(attempt > 1 ? [typography(h, { size: "xs", tone: "muted" }, [`attempt ${attempt}`])] : []),
 		],
 	)
 

@@ -11,11 +11,15 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
+import { inlineCode } from "../../../ui/inline-code"
+import { pressable } from "../../../ui/pressable"
 import { statusDot } from "../../../ui/status-dot"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // The session checks: the verdict, what needs attention, the rest.
 // Headlines and actions are sentences, so they read in the prose face; codes and values stay mono.
@@ -39,7 +43,7 @@ const withCode = (h: H, text: string): ReadonlyArray<Html | string> => {
 	const parts = text.split(/`([^`]+)`/)
 	if (parts.length === 1 || (text.match(/`/g)?.length ?? 0) % 2 === 1) return [text]
 	return parts.map((part, index) =>
-		index % 2 === 1 ? h.code([h.Class("font-mono text-[0.92em]")], [part]) : part,
+		index % 2 === 1 ? inlineCode(h, { variant: "plain", className: "text-inherit" }, [part]) : part,
 	)
 }
 
@@ -52,8 +56,7 @@ const verdict = (h: H, model: Model, report: SessionChecksReport): Html => {
 	return h.section(
 		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3")],
 		[
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-1")],
+			vstack(h, { gap: "1", shrink: true },
 				[
 					h.p(
 						[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base")],
@@ -102,15 +105,14 @@ const checkDot = (h: H, status: SessionCheckStatus): Html =>
 	})
 
 const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: SessionCheckStatus): Html =>
-	h.button(
-		[
-			h.AriaHasPopup("dialog"),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: openSpan(model, finding.spanId),
+			className:
 				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-			h.Type("button"),
-			h.OnClick(openSpan(model, finding.spanId)),
-		],
+			attributes: [h.AriaHasPopup("dialog")],
+		},
 		[
 			h.span(
 				[h.Class(cn("shrink-0", STATUS_TEXT[status]))],
@@ -119,7 +121,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 			h.span([h.Class("shrink-0 text-foreground-subtle")], [finding.turnText]),
 			...(finding.detail === undefined
 				? []
-				: [h.span([h.Class("min-w-0 truncate text-muted-foreground")], [finding.detail])]),
+				: [typography(h, { tone: "muted", truncate: true, className: "min-w-0" }, [finding.detail])]),
 			h.span(
 				[
 					h.Class(
@@ -149,8 +151,7 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 		[
 			checkDot(h, check.status),
 			h.span([h.Class("truncate font-semibold text-ui")], [check.name]),
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-1")],
+			vstack(h, { gap: "1", shrink: true },
 				[
 					h.p([h.Class("font-prose text-ui leading-relaxed")], withCode(h, check.headline)),
 					...(check.id === "tool-errors"
@@ -229,8 +230,7 @@ const disclosure = (
 				!isDisclosable && "invisible",
 			),
 		}),
-		h.span(
-			[h.Class("flex items-baseline gap-2")],
+		hstack(h, { gap: "2", align: "baseline", as: "span" },
 			[
 				h.span(
 					[
@@ -243,8 +243,7 @@ const disclosure = (
 					],
 					[options.title],
 				),
-				h.span(
-					[h.Class("font-mono text-muted-foreground text-xs tabular-nums")],
+				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true },
 					[String(options.checks.length)],
 				),
 			],
@@ -265,19 +264,19 @@ const disclosure = (
 	return h.div(
 		[h.Class("flex flex-col")],
 		[
-			h.button(
-				[
-					h.AriaExpanded(isExpanded),
-					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken")),
-					h.Type("button"),
-					h.OnClick(Message.ToggledChecks({ which: options.which, isOpen: !isExpanded })),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledChecks({ which: options.which, isOpen: !isExpanded }),
+					className: cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken"),
+					attributes: [h.AriaExpanded(isExpanded)],
+				},
 				head,
 			),
 			...(isExpanded
 				? [
 						h.div(
-							[h.Class(cn("pt-0.5 pb-3", "flex flex-col gap-1.5"))],
+							[h.Class(cn("pt-0.5 pb-3", vstackClass({ gap: "1.5" })))],
 							options.checks.map((check) => checkFact(h, check)),
 						),
 					]
@@ -358,12 +357,10 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 	const passed = report.checks.filter((check) => check.status === "passed")
 	const skipped = report.checks.filter((check) => check.status === "skipped")
 	const isClean = attention.length === 0
-	return h.div(
-		[h.Class("flex flex-col gap-5")],
+	return vstack(h, { gap: "5" },
 		[
 			verdict(h, model, report),
-			h.section(
-				[h.Class("flex flex-col gap-2")],
+			vstack(h, { gap: "2", as: "section" },
 				[
 					sectionHeading(h, {
 						variant: "eyebrow",

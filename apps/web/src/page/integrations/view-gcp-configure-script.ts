@@ -10,20 +10,21 @@ import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { ScriptFailure } from "./view-gcp-parts"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `FileCard` and `LoadFailure`: a generated file to copy, the start in view, the rest on request.
 
 type H = HtmlBuilder<Message>
 
 const COPY_ID = "configure-file"
-const LINK = "h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground"
+const LINK = typographyClass({ size: "xs", tone: "muted", weight: "normal", hoverTone: "foreground", className: "h-auto p-0" })
 
 /** Why a file couldn't be loaded, and the way to load it again. */
 export const loadFailure = (h: H, failure: ScriptFailure): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
+	hstack(h, { gap: "2", wrap: true },
 		[
-			h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [failure.message]),
+			typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [failure.message]),
 			button(
 				h,
 				{
@@ -79,8 +80,7 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2 border-b bg-surface-sunken px-3 py-2")],
 				[
-					h.span(
-						[h.Class("font-mono text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", mono: true },
 						[
 							promptShown ? "Prompt for a coding agent" : name,
 							...(shown === null || promptShown
@@ -101,10 +101,7 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 								idleLabel: secret ? "Copy script" : "Copy",
 								variant: children === undefined ? "default" : "outline",
 								size: "sm",
-								className: cn(
-									children === undefined &&
-										"text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
-								),
+								keepsFillInk: children === undefined,
 								attributes: copyable === null ? [h.Disabled(true)] : [],
 							}),
 							...(children ?? []),

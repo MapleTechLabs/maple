@@ -1,5 +1,11 @@
 # @maple/cli
 
+## 0.3.3
+
+### Patch Changes
+
+- 08119e1: The local server now allows the `traceparent`, `tracestate`, `baggage` and `b3` request headers from the local dashboard, so an instrumented dashboard's queries and status probes no longer fail CORS preflight.
+
 ## 0.3.2
 
 ### Patch Changes

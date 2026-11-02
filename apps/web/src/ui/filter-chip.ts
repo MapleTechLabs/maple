@@ -9,6 +9,7 @@ import {
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "./status-dot"
 import { togglePrimitive } from "./toggle"
+import type { ToggleGroupItem } from "./toggle-group"
 
 export type FilterChipOptions<Message> = Readonly<{
 	isPressed: boolean
@@ -55,3 +56,21 @@ export const filterChip = <Message>(
 		],
 	)
 }
+
+/** A ToggleGroup item drawn as a `filterChip`: label, optional tone dot, trailing count. */
+export const filterChipItem = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ value: string; label: string; count: number; tone?: Tone | undefined }>,
+): ToggleGroupItem => ({
+	value: options.value,
+	label: options.label,
+	className: cn(
+		filterChipVariants({ size: "xs" }),
+		filterChipPressedBorderStyles[options.tone ?? "neutral"],
+	),
+	children: [
+		...(options.tone === undefined ? [] : [statusDot(h, { tone: options.tone })]),
+		options.label,
+		h.span([h.Class(filterChipCountStyles)], [String(options.count)]),
+	],
+})

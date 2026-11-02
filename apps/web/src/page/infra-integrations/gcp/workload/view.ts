@@ -43,6 +43,8 @@ import { resolveQueryPeek } from "./peek"
 import { workloadRail } from "./view-rail"
 import { appWaitCallout, figure, topQueries } from "./view-sql"
 import { queryPeekSheet } from "./view-sql-peek"
+import { hstack } from "../../../../ui/stack"
+import { grid } from "../../../../ui/grid"
 
 // `GcpWorkloadPage`.
 
@@ -101,27 +103,24 @@ const header = (h: H, model: Model, data: PageData) => {
 				}),
 			]
 	return pageHeroParts(h, {
-		title: h.span(
-			[h.Class("flex items-center gap-3")],
-			[
-				h.span(
-					[h.Class("relative")],
-					[
-						gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
-						...(data.health === null
-							? []
-							: [
-									statusDot(h, {
-										tone: HEALTH_TONE[data.health],
-										className:
-											"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
-									}),
-								]),
-					],
-				),
-				h.span([], [gcpWorkloadName(service, keys)]),
-			],
-		),
+		title: hstack(h, { gap: "3", as: "span" }, [
+			h.span(
+				[h.Class("relative")],
+				[
+					gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
+					...(data.health === null
+						? []
+						: [
+								statusDot(h, {
+									tone: HEALTH_TONE[data.health],
+									className:
+										"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
+								}),
+							]),
+				],
+			),
+			h.span([], [gcpWorkloadName(service, keys)]),
+		]),
 		meta,
 	})
 }
@@ -235,8 +234,9 @@ const traceGapCallout = (
 }
 
 const loadingGrid = (h: H, service: GcpInfraServiceId): Html =>
-	h.div(
-		[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
+	grid(
+		h,
+		{ cols: 1, lg: 2, gap: "4" },
 		GCP_INFRA_CHARTS[service].map(() => chartLoading(h, { variant: "line", height: CHART_HEIGHT })),
 	)
 

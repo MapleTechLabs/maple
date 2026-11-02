@@ -29,6 +29,7 @@ import {
 import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
+import { hstack } from "../../ui/stack"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -169,8 +170,7 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 }
 
 const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between")],
+	hstack(h, { justify: "between" },
 		[
 			h.div(
 				[],
@@ -332,8 +332,7 @@ const serviceRow = <M>(
 			listRow(h, {
 				href: serviceHref(slice, service),
 				leading: statusDot(h, { tone: HEALTH_TONE[health], size: "lg" }),
-				title: h.span(
-					[h.Class("flex min-w-0 items-center gap-2")],
+				title: hstack(h, { gap: "2", shrink: true, as: "span" },
 					[
 						serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
 						h.span(

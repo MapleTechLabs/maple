@@ -25,6 +25,7 @@ import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { Message } from "./message"
 import type { ContainerMetric, ContainerSummary, Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { hstack } from "../../../../ui/stack"
 
 // `ContainerDetailPage` and `ContainerDetailChart`.
 
@@ -98,33 +99,30 @@ const noData = (h: H, model: Model): Html =>
 				"This container sent no metrics in this window. It may have stopped earlier: try a wider range, or go back to the containers list.",
 			],
 		),
-		h.div(
-			[h.Class("flex flex-wrap items-center justify-center gap-2")],
-			[
-				...(Frame.canWidenTimeRange(model.search, DEFAULT_PRESET)
-					? [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedWidenRange())],
-								},
-								["Show last 7 days"],
-							),
-						]
-					: []),
-				linkButton(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						href: hrefOf(AppRoute.InfraContainers({ search: {} })),
-					},
-					["Back to containers"],
-				),
-			],
-		),
+		hstack(h, { gap: "2", justify: "center", wrap: true }, [
+			...(Frame.canWidenTimeRange(model.search, DEFAULT_PRESET)
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedWidenRange())],
+							},
+							["Show last 7 days"],
+						),
+					]
+				: []),
+			linkButton(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					href: hrefOf(AppRoute.InfraContainers({ search: {} })),
+				},
+				["Back to containers"],
+			),
+		]),
 	])
 
 const summaryArea = (h: H, model: Model): Html =>

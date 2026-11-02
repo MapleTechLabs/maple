@@ -1,13 +1,7 @@
-import {
-	pageFilterSheetHeaderStyles,
-	pageFilterSheetStyles,
-	pageRightSheetHeaderStyles,
-	pageRightSheetStyles,
-} from "@maple/ui/styles/ui/page-layout"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Dialog from "../ui/dialog"
-import * as DialogView from "../ui/dialog-view"
+import { pageRailSheet } from "../page/kit/page-rail-sheet"
 import { button } from "../ui/button"
 import { icon } from "../ui/icon"
 import { Message } from "./message"
@@ -55,73 +49,31 @@ export const rightSheetTrigger = (h: HtmlBuilder<Message>, model: Model): Html =
 		onClick: Message.ClickedOpenContext(),
 	})
 
-/** `<Sheet><SheetContent side>` with the sr-only header, around the rail the page built. */
-const railSheet = (
-	h: HtmlBuilder<Message>,
-	sheet: Dialog.Model,
-	options: Readonly<{
-		side: "left" | "right"
-		className: string
-		headerClassName: string
-		title: string
-		description: string
-		toParentMessage: (message: Dialog.Message) => Message
-	}>,
-	rail: LiftedRail,
-): Html =>
-	h.submodel({
-		slotId: `${sheet.id}-dialog`,
-		model: sheet,
-		view: DialogView.view,
-		viewInputs: {
-			className: options.className,
-			side: options.side,
-			toView: ({ portal }) => portal,
-			toContent: () => [
-				DialogView.dialogHeader(
-					h,
-					"sheet",
-					[
-						DialogView.dialogTitle(h, "sheet", sheet.id, options.title),
-						DialogView.dialogDescription(h, "sheet", sheet.id, options.description),
-					],
-					options.headerClassName,
-				),
-				...rail.children,
-			],
-		},
-		toParentMessage: options.toParentMessage,
-	})
-
 export const filterSheet = (h: HtmlBuilder<Message>, model: Model, rail: LiftedRail): Html =>
-	railSheet(
+	pageRailSheet(
 		h,
-		model.filterSheet,
 		{
+			sheet: model.filterSheet,
 			side: "left",
-			className: pageFilterSheetStyles,
-			headerClassName: pageFilterSheetHeaderStyles,
 			title: filterLabelOf(rail),
 			description: Option.isSome(rail.label)
 				? `${rail.label.value} navigation.`
 				: "Filter options for this page.",
 			toParentMessage: (message) => Message.GotFilterSheetMessage({ message }),
 		},
-		rail,
+		rail.children,
 	)
 
 /** TODO(lg): `RightSidebar`'s `title` prop; every ported rail uses the default. */
 export const rightSheet = (h: HtmlBuilder<Message>, model: Model, rail: LiftedRail): Html =>
-	railSheet(
+	pageRailSheet(
 		h,
-		model.rightSheet,
 		{
+			sheet: model.rightSheet,
 			side: "right",
-			className: pageRightSheetStyles,
-			headerClassName: pageRightSheetHeaderStyles,
 			title: "Details",
 			description: "Context for this page.",
 			toParentMessage: (message) => Message.GotRightSheetMessage({ message }),
 		},
-		rail,
+		rail.children,
 	)

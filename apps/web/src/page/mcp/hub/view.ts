@@ -37,6 +37,7 @@ import { overviewOf, serverRows, toolOf } from "./data-map"
 import { Message } from "./message"
 import { DEFAULT_MCP_PRESET, type Model } from "./model"
 import { bucketSecondsOf, hrefOfView, shownPreset, tabSearch, widerPreset } from "./update"
+import { hstack, vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -75,35 +76,32 @@ const hasFilter = (filters: McpFilters): boolean =>
 	filters.search.trim() !== ""
 
 const timeActions = (h: H, model: Model, extra: ReadonlyArray<Html> = []): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
-		[
-			...extra,
-			timeControls(h, {
-				search: model.search,
-				defaultPreset: DEFAULT_MCP_PRESET,
-				window: model.window,
-				onReset: Message.ClickedResetTimeRange(),
-				onReload: Message.ClickedReload(),
-				isReloading: model.isReloading,
-				trigger: (label) =>
-					h.submodel({
-						slotId: "mcp-time-range-picker",
-						model: model.timePicker,
-						view: TimeRangePicker.view,
-						toParentMessage: (message: TimeRangePicker.Message) =>
-							Message.GotTimePickerMessage({ message }),
-						viewInputs: {
-							label,
-							selectedPreset:
-								model.search.timePreset ??
-								(model.search.startTime === undefined ? DEFAULT_MCP_PRESET : undefined),
-							presets: TimeRangePicker.PRESET_VALUES,
-						},
-					}),
-			}),
-		],
-	)
+	hstack(h, { gap: "2", wrap: true }, [
+		...extra,
+		timeControls(h, {
+			search: model.search,
+			defaultPreset: DEFAULT_MCP_PRESET,
+			window: model.window,
+			onReset: Message.ClickedResetTimeRange(),
+			onReload: Message.ClickedReload(),
+			isReloading: model.isReloading,
+			trigger: (label) =>
+				h.submodel({
+					slotId: "mcp-time-range-picker",
+					model: model.timePicker,
+					view: TimeRangePicker.view,
+					toParentMessage: (message: TimeRangePicker.Message) =>
+						Message.GotTimePickerMessage({ message }),
+					viewInputs: {
+						label,
+						selectedPreset:
+							model.search.timePreset ??
+							(model.search.startTime === undefined ? DEFAULT_MCP_PRESET : undefined),
+						presets: TimeRangePicker.PRESET_VALUES,
+					},
+				}),
+		}),
+	])
 
 const segmented = (
 	h: H,
@@ -203,19 +201,16 @@ const chartsReady = (h: H, model: Model, body: (theme: ThemeColors) => Html): Ht
 			: body(model.themeColors)
 
 const serverTitle = (h: H, name: string, description: string): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-1")],
-		[
-			pageTitle(h, { title: name, className: "leading-8" }, [
-				serviceDot(h, {
-					serviceName: name,
-					className: "relative -top-px mr-2.5 inline-block size-3 align-middle",
-				}),
-				name,
-			]),
-			pageDescription(h, [description], "text-sm"),
-		],
-	)
+	vstack(h, { gap: "1" }, [
+		pageTitle(h, { title: name, className: "leading-8" }, [
+			serviceDot(h, {
+				serviceName: name,
+				className: "relative -top-px mr-2.5 inline-block size-3 align-middle",
+			}),
+			name,
+		]),
+		pageDescription(h, [description], "text-sm"),
+	])
 
 const openInstrumentDocs = Message.ClickedInstrument()
 
@@ -541,13 +536,10 @@ const toolView = (h: H, model: Model, service: string, tool: string, timeZone: s
 	return dashboardPage(
 		h,
 		{
-			titleContent: h.div(
-				[h.Class("flex flex-col gap-1")],
-				[
-					pageTitle(h, { title: tool, className: "font-mono leading-8" }, [tool]),
-					pageDescription(h, [description], "text-sm"),
-				],
-			),
+			titleContent: vstack(h, { gap: "1" }, [
+				pageTitle(h, { title: tool, className: "font-mono leading-8" }, [tool]),
+				pageDescription(h, [description], "text-sm"),
+			]),
 			actions: timeActions(h, model),
 			scrollClassName: "p-0",
 		},

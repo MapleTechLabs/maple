@@ -12,6 +12,7 @@ import { traceFlowEdge } from "./edge"
 import { flowLegend } from "./legend"
 import { flowSpanNode } from "./node-card"
 import { type FlowGraph, isNodeSelected, MAX_FLOW_NODES, Message, type Model } from "./trace-flow"
+import { typography } from "../../ui/typography"
 
 type Pane = Canvas.Model["pane"]
 
@@ -127,7 +128,7 @@ const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 	h.div(
 		[h.Class("flex items-center justify-between border-b bg-surface-sunken px-3 py-2 shrink-0")],
 		[
-			h.span([h.Class("text-xs font-medium text-muted-foreground")], ["Flow View"]),
+			typography(h, { size: "xs", tone: "muted", weight: "medium" }, ["Flow View"]),
 			button(
 				h,
 				{
@@ -152,12 +153,9 @@ export const view = <M>(
 			[h.Class("border p-8 text-center")],
 			[
 				h.p([h.Class("text-muted-foreground")], ["Trace too large for the flow view"]),
-				h.p(
-					[h.Class("mt-1 text-xs text-muted-foreground")],
-					[
-						`${graph.nodeCount.toLocaleString("en-US")} nodes, the limit is ${MAX_FLOW_NODES.toLocaleString("en-US")}. Use the timeline instead.`,
-					],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-1" }, [
+					`${graph.nodeCount.toLocaleString("en-US")} nodes, the limit is ${MAX_FLOW_NODES.toLocaleString("en-US")}. Use the timeline instead.`,
+				]),
 			],
 		)
 	}

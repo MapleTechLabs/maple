@@ -34,6 +34,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { SIGNAL_LABELS } from "./summary"
 import { keyBoxId } from "./update"
+import { typography } from "../../../ui/typography"
+import { hstack, vstackClass } from "../../../ui/stack"
 
 // The "When ... where ..." half of the sentence: signals and conditions.
 
@@ -67,7 +69,7 @@ export const signalsClause = (h: H, model: Model): Html =>
 			})),
 			className: "self-start",
 		}),
-		h.p([h.Class("text-muted-foreground text-xs")], ["arrive at Maple"]),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, ["arrive at Maple"]),
 	])
 
 const select = (
@@ -85,7 +87,7 @@ const select = (
 		// A new option set gets a new element, and `Value` keeps the shown choice on the model's.
 		[
 			h.Key(`${options.id}:${options.entries.map((entry) => entry.value).join(",")}`),
-			h.Class(cn("flex flex-col gap-1", options.className)),
+			h.Class(cn(vstackClass({ gap: "1" }), options.className)),
 		],
 		[
 			label(h, { className: "sr-only", attributes: [h.For(options.id)] }, [options.label]),
@@ -128,8 +130,14 @@ const keyInput = (h: H, model: Model, condition: ConditionDraft): Html => {
 
 const chips = (h: H, condition: ConditionDraft, choices: ReadonlyArray<string>): Html => {
 	const chosen = splitList(condition.values)
-	return h.div(
-		[h.Role("group"), h.AriaLabel(`Condition ${condition.id} values`), h.Class("flex flex-wrap gap-1")],
+	return hstack(
+		h,
+		{
+			gap: "1",
+			align: "stretch",
+			wrap: true,
+			attributes: [h.Role("group"), h.AriaLabel(`Condition ${condition.id} values`)],
+		},
 		choices.map((choice) =>
 			toggle(
 				h,
@@ -180,53 +188,49 @@ const operand = (h: H, condition: ConditionDraft): ReadonlyArray<Html> => {
 }
 
 const conditionRow = (h: H, model: Model, condition: ConditionDraft, index: number): Html =>
-	h.div(
-		[h.Key(String(condition.id)), h.Class("flex flex-wrap items-center gap-2")],
-		[
-			h.span([h.Class("text-muted-foreground w-8 shrink-0 text-xs")], [index === 0 ? "" : "and"]),
-			select(h, {
-				id: `ingest-rule-field-${condition.id}`,
-				label: `Condition ${condition.id} field`,
-				value: condition.field,
-				entries: fieldsFor(model.draft.signals).map((field) => ({
-					value: field,
-					label: FIELD_LABELS[field],
-				})),
-				onChange: (value) =>
-					Message.ChangedConditionField({
-						id: condition.id,
-						field: isField(value) ? value : "service_name",
-					}),
-			}),
-			...(isKeyed(condition.field) ? [keyInput(h, model, condition)] : []),
-			select(h, {
-				id: `ingest-rule-op-${condition.id}`,
-				label: `Condition ${condition.id} operator`,
-				value: condition.op,
-				entries: opsForField(condition.field).map((op) => ({ value: op, label: OP_LABELS[op] })),
-				onChange: (value) =>
-					Message.ChangedConditionOp({ id: condition.id, op: isOp(value) ? value : "eq" }),
-			}),
-			...operand(h, condition),
-			iconButton(
-				h,
-				{
-					label: `Remove condition ${condition.id}`,
-					attributes: [h.OnClick(Message.RemovedCondition({ id: condition.id }))],
-				},
-				[icon(h, "XmarkIcon")],
-			),
-		],
-	)
+	hstack(h, { gap: "2", wrap: true, attributes: [h.Key(String(condition.id))] }, [
+		h.span([h.Class("text-muted-foreground w-8 shrink-0 text-xs")], [index === 0 ? "" : "and"]),
+		select(h, {
+			id: `ingest-rule-field-${condition.id}`,
+			label: `Condition ${condition.id} field`,
+			value: condition.field,
+			entries: fieldsFor(model.draft.signals).map((field) => ({
+				value: field,
+				label: FIELD_LABELS[field],
+			})),
+			onChange: (value) =>
+				Message.ChangedConditionField({
+					id: condition.id,
+					field: isField(value) ? value : "service_name",
+				}),
+		}),
+		...(isKeyed(condition.field) ? [keyInput(h, model, condition)] : []),
+		select(h, {
+			id: `ingest-rule-op-${condition.id}`,
+			label: `Condition ${condition.id} operator`,
+			value: condition.op,
+			entries: opsForField(condition.field).map((op) => ({ value: op, label: OP_LABELS[op] })),
+			onChange: (value) =>
+				Message.ChangedConditionOp({ id: condition.id, op: isOp(value) ? value : "eq" }),
+		}),
+		...operand(h, condition),
+		iconButton(
+			h,
+			{
+				label: `Remove condition ${condition.id}`,
+				attributes: [h.OnClick(Message.RemovedCondition({ id: condition.id }))],
+			},
+			[icon(h, "XmarkIcon")],
+		),
+	])
 
 export const conditionsClause = (h: H, model: Model): Html =>
 	clause(h, "Where", [
 		...(model.draft.conditions.length === 0
 			? [
-					h.p(
-						[h.Class("text-muted-foreground text-sm")],
-						["Every record matches. Add a condition to narrow it."],
-					),
+					typography(h, { size: "sm", tone: "muted", as: "p" }, [
+						"Every record matches. Add a condition to narrow it.",
+					]),
 				]
 			: model.draft.conditions.map((condition, index) => conditionRow(h, model, condition, index))),
 		h.div(

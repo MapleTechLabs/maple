@@ -9,9 +9,11 @@ import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
 import { Message } from "./message"
 import type { IngestKeyKind, Model } from "./model"
+import { hstack } from "../../../ui/stack"
 
 // `CredentialRow`.
 
@@ -50,20 +52,18 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 		: [
 				value === null
 					? skeleton(h, "h-4 w-40 max-w-full")
-					: h.button(
-							[
-								h.Type("button"),
-								...copyAttributes,
-								...(isDisabled ? [h.Disabled(true)] : []),
-								h.AriaLabel(`Copy ${label}`),
+					: pressable(
+							h,
+							{
+								onClick: options.onCopy(value),
+								isDisabled,
+								label: `Copy ${label}`,
 								// A revealed key is plain text, which the dashboard's own rrweb recording would capture.
-								h.Class(
-									cn(
-										isMasked && REPLAY_BLOCK_CLASS,
-										"group/value text-muted-foreground hover:text-foreground active:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs tracking-wide",
-									),
+								className: cn(
+									isMasked && REPLAY_BLOCK_CLASS,
+									"group/value text-muted-foreground hover:text-foreground active:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs tracking-wide",
 								),
-							],
+							},
 							[
 								h.span(
 									[h.Class(isHidden ? "truncate" : "min-w-0 break-all")],
@@ -103,8 +103,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 						: []),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-1.5")],
+			hstack(h, { gap: "1.5", className: "shrink-0" },
 				// Nothing to copy, reveal or rotate while the key is unknown.
 				isUnknown
 					? []

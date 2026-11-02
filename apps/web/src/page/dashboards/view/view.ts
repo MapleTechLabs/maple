@@ -1,7 +1,6 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -14,6 +13,7 @@ import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
+import { inlineRenameInput } from "../../../ui/inline-rename-input"
 import { pageTitle } from "../../../ui/page-layout"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageContext, PageViewInputs } from "../../contract"
@@ -33,6 +33,9 @@ import { historyPanel, previewBanner } from "./view-history"
 import { shareDialog } from "./view-share"
 import { embedDialog } from "./view-embed"
 import { errorState } from "../../../ui/error-state"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // The dashboard view page.
 
@@ -45,21 +48,19 @@ const title = (h: H, model: Model, name: string): Html => {
 		return h.form(
 			[h.OnSubmit(Message.SubmittedTitle())],
 			[
-				h.input([
-					h.Value(model.titleDraft),
-					h.OnInput((value) => Message.ChangedTitleDraft({ value })),
-					h.OnBlur(Message.SubmittedTitle()),
-					h.OnKeyDownPreventDefault((key) =>
-						key === "Escape" ? Option.some(Message.CancelledTitle()) : Option.none(),
-					),
-					h.Autofocus(true),
-					h.Class(
-						cn(
-							pageTitleStyles,
-							"bg-transparent border-b border-foreground/20 outline-none focus:border-foreground/50 w-full",
+				inlineRenameInput(h, {
+					isPageTitle: true,
+					className: "w-full",
+					attributes: [
+						h.Value(model.titleDraft),
+						h.OnInput((value) => Message.ChangedTitleDraft({ value })),
+						h.OnBlur(Message.SubmittedTitle()),
+						h.OnKeyDownPreventDefault((key) =>
+							key === "Escape" ? Option.some(Message.CancelledTitle()) : Option.none(),
 						),
-					),
-				]),
+						h.Autofocus(true),
+					],
+				}),
 			],
 		)
 	const isBlank = name.trim() === ""
@@ -105,20 +106,14 @@ const viewSkeleton = (h: H): Html => {
 		[h.Role("status"), h.AriaLabel("Loading dashboard")],
 		[
 			h.span([h.Class("sr-only")], ["Loading dashboard"]),
-			h.div(
-				[h.Class("flex flex-col gap-4"), h.AriaHidden(true)],
-				[
-					h.div(
-						[h.Class("grid grid-cols-2 gap-4 lg:grid-cols-4")],
-						[0, 1, 2, 3].map((index) => ghost(index, "h-28")),
-					),
-					h.div(
-						[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
-						[ghost(4, "h-64"), ghost(5, "h-64")],
-					),
-					ghost(6, "h-64"),
-				],
-			),
+			vstack(h, { gap: "4", attributes: [h.AriaHidden(true)] }, [
+				h.div(
+					[h.Class("grid grid-cols-2 gap-4 lg:grid-cols-4")],
+					[0, 1, 2, 3].map((index) => ghost(index, "h-28")),
+				),
+				grid(h, { cols: 1, lg: 2, gap: "4" }, [ghost(4, "h-64"), ghost(5, "h-64")]),
+				ghost(6, "h-64"),
+			]),
 		],
 	)
 }
@@ -170,38 +165,32 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 			emptyContent(
 				h,
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-center gap-2")],
-						[
-							button(
-								h,
-								{
-									size: "sm",
-									isDisabled: isReadOnly,
-									attributes: [h.OnClick(Message.ClickedAddWidget())],
-								},
-								[icon(h, "PlusIcon"), "Add your first widget"],
-							),
-							linkButton(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })),
-								},
-								["Start from a template"],
-							),
-							docsLink(h, "dashboards"),
-						],
-					),
-					h.p(
-						[h.Class("text-muted-foreground font-mono text-2xs")],
-						[
-							isReadOnly
-								? "Read-only. You can’t add widgets to this dashboard."
-								: "Templates create a new dashboard from this org’s data.",
-						],
-					),
+					hstack(h, { gap: "2", justify: "center", wrap: true }, [
+						button(
+							h,
+							{
+								size: "sm",
+								isDisabled: isReadOnly,
+								attributes: [h.OnClick(Message.ClickedAddWidget())],
+							},
+							[icon(h, "PlusIcon"), "Add your first widget"],
+						),
+						linkButton(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })),
+							},
+							["Start from a template"],
+						),
+						docsLink(h, "dashboards"),
+					]),
+					typography(h, { size: "2xs", tone: "muted", mono: true, as: "p" }, [
+						isReadOnly
+							? "Read-only. You can’t add widgets to this dashboard."
+							: "Templates create a new dashboard from this org’s data.",
+					]),
 				],
 				"max-w-none",
 			),

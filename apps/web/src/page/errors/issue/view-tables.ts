@@ -1,18 +1,27 @@
 import type { ErrorIncidentDocument, ErrorIssueSampleTrace } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { statusDot } from "../../../ui/status-dot"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The issue incidents and occurrences tables.
 // TODO(tooltip): the incident status's explanation popup; its trigger is ported.
@@ -56,14 +65,14 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 		tableCell(
 			h,
 			[relativeTime(h, { value: incident.firstTriggeredAt, ...clock, tooltip: "title" })],
-			"tabular-nums text-muted-foreground",
+			typographyClass({ tone: "muted", numeric: true }),
 		),
 		tableCell(
 			h,
 			[relativeTime(h, { value: incident.lastTriggeredAt, ...clock, tooltip: "title" })],
 			"tabular-nums",
 		),
-		tableCell(h, [formatNumber(incident.occurrenceCount)], "text-right font-mono tabular-nums"),
+		tableCell(h, [formatNumber(incident.occurrenceCount)], typographyClass({ mono: true, numeric: true, className: "text-right" })),
 	])
 }
 
@@ -102,25 +111,23 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 		tableCell(
 			h,
 			[relativeTime(h, { value: trace.timestamp, ...clock, tooltip: "title" })],
-			"tabular-nums text-muted-foreground",
+			typographyClass({ tone: "muted", numeric: true }),
 		),
 		tableCell(h, [
-			h.span(
-				[h.Class("inline-flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5", inline: true, as: "span" },
 				[
 					serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
 					h.span([], [trace.serviceName]),
 				],
 			),
 		]),
-		tableCell(
+		truncatedTableCell(
 			h,
 			[
 				truncatedText(h, { text: trace.exceptionMessage }, [
 					trace.exceptionMessage.split("\n", 1)[0] ?? "",
 				]),
 			],
-			truncatedCellStyles,
 		),
 		tableCell(h, [
 			h.a(
@@ -131,7 +138,7 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 					h.Class(
 						cn(
 							"inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface-sunken px-2 py-0.5",
-							"font-mono text-2xs text-muted-foreground tabular-nums",
+							typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true }),
 							"hover:border-primary-a4 active:border-primary-a4 hover:bg-primary-a2 active:bg-primary-a2 hover:text-primary active:text-primary",
 						),
 					),

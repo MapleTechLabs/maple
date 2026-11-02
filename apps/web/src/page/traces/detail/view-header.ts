@@ -12,6 +12,7 @@ import { correlationWindow } from "./command"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import type { LoadedTrace } from "./select"
+import { hstackClass } from "../../../ui/stack"
 
 // The trace page's header: `titleContent` (the root span) and `headerActions` (logs, replay).
 
@@ -78,4 +79,4 @@ export const replayLink = (h: HtmlBuilder<Message>, model: Model): Html | null =
 export const headerActions = (h: HtmlBuilder<Message>, model: Model, trace: LoadedTrace): Html | undefined =>
 	trace.rootSpan === undefined
 		? undefined
-		: h.div([h.Class(cn("flex items-center gap-2"))], [logsLink(h, model, trace), replayLink(h, model)])
+		: h.div([h.Class(cn(hstackClass({ gap: "2" })))], [logsLink(h, model, trace), replayLink(h, model)])

@@ -14,6 +14,7 @@ import {
 	skeletonSection,
 	statSection,
 	tableSection,
+	typeAndStackSection,
 } from "../../kit/display-sections-more"
 import { kitPage, kitSection } from "../../kit/kit-layout"
 
@@ -138,6 +139,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			),
 			meterSection(h),
 			statSection(h),
+			typeAndStackSection(h),
 			skeletonSection(h),
 			tableSection(h),
 			tabsSection(model, h),

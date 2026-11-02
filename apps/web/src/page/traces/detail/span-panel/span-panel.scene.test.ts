@@ -50,13 +50,12 @@ const loaded = (): Model => {
 	].reduce((model, message) => update(model, message).model, entered)
 }
 
+// The tab strip is a Tabs Submodel, so its mount resolves with the Submodel's own Message.
 const indicatorMeasured = () =>
-	Mount.resolve<string, Message>(
+	Mount.resolve(
 		Tabs.MeasureTabIndicator,
-		Message.GotTabsMessage({
-			message: Tabs.Message.MeasuredIndicator({
-				rect: { left: 16, right: 300, top: 4, bottom: 5, width: 96, height: 32 },
-			}),
+		Tabs.Message.MeasuredIndicator({
+			rect: { left: 16, right: 300, top: 4, bottom: 5, width: 96, height: 32 },
 		}),
 	)
 

@@ -9,6 +9,7 @@ import { logSourceLabel, severityOf } from "../health"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../panel"
+import { typography } from "../../../../ui/typography"
 
 // "Errors and warnings": the project's recurring WARN+ log messages.
 
@@ -38,8 +39,7 @@ const issueRow = (h: H, issue: SupabaseLogIssue, timeZone: string): Html => {
 				[h.Class("min-w-0 flex-1 truncate font-mono text-foreground"), h.Title(issue.message)],
 				[issue.message],
 			),
-			h.span(
-				[h.Class("shrink-0 font-mono text-2xs tabular-nums text-muted-foreground")],
+			typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
 				[`${formatNumber(issue.count)}×`],
 			),
 		],

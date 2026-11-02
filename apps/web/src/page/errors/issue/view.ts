@@ -31,12 +31,13 @@ import { attachDialog } from "./attach"
 import { verificationCard } from "./view-verification"
 import { incidentsTable, occurrencesTable } from "./view-tables"
 import { commentComposer, issueTimeline } from "./view-activity"
-import { skeleton } from "../../../ui/skeleton"
-import { panel, panelHeader } from "../../../ui/panel"
+import { skeleton, skeletonBlock } from "../../../ui/skeleton"
+import { panel, panelHeader, panelChartBody } from "../../../ui/panel"
 import { textLinkClass } from "../../../ui/text-link"
 import { AppRoute, hrefOf } from "../../../route"
 import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
+import { vstack } from "../../../ui/stack"
 
 // `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
 
@@ -120,7 +121,7 @@ const chartSlot = (h: H, model: Model, detail: ErrorIssueDetailResponse, timeZon
 	return chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
 		? panel(h, { className: "shrink-0 overflow-hidden" }, [
 				panelHeader(h, { title: "Occurrences" }),
-				h.div([h.Class("px-4 pt-3 pb-4")], [skeleton(h, "h-44 w-full rounded-md")]),
+				panelChartBody(h, [skeletonBlock(h, { height: "44" })]),
 			])
 		: occurrencePanel(
 				h,
@@ -150,8 +151,9 @@ const overview = (
 		...clock,
 	})
 	const fix = getItFixedPanel(h, model, issue, linkedInvestigationOf(model))
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(
+		h,
+		{ gap: "4" },
 		issue.kind === "alert"
 			? [
 					alertSourceCard(h, issue),
@@ -174,23 +176,20 @@ const overview = (
 const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html => {
 	const verification = latestVerificationOf(model)
 	const pullRequests = pullRequestsOf(model)
-	return h.div(
-		[h.Class("flex flex-col gap-4"), h.OnMount(MountRightRail())],
-		[
-			issueSidebar(h, model, detail.issue, detail.environments),
-			h.div(
-				[h.Class("flex flex-col gap-4 px-4 pb-4")],
-				[
-					...(verification !== null
-						? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
-						: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
-							? [attachNudge(h)]
-							: []),
-					pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
-				],
-			),
-		],
-	)
+	return vstack(h, { gap: "4", attributes: [h.OnMount(MountRightRail())] }, [
+		issueSidebar(h, model, detail.issue, detail.environments),
+		h.div(
+			[h.Class("flex flex-col gap-4 px-4 pb-4")],
+			[
+				...(verification !== null
+					? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
+					: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
+						? [attachNudge(h)]
+						: []),
+				pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
+			],
+		),
+	])
 }
 
 /** The Occurrences table, or the Activity timeline with its composer. */

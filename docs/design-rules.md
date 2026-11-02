@@ -5,6 +5,19 @@ The rules the dashboard (`apps/web`) and its kit (`packages/ui`) follow. Tokens 
 (`scripts/oxlint-plugins/design-rules.mjs`). A rule you need to break gets a new token, not an
 exception at the call site.
 
+## Build from the kit
+
+Pages compose the kit (`apps/web/src/ui`, `apps/web/src/page/kit`; index in
+`apps/web/src/ui/INDEX.md`). A control, heading or pattern a page needs and the kit lacks is built
+in the kit, and the pages that already hand-roll it move onto it. Outside the kit, lint bans raw
+controls (`maple/no-raw-control`), raw headings (`maple/no-raw-heading`) and building a component
+from its kit styles (`maple/no-kit-styles-in-pages`). Colours and type sizes come from tokens
+(`maple/no-raw-color`, `maple/no-arbitrary-text-size`). Existing violations are counted per file in
+`scripts/oxlint-plugins/ui-kit-baseline.json`, which only shrinks (`bun run lint:ui-baseline`).
+Type and flex layout use `typography` and `hstack`/`vstack`; a class string repeated across 3+
+page files is counted in `scripts/ui-class-patterns.json` and may only shrink
+(`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CLAUDE.md`.
+
 ## State is instant, only movement eases
 
 Hover, press, selection and colour changes land in the frame they happen. Transitions are for

@@ -13,6 +13,7 @@ import { button } from "../../../ui/button"
 import { card, cardPanel } from "../../../ui/card"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import * as Menu from "../../../ui/menu"
 import { meter } from "../../../ui/meter"
@@ -27,6 +28,8 @@ import { Message } from "./message"
 import type { Model, StateFilter } from "./model"
 import { incidentMenuId } from "./update"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The rule detail's History tab.
 
@@ -55,14 +58,13 @@ export const historyTab = (
 	return h.div(
 		[h.Class("space-y-6")],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between")],
+			hstack(h, { justify: "between" },
 				[
 					h.div(
 						[],
 						[
 							sectionHeading(h, { title: "History" }),
-							h.p([h.Class("text-muted-foreground text-sm")], [String(stats.totalTriggered), " total triggers"]),
+							typography(h, { size: "sm", tone: "muted", as: "p" }, [String(stats.totalTriggered), " total triggers"]),
 						],
 					),
 					segmentedSelect(h, {
@@ -87,13 +89,12 @@ export const historyTab = (
 						h.div(
 							[h.Class("space-y-2")],
 							[
-								h.h3([h.Class("text-sm font-semibold")], ["Top contributors"]),
+								heading(h, { level: 3, variant: "section" }, ["Top contributors"]),
 								card(h, [
 									cardPanel(
 										h,
 										stats.topContributors.map(([groupKey, count]) =>
-											h.div(
-												[h.Key(groupKey), h.Class("flex items-center gap-2")],
+											hstack(h, { gap: "2", attributes: [h.Key(groupKey)] },
 												[
 													badge(
 														h,
@@ -110,8 +111,7 @@ export const historyTab = (
 														className: "h-2 flex-1 bg-muted",
 														fillClassName: count === maxContributorCount ? "bg-severity-error" : "bg-severity-warn",
 													}),
-													h.span(
-														[h.Class("text-xs text-muted-foreground tabular-nums shrink-0")],
+													typography(h, { size: "xs", tone: "muted", numeric: true, className: "shrink-0" },
 														[String(count), "/", String(stats.totalTriggered)],
 													),
 												],
@@ -207,16 +207,15 @@ const incidentRow = (
 			),
 		]),
 		tableCell(h, [
-			h.div(
-				[h.Class("flex flex-wrap gap-1")],
+			hstack(h, { gap: "1", align: "stretch", wrap: true },
 				[
-					badge(h, { variant: "secondary", className: "text-xs font-mono" }, [
+					badge(h, { variant: "secondary", className: typographyClass({ size: "xs", mono: true }) }, [
 						rule.signalType.replace("_", " "),
 						":",
 						" ",
 						formatSignalValue(rule.signalType, incident.lastObservedValue),
 					]),
-					badge(h, { variant: "secondary", className: "text-xs font-mono" }, [
+					badge(h, { variant: "secondary", className: typographyClass({ size: "xs", mono: true }) }, [
 						"threshold:",
 						" ",
 						formatSignalValue(rule.signalType, incident.threshold),
@@ -227,7 +226,7 @@ const incidentRow = (
 		tableCell(h, [formatAlertDateTimeFull(incident.firstTriggeredAt, timeZone)], "text-xs"),
 		tableCell(h, [
 			h.span(
-				[h.Class(cn("text-xs tabular-nums", isOpen && "text-severity-error font-medium"))],
+				[h.Class(cn(typographyClass({ size: "xs", numeric: true }), isOpen && "text-severity-error font-medium"))],
 				[formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt ?? msIso(nowMs))],
 			),
 		]),
@@ -240,7 +239,7 @@ const incidentRow = (
 						],
 						["View"],
 					)
-				: h.span([h.Class("text-xs text-foreground-subtle")], [EMPTY_VALUE]),
+				: typography(h, { size: "xs", tone: "subtle" }, [EMPTY_VALUE]),
 		]),
 		tableCell(h, [
 			h.div(

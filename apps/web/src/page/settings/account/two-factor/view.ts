@@ -15,6 +15,8 @@ import { codeField } from "../code-field"
 import type { AccountUser } from "../user"
 import { type EnrollStep, Message, type Model } from "./model"
 import { qrCode } from "./qr-code"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -36,25 +38,21 @@ const authenticatorSection = (h: H, model: Model, user: AccountUser): Html =>
 		},
 		[
 			user.totpEnabled
-				? h.div(
-						[h.Class("flex items-center justify-between gap-4")],
-						[
-							h.p(
-								[h.Class("text-xs text-muted-foreground")],
-								["Your authenticator app is registered for this account."],
-							),
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									isDisabled: model.isBusy,
-									attributes: [h.OnClick(Message.ClickedRemove())],
-								},
-								["Remove"],
-							),
-						],
-					)
+				? hstack(h, { gap: "4", justify: "between" }, [
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Your authenticator app is registered for this account.",
+						]),
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: model.isBusy,
+								attributes: [h.OnClick(Message.ClickedRemove())],
+							},
+							["Remove"],
+						),
+					])
 				: button(
 						h,
 						{

@@ -23,6 +23,7 @@ import { Message } from "./message"
 import type { HostRow, Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hostTable, hostTableLoading } from "./view-table"
+import { hstack } from "../../../../ui/stack"
 
 // `HostsPage` / `HostList`.
 
@@ -118,8 +119,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					title: "Hosts",
 					description: "Every machine sending CPU, memory, disk and network metrics, busiest first.",
-					actions: h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
+					actions: hstack(h, { gap: "2", wrap: true },
 						[
 							button(
 								h,

@@ -25,50 +25,49 @@ import { whereAutocompleteOf } from "./update-where"
 import { isOpenOf } from "./where-editor"
 import { suggestionListbox, whereKeyHandler } from "../../kit/where-autocomplete-view"
 import { MountKeepWhereFocus, MountWhereCaret } from "./command"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `MetricGraduationActions` and `MetricQueryControls` (components/metrics/).
 
 type H = HtmlBuilder<Message>
 
 const label = (h: H, text: string): Html =>
-	h.span([h.Class("text-xs text-muted-foreground shrink-0")], [text])
+	typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, [text])
 
 /** The explorer's way out: a dashboard widget, an alert rule, or a shared link. */
 export const graduationActions = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("flex justify-end")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							attributes: [h.OnClick(Message.ClickedAddToDashboard())],
-						},
-						[icon(h, "GridSquareCirclePlusIcon"), "Add to dashboard"],
-					),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							attributes: [h.OnClick(Message.ClickedCreateAlert())],
-						},
-						[icon(h, "BellIcon"), "Create alert"],
-					),
-					CopyButton.copyButton(h, {
-						status: model.copyLink.status,
-						label: "Link",
-						idleLabel: "Copy link",
-						idleIcon: "LinkIcon",
+			hstack(h, { gap: "2" }, [
+				button(
+					h,
+					{
 						variant: "outline",
-						onClick: Message.ClickedCopyLink(),
-					}),
-				],
-			),
+						size: "sm",
+						attributes: [h.OnClick(Message.ClickedAddToDashboard())],
+					},
+					[icon(h, "GridSquareCirclePlusIcon"), "Add to dashboard"],
+				),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						attributes: [h.OnClick(Message.ClickedCreateAlert())],
+					},
+					[icon(h, "BellIcon"), "Create alert"],
+				),
+				CopyButton.copyButton(h, {
+					status: model.copyLink.status,
+					label: "Link",
+					idleLabel: "Copy link",
+					idleIcon: "LinkIcon",
+					variant: "outline",
+					onClick: Message.ClickedCopyLink(),
+				}),
+			]),
 		],
 	)
 
@@ -180,8 +179,7 @@ export const queryControls = (
 				})),
 				size: "sm",
 				className: "w-28 text-xs",
-				toView: (parts) =>
-					h.div([h.Class("flex items-center gap-2")], [label(h, "Aggregate"), ...parts]),
+				toView: (parts) => hstack(h, { gap: "2" }, [label(h, "Aggregate"), ...parts]),
 			},
 		}),
 		h.div(
@@ -198,29 +196,25 @@ export const queryControls = (
 				placeholder: "Search fields…",
 				emptyText: "",
 				className: "h-8 w-52 text-xs",
-				toView: ({ field, rest }) =>
-					h.div([h.Class("flex items-center gap-2")], [label(h, "Group by"), field, ...rest]),
+				toView: ({ field, rest }) => hstack(h, { gap: "2" }, [label(h, "Group by"), field, ...rest]),
 			},
 		}),
-		h.div(
-			[h.Class("flex items-center gap-2")],
-			[
-				label(h, "Every"),
-				input(h, {
-					id: "metric-step-interval",
-					className: "h-8 w-20 text-xs",
-					attributes: [
-						h.AriaLabel("Step interval"),
-						h.Placeholder("Auto"),
-						h.Value(model.stepInput),
-						h.OnInput((value) => Message.ChangedStepInput({ value })),
-						h.OnBlur(Message.CommittedStepInput()),
-						h.OnKeyDownPreventDefault((key) =>
-							key === "Enter" ? Option.some(Message.CommittedStepInput()) : Option.none(),
-						),
-					],
-				}),
-				h.span([h.Class("text-xs text-muted-foreground")], ["sec"]),
-			],
-		),
+		hstack(h, { gap: "2" }, [
+			label(h, "Every"),
+			input(h, {
+				id: "metric-step-interval",
+				className: "h-8 w-20 text-xs",
+				attributes: [
+					h.AriaLabel("Step interval"),
+					h.Placeholder("Auto"),
+					h.Value(model.stepInput),
+					h.OnInput((value) => Message.ChangedStepInput({ value })),
+					h.OnBlur(Message.CommittedStepInput()),
+					h.OnKeyDownPreventDefault((key) =>
+						key === "Enter" ? Option.some(Message.CommittedStepInput()) : Option.none(),
+					),
+				],
+			}),
+			typography(h, { size: "xs", tone: "muted" }, ["sec"]),
+		]),
 	])

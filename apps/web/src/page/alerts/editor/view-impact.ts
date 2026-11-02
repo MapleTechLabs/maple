@@ -14,6 +14,7 @@ import type { RuleForm } from "./form"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { isEvaluationChanged } from "./plan"
+import { typography } from "../../../ui/typography"
 
 // `RuleEditImpact`: the saved rule and the draft replayed
 // over one window, every changed field, and the open incidents the draft would clear.
@@ -47,7 +48,7 @@ const figure = (
 					),
 				],
 			),
-			h.p([h.Class("text-xs text-muted-foreground")], [caption]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [caption]),
 		],
 	)
 

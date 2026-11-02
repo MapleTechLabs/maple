@@ -8,6 +8,8 @@ import { displayStatus, formatShare, targetLine, uptimeShare } from "../../alert
 import { recentChecksStrip, uptimePanelBody, uptimeStatusChip } from "../../alerts/shared/uptime-view"
 import type { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The Overview's Uptime card: this service's monitors, checked from outside.
 
@@ -23,58 +25,40 @@ export const uptimePanel = (h: H, model: Model): Html => {
 	return panel(h, {}, [
 		panelHeader(h, {
 			title: "Uptime",
-			scope: h.span([h.Class("text-2xs text-foreground-subtle")], ["checked from outside"]),
+			scope: typography(h, { size: "2xs", tone: "subtle" }, ["checked from outside"]),
 			action: textLink(h, { href: uptimeTabHref(), className: "text-xs" }, ["Open in Alerts"]),
 		}),
 		uptimePanelBody(h, [
-			h.ul(
-				[h.Class("flex flex-col gap-3")],
+			vstack(
+				h,
+				{ gap: "3", as: "ul" },
 				monitors.map((monitor) => {
 					const isPaused = displayStatus(monitor) === "paused"
-					return h.li(
-						[h.Key(monitor.id), h.Class("flex flex-col gap-1.5")],
-						[
-							h.div(
-								[h.Class("flex items-center justify-between gap-3")],
-								[
-									h.div(
-										[h.Class("flex min-w-0 items-center gap-2")],
-										[
-											h.a(
-												[
-													h.Href(monitorHref(monitor.id)),
-													h.Class(
-														"truncate text-sm hover:underline active:underline",
-													),
-												],
-												[targetLine(monitor, nowMs)],
-											),
-											...(displayStatus(monitor) === "up"
-												? []
-												: [uptimeStatusChip(h, monitor, nowMs)]),
-										],
-									),
-									h.span(
-										[
-											h.Class(
-												"shrink-0 font-mono text-xs tabular-nums text-muted-foreground",
-											),
-										],
-										[
-											isPaused
-												? "Paused"
-												: formatShare(uptimeShare(monitor.state.recent)),
-										],
-									),
-								],
+					return vstack(h, { gap: "1.5", as: "li", attributes: [h.Key(monitor.id)] }, [
+						hstack(h, { gap: "3", justify: "between" }, [
+							hstack(h, { gap: "2", shrink: true }, [
+								h.a(
+									[
+										h.Href(monitorHref(monitor.id)),
+										h.Class("truncate text-sm hover:underline active:underline"),
+									],
+									[targetLine(monitor, nowMs)],
+								),
+								...(displayStatus(monitor) === "up"
+									? []
+									: [uptimeStatusChip(h, monitor, nowMs)]),
+							]),
+							h.span(
+								[h.Class("shrink-0 font-mono text-xs tabular-nums text-muted-foreground")],
+								[isPaused ? "Paused" : formatShare(uptimeShare(monitor.state.recent))],
 							),
-							recentChecksStrip(h, {
-								recent: monitor.state.recent,
-								slots: 40,
-								isMuted: isPaused,
-							}),
-						],
-					)
+						]),
+						recentChecksStrip(h, {
+							recent: monitor.state.recent,
+							slots: 40,
+							isMuted: isPaused,
+						}),
+					])
 				}),
 			),
 			...(model.canCreateUptimeMonitors

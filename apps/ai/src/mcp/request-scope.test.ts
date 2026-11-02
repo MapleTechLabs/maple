@@ -20,6 +20,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { buildIsolateHandler } from "../worker/http"
 import { McpToolExecutorLoader } from "./executor-loader"
 import { McpLive } from "./app"
+import { listMcpTools } from "./tool-catalog"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -39,6 +40,10 @@ const testConfig = ConfigProvider.layer(
 
 const ORG = Schema.decodeSync(OrgId)("org_scope")
 const USER = Schema.decodeSync(UserId)("user_scope")
+
+const ToolsListBody = Schema.Struct({
+	result: Schema.Struct({ tools: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }),
+})
 
 const ToolCallBody = Schema.Struct({
 	result: Schema.Struct({
@@ -123,7 +128,7 @@ const isolate = async () => {
 		}
 	}
 
-	const callTool = async (label: string, name: string) => {
+	const send = async (label: string, method: string, params: Record<string, unknown>) => {
 		const request = new Request("https://api.example.com/mcp", {
 			method: "POST",
 			headers: {
@@ -137,8 +142,8 @@ const isolate = async () => {
 			body: JSON.stringify({
 				jsonrpc: "2.0",
 				id: 1,
-				method: "tools/call",
-				params: { name, arguments: {} },
+				method,
+				params,
 			}),
 		})
 		const response = await Effect.runPromise(
@@ -151,10 +156,17 @@ const isolate = async () => {
 				Effect.scoped,
 			),
 		)
-		return Schema.decodeUnknownSync(ToolCallBody)(await response.json()).result
+		return {
+			builtHeader: response.headers.get("x-maple-ai-mcp-tools-built"),
+			body: await response.json(),
+		}
 	}
+	const callTool = async (label: string, name: string, args: Record<string, unknown> = {}) =>
+		Schema.decodeUnknownSync(ToolCallBody)(
+			(await send(label, "tools/call", { name, arguments: args })).body,
+		).result
 
-	return { callTool, statements }
+	return { callTool, send, statements }
 }
 
 describe("MCP tool calls on one isolate", () => {
@@ -184,5 +196,26 @@ describe("MCP tool calls on one isolate", () => {
 		const secondRequest = statements.slice(afterFirst)
 		expect(secondRequest.length).toBeGreaterThan(0)
 		expect(new Set(secondRequest)).toEqual(new Set(["second"]))
+	})
+})
+
+describe("MCP tools from the generated descriptors", () => {
+	it("lists what the registry generates, and builds the tool graph on the first call only", async () => {
+		const { callTool, send } = await isolate()
+
+		const listed = await send("list", "tools/list", {})
+		const first = await send("first", "tools/call", { name: "list_dashboards", arguments: {} })
+		const second = await send("second", "tools/call", { name: "list_dashboards", arguments: {} })
+
+		expect({
+			tools: Schema.decodeUnknownSync(ToolsListBody)(listed.body).result.tools,
+			built: [listed.builtHeader, first.builtHeader, second.builtHeader],
+		}).toEqual({ tools: await Effect.runPromise(listMcpTools), built: [null, "1", null] })
+		// Decoding, typed failures and rendering still run through the registry on a call.
+		const invalid = await callTool("invalid", "get_dashboard", {})
+		const missing = await callTool("missing", "get_dashboard", { dashboard_id: "dsh_missing" })
+		expect([invalid, missing].map((result) => result.isError)).toEqual([true, true])
+		expect(invalid.content[0]?.text).toContain("Invalid parameters")
+		expect(missing.content[0]?.text).toContain("dsh_missing")
 	})
 })

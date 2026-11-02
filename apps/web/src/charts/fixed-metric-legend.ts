@@ -1,7 +1,7 @@
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type FixedMetricSeries, LATENCY_SERIES } from "./fixed-metric-series"
 import { resolveColor, type ThemeColors } from "./theme-colors"
+import { swatch } from "../ui/swatch"
 
 // Port of `FixedMetricLegend` (packages/ui/src/components/plot/fixed-metrics.tsx).
 
@@ -13,16 +13,7 @@ export const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<Fi
 			h.span(
 				[h.Key(entry.key), h.Class("flex min-w-0 items-center gap-1.5 text-foreground")],
 				[
-					h.span([
-						h.Class(
-							cn("size-2 shrink-0 rounded-xs", entry.dashed === true && "border border-dashed"),
-						),
-						h.Style(
-							entry.dashed === true
-								? { "border-color": entry.color }
-								: { "background-color": entry.color },
-						),
-					]),
+					swatch(h, { color: entry.color, dashed: entry.dashed }),
 					h.span([h.Class("truncate")], [entry.label]),
 				],
 			),

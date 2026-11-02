@@ -131,3 +131,7 @@ export const backdropBar = <M>(
 		h.Style({ width: `calc(${width}% - 0.5rem)` }),
 	])
 }
+
+/** The classes of a bar's fill pinned to the left of its `relative` track, sized by an inline width. */
+export const barFillClass = (className?: string): string =>
+	cn("absolute inset-y-0 left-0 rounded-xs", className)

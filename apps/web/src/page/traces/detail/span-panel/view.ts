@@ -6,9 +6,11 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../../../ui/heading"
 import { keyValue, keyValueList } from "../../../../ui/key-value"
 import { scrollArea } from "../../../../ui/scroll-area"
 import { skeleton } from "../../../../ui/skeleton"
+import { textLink } from "../../../../ui/text-link"
 import * as InfraCorrelation from "../../../kit/infra-correlation"
 import { attributesSection } from "./attributes"
 import { copyableValue, selectableValue } from "./copy"
@@ -19,6 +21,7 @@ import type { Model } from "./model"
 import { getCloudPlatform } from "./platform"
 import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
 import { spanLogs, tabsView } from "./view-tabs"
+import { sidePanelFrame } from "../../../kit/side-panel"
 
 export type ViewInputs = Readonly<{ timeZone: string }>
 
@@ -76,7 +79,7 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 	return h.div(
 		[h.Class("space-y-1")],
 		[
-			h.h4([h.Class("text-xs font-medium text-muted-foreground")], ["Span"]),
+			heading(h, { level: 4, variant: "label" }, ["Span"]),
 			h.div(
 				[h.Class("rounded-md border p-2 space-y-1 text-xs")],
 				[
@@ -103,19 +106,16 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 												label: "parent span ID",
 											},
 											[
-												h.button(
-													[
-														h.Class(
-															"font-mono underline decoration-dotted underline-offset-2 hover:text-primary active:text-primary",
-														),
-														h.Title("Select the parent span"),
-														h.Type("button"),
-														h.OnClick(
-															Message.ClickedParentSpan({
-																spanId: span.parentSpanId,
-															}),
-														),
-													],
+												textLink(
+													h,
+													{
+														tone: "muted",
+														isMono: true,
+														onClick: Message.ClickedParentSpan({ spanId: span.parentSpanId }),
+														className:
+															"text-foreground underline decoration-dotted hover:text-primary active:text-primary",
+														attributes: [h.Title("Select the parent span")],
+													},
 													[span.parentSpanId],
 												),
 											],
@@ -180,9 +180,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const values = hasInfra
 		? (["details", "logs", "infrastructure"] as const)
 		: (["details", "logs"] as const)
-	return h.div(
-		[h.Class("flex flex-col h-full bg-background overflow-hidden")],
-		[
+	return sidePanelFrame(h, [
 			panelHeader(h, model),
 			scrollArea(h, { className: "min-h-0 flex-1", idPrefix: "span-panel-scroll" }, [
 				summaryStats(h, model),

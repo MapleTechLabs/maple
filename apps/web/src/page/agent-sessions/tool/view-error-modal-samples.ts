@@ -12,12 +12,16 @@ import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
+import { textLink } from "../../../ui/text-link"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
 import { currentOf, occurrencesOf, pagingOf } from "./error-modal-update"
 import { sampleBody } from "./view-error-modal-payload"
 import { sessionLink } from "./view-error-modal-rail"
 import type { ModalInputs } from "./view-error-modal"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `SamplesPane` and `Sample` of `ToolErrorModal`: the failed calls, newest first, one open at a time.
 
@@ -39,12 +43,13 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 			),
 			...(paging === "more"
 				? [
-						h.button(
-							[
-								h.Class("text-foreground hover:text-primary active:text-primary"),
-								h.Type("button"),
-								h.OnClick(Message.ClickedLoadMore()),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								onClick: Message.ClickedLoadMore(),
+								className: "text-foreground hover:text-primary active:text-primary",
+							},
 							["Load ", String(Math.min(SAMPLES_PAGE, Math.max(total - shown, 1))), " more"],
 						),
 					]
@@ -106,12 +111,10 @@ export const samplesPane = (
 					),
 				],
 				[
-					h.div(
-						[h.Class("flex items-baseline gap-2")],
+					hstack(h, { gap: "2", align: "baseline" },
 						[
-							h.span([h.Class("text-xs font-medium text-foreground")], ["Samples"]),
-							h.span(
-								[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
+							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Samples"]),
+							typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 								[
 									formatNumber(options.total),
 									" failed ",
@@ -121,8 +124,7 @@ export const samplesPane = (
 							),
 						],
 					),
-					h.div(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2" },
 						[
 							h.span(
 								[h.Class("pr-1 text-2xs text-foreground-subtle max-md:hidden")],
@@ -135,7 +137,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current === 0,
-									className: "text-muted-foreground hover:text-foreground active:text-foreground",
+									className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
 								},
 								[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
@@ -155,7 +157,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
-									className: "text-muted-foreground hover:text-foreground active:text-foreground",
+									className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
 								},
 								[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
@@ -197,16 +199,15 @@ const sampleRow = (
 					),
 				],
 				[
-					h.button(
-						[
-							h.AriaExpanded(options.isOpen),
-							h.AriaLabel(`Sample at ${time}`),
-							h.Class(
-								"absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-							),
-							h.Type("button"),
-							h.OnClick(Message.ClickedSample({ index: options.index })),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedSample({ index: options.index }),
+							label: `Sample at ${time}`,
+							className:
+								"absolute inset-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+							attributes: [h.AriaExpanded(options.isOpen)],
+						},
 						[],
 					),
 					icon(h, options.isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {

@@ -32,6 +32,10 @@ import {
 	supabaseProjectNotes,
 	supabaseProjectSwitches,
 } from "./view-supabase"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstackClass, vstack } from "../../ui/stack"
+import { stripClass } from "../../ui/rule"
+import { columnClass } from "../../ui/column"
 
 // Supabase in the connect flow: authorize an organization, switch on projects, watch the first data land.
 
@@ -69,7 +73,7 @@ const readsRail = (h: H): Html =>
 
 const isWaiting = (model: Model): boolean => model.connect.active?.provider === "supabase"
 
-const muted = (h: H, text: string): Html => h.p([h.Class("text-sm text-muted-foreground")], [text])
+const muted = (h: H, text: string): Html => typography(h, { size: "sm", tone: "muted", as: "p" }, [text])
 
 /** What happens in the Supabase window, before it opens. */
 const windowSteps = (h: H): Html =>
@@ -77,14 +81,11 @@ const windowSteps = (h: H): Html =>
 		[h.Class("flex flex-col gap-2 rounded-md bg-surface-sunken p-4")],
 		[
 			eyebrow(h, { variant: "mono" }, ["In the Supabase window"]),
-			h.ul(
-				[h.Class("flex flex-col gap-1.5 text-sm")],
-				[
-					h.li([], ["Pick the organization that owns your projects"]),
-					h.li([], ["Review the read scopes: projects, analytics, database"]),
-					h.li([], ["Click Authorize. This tab picks it up on its own"]),
-				],
-			),
+			vstack(h, { gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) }, [
+				h.li([], ["Pick the organization that owns your projects"]),
+				h.li([], ["Review the read scopes: projects, analytics, database"]),
+				h.li([], ["Click Authorize. This tab picks it up on its own"]),
+			]),
 		],
 	)
 
@@ -93,16 +94,12 @@ const waitingBlock = (h: H): Html =>
 		[h.Class("flex items-center gap-3 rounded-md bg-surface-sunken p-4")],
 		[
 			icon(h, "ClockIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-			h.div(
-				[h.Class("flex flex-col gap-0.5")],
-				[
-					h.span([h.Class("text-sm font-medium")], ["Waiting for you to approve in Supabase"]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground")],
-						["Pick an organization in that window, then click Authorize."],
-					),
-				],
-			),
+			vstack(h, { gap: "0.5" }, [
+				typography(h, { size: "sm", weight: "medium" }, ["Waiting for you to approve in Supabase"]),
+				typography(h, { size: "xs", tone: "muted" }, [
+					"Pick an organization in that window, then click Authorize.",
+				]),
+			]),
 		],
 	)
 
@@ -131,7 +128,9 @@ const selfHostedLine = (h: H): Html =>
 			h.a(
 				[
 					h.Href(PROMETHEUS_HREF),
-					h.Class("inline-flex items-center gap-1 text-foreground hover:underline active:underline"),
+					h.Class(
+						"inline-flex items-center gap-1 text-foreground hover:underline active:underline",
+					),
 				],
 				["Use Prometheus", icon(h, "ArrowRightIcon", { size: 12 })],
 			),
@@ -143,18 +142,12 @@ const revokedNotice = (h: H, status: SupabaseIntegrationStatus): Html =>
 		[h.Class("flex gap-3 rounded-md border border-severity-warn-a4 bg-card p-4"), h.Role("alert")],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0 text-severity-warn" }),
-			h.div(
-				[h.Class("flex flex-col gap-1")],
-				[
-					h.span([h.Class("text-sm font-medium")], ["Access revoked"]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground")],
-						[
-							`Supabase no longer accepts Maple's access to ${supabaseOrgName(status)}, so discovery, metrics and log polling are paused. Log drains live in Supabase and keep sending.`,
-						],
-					),
-				],
-			),
+			vstack(h, { gap: "1" }, [
+				typography(h, { size: "sm", weight: "medium" }, ["Access revoked"]),
+				typography(h, { size: "xs", tone: "muted" }, [
+					`Supabase no longer accepts Maple's access to ${supabaseOrgName(status)}, so discovery, metrics and log polling are paused. Log drains live in Supabase and keep sending.`,
+				]),
+			]),
 		],
 	)
 
@@ -251,27 +244,27 @@ const chooseRow = (h: H, model: Model, project: Project): Html => {
 			h.Key(project.ref),
 			h.Class(
 				cn(
-					"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
+					hstackClass({
+						gap: "4",
+						className: typographyClass({
+							size: "sm",
+							className: stripClass("row"),
+						}),
+					}),
 					isPaused && "opacity-60",
 				),
 			),
 		],
 		[
-			h.span(
-				[h.Class("flex w-0 min-w-48 flex-1 flex-col")],
-				[
-					h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
-					h.span(
-						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
-						[
-							[project.region, project.ref, isPaused ? "paused" : ""]
-								.filter((part) => part !== "")
-								.join(" · "),
-						],
-					),
-					...supabaseProjectNotes(h, project),
-				],
-			),
+			vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
+				h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
+				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+					[project.region, project.ref, isPaused ? "paused" : ""]
+						.filter((part) => part !== "")
+						.join(" · "),
+				]),
+				...supabaseProjectNotes(h, project),
+			]),
 			...supabaseProjectSwitches(h, model, project),
 		],
 	)
@@ -319,7 +312,7 @@ const chooseStep = (h: H, model: Model): Html => {
 					h,
 					{ ariaLabel: "Supabase projects" },
 					[
-						columnHead(h, { label: "Project", width: "w-0 min-w-48 flex-1" }),
+						columnHead(h, { label: "Project", width: columnClass({ min: "48" }) }),
 						columnHead(h, { label: "Metrics", width: "w-20", align: "right" }),
 						columnHead(h, { label: "Logs", width: "w-20", align: "right" }),
 						columnHead(h, { label: "Drain", width: "w-20", align: "right" }),
@@ -332,7 +325,7 @@ const chooseStep = (h: H, model: Model): Html => {
 							]
 						: status.projects.map((project) => chooseRow(h, model, project)),
 				),
-				h.p([h.Class("text-xs text-muted-foreground")], [SUPABASE_LOGS_NOTE]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [SUPABASE_LOGS_NOTE]),
 			]),
 		],
 		summaryRail(h, status),

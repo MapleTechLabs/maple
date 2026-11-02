@@ -5,6 +5,7 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { alert, alertDescription, alertTitle } from "../../ui/alert"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
@@ -22,6 +23,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { hostnameOf } from "./prometheus"
 import { AUTH_TYPE_LABELS, type ScheduledStatus, toneBadge } from "./view-prometheus"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, hstackClass } from "../../ui/stack"
 
 // `ScrapeTargetDetails`, `MetricBox` and `ScrapeTargetChecksTable`.
 // TODO(tooltip): a check's message renders its trigger; the full-message popup is the overlay port's.
@@ -109,8 +112,7 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 								tableCell(
 									h,
 									[
-										h.div(
-											[h.Class("truncate font-mono")],
+										typography(h, { mono: true, truncate: true, as: "div" },
 											[formatTimestampInTimezone(check.timestamp, { timeZone })],
 										),
 										...(check.message !== null && check.message !== ""
@@ -131,8 +133,7 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 									"max-w-0 min-w-[100px] pl-3",
 								),
 								tableCell(h, [
-									h.span(
-										[h.Class("flex items-center gap-1.5")],
+									hstack(h, { gap: "1.5", as: "span" },
 										[
 											check.success
 												? icon(h, "CircleCheckIcon", {
@@ -182,12 +183,12 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 						h.div(
 							[h.Class("min-w-0")],
 							[
-								h.div(
-									[h.Class("flex items-center gap-2")],
+								hstack(h, { gap: "2" },
 									[
 										statusDot(h, { tone: status.tone, size: "lg" }),
-										h.h3(
-											[h.Class("truncate text-sm font-semibold"), h.Title(target.name)],
+										heading(
+											h,
+											{ level: 3, variant: "section", className: "truncate", attributes: [h.Title(target.name)] },
 											[target.name],
 										),
 									],
@@ -206,8 +207,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 						badge(h, { variant: toneBadge(status.tone) }, [status.label]),
 					],
 				),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				hstack(h, { gap: "2", wrap: true },
 					[
 						button(
 							h,
@@ -268,7 +268,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 									h.div(
 										[h.Class("space-y-1")],
 										[
-											h.p([h.Class("font-medium text-foreground")], ["How to fix"]),
+											typography(h, { tone: "foreground", weight: "medium", as: "p" }, ["How to fix"]),
 											h.ul(
 												[h.Class("list-disc space-y-0.5 pl-4")],
 												diagnosis.fixes.map((fix) => h.li([], [fix])),
@@ -277,8 +277,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 									),
 									...(failureMessage !== null && failureMessage !== ""
 										? [
-												h.p(
-													[h.Class("font-mono text-2xs text-foreground-subtle")],
+												typography(h, { size: "2xs", tone: "subtle", mono: true, as: "p" },
 													[failureMessage],
 												),
 											]
@@ -337,7 +336,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 										[h.Class("flex flex-wrap gap-1.5 pt-1")],
 										labels.map(([key, value]) =>
 											badge(h, { variant: "outline", className: "max-w-full" }, [
-												h.span([h.Class("truncate font-mono")], [key, "=", value]),
+												typography(h, { mono: true, truncate: true }, [key, "=", value]),
 											]),
 										),
 									),
@@ -348,8 +347,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 				h.section(
 					[h.Class("space-y-2")],
 					[
-						h.div(
-							[h.Class("flex items-center justify-between gap-3")],
+						hstack(h, { gap: "3", justify: "between" },
 							[
 								sectionTitle(h, "HistoryIcon", "Check history"),
 								...(latest === null
@@ -360,7 +358,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 												nowMs: model.nowMs,
 												timeZone,
 												prefix: "Latest",
-												className: "text-muted-foreground text-xs",
+												className: typographyClass({ size: "xs", tone: "muted" }),
 											}),
 										]),
 							],
@@ -374,7 +372,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 }
 
 const sectionTitle = (h: H, iconName: "PulseIcon" | "ExternalLinkIcon" | "HistoryIcon", text: string): Html =>
-	eyebrow(h, { variant: "label", className: "flex items-center gap-2", as: "div" }, [
+	eyebrow(h, { variant: "label", className: hstackClass({ gap: "2" }), as: "div" }, [
 		icon(h, iconName, { size: 14 }),
 		text,
 	])

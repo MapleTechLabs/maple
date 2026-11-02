@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
+import { hstackClass } from "../../../ui/stack"
 
 // `MetaLine` and `PlatformLabel`.
 
@@ -67,7 +68,7 @@ const resolve = (kind: PlatformKind, value: string): Known => {
 export const platformLabel = <M>(h: HtmlBuilder<M>, kind: PlatformKind, value: string): Html => {
 	const known = resolve(kind, value)
 	return h.span(
-		[h.Class(cn("inline-flex items-center gap-1"))],
+		[h.Class(cn(hstackClass({ gap: "1", inline: true })))],
 		[
 			...(known.icon === undefined
 				? []

@@ -9,6 +9,7 @@ import { button } from "../../../ui/button"
 import * as DialogView from "../../../ui/dialog-view"
 import { errorState } from "../../../ui/error-state"
 import { input } from "../../../ui/input"
+import { pressable } from "../../../ui/pressable"
 import { defineMessageUnion } from "foldkit/message"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { trackProduct } from "../../../data/analytics"
@@ -21,6 +22,8 @@ import * as Dialog from "../../../ui/dialog"
 import { generateWidgetId, withAddedWidget } from "../../dashboards/kit/layout"
 import { createPayload } from "../../dashboards/kit/portable"
 import { awaitTxid, mutateDashboard, readDocument } from "../../dashboards/kit/store"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The add-to-dashboard dialog: the
 // explorer's query as a chart widget on an existing dashboard, or on a new one created with it.
@@ -217,21 +220,19 @@ const closedTo = (model: Model, dashboardId: string): Return => ({
 type H = HtmlBuilder<Message>
 
 const choiceRow = (h: H, dashboard: DashboardChoice): Html =>
-	h.button(
-		[
-			h.Key(dashboard.id),
-			h.Type("button"),
-			h.OnClick(Message.ClickedDashboard({ dashboardId: dashboard.id })),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedDashboard({ dashboardId: dashboard.id }),
+			className:
 				"flex w-full items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm hover:bg-accent active:bg-accent",
-			),
-		],
+			attributes: [h.Key(dashboard.id)],
+		},
 		[
 			h.span([h.Class("truncate")], [dashboard.name]),
-			h.span(
-				[h.Class("shrink-0 text-xs text-muted-foreground")],
-				[countLabel(dashboard.widgetCount, "widget")],
-			),
+			typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, [
+				countLabel(dashboard.widgetCount, "widget"),
+			]),
 		],
 	)
 
@@ -247,33 +248,30 @@ const body = (h: H, model: Model): Html =>
 							model.dashboards.map((d) => choiceRow(h, d)),
 						),
 					]),
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					input(h, {
-						id: "metric-add-to-dashboard-name",
-						className: "h-8 flex-1 text-sm",
-						attributes: [
-							h.Value(model.newName),
-							h.Placeholder("New dashboard name…"),
-							h.OnInput((value) => Message.ChangedNewName({ value })),
-							h.OnKeyDownPreventDefault((key) =>
-								key === "Enter" ? Option.some(Message.ClickedCreate()) : Option.none(),
-							),
-						],
-					}),
-					button(
-						h,
-						{
-							size: "sm",
-							isDisabled: model.newName.trim() === "",
-							isLoading: model.isCreating,
-							attributes: [h.OnClick(Message.ClickedCreate())],
-						},
-						["Create & add"],
-					),
-				],
-			),
+			hstack(h, { gap: "2" }, [
+				input(h, {
+					id: "metric-add-to-dashboard-name",
+					className: "h-8 flex-1 text-sm",
+					attributes: [
+						h.Value(model.newName),
+						h.Placeholder("New dashboard name…"),
+						h.OnInput((value) => Message.ChangedNewName({ value })),
+						h.OnKeyDownPreventDefault((key) =>
+							key === "Enter" ? Option.some(Message.ClickedCreate()) : Option.none(),
+						),
+					],
+				}),
+				button(
+					h,
+					{
+						size: "sm",
+						isDisabled: model.newName.trim() === "",
+						isLoading: model.isCreating,
+						attributes: [h.OnClick(Message.ClickedCreate())],
+					},
+					["Create & add"],
+				),
+			]),
 			...(model.error === null
 				? []
 				: [

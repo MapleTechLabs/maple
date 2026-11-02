@@ -2,7 +2,6 @@ import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/dom
 import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import {
 	releaseDayLabel,
 	releaseHeadline,
@@ -11,8 +10,8 @@ import {
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
 } from "../../../components/releases/release-model"
-import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { panel } from "../../../ui/panel"
@@ -24,6 +23,8 @@ import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-vie
 import { MountReleasesTable } from "./command"
 import { Message } from "./message"
 import type { TimeSearch } from "./view-overview"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The releases table and its commit count.
 
@@ -36,7 +37,7 @@ const baselineShift = (h: H, baseline: string | undefined, current: Html): Html 
 		[
 			...(baseline === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-foreground-subtle"), h.Title("The version this one replaced")], [baseline, " →"])]),
+				: [typography(h, { size: "3xs", tone: "subtle", attributes: [h.Title("The version this one replaced")] }, [baseline, " →"])]),
 			current,
 		],
 	)
@@ -54,7 +55,7 @@ const latencyShift = (h: H, value: number, baseline: number | undefined, tone?: 
 const issueCounts = (h: H, counts: ReleaseIssueCounts | undefined | null): Html | null => {
 	if (counts === null) return null
 	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0))
-		return emptyValue(h, "font-mono text-xs")
+		return emptyValue(h, typographyClass({ size: "xs", mono: true }))
 	return h.span(
 		[h.Class("inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums")],
 		[
@@ -81,7 +82,7 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 			[
 				h.span([h.Class("tabular-nums")], [String(names.length), " services"]),
 				...flagged.slice(0, 2).map((name) => serviceChip(h, name, "inline-flex min-w-0 max-w-56 items-center gap-1")),
-				...(flagged.length > 2 ? [h.span([h.Class("text-2xs text-foreground-subtle")], [`+${flagged.length - 2}`])] : []),
+				...(flagged.length > 2 ? [typography(h, { size: "2xs", tone: "subtle" }, [`+${flagged.length - 2}`])] : []),
 			],
 		)
 	}
@@ -120,10 +121,9 @@ const releaseTitle = (
 			h.div(
 				[h.Class("flex min-w-0 flex-col gap-0.5 leading-tight")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
+					hstack(h, { gap: "2", shrink: true },
 						[
-							commitTrigger(h, overlays, "releases-list", group.commitSha, cn("min-w-0 truncate text-sm text-foreground", commit === undefined && "font-mono text-xs"), [
+							commitTrigger(h, overlays, "releases-list", group.commitSha, cn("min-w-0 truncate text-sm text-foreground", commit === undefined && typographyClass({ size: "xs", mono: true })), [
 								(commit ? firstLine(commit.message) : "") || shortReleaseLabel(group.commitSha),
 							]),
 							...(group.health === "healthy"
@@ -195,14 +195,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 			...(showDay
 				? [
 						tableRow(h, [
-							h.td(
-								[
-									h.Attribute("class", cn(tableCellStyles, cn(eyebrowVariants({}), "bg-surface-sunken py-1"))),
-									h.Attribute("colspan", "6"),
-									h.DataAttribute("slot", "eyebrow"),
-								],
-								[day],
-							),
+							tableCell(h, [eyebrow(h, {}, [day])], "bg-surface-sunken py-1", [h.Attribute("colspan", "6")]),
 						], "hover:bg-transparent active:bg-transparent", [h.Key(`day:${group.commitSha}`)]),
 					]
 				: []),
@@ -256,8 +249,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 					tableCell(
 						h,
 						[
-							h.span(
-								[h.Class("inline-flex items-center gap-1.5")],
+							hstack(h, { gap: "1.5", inline: true, as: "span" },
 								[
 									...(multi
 										? [h.span([h.Class("inline-flex"), h.Title(`Worst service: ${worst.serviceName}`)], [serviceDot(h, { serviceName: worst.serviceName })])]

@@ -22,6 +22,7 @@ import {
 } from "./state"
 import { idsOf, lenses, numberField, textareaField, valueState } from "./view-fields"
 import { RULES_COPY } from "./copy"
+import { typography } from "../../../ui/typography"
 
 // `ReviewRulesForm`'s layout, selects, toggles and footer.
 
@@ -139,9 +140,13 @@ const footer = (h: H, model: Model, isAdmin: boolean): ReadonlyArray<Html> => {
 	const isDirty = !sameState(model.state, model.saved)
 	return [
 		...(model.error !== null
-			? [h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [model.error])]
+			? [
+					typography(h, { size: "xs", tone: "error", as: "p", attributes: [h.Role("alert")] }, [
+						model.error,
+					]),
+				]
 			: problem !== null && isDirty
-				? [h.p([h.Class("text-xs text-muted-foreground")], [problem])]
+				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [problem])]
 				: []),
 		h.div(
 			[h.Class("flex items-center justify-end gap-3 border-t pt-4")],

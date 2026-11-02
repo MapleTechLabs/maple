@@ -12,6 +12,7 @@ import { statRail, statRailItem } from "../../kit/stat-rail"
 import { changeOf } from "../analytics/view-stats"
 import { analyticsPanel, chartFrame } from "../kit/analytics-panel"
 import { Message, type Model } from "./model"
+import { grid } from "../../../ui/grid"
 
 // `HeadlineStrip`, `RunsCard` and `DurationCard`.
 
@@ -120,46 +121,43 @@ export const chartsRow = (
 		p50: point.p50DurationMs ?? "",
 		p95: point.p95DurationMs ?? "",
 	}))
-	return h.div(
-		[h.Class("grid gap-6 lg:grid-cols-2")],
-		[
-			analyticsPanel(h, { title: "Runs by result" }, [
-				chartFrame(h, isEmpty, () =>
-					h.submodel({
-						slotId: "code-review-ci-runs-chart",
-						model: model.runsChart,
-						view: BarChart.view,
-						toParentMessage: (message: Chart.Message) =>
-							Message.GotChartMessage({ chart: "runs", message }),
-						viewInputs: {
-							chartId: "code-review-ci-runs",
-							data: runRows,
-							stacked: true,
-							className: "h-full w-full",
-							...context,
-						},
-					}),
-				),
-			]),
-			analyticsPanel(h, { title: "Run time" }, [
-				chartFrame(h, isEmpty, () =>
-					h.submodel({
-						slotId: "code-review-ci-duration-chart",
-						model: model.durationChart,
-						view: AreaChart.view,
-						toParentMessage: (message: Chart.Message) =>
-							Message.GotChartMessage({ chart: "duration", message }),
-						viewInputs: {
-							chartId: "code-review-ci-duration",
-							mark: "line",
-							data: durationRows,
-							unit: "duration_ms",
-							className: "h-full w-full",
-							...context,
-						},
-					}),
-				),
-			]),
-		],
-	)
+	return grid(h, { lg: 2, gap: "6" }, [
+		analyticsPanel(h, { title: "Runs by result" }, [
+			chartFrame(h, isEmpty, () =>
+				h.submodel({
+					slotId: "code-review-ci-runs-chart",
+					model: model.runsChart,
+					view: BarChart.view,
+					toParentMessage: (message: Chart.Message) =>
+						Message.GotChartMessage({ chart: "runs", message }),
+					viewInputs: {
+						chartId: "code-review-ci-runs",
+						data: runRows,
+						stacked: true,
+						className: "h-full w-full",
+						...context,
+					},
+				}),
+			),
+		]),
+		analyticsPanel(h, { title: "Run time" }, [
+			chartFrame(h, isEmpty, () =>
+				h.submodel({
+					slotId: "code-review-ci-duration-chart",
+					model: model.durationChart,
+					view: AreaChart.view,
+					toParentMessage: (message: Chart.Message) =>
+						Message.GotChartMessage({ chart: "duration", message }),
+					viewInputs: {
+						chartId: "code-review-ci-duration",
+						mark: "line",
+						data: durationRows,
+						unit: "duration_ms",
+						className: "h-full w-full",
+						...context,
+					},
+				}),
+			),
+		]),
+	])
 }

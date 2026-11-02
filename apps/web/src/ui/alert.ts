@@ -6,7 +6,7 @@ import {
 	alertVariants,
 } from "@maple/ui/styles/ui/alert"
 import type { VariantProps } from "class-variance-authority"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // Port of packages/ui/src/components/ui/alert.tsx.
 
@@ -41,8 +41,13 @@ export const alert = <M>(h: HtmlBuilder<M>, options: AlertOptions, children: Chi
 
 const part =
 	(styles: string, slot: string) =>
-	<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
-		h.div([h.Class(cn(styles, className)), h.DataAttribute("slot", slot)], children)
+	<M>(
+		h: HtmlBuilder<M>,
+		children: Children,
+		className?: string,
+		attributes: ReadonlyArray<Attribute<M>> = [],
+	): Html =>
+		h.div([h.Class(cn(styles, className)), h.DataAttribute("slot", slot), ...attributes], children)
 
 export const alertTitle = part(cn(alertTitleStyles, "font-prose"), "alert-title")
 export const alertDescription = part(cn(alertDescriptionStyles, "font-prose"), "alert-description")

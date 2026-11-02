@@ -2,12 +2,13 @@ import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { badge } from "../../ui/display"
-import { item, itemActions, itemContent, itemMedia } from "../../ui/item"
+import { item, itemActions, itemContent, itemMedia, mediaCard } from "../../ui/item"
 import { panel } from "../../ui/panel"
-import { skeleton } from "../../ui/skeleton"
+import { skeletonBlock } from "../../ui/skeleton"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { liveChecklist } from "../kit/connect-flow"
 import { catalogEntry } from "./catalog"
@@ -19,6 +20,9 @@ import { disconnectDialog } from "./view-disconnect"
 import { inventoryCountsOf } from "./flow-planetscale"
 import { metricsHealth } from "./view-planetscale-parts"
 import { pickerDialog } from "./view-planetscale-picker"
+import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
+import { strip } from "../../ui/rule"
 
 // `PlanetScaleIntegrationCard` and `PlanetScaleWebhooks`: the source page's Connection tab.
 
@@ -51,11 +55,11 @@ const header = (
 		itemContent(
 			h,
 			[
-				h.div(
-					[h.Class("flex items-center gap-2")],
-					[h.h3([h.Class("text-sm font-semibold")], ["PlanetScale"]), badgeNode],
-				),
-				h.p([h.Class("mt-1 text-xs text-muted-foreground")], line),
+				hstack(h, { gap: "2" }, [
+					heading(h, { level: 3, variant: "section" }, ["PlanetScale"]),
+					badgeNode,
+				]),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-1" }, line),
 			],
 			"gap-0",
 		),
@@ -89,18 +93,17 @@ const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
 			itemContent(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[
-							h.h3([h.Class("text-sm font-semibold")], ["Webhooks"]),
-							webhooks.state === "active"
-								? badge(h, { variant: "ok" }, ["Active"])
-								: webhooks.state === "pending"
-									? badge(h, { variant: "secondary" }, ["Registering"])
-									: badge(h, { variant: "warn" }, ["Needs attention"]),
-						],
-					),
-					h.p([h.Class("mt-1 text-xs text-muted-foreground")], [webhookLine(webhooks)]),
+					hstack(h, { gap: "2" }, [
+						heading(h, { level: 3, variant: "section" }, ["Webhooks"]),
+						webhooks.state === "active"
+							? badge(h, { variant: "ok" }, ["Active"])
+							: webhooks.state === "pending"
+								? badge(h, { variant: "secondary" }, ["Registering"])
+								: badge(h, { variant: "warn" }, ["Needs attention"]),
+					]),
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-1" }, [
+						webhookLine(webhooks),
+					]),
 					...(webhooks.state === "failing" && webhooks.last_error !== null
 						? [
 								h.p(
@@ -127,10 +130,9 @@ const watchExpired = (h: H): Html =>
 	h.div(
 		[h.Class("mt-3 flex flex-col items-start gap-2")],
 		[
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				["Still no metrics after 30 minutes, so this stopped checking on its own."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Still no metrics after 30 minutes, so this stopped checking on its own.",
+			]),
 			button(
 				h,
 				{
@@ -146,77 +148,71 @@ const watchExpired = (h: H): Html =>
 const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, timeZone: string): Html => {
 	const setup = derivePlanetScaleSetup(status, model.nowMs, inventoryCountsOf(model))
 	const busy = model.connect.isStarting || model.disconnect.isPending
-	const organization = h.span([h.Class("font-medium text-foreground")], [status.organization ?? ""])
+	const organization = typography(h, { tone: "foreground", weight: "medium" }, [status.organization ?? ""])
 	const webhooks = status.webhooks ?? null
 	const isLive = setup.live === "healthy"
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			panel(h, {}, [
-				header(
-					h,
-					isLive
-						? badge(h, { variant: "ok" }, ["Connected"])
-						: setup.live === "attention"
-							? badge(h, { variant: "warn" }, ["Needs attention"])
-							: badge(h, { variant: "secondary" }, ["Starting"]),
-					isLive
-						? ["Streaming branch metrics from", " ", organization]
-						: ["Connected to", " ", organization],
-					[
-						itemActions(
-							h,
-							[
-								...(setup.accessBlocked ? [reconnectButton(h, model)] : []),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isDisabled: busy,
-										attributes: [h.OnClick(Message.ClickedChangeOrganization())],
-									},
-									["Edit data"],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isDisabled: busy,
-										isLoading: model.disconnect.isPending,
-										attributes: [h.OnClick(Message.ClickedDisconnect())],
-									},
-									["Disconnect"],
-								),
-								disconnectDialog(h, model, "planetscale"),
-							],
-							"shrink-0 gap-1.5",
-						),
-					],
-				),
+	return vstack(h, { gap: "4" }, [
+		panel(h, {}, [
+			header(
+				h,
 				isLive
-					? metricsHealth(h, model, status, timeZone)
-					: h.div(
-							[h.Class("border-t border-border-subtle p-4")],
-							[
-								liveChecklist(h, { title: "Checking the connection", rows: setup.checks }),
-								...(isWatchExpired(model.planetscaleCard, model.nowMs)
-									? [watchExpired(h)]
-									: []),
-							],
-						),
-			]),
-			...(webhooks === null ? [] : [webhookStatus(h, model, webhooks)]),
-			pickerDialog(h, model),
-		],
-	)
+					? badge(h, { variant: "ok" }, ["Connected"])
+					: setup.live === "attention"
+						? badge(h, { variant: "warn" }, ["Needs attention"])
+						: badge(h, { variant: "secondary" }, ["Starting"]),
+				isLive
+					? ["Streaming branch metrics from", " ", organization]
+					: ["Connected to", " ", organization],
+				[
+					itemActions(
+						h,
+						[
+							...(setup.accessBlocked ? [reconnectButton(h, model)] : []),
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									isDisabled: busy,
+									attributes: [h.OnClick(Message.ClickedChangeOrganization())],
+								},
+								["Edit data"],
+							),
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									isDisabled: busy,
+									isLoading: model.disconnect.isPending,
+									attributes: [h.OnClick(Message.ClickedDisconnect())],
+								},
+								["Disconnect"],
+							),
+							disconnectDialog(h, model, "planetscale"),
+						],
+						"shrink-0 gap-1.5",
+					),
+				],
+			),
+			isLive
+				? metricsHealth(h, model, status, timeZone)
+				: strip(h, { kind: "block" },
+						[
+							liveChecklist(h, { title: "Checking the connection", rows: setup.checks }),
+							...(isWatchExpired(model.planetscaleCard, model.nowMs) ? [watchExpired(h)] : []),
+						],
+					),
+		]),
+		...(webhooks === null ? [] : [webhookStatus(h, model, webhooks)]),
+		pickerDialog(h, model),
+	])
 }
 
 export const planetscaleCard = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.statuses.planetscale.data, {
-		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "40" }),
+		onLoading: () => skeletonBlock(h, { height: "40" }),
 		onFailure: () => statusFailed(h),
 		onStale: () => statusFailed(h),
 		onRefreshing: (status) => byStatus(h, model, status, timeZone),
@@ -246,13 +242,11 @@ const planetscaleReconnect = (h: H, text: string): Html =>
 
 /** A failed status read is not "not connected": no connect offer over a maybe-authorized org. */
 const statusFailed = (h: H): Html =>
-	item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-		itemMedia(h, {}, [integrationIconPlate(h, BRAND)]),
+	mediaCard(h, integrationIconPlate(h, BRAND), [
 		itemContent(h, [
-			h.h3([h.Class("text-sm font-semibold")], ["PlanetScale"]),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				["Couldn't load the PlanetScale connection status. Refresh the page to try again."],
-			),
+			heading(h, { level: 3, variant: "section" }, ["PlanetScale"]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Couldn't load the PlanetScale connection status. Refresh the page to try again.",
+			]),
 		]),
 	])

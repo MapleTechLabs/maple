@@ -1,3 +1,4 @@
+import { typographyClass } from "../ui/typography"
 const KEYWORDS = new Set([
 	"SELECT",
 	"FROM",
@@ -76,7 +77,11 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 		if (m.index > last) tokens.push({ text: code.slice(last, m.index), start: last })
 		const [full, comment, str, macro, num, ident] = m
 		if (comment) {
-			tokens.push({ text: comment, start: m.index, className: "text-foreground-subtle italic" })
+			tokens.push({
+				text: comment,
+				start: m.index,
+				className: typographyClass({ tone: "subtle", className: "italic" }),
+			})
 		} else if (str) {
 			tokens.push({ text: str, start: m.index, className: "text-severity-info" })
 		} else if (macro) {

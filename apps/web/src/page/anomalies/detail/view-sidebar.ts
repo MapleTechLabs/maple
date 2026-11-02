@@ -23,6 +23,8 @@ import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `AnomalySidebar`: the anomaly detail's side rail.
 
@@ -39,7 +41,7 @@ const row = (h: H, label: string, children: ReadonlyArray<Html | string>, title?
 	detailRailRow(h, { label, title }, children)
 
 const mono = (h: H, value: string, className: string): Html =>
-	h.span([h.Class(cn("font-mono text-sm tabular-nums", className))], [value])
+	h.span([h.Class(cn(typographyClass({ size: "sm", mono: true, numeric: true }), className))], [value])
 
 export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 	const { incident } = input
@@ -113,11 +115,11 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 					),
 				]),
 				row(h, "Signal", [
-					h.span([h.Class("text-sm text-foreground")], [SIGNAL_LABEL[incident.signalType]]),
+					typography(h, { size: "sm", tone: "foreground" }, [SIGNAL_LABEL[incident.signalType]]),
 				]),
 				row(h, "Severity", [
 					h.span(
-						[h.Class(cn("text-sm font-medium", live ? tone.text : "text-muted-foreground"))],
+						[h.Class(cn(typographyClass({ size: "sm", weight: "medium" }), live ? tone.text : "text-muted-foreground"))],
 						[incident.severity],
 					),
 				]),
@@ -125,18 +127,17 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 					h,
 					"Service",
 					[
-						h.span(
-							[h.Class("flex min-w-0 items-center gap-2")],
+						hstack(h, { gap: "2", shrink: true, as: "span" },
 							[
 								serviceDot(h, { serviceName: incident.serviceName, size: "sm" }),
-								h.span([h.Class("truncate text-sm text-foreground")], [incident.serviceName]),
+								typography(h, { size: "sm", tone: "foreground", truncate: true }, [incident.serviceName]),
 							],
 						),
 					],
 					incident.serviceName,
 				),
 				row(h, "Environment", [
-					h.span([h.Class("text-sm text-foreground")], [incident.deploymentEnv || EMPTY_VALUE]),
+					typography(h, { size: "sm", tone: "foreground" }, [incident.deploymentEnv || EMPTY_VALUE]),
 				]),
 				row(
 					h,
@@ -194,8 +195,7 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 										h.Title(fingerprint.fingerprintHash),
 									],
 									[
-										h.span(
-											[h.Class("flex min-w-0 items-center gap-1.5")],
+										hstack(h, { gap: "1.5", shrink: true, as: "span" },
 											[
 												statusDot(h, {
 													tone:
@@ -217,12 +217,11 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 															value: fingerprint.fingerprintHash,
 															length: 10,
 															className:
-																"truncate text-xs text-muted-foreground",
+																typographyClass({ size: "xs", tone: "muted", truncate: true }),
 														}),
 											],
 										),
-										h.span(
-											[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
+										typography(h, { size: "xs", tone: "muted", mono: true, numeric: true },
 											[
 												fingerprint.resolvedAt !== null
 													? "resolved"
@@ -278,8 +277,7 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 			]),
 			detailRailGroup(h, "Triage", [
 				triageChip === null
-					? h.p(
-							[h.Class("text-xs text-muted-foreground")],
+					? typography(h, { size: "xs", tone: "muted", as: "p" },
 							["No AI triage has run for this incident."],
 						)
 					: badge(

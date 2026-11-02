@@ -1,6 +1,8 @@
 import type { GithubIntegrationStatus, GithubRepoSummary, VcsRepoSyncStatus } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { listRow } from "../../ui/list-row"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { confirmDialog } from "../../ui/confirm-dialog"
 import { badge } from "../../ui/display"
@@ -16,6 +18,8 @@ import { branchPopoverId } from "./github"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { githubStatusOf, trackedBranchOf } from "./update-github"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, hstackClass } from "../../ui/stack"
 
 // `ConnectedView`'s repository panels, `RepoRow` and `BranchSelector`.
 
@@ -31,8 +35,7 @@ export const SYNC_PRESENTATION = {
 }
 
 const repoLink = (h: H, repo: GithubRepoSummary): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2")],
+	hstack(h, { gap: "2" },
 		[
 			h.a(
 				[
@@ -69,9 +72,8 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 		h.div(
 			[h.Class("border-b px-3 py-2.5")],
 			[
-				h.p([h.Class("text-xs font-medium text-foreground")], ["Tracked branch"]),
-				h.p(
-					[h.Class("mt-0.5 text-xs text-muted-foreground")],
+				typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "p" }, ["Tracked branch"]),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-0.5" },
 					[
 						"Maple syncs commits from the one branch you track. Changing it re-syncs this repo's commits from the new branch.",
 					],
@@ -97,33 +99,21 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 		h.div(
 			[h.Class("max-h-56 overflow-y-auto p-1")],
 			filtered.length === 0
-				? [h.p([h.Class("px-2 py-1.5 text-xs text-muted-foreground")], ["No matches."])]
+				? [typography(h, { size: "xs", tone: "muted", as: "p", className: "px-2 py-1.5" }, ["No matches."])]
 				: filtered.map((branch) =>
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(Message.ClickedBranch({ repoId: repo.id, branch: branch.name })),
-								h.Class(
-									"flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-								),
-							],
-							[
-								icon(h, "CheckIcon", {
-									size: 14,
-									className: `shrink-0 ${branch.name === tracked ? "text-foreground" : "text-transparent"}`,
-								}),
-								h.span([h.Class("truncate")], [branch.name]),
-								...(branch.isDefault
-									? [
-											badge(
-												h,
-												{ variant: "outline", size: "sm", className: "ml-auto" },
-												["default"],
-											),
-										]
-									: []),
-							],
-						),
+						listRow(h, {
+							onClick: Message.ClickedBranch({ repoId: repo.id, branch: branch.name }),
+							density: "compact",
+							className: "cursor-pointer gap-2 rounded-md px-2",
+							leading: icon(h, "CheckIcon", {
+								size: 14,
+								className: branch.name === tracked ? "text-foreground" : "text-transparent",
+							}),
+							title: branch.name,
+							trailing: branch.isDefault
+								? badge(h, { variant: "outline", size: "sm" }, ["default"])
+								: undefined,
+						}),
 					),
 		),
 	]
@@ -195,7 +185,7 @@ const repoRow = (h: H, model: Model, repo: GithubRepoSummary, timeZone: string):
 }
 
 const syncCount = (h: H, glyph: Html, count: number, label: string): Html =>
-	h.span([h.Class("flex items-center gap-1")], [glyph, String(count), ` ${label}`])
+	hstack(h, { gap: "1", as: "span" }, [glyph, String(count), ` ${label}`])
 
 const removedRow = (h: H, model: Model, repo: GithubRepoSummary): Html =>
 	item(h, { variant: "flush", size: "lg", tag: "li" }, [
@@ -204,8 +194,7 @@ const removedRow = (h: H, model: Model, repo: GithubRepoSummary): Html =>
 			h,
 			[
 				repoLink(h, repo),
-				h.div(
-					[h.Class("text-xs text-muted-foreground")],
+				typography(h, { size: "xs", tone: "muted", as: "div" },
 					["Access removed on GitHub · commit history kept"],
 				),
 			],
@@ -239,8 +228,7 @@ export const repositoriesPanels = (
 	).length
 	const failed = active.filter((repo) => repo.syncStatus === "error").length
 	const discovery = status.repositoryDiscovery
-	const counts = h.div(
-		[h.Class("flex items-center gap-3 text-xs text-muted-foreground")],
+	const counts = hstack(h, { gap: "3", className: typographyClass({ size: "xs", tone: "muted" }) },
 		[
 			...(synced > 0
 				? [
@@ -297,8 +285,9 @@ export const repositoriesPanels = (
 		panel(h, {}, [
 			panelHeader(h, {
 				children: [
-					h.h3(
-						[h.Class("text-sm font-medium")],
+					heading(
+						h,
+						{ level: 3, variant: "subsection" },
 						[
 							"Repositories",
 							h.span([h.Class("ml-1.5 text-muted-foreground")], [String(active.length)]),
@@ -326,8 +315,9 @@ export const repositoriesPanels = (
 					panel(h, {}, [
 						panelHeader(h, {
 							children: [
-								h.h3(
-									[h.Class("flex items-center gap-1.5 text-sm font-medium")],
+								heading(
+									h,
+									{ level: 3, variant: "subsection", className: hstackClass({ gap: "1.5" }) },
 									[
 										icon(h, "CircleWarningIcon", {
 											size: 16,
@@ -374,7 +364,7 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 	const toDelete = status?.repositories.find((repo) => repo.id === model.githubCard.repoToDelete)
 	const pending = model.githubCard.pendingBranch
 	const pendingRepo = status?.repositories.find((repo) => repo.id === pending?.repoId)
-	const strong = (text: string) => h.span([h.Class("font-medium text-foreground")], [text])
+	const strong = (text: string) => typography(h, { tone: "foreground", weight: "medium" }, [text])
 	return [
 		confirmDialog(h, {
 			slotId: "github-repo-delete",

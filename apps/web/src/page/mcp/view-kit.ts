@@ -1,14 +1,14 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Option, Record } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../charts/chart"
 import type { ThemeColors } from "../../charts/theme-colors"
 import { chartEmpty } from "../../ui/chart-state"
+import { badge } from "../../ui/display"
+import { eyebrow } from "../../ui/eyebrow"
 import { icon, type IconName } from "../../ui/icon"
 import { meter } from "../../ui/meter"
 import { panelHeader } from "../../ui/panel"
@@ -19,6 +19,8 @@ import type { ToolPercentile, ToolSeriesPoint } from "../agent-sessions/tools-ki
 import { type ToolPlotInputs, toolPlotView } from "../agent-sessions/tools-kit/series-chart"
 import { volumeSparkCell } from "../agent-sessions/tools-kit/spark"
 import type { McpClientKind } from "./data"
+import { typography } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // Pieces every MCP view shares: the chart cell over `toolPlotView`, section headings, client glyphs.
 
@@ -238,12 +240,13 @@ export const sectionTitle = <M>(
 			h.div(
 				[h.Class("flex items-baseline gap-2.5 font-mono")],
 				[
-					h.span([h.Class("text-xs font-medium text-foreground")], [title]),
+					typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [title]),
 					...(count === undefined
 						? []
 						: [
-								h.span(
-									[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
+								typography(
+									h,
+									{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 									[count],
 								),
 							]),
@@ -280,7 +283,7 @@ export const attr = <M>(h: HtmlBuilder<M>, name: string): Html =>
 
 /** The muted mono note on the right of a heading. */
 export const headingNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.span([h.Class("font-mono text-2xs text-foreground-subtle")], [text])
+	typography(h, { size: "2xs", tone: "subtle", mono: true }, [text])
 
 const CLIENT_ICONS = new Map<string, IconName>([
 	["Claude Code", "ClaudeIcon"],
@@ -307,7 +310,7 @@ export const kindTag = <M>(h: HtmlBuilder<M>, kind: McpClientKind): ReadonlyArra
 
 /** `error.type` as a pill, in the tone Agent Sessions gives tool failures. */
 export const errorTypeChip = <M>(h: HtmlBuilder<M>, errorType: string): Html =>
-	h.span([h.Class(cn(badgeVariants({ pill: true, size: "xs", mono: true }), TOOL_CHIP))], [errorType])
+	badge(h, { pill: true, size: "xs", mono: true, className: TOOL_CHIP }, [errorType])
 
 /** A call's duration as a bar against the table's slowest, red when the call failed. */
 export const durationMeterCell = <M>(
@@ -364,13 +367,10 @@ export const mcpScopeRow = <M>(h: HtmlBuilder<M>, scope: string, count: string, 
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					h.span([h.Class(eyebrowVariants({ variant: "mono" }))], ["Scope"]),
-					h.span([h.Class("text-2xs text-foreground-subtle")], [scope]),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				eyebrow(h, { variant: "mono" }, ["Scope"]),
+				typography(h, { size: "2xs", tone: "subtle" }, [scope]),
+			]),
 			h.span(
 				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
 				[

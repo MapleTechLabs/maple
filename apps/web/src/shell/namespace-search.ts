@@ -1,6 +1,7 @@
 import { Effect, Option, type Scope } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { input } from "../ui/input"
+import { typography } from "../ui/typography"
 
 /** `NamespaceScopeList`'s search: it only earns its row once the list is this long. */
 export const SEARCH_THRESHOLD = 8
@@ -54,7 +55,7 @@ export const namespaceSearchRow = <Message>(
 	)
 
 export const noNamespacesMatch = <Message>(h: HtmlBuilder<Message>): Html =>
-	h.div([h.Class("px-2 py-1.5 text-xs text-muted-foreground")], ["No namespaces match"])
+	typography(h, { size: "xs", tone: "muted", as: "div", className: "px-2 py-1.5" }, ["No namespaces match"])
 
 /**
  * The search input's mount: it takes focus (`autoFocus`) and its keydowns stop there, so the

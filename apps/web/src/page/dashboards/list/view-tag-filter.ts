@@ -1,12 +1,13 @@
-import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as Combobox from "../../../ui/combobox"
 import { hiddenInput, inputField, listPopup } from "../../../ui/combobox-view"
+import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { isMounted } from "../../../ui/overlay/transition"
+import { hstack } from "../../../ui/stack"
+import { typography } from "../../../ui/typography"
 
 // `TagFilterMenu`'s `MultiSelectCombobox` in `mode="trigger"`: the Tags button, and its popup with
 // the tag search, the tag list and "Clear tags".
@@ -48,13 +49,7 @@ export const tagFilterView = Submodel.defineView<Combobox.Model, Combobox.Messag
 					...(selected.length === 0
 						? []
 						: [
-								h.span(
-									[
-										h.Class(cn(badgeVariants({ className: "ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs" }))),
-										h.DataAttribute("slot", "badge"),
-									],
-									[String(selected.length)],
-								),
+								badge(h, { className: "ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs" }, [String(selected.length)]),
 							]),
 					icon(h, "ChevronDownIcon", { className: "text-muted-foreground" }),
 				],
@@ -79,7 +74,7 @@ const popup = (
 		anchorSelector: `#${triggerId}`,
 		className: "w-64",
 		renderItem: (tag) => [
-			h.span([h.Class("flex min-w-0 items-center gap-2")], [h.span([h.Class("min-w-0 flex-1 truncate")], [tag])]),
+			hstack(h, { gap: "2", shrink: true, as: "span" }, [typography(h, { truncate: true, className: "min-w-0 flex-1" }, [tag])]),
 		],
 		trigger: {
 			returnFocusId: triggerId,

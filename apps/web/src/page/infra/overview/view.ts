@@ -18,6 +18,8 @@ import { presentSources, sourceState, surfacesOf } from "./state"
 import { DEFAULT_PRESET } from "./update"
 import { needsAttention, sharedFailure } from "./view-findings"
 import { sourcesTable } from "./view-sources"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `InfraOverviewPage`.
 
@@ -39,22 +41,14 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 		h.div(
 			[h.Class("flex flex-col gap-3 @2xl:flex-row @2xl:items-center @2xl:gap-4")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-					[
-						h.span([h.Class("text-sm text-foreground")], ["Add a source"]),
-						h.span(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Not reporting yet:",
-								" ",
-								...missing.flatMap((id, index) =>
-									missingMark(h, id, index === missing.length - 1),
-								),
-							],
-						),
-					],
-				),
+				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+					typography(h, { size: "sm", tone: "foreground" }, ["Add a source"]),
+					typography(h, { size: "xs", tone: "muted" }, [
+						"Not reporting yet:",
+						" ",
+						...missing.flatMap((id, index) => missingMark(h, id, index === missing.length - 1)),
+					]),
+				]),
 				h.div(
 					[h.Class("grid gap-2 @sm:flex @sm:shrink-0")],
 					[

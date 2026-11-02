@@ -1,9 +1,7 @@
-import { cn } from "@maple/ui/lib/utils"
-import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 import { traceIdBadge } from "../../../ui/trace-badges"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonList, skeletonMeter } from "../../../ui/skeleton"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { docsLink } from "../../kit/signal-empty-state"
 import type { Message } from "./message"
@@ -31,21 +29,14 @@ export const detailLoading = (h: HtmlBuilder<Message>): Html =>
 				[h.Class("space-y-2")],
 				[
 					skeleton(h, "h-8 w-32"),
-					skeleton(h, "h-1.5 w-full rounded-full"),
+					skeletonMeter(h),
 					h.div(
 						[h.Class("flex gap-4")],
 						[skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")],
 					),
 				],
 			),
-			h.div(
-				[
-					h.AriaBusy(true),
-					h.Class(cn(skeletonListStyles, skeletonListGapStyles.px, "gap-0 rounded-md border")),
-					h.DataAttribute("slot", "skeleton-list"),
-				],
-				Array.from({ length: 5 }, () => loadingRow(h)),
-			),
+			skeletonList(h, { rows: 5, className: "gap-0 rounded-md border", renderRow: () => loadingRow(h) }),
 		],
 	)
 

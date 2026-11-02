@@ -1,7 +1,7 @@
-import { cn } from "@maple/ui/lib/utils"
-import { listFooterStartStyles, listFooterStyles } from "@maple/ui/styles/ui/list-footer"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { listFooter } from "../../../ui/list-footer"
+import { hstack } from "../../../ui/stack"
 
 // `OffsetPager` and `pageRangeLabel`, on `ListFooter align="start"` with children only. Counts
 // use `toLocaleString()` (en-US).
@@ -30,12 +30,12 @@ export const offsetPager = <M>(
 	if (!hasPrevious && !hasNext) return null
 	const page = Math.floor(options.offset / options.pageSize) + 1
 	const pages = Math.max(1, Math.ceil(options.total / options.pageSize))
-	return h.div(
-		[h.Class(cn(listFooterStyles, listFooterStartStyles, "px-0 py-1")), h.DataAttribute("slot", "list-footer")],
-		[
+	return listFooter(h, {
+		align: "start",
+		className: "px-0 py-1",
+		children: [
 			h.span([], [pageRangeLabel(options.offset, options.shown, options.total, options.noun)]),
-			h.div(
-				[h.Class("ml-auto flex items-center gap-2")],
+			hstack(h, { gap: "2", className: "ml-auto" },
 				[
 					h.span([], ["Page ", count(page), " of ", count(pages)]),
 					button(
@@ -56,5 +56,5 @@ export const offsetPager = <M>(
 				],
 			),
 		],
-	)
+	})
 }

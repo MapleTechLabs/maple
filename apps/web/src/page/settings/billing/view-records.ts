@@ -20,6 +20,8 @@ import { errorState } from "../../../ui/error-state"
 import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { taxIdValue, view as detailsDialogView } from "./details/view"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -156,8 +158,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 						title: "Couldn't load invoices",
 						onRetry: Message.ClickedRetryInvoices(),
 					}),
-					h.p(
-						[h.Class("font-prose text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" },
 						model.isAdmin
 							? [
 									"You can still view them in the ",
@@ -195,7 +196,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 											h,
 											[column.label],
 											cn(
-												"text-2xs font-medium text-muted-foreground",
+												typographyClass({ size: "2xs", tone: "muted", weight: "medium" }),
 												column.className,
 											),
 											[h.Key(column.label)],
@@ -267,8 +268,7 @@ export const detailsSection = (h: H, model: Model): Html => {
 		onFailure: (failure) =>
 			failure.isNotConfigured
 				? panel(h, { padded: true }, [
-						h.p(
-							[h.Class("font-prose text-sm text-muted-foreground")],
+						typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" },
 							[
 								"Billing details aren't set up for this deployment. Company name, address and tax IDs are managed in the billing portal instead.",
 							],
@@ -304,8 +304,7 @@ export const detailsSection = (h: H, model: Model): Html => {
 											? "None on file"
 											: "Available once your organization has a plan",
 									)
-								: h.span(
-										[h.Class("flex flex-col gap-1")],
+								: vstack(h, { gap: "1", as: "span" },
 										details.taxIds.map((taxId) => taxIdValue(h, taxId)),
 									),
 						]),

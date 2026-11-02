@@ -9,6 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { IconName } from "../../ui/icon"
 import { eyebrow } from "../../ui/eyebrow"
+import { pressable } from "../../ui/pressable"
 
 // Shared pieces of `ServiceMapNode` (packages/ui `service-map/service-map-node.tsx`).
 
@@ -71,12 +72,17 @@ export const errorRateClass = (errorRate: number): string => {
 
 /** Base UI `<TooltipTrigger>`: a bare button around the trigger content (the popup is not ported). */
 export const tooltipTrigger = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.button(
-		[
-			h.Attribute("data-base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.Type("button"),
-		],
+	pressable(
+		h,
+		{
+			// No click of its own: the plain arrow, as the bare trigger had.
+			className: "cursor-default",
+			attributes: [
+				h.Attribute("data-base-ui-tooltip-trigger", ""),
+				// TooltipTrigger's `data-slot` overrides Pressable's.
+				h.DataAttribute("slot", "tooltip-trigger"),
+			],
+		},
 		children,
 	)
 

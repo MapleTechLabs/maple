@@ -1,5 +1,6 @@
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { typography } from "../../ui/typography"
 
 /** The workspace card of `/cli-login` and `/mcp-authorize`; `trailing` is the Clerk switcher. */
 export const workspaceCard = <M>(h: HtmlBuilder<M>, name: string, trailing: ReadonlyArray<Html>): Html =>
@@ -9,8 +10,8 @@ export const workspaceCard = <M>(h: HtmlBuilder<M>, name: string, trailing: Read
 			h.div(
 				[h.Class("min-w-0")],
 				[
-					h.p([h.Class("text-xs text-muted-foreground")], ["Workspace"]),
-					h.p([h.Class("truncate text-sm font-medium")], [name]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, ["Workspace"]),
+					typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [name]),
 				],
 			),
 			...trailing,

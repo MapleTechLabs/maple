@@ -36,6 +36,7 @@ import {
 	rankingTable,
 } from "./view-ai-parts"
 import { favicon } from "./view-icons"
+import { hstack } from "../../ui/stack"
 
 // `AnalyticsAiTab`: the AI traffic tab.
 
@@ -101,7 +102,9 @@ const NO_CRAWLS = (h: H): ReadonlyArray<Html | string> => [
 	"AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are counted from your server’s traces: HTTP server spans whose ",
 	inlineCode(h, {}, ["user_agent.original"]),
 	" names GPTBot, ClaudeBot, PerplexityBot or another AI fetcher.",
-	h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "traces")]),
+	hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+		docsLink(h, "traces"),
+	]),
 ]
 
 export const aiTab = (h: H, model: Model, timeZone: string): Html => {

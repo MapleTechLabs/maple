@@ -13,7 +13,7 @@ import { icon } from "../../ui/icon"
 import {
 	shareCell,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
@@ -80,56 +80,44 @@ const userCell = <M>(h: HtmlBuilder<M>, user: string | null, userName: string | 
 	)
 
 const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: SessionsBodyOptions<M>): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.Key(row.sessionId),
-			h.Class(toolRowClass(false)),
-			h.OnClick(options.onOpenSession(row.sessionId)),
-		],
-		[
-			row.source === "issued"
-				? h.span(
-						[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
-						[row.sessionId],
-					)
-				: // Who it was only while the User column is hidden in a narrow panel.
-					h.span(
-						[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
-						[
-							h.span(
-								[h.Class("truncate text-foreground @min-[800px]/panel:hidden")],
-								[row.userName ?? row.user ?? "anonymous"],
-							),
-							h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["user session"]),
-						],
-					),
-			userCell(h, row.user, row.userName),
-			h.span(
-				[h.Class("flex w-44 shrink-0 items-center gap-2 font-mono text-xs")],
-				[
-					clientIcon(h, row.client, 12),
-					h.span([h.Class("truncate")], [row.client]),
-					...kindTag(h, row.kind),
-				],
-			),
-			numberCell(h, formatNumber(row.calls), "w-14"),
-			failedCell(h, row.errors),
-			numberCell(
-				h,
-				formatNumber(row.tools),
-				"hidden w-14 text-muted-foreground @min-[800px]/panel:block",
-			),
-			numberCell(
-				h,
-				formatLatency(row.lastSeenMs - row.firstSeenMs),
-				"hidden w-20 text-muted-foreground @min-[560px]/panel:block",
-			),
-			numberCell(h, formatClock(row.firstSeenMs, options.timeZone), "w-16 text-muted-foreground"),
-			lastSeenCell(h, row.lastSeenMs, options.nowMs, options.timeZone),
-			arrowCell(h),
-		],
-	)
+	toolTableRow(h, { onClick: options.onOpenSession(row.sessionId), attributes: [h.Key(row.sessionId)] }, [
+		row.source === "issued"
+			? h.span(
+					[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
+					[row.sessionId],
+				)
+			: // Who it was only while the User column is hidden in a narrow panel.
+				h.span(
+					[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
+					[
+						h.span(
+							[h.Class("truncate text-foreground @min-[800px]/panel:hidden")],
+							[row.userName ?? row.user ?? "anonymous"],
+						),
+						h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["user session"]),
+					],
+				),
+		userCell(h, row.user, row.userName),
+		h.span(
+			[h.Class("flex w-44 shrink-0 items-center gap-2 font-mono text-xs")],
+			[
+				clientIcon(h, row.client, 12),
+				h.span([h.Class("truncate")], [row.client]),
+				...kindTag(h, row.kind),
+			],
+		),
+		numberCell(h, formatNumber(row.calls), "w-14"),
+		failedCell(h, row.errors),
+		numberCell(h, formatNumber(row.tools), "hidden w-14 text-muted-foreground @min-[800px]/panel:block"),
+		numberCell(
+			h,
+			formatLatency(row.lastSeenMs - row.firstSeenMs),
+			"hidden w-20 text-muted-foreground @min-[560px]/panel:block",
+		),
+		numberCell(h, formatClock(row.firstSeenMs, options.timeZone), "w-16 text-muted-foreground"),
+		lastSeenCell(h, row.lastSeenMs, options.nowMs, options.timeZone),
+		arrowCell(h),
+	])
 
 /** The read of users' activity hit its limit, so older user sessions are missing or cut short. */
 const activityCut = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): ReadonlyArray<Html> =>
@@ -361,46 +349,38 @@ const requestRow = <M>(
 	row: McpSessionRequestItem,
 	context: Readonly<{ startMs: number; max: number; options: SessionBodyOptions<M> }>,
 ): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.Key(row.spanId),
-			h.Class(toolRowClass(false)),
-			h.OnClick(context.options.onOpenTrace(row.traceId)),
-		],
-		[
-			numberCell(h, offsetLabel(row.timeMs - context.startMs), "w-20 text-left text-muted-foreground"),
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
-				row.method === "tools/call" && row.tool !== null
-					? [
-							h.span([h.Class("truncate text-foreground")], [row.tool]),
-							h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["tools/call"]),
-						]
-					: [h.span([h.Class("truncate text-muted-foreground")], [row.method])],
-			),
-			h.span(
-				[
-					h.Class(
-						"hidden w-0 min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground @min-[800px]/panel:block",
-					),
-				],
-				[row.message ?? ""],
-			),
-			durationMeterCell(h, {
-				durationNs: row.durationNs,
-				max: context.max,
-				isFailed: row.errorType !== null,
-			}),
-			resultCell(h, row.errorType),
-			numberCell(
-				h,
-				formatClock(row.timeMs, context.options.timeZone),
-				"hidden w-14 text-foreground-subtle @min-[640px]/panel:block",
-			),
-			arrowCell(h),
-		],
-	)
+	toolTableRow(h, { onClick: context.options.onOpenTrace(row.traceId), attributes: [h.Key(row.spanId)] }, [
+		numberCell(h, offsetLabel(row.timeMs - context.startMs), "w-20 text-left text-muted-foreground"),
+		h.span(
+			[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
+			row.method === "tools/call" && row.tool !== null
+				? [
+						h.span([h.Class("truncate text-foreground")], [row.tool]),
+						h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["tools/call"]),
+					]
+				: [h.span([h.Class("truncate text-muted-foreground")], [row.method])],
+		),
+		h.span(
+			[
+				h.Class(
+					"hidden w-0 min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground @min-[800px]/panel:block",
+				),
+			],
+			[row.message ?? ""],
+		),
+		durationMeterCell(h, {
+			durationNs: row.durationNs,
+			max: context.max,
+			isFailed: row.errorType !== null,
+		}),
+		resultCell(h, row.errorType),
+		numberCell(
+			h,
+			formatClock(row.timeMs, context.options.timeZone),
+			"hidden w-14 text-foreground-subtle @min-[640px]/panel:block",
+		),
+		arrowCell(h),
+	])
 
 const agentSessionsPanel = <M>(
 	h: HtmlBuilder<M>,
@@ -486,19 +466,14 @@ const toolRow = <M>(
 	]
 	// A call naming no tool has no tool page to open.
 	return tool.tool === null
-		? h.div(
-				[h.Key("no-tool-name"), h.Class(toolRowClass(false))],
-				[...cells, h.span([h.Class("w-3.5 shrink-0")], [])],
-			)
-		: h.button(
-				[
-					h.Type("button"),
-					h.Key(tool.tool),
-					h.Class(toolRowClass(false)),
-					h.OnClick(options.onOpenTool(tool.tool)),
-				],
-				[...cells, arrowCell(h)],
-			)
+		? toolTableRow(h, { attributes: [h.Key("no-tool-name")] }, [
+				...cells,
+				h.span([h.Class("w-3.5 shrink-0")], []),
+			])
+		: toolTableRow(h, { onClick: options.onOpenTool(tool.tool), attributes: [h.Key(tool.tool)] }, [
+				...cells,
+				arrowCell(h),
+			])
 }
 
 const toolsPanel = <M>(h: HtmlBuilder<M>, data: McpSessionResponse, options: SessionBodyOptions<M>): Html => {

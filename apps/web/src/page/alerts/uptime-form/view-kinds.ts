@@ -3,11 +3,13 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import * as MenuView from "../../../ui/menu-view"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, nameSection, section, selectField, textField } from "./view-fields"
+import { hstack } from "../../../ui/stack"
 
 // The TCP, DNS and heartbeat sections, and the Service and Notify sections every kind shares.
 
@@ -22,57 +24,51 @@ const isMode = (value: string): value is typeof ScheduleMode.Type =>
 
 export const tcpSection = (h: H, model: Model): ReadonlyArray<Html> => [
 	section(h, "Host and port", undefined, [
-		h.div(
-			[h.Class("flex items-start gap-2")],
-			[
-				textField(h, {
-					field: "host",
-					label: "Host",
-					value: model.form.host,
-					placeholder: "db.example.com",
-					className: "min-w-0 flex-1",
-					isLabelHidden: true,
-				}),
-				textField(h, {
-					field: "port",
-					label: "Port",
-					value: model.form.port,
-					placeholder: "5432",
-					inputMode: "numeric",
-					className: "w-24 shrink-0",
-					isLabelHidden: true,
-				}),
-			],
-		),
+		hstack(h, { gap: "2", align: "start" }, [
+			textField(h, {
+				field: "host",
+				label: "Host",
+				value: model.form.host,
+				placeholder: "db.example.com",
+				className: "min-w-0 flex-1",
+				isLabelHidden: true,
+			}),
+			textField(h, {
+				field: "port",
+				label: "Port",
+				value: model.form.port,
+				placeholder: "5432",
+				inputMode: "numeric",
+				className: "w-24 shrink-0",
+				isLabelHidden: true,
+			}),
+		]),
 	]),
 	nameSection(h, model, "Defaults to host:port"),
 ]
 
 export const dnsSection = (h: H, model: Model): ReadonlyArray<Html> => [
 	section(h, "Record", undefined, [
-		h.div(
-			[h.Class("flex items-start gap-2")],
-			[
-				selectField(h, {
-					id: "uptime-record-type",
-					label: "Record type",
-					isLabelHidden: true,
-					value: model.form.recordType,
-					entries: RecordType.literals.map((type) => ({ value: type, label: type })),
-					onChange: (value) =>
-						Message.ChangedRecordType({ recordType: isRecordType(value) ? value : "A" }),
-					className: "w-24 shrink-0",
-				}),
-				textField(h, {
-					field: "hostname",
-					label: "Hostname",
-					value: model.form.hostname,
-					placeholder: "example.com",
-					className: "min-w-0 flex-1",
-					isLabelHidden: true,
-				}),
-			],
-		),
+		hstack(h, { gap: "2", align: "start" }, [
+			selectField(h, {
+				id: "uptime-record-type",
+				label: "Record type",
+				isLabelHidden: true,
+				value: model.form.recordType,
+				entries: RecordType.literals.map((type) => ({ value: type, label: type })),
+				onChange: (value) =>
+					Message.ChangedRecordType({ recordType: isRecordType(value) ? value : "A" }),
+				className: "w-24 shrink-0",
+			}),
+			textField(h, {
+				field: "hostname",
+				label: "Hostname",
+				value: model.form.hostname,
+				placeholder: "example.com",
+				className: "min-w-0 flex-1",
+				isLabelHidden: true,
+			}),
+		]),
 		textField(h, {
 			field: "expected",
 			label: "Expected value (optional)",
@@ -104,29 +100,26 @@ export const heartbeatSection = (h: H, model: Model): ReadonlyArray<Html> => {
 				],
 			}),
 			form.scheduleMode === "interval"
-				? h.div(
-						[h.Class("flex items-start gap-2")],
-						[
-							textField(h, {
-								field: "everyValue",
-								label: "Every",
-								value: form.everyValue,
-								inputMode: "numeric",
-								className: "w-24",
-								isLabelHidden: true,
-							}),
-							selectField(h, {
-								id: "uptime-every-unit",
-								label: "Unit",
-								isLabelHidden: true,
-								value: form.everyUnit,
-								entries: EveryUnit.literals.map((unit) => ({ value: unit, label: unit })),
-								onChange: (value) =>
-									Message.ChangedEveryUnit({ unit: isUnit(value) ? value : "hours" }),
-								className: "w-32",
-							}),
-						],
-					)
+				? hstack(h, { gap: "2", align: "start" }, [
+						textField(h, {
+							field: "everyValue",
+							label: "Every",
+							value: form.everyValue,
+							inputMode: "numeric",
+							className: "w-24",
+							isLabelHidden: true,
+						}),
+						selectField(h, {
+							id: "uptime-every-unit",
+							label: "Unit",
+							isLabelHidden: true,
+							value: form.everyUnit,
+							entries: EveryUnit.literals.map((unit) => ({ value: unit, label: unit })),
+							onChange: (value) =>
+								Message.ChangedEveryUnit({ unit: isUnit(value) ? value : "hours" }),
+							className: "w-32",
+						}),
+					])
 				: h.div(
 						[h.Class("flex flex-wrap items-start gap-2")],
 						[
@@ -151,29 +144,26 @@ export const heartbeatSection = (h: H, model: Model): ReadonlyArray<Html> => {
 					),
 		]),
 		section(h, "Grace period", "how late a ping may be", [
-			h.div(
-				[h.Class("flex items-start gap-2")],
-				[
-					textField(h, {
-						field: "graceValue",
-						label: "Grace period",
-						value: form.graceValue,
-						inputMode: "numeric",
-						className: "w-24",
-						isLabelHidden: true,
-					}),
-					selectField(h, {
-						id: "uptime-grace-unit",
-						label: "Grace unit",
-						isLabelHidden: true,
-						value: form.graceUnit,
-						entries: GraceUnit.literals.map((unit) => ({ value: unit, label: unit })),
-						onChange: (value) =>
-							Message.ChangedGraceUnit({ unit: isGraceUnit(value) ? value : "minutes" }),
-						className: "w-32",
-					}),
-				],
-			),
+			hstack(h, { gap: "2", align: "start" }, [
+				textField(h, {
+					field: "graceValue",
+					label: "Grace period",
+					value: form.graceValue,
+					inputMode: "numeric",
+					className: "w-24",
+					isLabelHidden: true,
+				}),
+				selectField(h, {
+					id: "uptime-grace-unit",
+					label: "Grace unit",
+					isLabelHidden: true,
+					value: form.graceUnit,
+					entries: GraceUnit.literals.map((unit) => ({ value: unit, label: unit })),
+					onChange: (value) =>
+						Message.ChangedGraceUnit({ unit: isGraceUnit(value) ? value : "minutes" }),
+					className: "w-32",
+				}),
+			]),
 		]),
 	]
 }
@@ -256,14 +246,13 @@ export const notifySection = (h: H, model: Model): Html => {
 									h.span(
 										[h.Class("contents")],
 										withTrigger(
-											h.button(
-												[
-													h.Type("button"),
-													h.Class(
+											pressable(
+												h,
+												{
+													className:
 														"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-													),
-													...trigger,
-												],
+													attributes: trigger,
+												},
 												[icon(h, "PlusIcon", { size: 14 }), "Add destination"],
 											),
 										),

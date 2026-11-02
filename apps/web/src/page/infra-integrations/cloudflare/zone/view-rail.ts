@@ -3,27 +3,25 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../../ui/copy-button"
 import { detailRailGroup, detailRailMetaRow } from "../../../../ui/detail-rail"
 import { icon, type IconName } from "../../../../ui/icon"
-import { textLinkClass } from "../../../../ui/text-link"
+import { textLink } from "../../../../ui/text-link"
 import type { ZoneRow } from "../data"
 import type { ZoneRailDns } from "./derive"
 import { Message, type Model, type ZoneTab } from "./model"
+import { typography } from "../../../../ui/typography"
 
 // `CloudflareZoneRail`.
 
 type H = HtmlBuilder<Message>
 
 const railLink = (h: H, name: IconName, tab: ZoneTab, children: ReadonlyArray<string>): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedTab({ tab })),
-			h.Class(textLinkClass("primary", true, "gap-1.5 text-left text-xs")),
-		],
+	textLink(
+		h,
+		{ onClick: Message.ClickedTab({ tab }), isMono: true, className: "gap-1.5 text-left text-xs" },
 		[icon(h, name, { className: "size-3.5 shrink-0" }), ...children],
 	)
 
 const note = (h: H, text: string): Html =>
-	h.p([h.Class("text-2xs leading-relaxed text-muted-foreground")], [text])
+	typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [text])
 
 export const zoneRail = (
 	h: H,

@@ -1,11 +1,13 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { label } from "../../../ui/label"
 import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
 import { searchInput } from "../../../ui/search-input"
 import { switchControl } from "../../../ui/switch"
 import { listToolbar } from "../../kit/list-toolbar"
+import { hstackClass } from "../../../ui/stack"
 
 // The tool filter toolbar and its facet selects.
 
@@ -101,13 +103,14 @@ export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>
 	const filters = h.div(
 		[
 			...(config.isWaiting ? [h.AriaBusy(true)] : []),
-			h.Class(cn("flex flex-wrap items-center gap-2", refreshingClass(config.isWaiting))),
+			h.Class(cn(hstackClass({ gap: "2", wrap: true }), refreshingClass(config.isWaiting))),
 		],
 		[
 			...config.selects,
 			// The same switch as "With errors" on the sessions list, so it reads as a filter.
-			h.label(
-				[h.Class("inline-flex cursor-pointer items-center gap-2 text-xs font-medium")],
+			label(
+				h,
+				{ className: "cursor-pointer text-xs sm:text-xs" },
 				[
 					...switchControl(h, {
 						id: "agent-tools-failing-switch",

@@ -22,6 +22,7 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { axisTickFormatter, axisTickValues, formatBytes } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
@@ -157,6 +158,10 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 				})
 			})
 		: []
+	// Lines bridge a short silence and dash a long one. A gaps chart exists to show every silence,
+	// so its lines break at each silent bucket instead.
+	const bridged = !spec.stacked && !spec.gaps
+	const runsOf = new Map(bridged ? series.map((name) => [name, seriesRuns(data, valueOf(name), at)]) : [])
 	const bands = spec.stacked
 		? [
 				areaY(cells, {
@@ -170,32 +175,54 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 					layout: stack({ order: [...series] }),
 				}),
 			]
-		: series.map((name) =>
-				lineY(data, {
-					id: name,
-					x: at,
-					y: valueOf(name),
-					stroke: colorOf(name),
-					strokeWidth: STROKE_WIDTH,
-					curve,
-				}),
-			)
+		: spec.gaps
+			? series.map((name) =>
+					lineY(data, {
+						id: name,
+						x: at,
+						y: valueOf(name),
+						stroke: colorOf(name),
+						strokeWidth: STROKE_WIDTH,
+						curve,
+					}),
+				)
+			: series.flatMap((name) =>
+					(runsOf.get(name)?.runs ?? []).map((run, index) =>
+						lineY(run, {
+							id: `${name}:${index}`,
+							x: at,
+							y: valueOf(name),
+							stroke: colorOf(name),
+							strokeWidth: STROKE_WIDTH,
+							curve,
+						}),
+					),
+				)
 	const silent = (value: (point: InfraPoint) => number | null) => (point: InfraPoint | undefined) =>
 		point === undefined || value(point) === null
-	const lone = spec.gaps
-		? series.map((name) => {
-				const value = plottedOf(name)
-				return dot(
-					data.filter(
-						(point, index) =>
-							value(point) !== null &&
-							silent(value)(data[index - 1]) &&
-							silent(value)(data[index + 1]),
-					),
-					{ x: at, y: value, r: STROKE_WIDTH + 1, fill: colorOf(name) },
-				)
-			})
-		: []
+	const lone = bridged
+		? series.map((name) =>
+				dot(runsOf.get(name)?.lone ?? [], {
+					x: at,
+					y: valueOf(name),
+					r: STROKE_WIDTH + 1,
+					fill: colorOf(name),
+				}),
+			)
+		: spec.gaps
+			? series.map((name) => {
+					const value = plottedOf(name)
+					return dot(
+						data.filter(
+							(point, index) =>
+								value(point) !== null &&
+								silent(value)(data[index - 1]) &&
+								silent(value)(data[index + 1]),
+						),
+						{ x: at, y: value, r: STROKE_WIDTH + 1, fill: colorOf(name) },
+					)
+				})
+			: []
 	const thresholdColor = spec.thresholdColor
 	const labelX = axis.domainMs ? new Date(axis.domainMs[1]) : undefined
 	const thresholdMarks =
@@ -235,6 +262,17 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		marks: [
 			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
 			...thresholdMarks,
+			...(bridged
+				? series.map((name) =>
+						silenceBridges(
+							`${name}-silence`,
+							runsOf.get(name)?.silences ?? [],
+							at,
+							valueOf(name),
+							colorOf(name),
+						),
+					)
+				: []),
 			...bands,
 			...lone,
 			...series.map((name) => focusDot(data, at, plottedOf(name), colorOf(name), chrome)),

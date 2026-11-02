@@ -16,7 +16,7 @@ import * as Dialog from "../../../ui/dialog"
 import { ParsedMarkdown } from "../../kit/markdown"
 import { SeverityBucket } from "../kit/findings"
 
-// `/security/runs/$runId`: one audit run, live while it is in progress.
+// `/security/code/runs/$runId`: one audit run, live while it is in progress.
 
 export const UnitFilter = Schema.Literals([
 	"all",

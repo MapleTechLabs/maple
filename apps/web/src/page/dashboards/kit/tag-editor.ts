@@ -1,21 +1,17 @@
-import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import * as DialogStyles from "@maple/ui/styles/ui/dialog"
-import { fieldLabelStyles } from "@maple/ui/styles/ui/field"
-import { formDialogFormStyles, formDialogPanelStyles } from "@maple/ui/styles/ui/form-dialog"
 import { Option, Schema } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { button } from "../../../ui/button"
 import * as Dialog from "../../../ui/dialog"
-import { descriptionId, titleId } from "../../../ui/dialog"
-import * as DialogView from "../../../ui/dialog-view"
-import { dialogFooter, dialogHeader, dialogPanel } from "../../../ui/dialog-view"
-import { field, fieldDescription, fieldLabel, type FieldState } from "../../../ui/field"
+import { badge } from "../../../ui/display"
+import { field, fieldDescription, fieldGroupLabel, fieldLabel, type FieldState } from "../../../ui/field"
+import { formDialog } from "../../../ui/form-dialog"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `TagEditorDialog` on `FormDialog`: one dashboard's tags,
 // added by typing or from the org's other tags, removed by chip; Save reports them.
@@ -135,8 +131,7 @@ const IDLE: FieldState = {
 }
 
 /** A `FieldLabel` with no control of its own (a chip list follows it). */
-const plainFieldLabel = (h: H, text: string): Html =>
-	h.label([h.Class(cn(fieldLabelStyles, "text-xs")), h.DataAttribute("slot", "field-label")], [text])
+const plainFieldLabel = (h: H, text: string): Html => fieldGroupLabel(h, { className: "text-xs" }, text)
 
 const TAG_INPUT_ID = "tag-editor-input"
 const TAG_IDS = { control: TAG_INPUT_ID, label: `${TAG_INPUT_ID}-label`, error: `${TAG_INPUT_ID}-error` }
@@ -148,21 +143,11 @@ const draftChips = (h: H, model: Model): Html =>
 				{ ids: TAG_IDS, className: "text-2xs", state: IDLE },
 				"No tags yet, so this dashboard won't appear under any Tags filter.",
 			)
-		: h.div(
-				[h.Class("flex flex-wrap gap-1")],
+		: hstack(h, { gap: "1", align: "stretch", wrap: true },
 				model.drafts.map((tag) =>
-					h.span(
-						[
-							h.Class(
-								cn(
-									badgeVariants({
-										variant: "secondary",
-										className: "gap-1 pr-1 font-mono text-2xs",
-									}),
-								),
-							),
-							h.DataAttribute("slot", "badge"),
-						],
+					badge(
+						h,
+						{ variant: "secondary", className: "gap-1 pr-1 font-mono text-2xs" },
 						[
 							tag,
 							iconButton(
@@ -187,15 +172,14 @@ const suggestions = (h: H, unused: ReadonlyArray<string>): ReadonlyArray<Html> =
 		: [
 				field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 					plainFieldLabel(h, "Used elsewhere"),
-					h.div(
-						[h.Class("flex flex-wrap gap-1")],
+					hstack(h, { gap: "1", align: "stretch", wrap: true },
 						unused.map((tag) =>
 							button(
 								h,
 								{
 									variant: "outline",
 									size: "xs",
-									className: "font-mono text-2xs",
+									className: typographyClass({ size: "2xs", mono: true }),
 									attributes: [h.OnClick(Message.ClickedSuggestedTag({ tag }))],
 								},
 								[
@@ -214,8 +198,7 @@ const tagInput = (h: H, model: Model): Html => {
 	const canAdd = normalizeTags(splitTagInput(model.input)).length > 0
 	return field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 		fieldLabel(h, { ids: TAG_IDS, className: "text-xs", state: IDLE }, "Add a tag"),
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
+		hstack(h, { gap: "1.5" },
 			[
 				input(h, {
 					id: TAG_INPUT_ID,
@@ -254,64 +237,28 @@ export type ViewInputs = Readonly<{
 }>
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
-	const id = model.dialog.id
 	const unused = normalizeTags(inputs.allTags).filter((tag) => !model.drafts.includes(tag))
-	return h.submodel({
-		slotId: id,
+	return formDialog(h, {
+		slotId: model.dialog.id,
 		model: model.dialog,
-		view: DialogView.view,
-		viewInputs: {
-			hasTrigger: false,
-			className: "sm:max-w-md",
-			toView: ({ portal }) => portal ?? h.empty,
-			toContent: (close) => [
-				h.form(
-					[h.Class(formDialogFormStyles), h.OnSubmit(Message.ClickedSaveTags())],
-					[
-						dialogHeader(h, "dialog", [
-							h.h2(
-								[
-									h.Class(cn(DialogStyles.dialogTitleStyles)),
-									h.DataAttribute("slot", "dialog-title"),
-									h.Id(titleId(id)),
-								],
-								["Tags"],
-							),
-							h.p(
-								[
-									h.Class(cn(DialogStyles.dialogDescriptionStyles)),
-									h.DataAttribute("slot", "dialog-description"),
-									h.Id(descriptionId(id)),
-								],
-								[
-									"Group ",
-									h.span([h.Class("text-foreground")], [model.name]),
-									" with related dashboards. Tags drive the Tags filter on the dashboards list.",
-								],
-							),
-						]),
-						dialogPanel(
-							h,
-							"dialog",
-							id,
-							[
-								tagInput(h, model),
-								field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
-									plainFieldLabel(h, "On this dashboard"),
-									draftChips(h, model),
-								]),
-								...suggestions(h, unused),
-							],
-							cn(formDialogPanelStyles, "flex flex-col gap-3 space-y-0"),
-						),
-						dialogFooter(h, "dialog", [
-							button(h, { variant: "outline", attributes: close }, ["Cancel"]),
-							button(h, { type: "submit" }, ["Save tags"]),
-						]),
-					],
-				),
-			],
-		},
 		toParentMessage: (message) => Message.GotDialogMessage({ message }),
+		className: "sm:max-w-md",
+		title: "Tags",
+		description: [
+			"Group ",
+			h.span([h.Class("text-foreground")], [model.name]),
+			" with related dashboards. Tags drive the Tags filter on the dashboards list.",
+		],
+		onSubmit: Message.ClickedSaveTags(),
+		submitLabel: "Save tags",
+		panelClassName: "flex flex-col gap-3 space-y-0",
+		fields: [
+			tagInput(h, model),
+			field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
+				plainFieldLabel(h, "On this dashboard"),
+				draftChips(h, model),
+			]),
+			...suggestions(h, unused),
+		],
 	})
 })

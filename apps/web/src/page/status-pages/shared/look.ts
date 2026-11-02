@@ -6,8 +6,9 @@ import {
 	type StatusPageThemeAppearance,
 	type StatusPageThemePreset,
 } from "@maple/domain/status-page"
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { cardButton } from "../../../ui/card-button"
+import { hstack } from "../../../ui/stack"
 
 // The theme presets as small cards, shared by the builder's Look and the Settings appearance.
 
@@ -37,19 +38,13 @@ const miniPage = <M>(h: HtmlBuilder<M>, scheme: Scheme, tokens: ResolvedStatusPa
 			h.Style({ backgroundColor: scheme.bg, color: scheme.fg, fontFamily: tokens.fontStack }),
 		],
 		[
-			h.span(
-				[h.Class("flex items-center gap-1")],
-				[
-					h.span(
-						[
-							h.Class("size-2.5"),
-							h.Style({ backgroundColor: scheme.primary, borderRadius: radius }),
-						],
-						[],
-					),
-					h.span([h.Class("text-xs/none font-semibold")], ["Aa"]),
-				],
-			),
+			hstack(h, { gap: "1", as: "span" }, [
+				h.span(
+					[h.Class("size-2.5"), h.Style({ backgroundColor: scheme.primary, borderRadius: radius })],
+					[],
+				),
+				h.span([h.Class("text-xs/none font-semibold")], ["Aa"]),
+			]),
 			h.span(
 				[
 					h.Class("flex gap-px p-1"),
@@ -83,20 +78,15 @@ const presetCard = <M>(
 		preset: preset.value,
 	})
 	const isSelected = options.selected === preset.value
-	return h.button(
-		[
-			h.Type("button"),
-			h.Key(preset.value),
-			h.AriaPressed(isSelected ? "true" : "false"),
-			h.Disabled(options.isDisabled),
-			h.OnClick(options.onPick(preset.value)),
-			h.Class(
-				cn(
-					"flex flex-col gap-1.5 rounded-lg border p-1.5 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-					isSelected ? "border-primary-a4 bg-primary-a1" : "hover:bg-surface-sunken active:bg-surface-sunken",
-				),
-			),
-		],
+	return cardButton(
+		h,
+		{
+			onClick: options.onPick(preset.value),
+			isSelected,
+			isDisabled: options.isDisabled,
+			className: "flex flex-col gap-1.5 rounded-lg p-1.5 text-xs disabled:opacity-60",
+			attributes: [h.Key(preset.value)],
+		},
 		[
 			h.span(
 				[h.AriaHidden(true), h.Class("flex h-16 overflow-hidden rounded-md border")],

@@ -13,6 +13,7 @@ import { button } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
 import { copyableField } from "../../../ui/copyable-field"
 import { inlineCode } from "../../../ui/inline-code"
+import { label } from "../../../ui/label"
 import * as TabsView from "../../../ui/tabs-view"
 import * as CreateKeyView from "../keys/create-dialog-view"
 import { codeBlock } from "../kit/code-block"
@@ -21,6 +22,7 @@ import { Message } from "./message"
 import { CLIENT_LABELS, type Model } from "./model"
 import { connectedClientsSection } from "./view-clients"
 import { toolsSection } from "./view-tools"
+import { typography } from "../../../ui/typography"
 
 export type ViewInputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>
 
@@ -40,7 +42,7 @@ const snippet = (
 	h.div(
 		[h.Class("space-y-2")],
 		[
-			h.p([h.Class("font-prose text-xs text-muted-foreground")], hint),
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, hint),
 			codeBlock(h, {
 				code,
 				language,
@@ -168,11 +170,12 @@ const connectSection = (h: H, model: Model): Html =>
 						[h.Class("space-y-1.5")],
 						[
 							// A sans field label: mono is for the value, not its name.
-							h.label(
-								[
-									h.For("mcp-server-url"),
-									h.Class("block font-prose text-xs text-muted-foreground"),
-								],
+							label(
+								h,
+								{
+									className: "block font-prose text-xs font-normal text-muted-foreground sm:text-xs",
+									attributes: [h.For("mcp-server-url")],
+								},
 								["Server URL"],
 							),
 							copyableField(h, {

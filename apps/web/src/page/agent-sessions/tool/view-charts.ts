@@ -12,6 +12,7 @@ import { seriesLegend } from "../../kit/series-legend"
 import type { ToolSeriesPoint } from "../tools-kit/model"
 import { type ToolPlotInputs, toolPlotView } from "../tools-kit/series-chart"
 import { Message } from "./message"
+import { vstackClass } from "../../../ui/stack"
 
 // The tool detail charts: four readings of one tool.
 
@@ -94,7 +95,7 @@ const cell = (
 		[
 			h.Class(
 				cn(
-					"flex min-w-0 flex-col",
+					vstackClass({ shrink: true }),
 					"gap-3.5 border-b border-border px-6 py-5 @min-[900px]/page:[&:nth-child(odd)]:border-r",
 				),
 			),

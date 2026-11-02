@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
 import { serviceDot } from "./node-card"
 import type { SpanCategory } from "./span-category"
+import { hstack } from "../../ui/stack"
 
 // The hint, service and category legend under `TraceFlowView`.
 
@@ -24,8 +25,7 @@ export const flowLegend = <M>(
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-3")],
+			hstack(h, { gap: "3" },
 				[
 					hint(h, "Click to select"),
 					separator(h),
@@ -37,12 +37,10 @@ export const flowLegend = <M>(
 			// Groups are split by the gap alone, so a wrapped line never starts with a separator.
 			...(services.length > 0
 				? [
-						h.div(
-							[h.Class("flex items-center gap-3")],
+						hstack(h, { gap: "3" },
 							[
 								...services.map((service) =>
-									h.div(
-										[h.Class("flex items-center gap-1.5")],
+									hstack(h, { gap: "1.5" },
 										[
 											serviceDot(h, service, "size-2.5"),
 											h.span([h.Class("font-medium")], [service]),
@@ -54,12 +52,10 @@ export const flowLegend = <M>(
 					]
 				: []),
 			// The error swatch closes the span-kind group, so it never strands at the far right.
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-3 gap-y-2")],
+			hstack(h, { wrap: true, className: "gap-x-3 gap-y-2" },
 				[
 					...categories.map((category) =>
-						h.div(
-							[h.Class("flex items-center gap-1.5")],
+						hstack(h, { gap: "1.5" },
 							[
 								h.span(
 									[
@@ -77,8 +73,7 @@ export const flowLegend = <M>(
 							],
 						),
 					),
-					h.div(
-						[h.Class("flex items-center gap-1.5")],
+					hstack(h, { gap: "1.5" },
 						[
 							h.span([
 								h.Class(

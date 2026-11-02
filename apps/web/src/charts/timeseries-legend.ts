@@ -9,8 +9,12 @@ import {
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../ui/pressable"
+import { table } from "../ui/table"
 import { Message, type Model } from "./chart"
 import { bucketSecondsOf, normaliseRows, scaleRates, type SeriesDefinition } from "./timeseries"
+import { hstack } from "../ui/stack"
+import { swatch } from "../ui/swatch"
 
 // `TimeseriesLegend` (packages/ui/src/components/plot/timeseries.tsx): the compact legend or the
 // Min/Max/Mean/Last table, below or beside the plot; shared by the line, area and bar charts.
@@ -46,24 +50,18 @@ const compactLegend = (
 			),
 		],
 		series.map((entry) =>
-			h.button(
-				[
-					h.Key(entry.key),
-					h.Type("button"),
-					h.Class(
-						cn(
-							"hover:bg-surface-sunken active:bg-surface-sunken flex min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1 py-0.5 select-none",
-							hidden.includes(entry.key) && "opacity-40",
-						),
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledLegendSeries({ key: entry.key, keys }),
+					className: cn(
+						"hover:bg-surface-sunken active:bg-surface-sunken flex min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1 py-0.5 select-none",
+						hidden.includes(entry.key) && "opacity-40",
 					),
-					h.Title(entry.label),
-					h.OnClick(Message.ToggledLegendSeries({ key: entry.key, keys })),
-				],
+					attributes: [h.Key(entry.key), h.Title(entry.label)],
+				},
 				[
-					h.span([
-						h.Class("size-2 shrink-0 rounded-xs"),
-						h.Style({ "background-color": entry.color }),
-					]),
+					swatch(h, { color: entry.color }),
 					h.span([h.Class("truncate")], [entry.label]),
 				],
 			),
@@ -94,8 +92,10 @@ const statsTable = (
 			h.Class(cn("@container h-full overflow-auto text-xs", layout.isRight ? "pl-3" : "pt-2")),
 		],
 		[
-			h.table(
-				[h.Class("w-full table-fixed border-collapse")],
+			// `bare` and no scroll: the kit frame only; `text-xs` keeps the legend's own size.
+			table(
+				h,
+				{ variant: "bare", scroll: false, className: "w-full table-fixed border-collapse text-xs" },
 				[
 					h.thead(
 						[],
@@ -141,27 +141,21 @@ const statsTable = (
 									h.td(
 										[h.Class("max-w-0 py-0.5 pr-3")],
 										[
-											h.span(
-												[h.Class("flex min-w-0 items-center gap-1.5")],
-												[
-													h.span([
-														h.Class("size-2 shrink-0 rounded-xs"),
-														h.Style({ "background-color": entry.color }),
-													]),
-													h.span(
-														[
-															h.Class(
-																cn(
-																	"truncate",
-																	allZero && "text-muted-foreground",
-																),
+											hstack(h, { gap: "1.5", shrink: true, as: "span" }, [
+												swatch(h, { color: entry.color }),
+												h.span(
+													[
+														h.Class(
+															cn(
+																"truncate",
+																allZero && "text-muted-foreground",
 															),
-															h.Title(entry.label),
-														],
-														[entry.label],
-													),
-												],
-											),
+														),
+														h.Title(entry.label),
+													],
+													[entry.label],
+												),
+											]),
 										],
 									),
 									...STAT_COLUMNS.map((column) =>
@@ -201,7 +195,6 @@ const statsTable = (
 	)
 }
 
-
 export type TimeseriesLegendInputs = Readonly<{
 	series: ReadonlyArray<LegendSeries>
 	data: ReadonlyArray<Readonly<Record<string, unknown>>>
@@ -213,7 +206,11 @@ export type TimeseriesLegendInputs = Readonly<{
 }>
 
 /** The legend `PlotFrame` gets: nothing when hidden (the tile header hoists it instead). */
-export const timeseriesLegend = (h: HtmlBuilder<Message>, model: Model, inputs: TimeseriesLegendInputs): Html => {
+export const timeseriesLegend = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	inputs: TimeseriesLegendInputs,
+): Html => {
 	const { series } = inputs
 	if ((inputs.legend !== "visible" && inputs.legend !== "right") || series.length === 0) return h.empty
 	// Stats over the closed buckets only, so all-zero series sink to the bottom (`TimeseriesLegend`).

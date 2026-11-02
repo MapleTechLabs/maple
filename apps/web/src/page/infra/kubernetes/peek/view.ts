@@ -24,6 +24,7 @@ import { Message } from "./message"
 import { type Model, PEEK_CHART_HEIGHT, PEEK_METRICS, seriesId } from "./model"
 import type { Peek } from "./update"
 import { peekHeader } from "./view-header"
+import { hstack } from "../../../../ui/stack"
 
 // `PodPeekSheet`.
 
@@ -104,8 +105,7 @@ const peekFooter = (h: H, peek: Peek, timeSearch: TimeSearch, locale: string): H
 		h,
 		"sheet",
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5" },
 				[
 					stepButton(h, "Previous pod", "ArrowUpIcon", peek.index > 0, -1),
 					stepButton(h, "Next pod", "ArrowDownIcon", peek.index < peek.count - 1, 1),

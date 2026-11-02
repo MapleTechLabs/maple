@@ -6,6 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
+import { label } from "../../../../ui/label"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import { switchControl } from "../../../../ui/switch"
 import type { PageViewInputs } from "../../../contract"
@@ -27,6 +28,7 @@ import { podTable, podTableLoading } from "../pod-table"
 import { Message } from "./message"
 import { type Model, seriesId, type WorkloadKind, type WorkloadMetric, type WorkloadSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { hstack } from "../../../../ui/stack"
 
 // `WorkloadDetailPage` and `WorkloadDetailChart`.
 
@@ -133,8 +135,7 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return h.div(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-3")],
+			hstack(h, { gap: "3", justify: "between", wrap: true },
 				[
 					segmentedSelect(h, {
 						size: "xs",
@@ -144,11 +145,12 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						ariaLabel: "Metric",
 					}),
 					// The label wraps the switch's hidden input, so a click on the text toggles too.
-					h.label(
-						[
-							h.Id("workload-group-by-pod-label"),
-							h.Class("inline-flex cursor-pointer items-center gap-2 text-2xs text-muted-foreground"),
-						],
+					label(
+						h,
+						{
+							className: "cursor-pointer font-normal text-2xs text-muted-foreground sm:text-2xs",
+							attributes: [h.Id("workload-group-by-pod-label")],
+						},
 						[
 							...switchControl(h, {
 								id: "workload-group-by-pod",
