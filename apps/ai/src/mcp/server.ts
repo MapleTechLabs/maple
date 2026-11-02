@@ -1,7 +1,7 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
 import { Context, Effect, Layer } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import { McpToolExecutorLoader, type McpToolsUnavailableError } from "./executor-loader"
+import { McpToolExecutorLoader, McpToolsUnavailableError } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
@@ -37,7 +37,7 @@ export class McpToolRegistration extends Context.Service<
 	McpToolRegistration,
 	{
 		/** Adds every public tool to the server, once per isolate, before the first `tools/*` request. */
-		readonly ensureRegistered: Effect.Effect<void>
+		readonly ensureRegistered: Effect.Effect<void, McpToolsUnavailableError>
 		/** Builds the executor before a `tools/call`; `built` marks the request that paid for it. */
 		readonly ensureExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
 	}
@@ -91,7 +91,11 @@ export class McpToolRegistration extends Context.Service<
 						),
 					),
 			})
-		const register = Effect.promise(() => import("./tool-descriptors.generated")).pipe(
+		const register = Effect.tryPromise({
+			try: () => import("./tool-descriptors.generated"),
+			catch: (cause) =>
+				new McpToolsUnavailableError({ message: "The MCP tool descriptors failed to load", cause }),
+		}).pipe(
 			Effect.flatMap(({ MCP_TOOL_DESCRIPTORS }) =>
 				Effect.forEach(MCP_TOOL_DESCRIPTORS, addTool, { discard: true }),
 			),

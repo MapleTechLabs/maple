@@ -151,7 +151,7 @@ export const layerStatelessMcpHttp = (options: {
 	readonly allowedOrigins?: ReadonlyArray<string> | undefined
 	/** Registers the server's tools. Runs before any `tools/*` request, not up front: most
 	 * requests never touch a tool. */
-	readonly registerTools: Effect.Effect<void>
+	readonly registerTools: Effect.Effect<void, McpToolsUnavailableError>
 	/** Builds the tool executor before a `tools/call`; it dominates a cold call's CPU.
 	 * `built` is true on the one request that paid for it, which the response then says. */
 	readonly loadToolExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
@@ -265,7 +265,13 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
-					if (messages.some(isToolMessage)) yield* options.registerTools
+					const registered = messages.some(isToolMessage)
+						? yield* Effect.exit(options.registerTools)
+						: Exit.void
+					if (Exit.isFailure(registered)) {
+						yield* Effect.logError("MCP tool registration failed", registered.cause)
+						return toolsUnavailable()
+					}
 					const loaded = messages.some(isToolCallMessage)
 						? yield* Effect.exit(options.loadToolExecutor)
 						: Exit.succeed({ built: false })
