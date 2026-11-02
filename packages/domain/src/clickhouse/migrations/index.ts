@@ -50,6 +50,7 @@ import { migration_0048_service_api_http_details } from "./0048_service_api_http
 import { migration_0049_service_map_db_edges_minutely } from "./0049_service_map_db_edges_minutely"
 import { migration_0050_security_telemetry } from "./0050_security_telemetry"
 import { migration_0051_error_fingerprint_fuzz_fixes } from "./0051_error_fingerprint_fuzz_fixes"
+import { migration_0052_error_fingerprint_json_frames } from "./0052_error_fingerprint_json_frames"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -132,6 +133,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0049_service_map_db_edges_minutely,
 	migration_0050_security_telemetry,
 	migration_0051_error_fingerprint_fuzz_fixes,
+	migration_0052_error_fingerprint_json_frames,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

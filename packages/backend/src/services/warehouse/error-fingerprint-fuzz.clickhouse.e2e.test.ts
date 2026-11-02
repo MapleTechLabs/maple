@@ -68,6 +68,16 @@ const frameLine = fc.oneof(
 		'{"user":"a@b.io","attempt":0}',
 		"params: 1, abc, 2026-10-01",
 		"Traceback (most recent call last):",
+		// Runtime-internal frames are dropped; an anonymous one with a location is kept.
+		"    at next (<anonymous>)",
+		"    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+		"    at Array.forEach (native)",
+		"    at run (native:7:39)",
+		"    at op_fetch (ext:core/01_core.js:3:1)",
+		"    at <anonymous> (/app/x.js:4:2)",
+		// These two normalize alike, so drawing both side by side exercises the collapse.
+		"    at /app/index.js:1:4410",
+		"    at /app/index.js:1:9921",
 	),
 	hostile,
 )
@@ -81,6 +91,10 @@ const messagePart = fc.oneof(
 	fc.constantFrom(
 		"RouteNotFound (GET /.env)",
 		"RouteNotFound (POST /a/b?x=1) extra",
+		"RouteNotFound (GET /$%7B$%7Bj:-n%7D",
+		"GET /v2/.env not found",
+		"denied key 'rk_live_...DtrK'",
+		'token "sk-****abcd" revoked',
 		"Cannot GET /wp-login.php",
 		"Cannot GET /x\nDatabaseTimeout",
 		"Route GET:/x not found",
@@ -113,6 +127,7 @@ const jsonValue = fc.letrec<{ value: unknown }>((tie) => ({
 		{ depthSize: "small" },
 		hostile,
 		fc.constantFrom("\u2028\u2029", "\u000f\\u000f\\\u001f", "\u0001\t/", "é😀", 'a\\b"c'),
+		fc.constantFrom("https://x.dev/.git/config", "/a/b c", "a/b", "/Users/bob/x?q=1"),
 		fc.integer(),
 		fc.double({ noNaN: true, noDefaultInfinity: true }),
 		fc.boolean(),
@@ -165,7 +180,7 @@ const jsonMessage = fc.oneof(
 
 const Case = fc.record({
 	type: fc.oneof(fc.constantFrom("", "Error", "HttpServerError", "@acme/http/errors/Upstream"), hostile),
-	stack: fc.array(frameLine, { maxLength: 10 }).map((lines) => lines.join("\n")),
+	stack: fc.array(frameLine, { maxLength: 14 }).map((lines) => lines.join("\n")),
 	message: fc.oneof(
 		{ arbitrary: fc.array(messagePart, { maxLength: 40 }).map((parts) => parts.join(" ")), weight: 3 },
 		{

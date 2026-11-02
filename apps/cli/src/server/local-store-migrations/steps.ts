@@ -1694,5 +1694,33 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
 		],
 	},
+	{
+		id: "local-0043-to-0044-error-fingerprint-json-frames",
+		from: 43,
+		to: 44,
+		description:
+			"Recreate the error_events MVs: JSON path values, route-not-found variants, masked secrets, internal and repeated frames",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so JSON path values, masked secrets, runtime-internal frames and repeated frames no longer split one bug",
+			],
+		],
+		verifies: "Verify the v44 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences whose message or stack carries one of the redacted shapes hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

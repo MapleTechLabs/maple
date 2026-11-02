@@ -9,7 +9,9 @@ import {
 	FRAME_REDACTIONS,
 	JSON_LABEL_KEYS,
 	JSON_VALUE_REDACTIONS,
+	INTERNAL_FRAME_PATTERN,
 	MAX_FINGERPRINT_FRAMES,
+	MAX_NORMALIZED_FRAMES,
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
 	NAMESPACED_TYPE_MAX_FRAMES,
@@ -1009,16 +1011,10 @@ const errorEventsSelectSql = `
             line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
               AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
               AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})
-              AND NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)}),
+              AND NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})
+              AND NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)}),
             splitByChar('\\n', _exStack)
           ) AS _frameLines,
-          arraySlice(
-            -- Python prints the outermost frame first: read it from the raise site.
-            if(match(_frameLines[1], ${chPattern(PYTHON_FRAME_PATTERN)}), arrayReverse(_frameLines), _frameLines),
-            -- A namespaced type plus its message names one failure: keep only the
-            -- throw site. With no message the frames are all that is left; keep 3.
-            1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
-          ) AS _rawFrames,
           -- Redact every volatile token a frame line can carry: the URL origin
           -- (so preview hosts share one fingerprint), Vite's 8-char bundle
           -- content hash (so a deploy does not re-split every triaged browser and
@@ -1026,7 +1022,19 @@ const errorEventsSelectSql = `
           -- FRAME_REDACTIONS for the order and the reasoning.
           arrayMap(
             line -> ${chRedactChain("line", FRAME_REDACTIONS)},
-            _rawFrames
+            arraySlice(
+              -- Python prints the outermost frame first: read it from the raise site.
+              if(match(_frameLines[1], ${chPattern(PYTHON_FRAME_PATTERN)}), arrayReverse(_frameLines), _frameLines),
+              1, ${MAX_NORMALIZED_FRAMES}
+            )
+          ) AS _normFrames,
+          arraySlice(
+            -- A repeat (two anonymous closures in one bundle, or recursion) collapses
+            -- so it does not use up the frames the hash keeps.
+            arrayFilter((frame, i) -> i = 1 OR frame != _normFrames[i - 1], _normFrames, arrayEnumerate(_normFrames)),
+            -- A namespaced type plus its message names one failure: keep only the
+            -- throw site. With no message the frames are all that is left; keep 3.
+            1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
           ) AS _topFrames,
           if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
           arrayStringConcat(_topFrames, '\\n') AS _fpFrames,

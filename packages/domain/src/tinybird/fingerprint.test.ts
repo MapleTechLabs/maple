@@ -7,8 +7,10 @@ import {
 	FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
+	INTERNAL_FRAME_PATTERN,
 	JSON_VALUE_REDACTIONS,
 	MAX_FINGERPRINT_FRAMES,
+	MAX_NORMALIZED_FRAMES,
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
 	NAMESPACED_TYPE_MAX_FRAMES,
@@ -545,7 +547,15 @@ describe("error fingerprint normalization", () => {
 				sig(
 					'{"type":"https://e/rate-limit","title":"Rate limited","detail":"retry in 5s","status":429}',
 				),
-			).toBe('detail="retry in #s"|status=#|title="Rate limited"|type="/rate-limit"')
+			).toBe('detail="retry in #s"|status=#|title="Rate limited"|type="#"')
+		})
+
+		it("separates problem types by title once their type URI folds as a path", () => {
+			const problem = (type: string, title: string) => sig(JSON.stringify({ type, title }))
+
+			expect(problem("https://e/rate-limit", "Rate limited")).not.toBe(
+				problem("https://e/forbidden", "Forbidden"),
+			)
 		})
 
 		it("is insensitive to key order", () => {
@@ -624,8 +634,9 @@ describe("SQL parity", () => {
 		expect(sql).toContain(`position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})`)
+		expect(sql).toContain(`NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)})`)
 		// The frame limit reads _msgSig, so the signature must be defined first.
-		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _rawFrames"))
+		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _topFrames"))
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
@@ -651,7 +662,7 @@ describe("SQL parity", () => {
 
 	it("keeps the frame limit in step", () => {
 		expect(sql).toContain(
-			`1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})\n          ) AS _rawFrames`,
+			`1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})\n          ) AS _topFrames`,
 		)
 	})
 
@@ -1113,11 +1124,108 @@ describe("fingerprint v3", () => {
 			const json = (url: string, user: string) => JSON.stringify({ error: "fetch_failed", url, user })
 
 			expect(signature(json("https://a.acme.dev/favicon.ico", "ann@acme.dev"))).toBe(
-				'error="fetch_failed"|url="/favicon.ico"|user="EMAIL"',
+				'error="fetch_failed"|url="#"|user="EMAIL"',
 			)
 			expect(signature(json("https://b.other.io/favicon.ico", "bo@other.io"))).toBe(
 				signature(json("https://a.acme.dev/favicon.ico", "ann@acme.dev")),
 			)
 		})
+	})
+})
+
+describe("grouping residuals from a production replay", () => {
+	const inputs = (exceptionType: string, exceptionStacktrace: string, statusMessage: string) =>
+		computeFingerprintInputs({ exceptionType, exceptionStacktrace, statusMessage })
+	const signature = (statusMessage: string) => inputs("", "", statusMessage).msgSignature
+	const frames = (...lines: ReadonlyArray<string>) =>
+		inputs("GatewayError", ["GatewayError: boom", ...lines].join("\n"), "").fpFrames
+
+	it("folds a path held in a JSON value, so scanner probes are one issue", () => {
+		const probe = (url: string) => signature(JSON.stringify({ _tag: "NoSubdomainInUrlParams", url }))
+
+		expect(probe("/.git/config")).toBe(probe("/supabase/config.toml"))
+		expect(probe("https://x.acme.dev/.env")).toBe('_tag="NoSubdomainInUrlParams"|url="#"')
+		expect(signature(JSON.stringify({ error: "not_found", path: "/a" }))).not.toBe(
+			signature(JSON.stringify({ error: "forbidden", path: "/a" })),
+		)
+	})
+
+	it("keeps a long code in a JSON value, which names the failure", () => {
+		expect(signature(JSON.stringify({ code: "ERR_UNSUPPORTED_PAYMENT_METHOD_TYPE" }))).toBe(
+			'code="ERR_UNSUPPORTED_PAYMENT_METHOD_TYPE"',
+		)
+	})
+
+	it("folds a route-not-found path the scan cut before its closing parenthesis", () => {
+		const longProbe = `RouteNotFound (GET /${"$%7B".repeat(300)})`
+
+		expect(signature(longProbe)).toBe("RouteNotFound (GET PATH)")
+	})
+
+	it("folds Effect 4's `GET /x not found` wording, and only at the start of the message", () => {
+		expect(signature("GET /v2/.env not found")).toBe(signature("GET /wp-login.php not found"))
+		expect(signature("GET /v2/.env not found")).toBe("GET PATH not found")
+		expect(signature("lookup failed: GET /api/users not found")).not.toBe(
+			signature("lookup failed: GET /api/teams not found"),
+		)
+	})
+
+	it("redacts a masked secret however short", () => {
+		const denied = (key: string) =>
+			signature(`Permission denied. The provided key '${key}' does not have the required permissions`)
+
+		expect(denied("rk_live_...DtrK")).toBe(denied("rk_test_...U9o3"))
+		expect(signature('token "sk-****abcd" revoked')).toBe('token "#" revoked')
+		expect(signature("No such table: 'users'")).not.toBe(signature("No such table: 'orders'"))
+	})
+
+	it("drops runtime-internal frames, which come and go with how a promise resumed", () => {
+		const site = "    at storeFresh (/app/worker.js:1:200)"
+		const caller = "    at storeForward (/app/worker.js:1:900)"
+
+		expect(frames(site, "    at next (<anonymous>)", caller)).toBe(frames(site, caller))
+		expect(
+			frames(
+				"    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+				"    at EventEmitter.emit (node:events:517:28)",
+				"    at Array.forEach (native)",
+				"    at run (native:7:39)",
+				"    at op_fetch (ext:core/01_core.js:3:1)",
+				site,
+			),
+		).toBe("    at storeFresh (/app/worker.js)")
+	})
+
+	it("keeps anonymous functions that have a real location", () => {
+		expect(
+			frames("    at <anonymous> (/app/worker.js:4:2)", "    at Object.<anonymous> (/app/main.js:9:1)"),
+		).toBe("    at <anonymous> (/app/worker.js)\n    at Object.<anonymous> (/app/main.js)")
+		expect(frames("    at nativeBridge (/app/bridge.js:1:1)")).toBe(
+			"    at nativeBridge (/app/bridge.js)",
+		)
+	})
+
+	it("collapses repeated frames so they do not use up the hashed frames", () => {
+		const closure = "    at /app/index.js:1:4410"
+
+		expect(
+			frames(
+				closure,
+				"    at /app/index.js:1:9921",
+				"    at getUserAttributes (/app/index.js:1:300)",
+				"    at enrichEvent (/app/index.js:1:700)",
+			),
+		).toBe(
+			"    at /app/index.js\n    at getUserAttributes (/app/index.js)\n    at enrichEvent (/app/index.js)",
+		)
+	})
+
+	it("normalizes a bounded number of frames before collapsing repeats", () => {
+		const recursion = Array.from(
+			{ length: MAX_NORMALIZED_FRAMES + 5 },
+			() => "    at walk (/app/tree.js:3:1)",
+		)
+
+		expect(frames(...recursion, "    at main (/app/main.js:1:1)")).toBe("    at walk (/app/tree.js)")
 	})
 })

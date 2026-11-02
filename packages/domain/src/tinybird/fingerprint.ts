@@ -65,6 +65,8 @@ export const MAX_FINGERPRINT_FRAMES = 3
  * upstream 503 became one issue per query that happened to hit it.
  */
 export const NAMESPACED_TYPE_MAX_FRAMES = 1
+/** Frames normalized before repeats collapse; bounds the regex work per error. */
+export const MAX_NORMALIZED_FRAMES = 10
 /** Marks an Effect span frame, which varies the stack depth of one call path. */
 export const EFFECT_SPAN_FRAME_MARKER = "(definition)"
 /**
@@ -214,9 +216,13 @@ export const MSG_TEXT_REDACTIONS: Redactions = [
 /**
  * Redaction for the JSON-object branch of the signature. Emails and URL origins go
  * first, as in the plain-text branch: `{"url":"https://<host>/"}` split per host.
+ * A string value holding a path is a value, as a quoted path is in plain text:
+ * `{"url":"/.git/config"}` minted one issue per scanner probe. Long single tokens
+ * stay, because a JSON `code` is often a long SCREAMING_SNAKE name.
  */
 export const JSON_VALUE_REDACTIONS: Redactions = [
-	...MSG_TEXT_REDACTIONS.slice(0, 2),
+	...MSG_TEXT_REDACTIONS.slice(0, 4),
+	['"[^" ]*/[^" ]*"', '"#"'],
 	["[0-9a-fA-F-]{6,}|[0-9]+", "#"],
 ]
 
@@ -265,8 +271,11 @@ export const ERROR_MSG_REDACTIONS: Redactions = [
 	],
 	// A route-not-found error names a path that by definition matched no route: a
 	// scanner probing `/.env`, `/wp-login.php` and so on minted one issue per probe.
-	// The path stops at any whitespace, so a cause on the next line still counts.
-	["RouteNotFound \\(([A-Z]+) [^ \\t\\r\\n]*\\)", "RouteNotFound ($1 PATH)"],
+	// The path stops at any whitespace, so a cause on the next line still counts. The
+	// `)` is optional: a probe URL longer than the scan loses it to the cut.
+	["RouteNotFound \\(([A-Z]+) [^ \\t\\r\\n]*\\)?", "RouteNotFound ($1 PATH)"],
+	// Effect 4 words it `GET /x not found`.
+	[`^(${HTTP_METHODS}) /[^ \\t\\r\\n]* not found([\\r\\n]|$)`, "$1 PATH not found$2"],
 	["\\bCannot (GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) /[^ \\t\\r\\n]*", "Cannot $1 PATH"],
 	[
 		"\\bRoute (GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS):/[^ \\t\\r\\n]* not found",
@@ -294,6 +303,9 @@ export const ERROR_MSG_REDACTIONS: Redactions = [
 	// After the origin pass, so a URL's path is reached: a segment holding `~`, `@`, `%`
 	// or `$` is a value (a handle, an encoded string, a slug), never a route literal.
 	[`/${PATH_SEGMENT}*[~@%$]${PATH_SEGMENT}*`, "/#"],
+	// A masked secret (`'rk_live_...DtrK'`, `"sk-****abcd"`) is a value however short.
+	["'[^' ]*([.][.][.]|[*]{3,})[^' ]*'", "'#'"],
+	['"[^" ]*([.][.][.]|[*]{3,})[^" ]*"', '"#"'],
 	...MSG_TEXT_REDACTIONS.slice(2, -1),
 	// An unquoted opaque token (`rejected key tok_prod_9fQz2LmXc7RtV4bNw8Yh`) kept
 	// every letter, one issue per key. A long token mixing both cases and a digit is a
@@ -357,6 +369,14 @@ const SCHEMA_PATH_LINE_RE = new RegExp(SCHEMA_PATH_LINE_PATTERN, "u")
  */
 export const SPAN_NAME_FRAME_PATTERN = "^[ \\t]*at ([^(:]|:[^0-9])*:?$"
 const SPAN_NAME_FRAME_RE = new RegExp(SPAN_NAME_FRAME_PATTERN, "u")
+/**
+ * A runtime-internal frame: `at next (<anonymous>)`, `(native)`, `(native:7:39)` (Bun),
+ * `(node:internal/...)`, `(node:events:517:28)`, `(ext:core/...)` (Deno). Whether one
+ * shows up depends on how a promise or generator happened to resume, so the same bug
+ * split into one issue with `next (<anonymous>)` in its top frames and one without.
+ */
+export const INTERNAL_FRAME_PATTERN = "^[ \\t]*at ([^(]* \\()?(<anonymous>\\)?$|native(:|\\)|$)|node:|ext:)"
+const INTERNAL_FRAME_RE = new RegExp(INTERNAL_FRAME_PATTERN, "u")
 const PYTHON_FRAME_RE = new RegExp(PYTHON_FRAME_PATTERN, "u")
 
 /** Display-only candidate keys for the human label (NOT used by the fingerprint). */
@@ -582,13 +602,16 @@ export function computeFingerprintInputs(args: {
 				FRAME_LINE_RE.test(line) &&
 				!line.includes(EFFECT_SPAN_FRAME_MARKER) &&
 				!SCHEMA_PATH_LINE_RE.test(line) &&
-				!SPAN_NAME_FRAME_RE.test(line),
+				!SPAN_NAME_FRAME_RE.test(line) &&
+				!INTERNAL_FRAME_RE.test(line),
 		)
-	const rawFrames = (
-		PYTHON_FRAME_RE.test(frameLines[0] ?? "") ? [...frameLines].reverse() : frameLines
-	).slice(0, maxFrames)
-
-	const topFrames = rawFrames.map(normalizeFrame)
+	// Repeats collapse after normalizing (`at index.js` twice is two anonymous closures in
+	// one bundle, or recursion), so they do not use up the frames the hash keeps.
+	const topFrames = (PYTHON_FRAME_RE.test(frameLines[0] ?? "") ? [...frameLines].reverse() : frameLines)
+		.slice(0, MAX_NORMALIZED_FRAMES)
+		.map(normalizeFrame)
+		.filter((frame, i, frames) => i === 0 || frame !== frames[i - 1])
+		.slice(0, maxFrames)
 	const topFrame = topFrames[0] ?? ""
 	const fpFrames = topFrames.join("\n")
 
@@ -616,8 +639,9 @@ export function computeFingerprintInputs(args: {
  * frames also skipped one: it re-keys only the stacks carrying such a line, and so
  * did folding route-not-found paths, URL path values and opaque tokens, the 1000
  * character scan, keeping compact JSON log lines out of the frames, keeping the
- * status of `statusCode: N` and `(N GET url)`, and stripping origins and emails
- * from JSON values.)
+ * status of `statusCode: N` and `(N GET url)`, stripping origins and emails
+ * from JSON values, folding JSON path values and masked secrets, and dropping
+ * runtime-internal and repeated frames.)
  *
  * Deliberately NOT a ClickHouse column. Old and new hashes cannot collide, so
  * the warehouse needs no discriminator — only the Postgres row does.

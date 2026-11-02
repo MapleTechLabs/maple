@@ -553,6 +553,20 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "47ea87e9ae0d61ad14355fef03f5b1fd733ed5fb2f910a8178870407802dc647",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v44 recreates the error-events views: JSON path values, route-not-found
+		// variants and masked secrets fold, runtime-internal and repeated frames
+		// drop. No row is rewritten; stored hashes are not backfilled.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 44,
+		fingerprint: "e975a36797936eda",
+		digest: "e975a36797936eda99f00196901542e129d60397d74d4f7d640fa08b21a6dad7",
+		manifestDigest: "871411774a57c4ce8d3085dfab31117cf2f1134ee477573ec98c9d880c9fc1ea",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */
