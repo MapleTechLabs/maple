@@ -1,14 +1,19 @@
 # The repository sandbox's container. Sandbox SDK 1.0 ships only its helper binary, so the
 # toolset the agent tools promise (git, coreutils, awk, sed, jq, node, bun) is built here.
-# `iproute2` brings up loopback inside the executor's per-run network namespace.
+# `iproute2` brings up loopback inside the executor's per-run network namespace; `python3` runs the
+# executor's artifact promotion helper; `pnpm` installs pnpm lockfiles during prepare.
 # Every tag is pinned: `alchemy.run.ts` rebuilds on a content change, and `verify:image` runs this.
 FROM docker.io/cloudflare/sandbox:1.0.3 AS sandbox
 FROM docker.io/oven/bun:1.4.4-slim AS bun
 
 FROM docker.io/library/node:24-trixie-slim
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates git iproute2 jq \
+	&& apt-get install -y --no-install-recommends ca-certificates git iproute2 jq python3 \
 	&& rm -rf /var/lib/apt/lists/*
+RUN npm install -g pnpm@10.34.9 && npm cache clean --force
+# Executor checkouts are root-owned and read by each agent's own uid.
+RUN git config --system safe.directory '*'
+COPY promote.py /usr/local/lib/maple/promote.py
 # `Files` and `DirectoryBackup` run this helper; its tag must match `@cloudflare/sandbox`.
 COPY --from=sandbox /usr/local/bin/sandbox-shim /usr/local/bin/sandbox-shim
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
