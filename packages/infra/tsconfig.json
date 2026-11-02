@@ -12,6 +12,13 @@
 		"skipLibCheck": true,
 		"strict": true,
 		"noFallthroughCasesInSwitch": true,
-		"noUncheckedSideEffectImports": true
+		"noUncheckedSideEffectImports": true,
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"ignoreEffectWarningsInTscExitCode": true,
+				"diagnosticSeverity": { "unstableApiUsage": "off" }
+			}
+		]
 	}
 }
