@@ -7,6 +7,10 @@
 @import "./fonts.generated.css";
 
 @source "../../../../packages/ui/src";
+/* The @maple/views chart frame and tooltip the Foldkit logs volume island renders. */
+@source "../../../../packages/views/src/charts/plot-frame.ts";
+@source "../../../../packages/views/src/charts/bucket-tooltip.ts";
+@source "../../../../packages/views/src/ui/{layer,stack,typography}.ts";
 
 /* Landing-only tokens — marketing surfaces, not part of the shared system. */
 :root {

@@ -2,7 +2,7 @@ import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./chart"
 import type { ChartBounds } from "@tanstack/charts"
-import type { ChartHost, TimeAxis } from "./chart-host"
+import type { ChartHost, CreateChartHost, TimeAxis } from "./chart-host-base"
 import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, decodeChartSpec } from "./chart-spec"
 
 /** `PlotFrame`'s `FALLBACK_HEIGHT`: drawn at until the plot box has been measured. */
@@ -24,18 +24,21 @@ type ChartMountMessage =
 const failed = (reason: string) => Message.FailedMountChart({ reason })
 
 interface ChartHostModule {
-	readonly createChartHost: typeof import("./chart-host").createChartHost
+	readonly createChartHost: CreateChartHost
 }
 
-interface LabHostSlot {
-	load?: () => Promise<ChartHostModule>
-}
+/** Hosts other than the full one (`./chart-host`, every definition), by name. */
+export const ChartHostName = Schema.Literals(["lab", "logs-volume"])
+export type ChartHostName = typeof ChartHostName.Type
 
-/** The `/lab/charts` prototypes' host lives with the app, which registers it on the lab page. */
-const labHost: LabHostSlot = {}
+/** The landing's host ships here; the `/lab/charts` host lives with the app, which registers it. */
+const namedHosts = new Map<ChartHostName, () => Promise<ChartHostModule>>([
+	["logs-volume", () => import("./logs-volume-host")],
+])
 
-export const registerLabChartHost = (load: () => Promise<ChartHostModule>): void => {
-	labHost.load = load
+/** The first registration of a name wins; a later one is ignored. */
+export const registerChartHost = (name: ChartHostName, load: () => Promise<ChartHostModule>): void => {
+	if (!namedHosts.has(name)) namedHosts.set(name, load)
 }
 
 /**
@@ -51,8 +54,8 @@ export const MountChart = Mount.defineStream("MountChart", {
 		renderer: ChartRenderer,
 		/** Report the plot rect and time axis (`RenderedPlot`) for an overlay. */
 		reportPlot: Schema.Boolean,
-		/** `"lab"`: the `/lab/charts` prototypes' host (`registerLabChartHost`), loaded only there. */
-		host: Schema.optional(Schema.Literal("lab")),
+		/** A host registered under this name (`registerChartHost`) instead of the full one. */
+		host: Schema.optional(ChartHostName),
 	},
 	messages: [
 		Message.CompletedMountChart,
@@ -63,9 +66,9 @@ export const MountChart = Mount.defineStream("MountChart", {
 		Message.ToggledLegendSeries,
 	],
 	execute: ({ element, chartId, ariaLabel, renderer, reportPlot, host: hostKind }) => {
-		const loadHost = hostKind === "lab" ? labHost.load : () => import("./chart-host")
+		const loadHost = hostKind === undefined ? () => import("./chart-host") : namedHosts.get(hostKind)
 		if (loadHost === undefined) {
-			return Stream.concat(Stream.make(failed("lab chart host not registered")), Stream.never)
+			return Stream.concat(Stream.make(failed(`chart host "${hostKind}" not registered`)), Stream.never)
 		}
 		return Stream.callback<ChartMountMessage>((queue) =>
 			Effect.acquireRelease(
@@ -100,7 +103,7 @@ export const MountChart = Mount.defineStream("MountChart", {
 									Queue.offerUnsafe(queue, Message.RenderedPlot({ plot }))
 								})
 							const create = (spec: typeof initialSpec.value, height: number): ChartHost =>
-								createChartHost(surface, spec, height, {
+								Option.getOrElse(createChartHost(surface, spec, height, {
 									ariaLabel: () => element.getAttribute(CHART_LABEL_ATTRIBUTE) ?? ariaLabel,
 									idPrefix: `ts-chart-${chartId}`,
 									renderer,
@@ -122,6 +125,10 @@ export const MountChart = Mount.defineStream("MountChart", {
 											anchor.style.height = `${bounds.height}px`
 										},
 									},
+								}), () => {
+									// The host has no definition for this spec: report it and draw nothing.
+									Queue.offerUnsafe(queue, failed(`no chart definition for ${spec._tag}`))
+									return { update: () => false, destroy: () => undefined }
 								})
 							// NOTE: mounted at the fallback height and then corrected (chart first, then the frame's
 							// measurement); the first scene shapes the canvas state.
