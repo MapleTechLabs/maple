@@ -73,7 +73,10 @@ interface RecordedRequest {
 	wireBytes: number
 }
 
-const stubFetch = (recorded: Array<RecordedRequest>, respond: () => Response): typeof globalThis.fetch =>
+const stubFetch = (
+	recorded: Array<RecordedRequest>,
+	respond: () => Response | Promise<Response>,
+): typeof globalThis.fetch =>
 	(async (input: string | URL | Request, init?: RequestInit) => {
 		const headers: Record<string, string> = {}
 		new Headers(init?.headers).forEach((value, key) => {
@@ -174,6 +177,40 @@ describe("OtlpIngest", () => {
 			yield* advanceUntilDone(fiber)
 			yield* Fiber.join(fiber)
 			assert.lengthOf(recorded, 2)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	it.effect("errors no span for a dropped connection the retry recovers from", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const tracer = makeCapturingTracer()
+			const otlp = yield* OtlpIngest
+			const fiber = yield* Effect.forkChild(
+				otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () =>
+							recorded.length === 1
+								? Promise.reject(new TypeError("socket closed"))
+								: Response.json({ partialSuccess: {} }),
+						),
+					),
+					Effect.provide(tracer.layer),
+				),
+			)
+			yield* advanceUntilDone(fiber)
+			yield* Fiber.join(fiber)
+
+			assert.lengthOf(recorded, 2)
+			assert.isTrue(tracer.ended.every((span) => Exit.isSuccess(span.exit)))
+			const attempts = endedSpansNamed(tracer.ended, "POST")
+			assert.lengthOf(attempts, 2)
+			assert.strictEqual(attempts[0]!.attributes.get("error.type"), "TransportError")
+			assert.strictEqual(attempts[1]!.attributes.get("http.response.status_code"), 200)
+			const [chunk] = endedSpansNamed(tracer.ended, "OtlpIngest.send_chunk")
+			assert.isTrue(attempts.every((attempt) => attempt.parentSpanId === chunk!.spanId))
+			// Each attempt propagates its own span, so ingest's server span parents to it.
+			assert.include(recorded[1]!.headers.traceparent, attempts[1]!.spanId)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 

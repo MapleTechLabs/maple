@@ -5,7 +5,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { countDataPoints, encodeExportRequestChunks, type OtlpExportRequest } from "@maple/prometheus-otlp"
 import { ScraperEnv } from "./Env"
 import { scrapeError, withScrapeSpan, type ScrapeError } from "./ScrapeError"
-import { isTransientStatus, TRANSIENT_RETRY } from "./retry"
+import { executeAttempt, isTransientStatus, TRANSIENT_RETRY } from "./retry"
 
 export interface OtlpIngestApi {
 	/**
@@ -49,9 +49,10 @@ export class OtlpIngest extends Context.Service<OtlpIngest, OtlpIngestApi>()("@m
 				}).pipe(HttpClientRequest.bodyUint8Array(compressed, "application/json"))
 
 				const attempt = Effect.gen(function* () {
-					const response = yield* client.execute(request).pipe(
-						Effect.annotateSpans("peer.service", "ingest"),
-						Effect.timeout(REQUEST_TIMEOUT),
+					const response = yield* executeAttempt(client, request, {
+						peerService: "ingest",
+						timeout: REQUEST_TIMEOUT,
+					}).pipe(
 						Effect.mapError((error) =>
 							scrapeError({
 								message: `ingest gateway unreachable: ${error.message}`,

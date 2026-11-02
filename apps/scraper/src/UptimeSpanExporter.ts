@@ -2,7 +2,7 @@ import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Sch
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ScraperEnv } from "./Env"
 import { bufferedUptimeSpans } from "./Metrics"
-import { isTransientStatus, TRANSIENT_RETRY } from "./retry"
+import { executeAttempt, isTransientStatus, TRANSIENT_RETRY } from "./retry"
 import { encodeTraceExport, type UptimeCheckSpan } from "./UptimeSpans"
 
 /** Oldest spans drop first while ingest is unreachable; a check result never waits on export. */
@@ -57,16 +57,10 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 							"application/json",
 						),
 					)
-					const response = yield* client.execute(request).pipe(
-						Effect.annotateSpans("peer.service", "ingest"),
-						Effect.timeout(REQUEST_TIMEOUT),
-						Effect.withSpan("UptimeSpanExporter.post", {
-							kind: "client",
-							attributes: {
-								"peer.service": "ingest",
-								"maple.uptime.span_count": checks.length,
-							},
-						}),
+					const response = yield* executeAttempt(client, request, {
+						peerService: "ingest",
+						timeout: REQUEST_TIMEOUT,
+					}).pipe(
 						Effect.mapError(
 							(error) =>
 								new UptimeSpanExportError({
@@ -92,6 +86,10 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 					Effect.retry({
 						schedule: TRANSIENT_RETRY,
 						while: (error) => isTransientStatus(error.status),
+					}),
+					// Around the retry, so only a dropped batch errors it.
+					Effect.withSpan("UptimeSpanExporter.post", {
+						attributes: { "peer.service": "ingest", "maple.uptime.span_count": checks.length },
 					}),
 					// Spans are best effort: a 402 (org over its limit) or an outage drops them, logged.
 					Effect.catch((error) =>

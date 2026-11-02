@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer, Metric, Schema } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Metric, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { ScrapeResultReport, ScrapeTargetId } from "@maple/domain/http"
 import { UptimeMonitorId } from "@maple/domain/primitives"
@@ -7,6 +7,7 @@ import { UptimeCheckReport, UptimeCheckReportList, UPTIME_CHECK_REPORT_BATCH_MAX
 import { ApiClient, ApiRequestError } from "./ApiClient"
 import { bufferedResults } from "./Metrics"
 import { REPORT_BATCH_SIZE, REPORT_INTERVAL, ResultReporter, UptimeReporter } from "./ResultReporter"
+import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 import { MONITOR_A } from "./testing/uptime"
 
 const monitorId = Schema.decodeSync(UptimeMonitorId)(MONITOR_A)
@@ -97,6 +98,35 @@ describe("ResultReporter", () => {
 				yield* TestClock.adjust(REPORT_INTERVAL)
 				assert.deepStrictEqual(scrapedAts(harness), [1, 2])
 			}).pipe(Effect.provide(reporterLayer(harness)))
+		}),
+	)
+
+	it.effect("errors the delivery span only for a batch it drops, not one it retried", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			const tracer = makeCapturingTracer()
+			const outcomes = [
+				new ApiRequestError({ message: "api down", status: null }),
+				null,
+				new ApiRequestError({ message: "bad request", status: 400 }),
+			]
+			harness.reportImpl = () => {
+				const outcome = outcomes.shift() ?? null
+				return outcome === null ? Effect.void : Effect.fail(outcome)
+			}
+			yield* Effect.gen(function* () {
+				const reporter = yield* ResultReporter
+				yield* reporter.record(report(1))
+				yield* Effect.forkChild(reporter.run)
+				// The first attempt fails, the retry after 1s lands.
+				yield* TestClock.adjust(Duration.seconds(1))
+				yield* reporter.record(report(2))
+				yield* TestClock.adjust(REPORT_INTERVAL)
+				const spans = endedSpansNamed(tracer.ended, "ResultReporter.deliver")
+				assert.lengthOf(spans, 2)
+				assert.isTrue(Exit.isSuccess(spans[0]!.exit))
+				assert.isTrue(Exit.isFailure(spans[1]!.exit))
+			}).pipe(Effect.provide(reporterLayer(harness)), Effect.provide(tracer.layer))
 		}),
 	)
 
