@@ -362,8 +362,12 @@ const share = (
 			// Strict: the Workers export to this port, so a free one elsewhere would strand them.
 			yield* ownOrShare(options, { port, strict: true }, parent)
 		}).pipe(
-			// Never give up while this session runs: a lost race with another sharer, a
-			// slow new owner or a store fixed by `maple restore` all resolve on a later try.
+			// Retry races and transient failures, but a dirty store needs an explicit
+			// recovery choice. This session already returned its shared endpoint, so
+			// report the terminal refusal once and stop monitoring rather than spin.
+			Effect.catchTag("@maple/cli/LocalStoreDirtyError", (error) =>
+				Effect.logError(`cannot take over Maple Local at ${dataDir}: ${error.message}`),
+			),
 			Effect.tapError((error) =>
 				Effect.logError(`cannot take over Maple Local at ${dataDir}: ${error.message}; retrying`),
 			),
@@ -402,5 +406,6 @@ export const startLocal = (options: LocalOptions) =>
 			options.port === undefined
 				? { port: DEFAULT_PORT, strict: false }
 				: { port: options.port, strict: true }
-		return yield* ownOrShare(options, portChoice, yield* Scope.Scope)
+		const scope = yield* Scope.Scope
+		return yield* ownOrShare(options, portChoice, scope)
 	})

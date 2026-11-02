@@ -26,7 +26,19 @@ import { envPorts } from "@maple/backend/platform/env-ports"
 import { CodeLoader } from "@maple/backend/platform/bindings"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
-import { Cause, Clock, Duration, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
+import {
+	Cause,
+	Clock,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	ManagedRuntime,
+	Match,
+	Option,
+	Redacted,
+	Schema,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
@@ -63,6 +75,15 @@ import { runChatTurn, type ChatRunOutcome } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
+
+/** A best-effort turn step (loading the code executor, disposing the runtime, flushing spans) rejected. */
+class TurnRuntimeStepError extends Schema.TaggedError<TurnRuntimeStepError>()(
+	"@maple/ai/chat/TurnRuntimeStepError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /**
  * The engine's per-step bookkeeping, which is named and therefore traced.
@@ -323,7 +344,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const reviews = yield* PrReviewService
 			const conversations = yield* PrReviewConversationService
 			// Shared by the kickoff's clone, every pass of the turn and its review_files children.
-			const toolExecutor = yield* withSandboxBreaker(yield* McpToolExecutor)
+			const mcpToolExecutor = yield* McpToolExecutor
+			const toolExecutor = yield* withSandboxBreaker(mcpToolExecutor)
 			const runTenant = yield* turnTenant(tenant, origin).pipe(
 				// The asker's linked Maple user may not read this org: nothing runs, and the message
 				// is the only thing that tells them why.
@@ -446,16 +468,24 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const codeExecutor =
 				agent.codeMode !== true || Option.isNone(codeLoader)
 					? undefined
-					: yield* Effect.tryPromise(
-							() => import("@yielded/agent-platform-cloudflare/cloudflare-code-mode"),
-						).pipe(
+					: yield* Effect.tryPromise({
+							try: () => import("@yielded/agent-platform-cloudflare/cloudflare-code-mode"),
+							catch: (cause) =>
+								new TurnRuntimeStepError({
+									message: "Failed to load the code executor",
+									cause,
+								}),
+						}).pipe(
 							Effect.map(({ dynamicWorkerCodeExecutorLayer }) =>
 								dynamicWorkerCodeExecutorLayer({ loader: codeLoader.value }),
 							),
 							Effect.catch((error) =>
 								Effect.logWarning(
 									"run_code unavailable: the code executor failed to load",
-								).pipe(Effect.annotateLogs({ cause: String(error) }), Effect.as(undefined)),
+								).pipe(
+									Effect.annotateLogs({ cause: String(error.cause) }),
+									Effect.as(undefined),
+								),
 							),
 						)
 			// A restarted turn reads from its kickoff: what came after it is the attempt that died.
@@ -854,7 +884,16 @@ const releaseQuietly = (
 	runtime: { readonly dispose: () => Promise<void> },
 	flush: () => Promise<void>,
 ): Effect.Effect<void> =>
-	Effect.tryPromise(() => runtime.dispose()).pipe(
+	Effect.tryPromise({
+		try: () => runtime.dispose(),
+		catch: (cause) => new TurnRuntimeStepError({ message: "Failed to dispose the turn runtime", cause }),
+	}).pipe(
 		Effect.ignore,
-		Effect.andThen(Effect.tryPromise(flush).pipe(Effect.ignore)),
+		Effect.andThen(
+			Effect.tryPromise({
+				try: flush,
+				catch: (cause) =>
+					new TurnRuntimeStepError({ message: "Failed to flush the turn spans", cause }),
+			}).pipe(Effect.ignore),
+		),
 	)

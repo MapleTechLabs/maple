@@ -25,6 +25,7 @@ import {
 import { delegatedAgentOf, type ChatMessage, type ChatToolCall } from "@maple/domain/chat-session"
 import { formatDuration, formatNumber } from "@maple/domain/format"
 import { encodeChatActionToken } from "../action-token"
+import { Option, Schema } from "effect"
 import { approvalOutcome } from "./approval-outcome"
 import { type ChatBlock, type ChatEntityBlock, type ChatRenderContext, type ChatToolActivity } from "./blocks"
 
@@ -287,6 +288,7 @@ const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 /** How many arguments an approval line shows before it stops being readable. */
 const MAX_SUMMARY_ARGS = 6
 const MAX_SUMMARY_VALUE = 80
+const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 /** A proposed call's arguments as a line someone can approve or refuse without reading JSON. */
 export const summarizeToolInput = (input: unknown): string => {
@@ -298,7 +300,10 @@ export const summarizeToolInput = (input: unknown): string => {
 			parts.push("…")
 			break
 		}
-		const text = typeof value === "object" ? JSON.stringify(value) : String(value)
+		const text =
+			typeof value === "object"
+				? Option.getOrElse(encodeJsonOption(value), () => String(value))
+				: String(value)
 		parts.push(`${key}: ${truncate(text, MAX_SUMMARY_VALUE)}`)
 	}
 	return parts.join(" · ")

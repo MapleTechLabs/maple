@@ -349,7 +349,8 @@ const guardWith = <E, R, E2>(
 						? withoutHeaders(request, ownHeaders)
 						: withoutCredentialHeaders(request)
 					: request
-			const response = yield* send(yield* dial(outgoing, validated))
+			const dialed = yield* dial(outgoing, validated)
+			const response = yield* send(dialed)
 			if (response.status < 300 || response.status >= 400) return response
 			const location = response.headers["location"]
 			// An empty Location resolves to the current URL; following it would

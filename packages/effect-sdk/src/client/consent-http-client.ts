@@ -91,6 +91,7 @@ export const filterOtlpRequestForConsent = (
 	// rather than forwarding it unfiltered.
 	return trySyncOrUndefined(() => {
 		// SAFETY: The SDK's OTLP encoder created this body; malformed shapes throw here and fail closed.
+		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		const decoded = JSON.parse(new TextDecoder().decode(body.body)) as OtlpBody
 		const threshold = BigInt(Math.trunc(since)) * 1_000_000n
 		const filtered = request.url.endsWith("/v1/traces")

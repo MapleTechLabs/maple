@@ -14,7 +14,7 @@ export const ownershipTags = (tags: ReadonlyArray<string>) => tags.filter((tag) 
 const ruleOwnerTag = Effect.fn(function* (fqn: string) {
 	const identity = yield* createInternalTags(fqn)
 	// A fixed local identity is encoded for hashing, not sent over a JSON boundary.
-	// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
+	// oxlint-disable-next-line effecttsgo/global-json-in-effect
 	return `${prefix}${createHash("sha256").update(JSON.stringify(identity)).digest("hex").slice(0, 24)}`
 })
 

@@ -2,7 +2,11 @@
 // formatting, CSV/JSON export and the starter queries.
 
 import { LocalQueryFailed, LocalQueryUnreachable, type LocalQueryRow } from "@maple/query-engine/local"
+import { Option, Schema } from "effect"
 import { LOCAL_ORG_ID } from "./constants"
+
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 /** Rows rendered in the table; downloads always carry the full result. */
 export const DISPLAY_ROW_LIMIT = 1000
@@ -102,7 +106,7 @@ export function formatCell(value: unknown): string {
 	if (typeof value === "string") return value
 	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
 		return String(value)
-	return JSON.stringify(value)
+	return Option.getOrElse(encodeJson(value), () => String(value))
 }
 
 export function truncateCell(text: string, max = CELL_TRUNCATE_LENGTH): string {
@@ -127,7 +131,7 @@ export function toCsv(rows: ReadonlyArray<LocalQueryRow>, columns = inferColumns
 }
 
 export function toJson(rows: ReadonlyArray<LocalQueryRow>): string {
-	return `${JSON.stringify(rows, null, 2)}\n`
+	return `${encodePrettyJson(rows)}\n`
 }
 
 export interface QueryErrorDescription {

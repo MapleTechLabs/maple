@@ -13,6 +13,10 @@
  * with TINYBIRD_TOKEN (`.env.local`).
  */
 import { parseArgs } from "node:util"
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 const { values } = parseArgs({
 	options: {
@@ -369,7 +373,7 @@ const seeded = rows.filter(
 
 console.log(`${seeded.length} spans for ${org}`)
 if (values["dry-run"]) {
-	console.log(JSON.stringify(seeded.slice(0, 2), null, 2))
+	console.log(encodeJsonPretty(seeded.slice(0, 2)))
 	process.exit(0)
 }
 
@@ -382,7 +386,7 @@ if (!host || !token) {
 const response = await fetch(`${host.replace(/\/+$/, "")}/v0/events?name=traces&wait=true`, {
 	method: "POST",
 	headers: { Authorization: `Bearer ${token}` },
-	body: seeded.map((row) => JSON.stringify(row)).join("\n"),
+	body: seeded.map((row) => encodeJson(row)).join("\n"),
 })
 if (!response.ok) {
 	console.error(`Tinybird answered ${response.status}: ${await response.text()}`)

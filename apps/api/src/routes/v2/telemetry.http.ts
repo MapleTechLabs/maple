@@ -200,12 +200,16 @@ const expandHexId = (value: string): Option.Option<string> => {
 	if (Result.isFailure(decoded)) return Option.none()
 	return Option.some([...decoded.success].map((byte) => byte.toString(16).padStart(2, "0")).join(""))
 }
-const logKey = (row: { exactTimestamp: string; recordIdentity: string }) =>
-	JSON.stringify([compactTimestamp(row.exactTimestamp), compactHexId(row.recordIdentity)] satisfies LogKey)
+const StringPairJson = Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String]))
+const encodeStringPair = Schema.encodeSync(StringPairJson)
 
-const decodeLogKeyParts = Schema.decodeUnknownOption(
-	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
-)
+const logKey = (row: { exactTimestamp: string; recordIdentity: string }) =>
+	encodeStringPair([
+		compactTimestamp(row.exactTimestamp),
+		compactHexId(row.recordIdentity),
+	] satisfies LogKey)
+
+const decodeLogKeyParts = Schema.decodeUnknownOption(StringPairJson)
 
 const parseLogKey = (value: string) =>
 	Option.match(
@@ -1005,7 +1009,7 @@ const toOverviewPoints = (
 		p99_latency_ms: Number(point.series.p99_duration ?? 0),
 	}))
 
-const baselineKey = (serviceName: string, environment: string) => JSON.stringify([serviceName, environment])
+const baselineKey = (serviceName: string, environment: string) => encodeStringPair([serviceName, environment])
 
 /** Baseline per (service, environment); of several namespaces, the busiest one's. */
 const baselineByServiceEnvironment = (rows: ReadonlyArray<CH.ServiceHealthBaselineOutput>) =>

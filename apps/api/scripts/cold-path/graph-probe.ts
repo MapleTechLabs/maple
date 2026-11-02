@@ -1,4 +1,3 @@
-// oxlint-disable effecttsgo/strict-effect-provide -- Offline benchmark entry points.
 /** Offline probe of the real HTTP graph. No external I/O or production secrets. */
 import { Context, Effect, Layer, Scope } from "effect"
 import * as Cloudflare from "@alchemy.run/cloudflare"

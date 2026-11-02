@@ -108,7 +108,7 @@ describe("whose authority an approval runs under", () => {
 				input: {},
 			}).pipe(
 				// Neither lookup is consulted: the route already authenticated the caller.
-				Effect.provide(Layer.mergeAll(memberships(die), noActors)),
+				Effect.provide([memberships(die), noActors]),
 			)
 
 			assert.strictEqual(tenant.userId, ADA)
@@ -126,12 +126,10 @@ describe("whose authority an approval runs under", () => {
 	it.effect("gives a linked user their OWN roles, and grants nothing", () =>
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
-						noActors,
-					),
-				),
+				Effect.provide([
+					memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
+					noActors,
+				]),
 			)
 
 			assert.strictEqual(tenant.userId, ADA)
@@ -150,12 +148,7 @@ describe("whose authority an approval runs under", () => {
 			// The link outlived the membership. Falling back to the org-level identity here would
 			// hand `org:admin` to somebody who was removed.
 			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.none())),
-						noActors,
-					),
-				),
+				Effect.provide([memberships(() => Effect.succeed(Option.none())), noActors]),
 				Effect.flip,
 			)
 
@@ -166,18 +159,16 @@ describe("whose authority an approval runs under", () => {
 	it.effect("fails closed when membership cannot be checked at all", () =>
 		Effect.gen(function* () {
 			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() =>
-							Effect.fail(
-								new AuthorizationUnavailableError({
-									message: "the directory was unreachable",
-								}),
-							),
+				Effect.provide([
+					memberships(() =>
+						Effect.fail(
+							new AuthorizationUnavailableError({
+								message: "the directory was unreachable",
+							}),
 						),
-						noActors,
 					),
-				),
+					noActors,
+				]),
 				Effect.flip,
 			)
 
@@ -191,7 +182,7 @@ describe("whose authority an approval runs under", () => {
 			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
 				// The membership check is never consulted: there is no user to check. The actor lookup
 				// failing must not cost an answer either; `withConnectorActor` absorbs it.
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(undefined))),
+				Effect.provide([memberships(die), actorsThat(undefined)]),
 			)
 
 			// The placeholder user, because nobody can be named — and the one role the mutating
@@ -205,7 +196,7 @@ describe("whose authority an approval runs under", () => {
 	it.effect("pins the connector's agent actor on that path, so the audit log names it", () =>
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+				Effect.provide([memberships(die), actorsThat(CONNECTOR_ACTOR)]),
 			)
 
 			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
@@ -224,12 +215,10 @@ describe("whose authority a connector turn reads under", () => {
 	it.effect("reads as the linked asker, under the roles they hold now", () =>
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* run(asking(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
-						noActors,
-					),
-				),
+				Effect.provide([
+					memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
+					noActors,
+				]),
 			)
 
 			assert.strictEqual(tenant.userId, ADA)
@@ -241,12 +230,7 @@ describe("whose authority a connector turn reads under", () => {
 	it.effect("refuses a linked asker who left the organization", () =>
 		Effect.gen(function* () {
 			const failure = yield* run(asking(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.none())),
-						noActors,
-					),
-				),
+				Effect.provide([memberships(() => Effect.succeed(Option.none())), noActors]),
 				Effect.flip,
 			)
 
@@ -258,7 +242,7 @@ describe("whose authority a connector turn reads under", () => {
 	it.effect("refuses a linked id that does not decode, rather than reading as the connector", () =>
 		Effect.gen(function* () {
 			const failure = yield* run({ ...APPROVER, actingUserId: "" }).pipe(
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+				Effect.provide([memberships(die), actorsThat(CONNECTOR_ACTOR)]),
 				Effect.flip,
 			)
 
@@ -269,7 +253,7 @@ describe("whose authority a connector turn reads under", () => {
 	it.effect("reads as the connector, with no roles, when nobody is named", () =>
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* run(asking()).pipe(
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+				Effect.provide([memberships(die), actorsThat(CONNECTOR_ACTOR)]),
 			)
 
 			assert.strictEqual(tenant.userId, CONNECTOR_TENANT_USER_ID)

@@ -13,6 +13,8 @@ import { buildTelegramText, buildTelegramTextFromTemplate } from "../../AlertDel
 import { truncate } from "../../alert-formatting"
 import type { HttpTransport, ProviderAck, RenderInput, SecretConfigOf } from "../Transport"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 type Config = SecretConfigOf<"telegram">
 
 const TELEGRAM_API_ORIGIN = "https://api.telegram.org"
@@ -80,7 +82,7 @@ export const telegramTransport: HttpTransport<Config> = {
 			// `server.address` only. The first provider where these two disagree,
 			// which is why `sensitivePath` is declared rather than inferred.
 			sensitivePath: true,
-			body: JSON.stringify({
+			body: encodeJson({
 				chat_id: input.config.chatId,
 				text,
 				parse_mode: "HTML",
@@ -303,7 +305,7 @@ export const fetchTelegramChats = (
 ): Effect.Effect<TelegramChatDiscovery, never, HttpClient.HttpClient> =>
 	telegramGet(
 		`${TELEGRAM_API_ORIGIN}/bot${botToken}/getUpdates?limit=100&timeout=0&allowed_updates=${encodeURIComponent(
-			JSON.stringify(["message", "edited_message", "channel_post", "my_chat_member"]),
+			encodeJson(["message", "edited_message", "channel_post", "my_chat_member"]),
 		)}`,
 	).pipe(
 		Effect.map((response): TelegramChatDiscovery => {

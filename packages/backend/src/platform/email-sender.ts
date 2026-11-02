@@ -26,17 +26,21 @@ const toPort = (client: Cloudflare.Email.SendClient): EmailSenderClient => ({
 				...(headers === undefined ? undefined : { headers: { ...headers } }),
 			}),
 		).pipe(
-			Effect.map((result) => ({ messageId: result.messageId })),
-			Effect.mapError((error) => new EmailSendError({ message: error.message, cause: error.cause })),
+			Effect.mapBoth({
+				onSuccess: (result) => ({ messageId: result.messageId }),
+				onFailure: (error) => new EmailSendError({ message: error.message, cause: error.cause }),
+			}),
 		),
 })
 
 /** Yield from a Worker's init, with `Cloudflare.Email.SendBinding` provided; the value is {@link EmailSender}'s. */
 export const bindEmailSender = Effect.gen(function* () {
-	if (!globalThis.__ALCHEMY_RUNTIME__ && parseMapleDeployment(yield* Stage).stage.kind !== "prd") {
-		return Option.none<EmailSenderClient>()
+	if (!globalThis.__ALCHEMY_RUNTIME__) {
+		const stage = yield* Stage
+		if (parseMapleDeployment(stage).stage.kind !== "prd") return Option.none<EmailSenderClient>()
 	}
-	const client = yield* Cloudflare.Email.Send(yield* NotificationsEmail)
+	const notificationsEmail = yield* NotificationsEmail
+	const client = yield* Cloudflare.Email.Send(notificationsEmail)
 	if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none<EmailSenderClient>()
 	const raw: unknown = yield* runtime(client.raw)
 	return raw === undefined || raw === null ? Option.none<EmailSenderClient>() : Option.some(toPort(client))

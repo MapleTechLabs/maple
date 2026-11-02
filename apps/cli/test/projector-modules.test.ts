@@ -75,7 +75,11 @@ describe("projector modules", () => {
 			// Saved specs cannot silently lose their implementation on the next start.
 			const store = await openStore(data)
 			try {
-				const missing = Effect.runSync(Effect.result(Effect.try(() => makeRuntime(store))))
+				const missing = Effect.runSync(
+					Effect.result(
+						Effect.try({ try: () => makeRuntime(store), catch: (cause) => String(cause) }),
+					),
+				)
 				ok(Result.isFailure(missing))
 			} finally {
 				await store.close()

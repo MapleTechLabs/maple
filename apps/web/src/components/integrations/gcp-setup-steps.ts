@@ -7,6 +7,7 @@ import {
 	type GcpSetupPlan,
 } from "@maple/domain/gcp"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
+import { Schema } from "effect"
 
 import { gcpScopeRoles } from "./gcp-connector-state"
 
@@ -31,6 +32,8 @@ export interface GcpManualStep {
 }
 
 const CONSOLE = "https://console.cloud.google.com"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const ROLE_NAMES = new Map([
 	["roles/monitoring.viewer", "Monitoring Viewer"],
@@ -190,7 +193,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 				fields: [
 					field(
 						"Message body",
-						JSON.stringify({
+						encodeJson({
 							logName: `projects/${host}/logs/maple-setup`,
 							jsonPayload: { logs: true },
 						}),

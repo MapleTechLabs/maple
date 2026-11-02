@@ -232,7 +232,8 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		// Per call, not here: acquiring the transport must not cost the host its credential read.
-		const token = Effect.map(yield* ConnectorCredentials, (config: ConnectorConfig) =>
+		const credentials = yield* ConnectorCredentials
+		const token = Effect.map(credentials, (config: ConnectorConfig) =>
 			Option.map(decodeSlackCredentials(config.get(WORKSPACE_CREDENTIALS)), (value) =>
 				Redacted.make(value.bot_token),
 			),

@@ -6,9 +6,11 @@ import {
 	type StatusPageSnapshot,
 } from "@maple/domain/status-page"
 import { FIXTURE_NOW, FIXTURE_PAGE_ID } from "@maple/status-page/fixtures"
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { handleRequest } from "./handler"
 import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** In-memory KV, R2, colo cache and rate limiter; each store can be made to fail. */
 interface ListHook {
@@ -73,7 +75,7 @@ export const publish = (
 	snapshot: StatusPageSnapshot,
 	options: { readonly host?: string; readonly heartbeatAt?: number | null } = {},
 ) => {
-	const json = JSON.stringify(snapshot)
+	const json = encodeJson(snapshot)
 	const host = options.host ?? "status.acme.example"
 	fake.kv.set(StatusPageKeys.host(host), snapshot.pageId)
 	fake.kv.set(StatusPageKeys.slug(snapshot.page.slug), snapshot.pageId)
@@ -87,13 +89,13 @@ export const publish = (
 			at: heartbeatAt,
 			probesSeenAt: heartbeatAt - 30_000,
 		}
-		fake.kv.set(StatusPageKeys.heartbeat, JSON.stringify(heartbeat))
+		fake.kv.set(StatusPageKeys.heartbeat, encodeJson(heartbeat))
 	}
 }
 
 /** Writes one break-glass entry under its own key, as the Worker does. */
 export const putOverlayEntry = (fake: FakeStorage, entry: StatusPageOverlayEntry) =>
-	fake.kv.set(StatusPageKeys.overlayEntry(FIXTURE_PAGE_ID, entry.id), JSON.stringify(entry))
+	fake.kv.set(StatusPageKeys.overlayEntry(FIXTURE_PAGE_ID, entry.id), encodeJson(entry))
 
 /** Every break-glass entry stored for the fixture page, in key order. */
 export const overlayEntries = (fake: FakeStorage): ReadonlyArray<StatusPageOverlayEntry> =>

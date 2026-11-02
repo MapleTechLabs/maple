@@ -22,7 +22,8 @@ const Newest = Schema.Struct({ name: Schema.NullOr(Schema.String) })
 
 /** The newest migration drizzle-kit recorded, when the database has its ledger and no effect-orm one. */
 const drizzleHead = Effect.gen(function* () {
-	const orm = Orm.fromSqlClient(yield* SqlClient.SqlClient, { dialect: PG.postgresDialect })
+	const sql = yield* SqlClient.SqlClient
+	const orm = Orm.fromSqlClient(sql, { dialect: PG.postgresDialect })
 	const [found] = yield* orm.query(
 		Orm.sql`SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS drizzle,
 			to_regclass(${Migrate.LEDGER_TABLES.migrations}) IS NOT NULL AS "effectOrm"`,

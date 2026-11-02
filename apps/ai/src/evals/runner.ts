@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import type { Transcript } from "./chat-turn"
 import { passAt1, passAtK, passHatK, type Estimate, type TaskTally } from "./stats"
 import type { Grade } from "./targets"
@@ -215,27 +215,24 @@ export const renderSummary = (summary: RunSummary): string => {
 	return lines.join("\n")
 }
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 export const runSuite = <T extends EvalTask>(options: RunOptions<T>): Effect.Effect<RunSummary> =>
 	Effect.gen(function* () {
 		const stamp = new Date().toISOString().replace(/[:.]/g, "-")
 		const dir = join(APP_ROOT, ".evals", "runs", `${stamp}-${slug(options.suite)}-${slug(options.model)}`)
 		mkdirSync(dir, { recursive: true })
-		writeFileSync(
-			join(dir, "manifest.json"),
-			JSON.stringify(
-				{
-					suite: options.suite,
-					model: options.model,
-					k: options.k,
-					startedAt: new Date().toISOString(),
-					revision: git(["rev-parse", "HEAD"]),
-					dirty: git(["status", "--porcelain"]).split("\n").filter(Boolean),
-					tasks: options.tasks.map((task) => task.id),
-				},
-				null,
-				2,
-			),
-		)
+		const manifest = yield* encodePrettyJson({
+			suite: options.suite,
+			model: options.model,
+			k: options.k,
+			startedAt: new Date().toISOString(),
+			revision: git(["rev-parse", "HEAD"]),
+			dirty: git(["status", "--porcelain"]).split("\n").filter(Boolean),
+			tasks: options.tasks.map((task) => task.id),
+		}).pipe(Effect.orDie)
+		writeFileSync(join(dir, "manifest.json"), manifest)
 		// Trial-major order: every task's first trial before any second, so a stopped run is balanced.
 		const specs = Array.from({ length: options.k }, (_, trial) =>
 			options.tasks.map((task) => ({ task, trial })),
@@ -253,9 +250,11 @@ export const runSuite = <T extends EvalTask>(options: RunOptions<T>): Effect.Eff
 						transcript,
 					})),
 					Effect.tap((record) =>
-						Effect.sync(() =>
-							appendFileSync(join(dir, "trials.jsonl"), `${JSON.stringify(record)}\n`),
-						).pipe(
+						encodeJson(record).pipe(
+							Effect.orDie,
+							Effect.flatMap((line) =>
+								Effect.sync(() => appendFileSync(join(dir, "trials.jsonl"), `${line}\n`)),
+							),
 							Effect.andThen(
 								Effect.logInfo(
 									`[eval] ${record.grade.pass ? "pass" : "FAIL"} ${record.task}#${record.trial}`,
@@ -267,7 +266,8 @@ export const runSuite = <T extends EvalTask>(options: RunOptions<T>): Effect.Eff
 			{ concurrency: options.concurrency },
 		)
 		const summary = summarize(options, dir, records)
-		writeFileSync(join(dir, "summary.json"), JSON.stringify(summary, null, 2))
+		const summaryJson = yield* encodePrettyJson(summary).pipe(Effect.orDie)
+		writeFileSync(join(dir, "summary.json"), summaryJson)
 		writeFileSync(join(dir, "summary.md"), renderSummary(summary))
 		return summary
 	})

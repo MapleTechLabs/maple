@@ -570,8 +570,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 						Effect.gen(function* () {
 							const latest = yield* requireConnection(orgId)
 							const advanced = latest.updatedAt > row.updatedAt
-							if (advanced && rowIsValid(latest, yield* Clock.currentTimeMillis)) {
-								return yield* accessTokenFromRow(latest)
+							if (advanced) {
+								const now = yield* Clock.currentTimeMillis
+								if (rowIsValid(latest, now)) return yield* accessTokenFromRow(latest)
 							}
 							// Only while the row is still the one we read: a racing isolate may persist
 							// fresh tokens between our re-read and this stamp.
@@ -587,7 +588,8 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				Effect.gen(function* () {
 					// Double-checked: another local fiber may have refreshed while we waited.
 					const row = yield* requireConnection(orgId)
-					if (rowIsValid(row, yield* Clock.currentTimeMillis)) {
+					const now = yield* Clock.currentTimeMillis
+					if (rowIsValid(row, now)) {
 						return yield* accessTokenFromRow(row)
 					}
 					return yield* refreshRow(config, orgId, row)

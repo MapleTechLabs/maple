@@ -1,5 +1,8 @@
+import { Schema } from "effect"
 import { getActiveInfraCorrelations } from "../../../components/infra/infra-correlations"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
+
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // Pure readings of a log for the sheet: its severity label, JSON payload, tabs and timestamp.
 
@@ -15,21 +18,17 @@ export const severityLabel = (severityText: string, severityNumber?: number): st
 
 // The log as the Raw tab's JSON.
 export const buildLogJsonPayload = (log: LogRecord): string =>
-	JSON.stringify(
-		{
-			timestamp: log.timestamp,
-			severityText: log.severityText,
-			severityNumber: log.severityNumber,
-			serviceName: log.serviceName,
-			body: log.body,
-			traceId: log.traceId || undefined,
-			spanId: log.spanId || undefined,
-			logAttributes: log.logAttributes,
-			resourceAttributes: log.resourceAttributes,
-		},
-		null,
-		2,
-	)
+	encodePrettyJson({
+		timestamp: log.timestamp,
+		severityText: log.severityText,
+		severityNumber: log.severityNumber,
+		serviceName: log.serviceName,
+		body: log.body,
+		traceId: log.traceId || undefined,
+		spanId: log.spanId || undefined,
+		logAttributes: log.logAttributes,
+		resourceAttributes: log.resourceAttributes,
+	})
 
 export const hasInfraCorrelations = (log: LogRecord): boolean =>
 	getActiveInfraCorrelations(log.resourceAttributes).length > 0

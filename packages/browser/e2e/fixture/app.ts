@@ -21,6 +21,7 @@ window.addEventListener("unhandledrejection", (event) => {
 const raw = new URLSearchParams(location.search).get("maple") ?? sessionStorage.getItem("e2e:maple")
 if (raw !== null) {
 	sessionStorage.setItem("e2e:maple", raw)
+	// oxlint-disable-next-line effecttsgo/global-json -- packages/browser does not depend on effect
 	const config: MapleBrowserConfig = JSON.parse(raw)
 	window.maple = MapleBrowser.init(config)
 }

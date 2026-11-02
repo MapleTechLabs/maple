@@ -76,32 +76,38 @@ const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* 
 	return yield* Match.value(subject.incidentKind).pipe(
 		Match.when("error", () =>
 			Schema.decodeEffect(ErrorIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "error" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "error" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.when("anomaly", () =>
 			Schema.decodeEffect(AnomalyIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "anomaly" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "anomaly" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.when("alert", () =>
 			Schema.decodeEffect(AlertIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "alert" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "alert" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.exhaustive,

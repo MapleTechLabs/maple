@@ -401,6 +401,7 @@ const decodeJsonObject = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 )
 const decodeJsonString = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** One top-level entry as `JSONExtractKeysAndValuesRaw` reports it, duplicates included. */
 interface JsonEntry {
@@ -435,7 +436,7 @@ const readString = (s: string, at: number): Read<{ readonly text: string; readon
 	if (token === undefined || text === undefined || LONE_SURROGATE.test(text)) return undefined
 	// ClickHouse escapes the two line separators JSON.stringify leaves raw, and writes
 	// `\u000F` where JSON.stringify writes `\u000f`. An escaped backslash pairs first.
-	const raw = JSON.stringify(text)
+	const raw = encodeJson(text)
 		.replace(/\u2028/g, "\\u2028")
 		.replace(/\u2029/g, "\\u2029")
 		.replace(/\\\\|\\u[0-9a-f]{4}/g, (escape) => escape.toUpperCase().replace("\\U", "\\u"))
@@ -453,7 +454,7 @@ const readNumber = (s: string, at: number): Read<string> => {
 	}
 	const n = Number(token)
 	if (!Number.isFinite(n)) return undefined
-	const value = Object.is(n, -0) ? "-0" : JSON.stringify(n).replace("e+", "e")
+	const value = Object.is(n, -0) ? "-0" : encodeJson(n).replace("e+", "e")
 	return { value, end: at + token.length }
 }
 

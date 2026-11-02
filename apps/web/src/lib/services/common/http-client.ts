@@ -15,7 +15,8 @@ export const withRequestTimeout = (client: HttpClient.HttpClient): HttpClient.Ht
 				duration: CLIENT_TIMEOUT,
 				orElse: () =>
 					Effect.gen(function* () {
-						noteUnreachable(originOf(request.url), yield* Clock.currentTimeMillis)
+						const now = yield* Clock.currentTimeMillis
+						noteUnreachable(originOf(request.url), now)
 						const description = `No response within ${Duration.toMillis(CLIENT_TIMEOUT)}ms`
 						// A `TimeoutError` cause marks it non-retryable (`isRetryableTransportError`).
 						return yield* new HttpClientError.HttpClientError({

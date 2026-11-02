@@ -1,6 +1,7 @@
 // The tool analytics fixture, detail half (`SESSION_SEEDS`, the error groups,
 // `buildToolErrorDetailFixture`, `buildToolDetailFixture`).
 
+import { Schema } from "effect"
 import {
 	EMPTY_MEASURES,
 	type ToolErrorOccurrenceRow,
@@ -18,6 +19,8 @@ import {
 	type ToolAnalyticsSearch,
 	type ToolFixtureCell,
 } from "./agent-tools-fixture"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const SESSION_SEEDS = [
 	{
@@ -128,7 +131,7 @@ interface ErrorGroupSpec {
 }
 
 /** A tool result's error envelope, as the maple vendor records one. */
-const envelope = (text: string) => JSON.stringify({ result: text })
+const envelope = (text: string) => encodeJson({ result: text })
 
 const FINDINGS_CLAIM =
 	'Confirmed: the incident\'s failure is a disk-capacity exhaustion: the embedded chDB store on the local filesystem hit its "no space left on device" ceiling, and at least one trace ingest (POST /v1/traces) was rejected with HTTP 500 as a result.'
@@ -142,7 +145,7 @@ const evidenceItem = (index: number, omit?: "traceIds" | "logPatterns") => ({
 })
 
 const candidate = (overrides: Record<string, unknown>) =>
-	JSON.stringify({
+	encodeJson({
 		claim: FINDINGS_CLAIM,
 		confidence: "high",
 		mechanism: "The store's volume filled; every insert after that failed until the volume was grown.",
@@ -152,7 +155,7 @@ const candidate = (overrides: Record<string, unknown>) =>
 	})
 
 const queryData = (overrides: Record<string, unknown>) =>
-	JSON.stringify({
+	encodeJson({
 		source: "traces",
 		kind: "breakdown",
 		start_time: "2026-09-04 00:00:00",
@@ -183,7 +186,7 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				callsSince: 281,
 				// The model sent the array as a string holding its JSON.
 				arguments: (index) =>
-					candidate({ evidence: JSON.stringify([evidenceItem(index), evidenceItem(index + 1)]) }),
+					candidate({ evidence: encodeJson([evidenceItem(index), evidenceItem(index + 1)]) }),
 				where: INVESTIGATIONS,
 			},
 			{
@@ -245,7 +248,7 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				perDay: [1, 2, 2, 1, 0, 0, 0, 0],
 				callsSince: 300,
 				arguments: () =>
-					JSON.stringify({
+					encodeJson({
 						claim: FINDINGS_CLAIM,
 						confidence: "medium",
 						evidence: [evidenceItem(0)],
@@ -258,7 +261,7 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				sessions: 5,
 				perDay: [2, 1, 2, 1, 0, 0, 0, 0],
 				callsSince: 296,
-				arguments: () => candidate({ suggestedActions: JSON.stringify(["Grow the store's volume"]) }),
+				arguments: () => candidate({ suggestedActions: encodeJson(["Grow the store's volume"]) }),
 			},
 			{
 				message: expectedAt("object", '["evidence"][0]'),
@@ -303,7 +306,7 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				sessions: 5,
 				perDay: [1, 1, 0, 2, 0, 1, 0, 0],
 				callsSince: 260,
-				arguments: () => JSON.stringify({ kind: "timeseries", group_by: "service" }),
+				arguments: () => encodeJson({ kind: "timeseries", group_by: "service" }),
 			},
 			{
 				message:
@@ -313,7 +316,7 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				sessions: 3,
 				perDay: [0, 0, 3, 0, 1, 0, 1, 0],
 				callsSince: 120,
-				arguments: () => JSON.stringify({ source: "logs", group_by: "service" }),
+				arguments: () => encodeJson({ source: "logs", group_by: "service" }),
 			},
 			{
 				message:

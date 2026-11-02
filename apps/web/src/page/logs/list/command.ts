@@ -49,8 +49,10 @@ export const FetchFirstPage = Command.define("FetchLogsFirstPage", {
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, search, window, pinnedNamespace }) =>
 		listLogs({ data: listInput(search, window, pinnedNamespace) }).pipe(
-			Effect.map((response) => page(response.data, response.meta.cursor)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => page(response.data, response.meta.cursor),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
 		),
@@ -62,8 +64,10 @@ export const FetchNextPage = Command.define("FetchLogsNextPage", {
 	messages: [Message.CompletedFetchNextPage],
 	execute: ({ key, search, window, pinnedNamespace, generation, cursor }) =>
 		listLogs({ data: { ...listInput(search, window, pinnedNamespace), cursor, limit: PAGE_SIZE } }).pipe(
-			Effect.map((response) => page(response.data, response.meta.cursor)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => page(response.data, response.meta.cursor),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchNextPage({ key, generation, result })),
 		),
@@ -87,8 +91,7 @@ export const FetchFacets = Command.define("FetchLogsFacets", {
 				...logAttributeQueryFilters(attrs),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -100,8 +103,10 @@ export const FetchVolume = Command.define("FetchLogsVolume", {
 	messages: [Message.CompletedFetchVolume],
 	execute: ({ key, search, window, pinnedNamespace, bucketSeconds }) =>
 		getCustomChartTimeSeries({ data: volumeInput(search, window, bucketSeconds, pinnedNamespace) }).pipe(
-			Effect.map((response) => toVolumeBuckets(response.data)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => toVolumeBuckets(response.data),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchVolume({ key, result })),
 		),
@@ -113,10 +118,11 @@ export const FetchAttributeKeys = Command.define("FetchLogAttributeKeys", {
 	messages: [Message.CompletedFetchAttributeKeys],
 	execute: ({ key, window }) =>
 		getLogAttributeKeys({ data: window }).pipe(
-			Effect.map((response) =>
-				response.data.map((row) => ({ name: row.attributeKey, count: row.usageCount })),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					response.data.map((row) => ({ name: row.attributeKey, count: row.usageCount })),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchAttributeKeys({ key, result })),
 		),

@@ -7,7 +7,7 @@ import { writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { isDeepStrictEqual, parseArgs } from "node:util"
-import { Arbitrary, Effect, Ref, Schema } from "effect"
+import { Arbitrary, Effect, Option, Ref, Schema } from "effect"
 import { isJsonObject, member, runCase, type FixtureCase } from "../src/conformance"
 import { fuzzCase } from "../src/fuzz-arbitraries"
 
@@ -47,17 +47,21 @@ oracle.stdout.setEncoding("utf8")
 const replies = lines(oracle.stdout)
 
 const parseOutcome = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const encodeReport = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
 
 /** The gateway engine's outcome; requests run one at a time, so replies stay in order. */
 const gateway = (fixture: FixtureCase) =>
 	Effect.promise(async (): Promise<Schema.Json> => {
-		oracle.stdin.write(`${JSON.stringify(fixture)}\n`)
+		oracle.stdin.write(`${encodeJson(fixture)}\n`)
 		const reply = await replies.next()
 		return reply.done === true ? { oracleExited: true } : parseOutcome(reply.value)
 	})
 
 const clip = (value: Schema.Json | undefined, at = 0) => {
-	const text = typeof value === "string" ? value : (JSON.stringify(value) ?? "undefined")
+	const text =
+		typeof value === "string" ? value : Option.getOrElse(encodeJsonOption(value), () => "undefined")
 	return text.length <= 160
 		? text
 		: `…${text.slice(Math.max(0, at - 60), at + 100)}… (${text.length} chars)`
@@ -88,8 +92,8 @@ type Exercised = "dropped" | "redacted" | "untouched"
 
 /** What a passing case exercised, so a green run that never redacts anything is visible. */
 const exercised = (fixture: FixtureCase, outcome: Schema.Json): Exercised => {
-	const input = JSON.stringify(fixture.input)
-	const output = JSON.stringify(outcome)
+	const input = encodeJson(fixture.input)
+	const output = encodeJson(outcome)
 	if (member(outcome, "dropped") === true) return "dropped"
 	return output.includes("REDACTED") || output.includes("hash:") || output.length < input.length - 60
 		? "redacted"
@@ -109,7 +113,7 @@ const result = await Effect.runPromise(
 				const remote = yield* gateway(fixture)
 				const ts = runCase(fixture)
 				const kind = exercised(fixture, ts)
-				const nearCap = JSON.stringify(fixture.input).length > 16_000 ? 1 : 0
+				const nearCap = encodeJson(fixture.input).length > 16_000 ? 1 : 0
 				yield* Ref.update(coverage, (counts) => ({
 					...counts,
 					[kind]: counts[kind] + 1,
@@ -127,10 +131,10 @@ if (result._tag === "Falsified") {
 	const shrunk = result.shrunkInput
 	const report = { case: shrunk, ts: runCase(shrunk), rust: shrunkRemote, seed, replay: result.replay }
 	const path = join(tmpdir(), "ingest-rules-fuzz-failure.json")
-	writeFileSync(path, `${JSON.stringify(report, null, "\t")}\n`)
+	writeFileSync(path, `${encodeReport(report)}\n`)
 	console.error(`The engines disagree after ${result.runs} cases (${result.shrinks} shrinks).`)
 	console.error(firstDifference(report.ts, report.rust))
-	console.error(`rules: ${JSON.stringify(shrunk.rules)}`)
+	console.error(`rules: ${encodeJson(shrunk.rules)}`)
 	console.error(`Written to ${path}. Rerun with --seed ${seed} or --replay ${result.replay}.`)
 	process.exit(1)
 }

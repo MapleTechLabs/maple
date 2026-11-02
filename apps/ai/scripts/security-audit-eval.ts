@@ -27,7 +27,7 @@ import {
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import {
 	aggregate,
 	type CaseResult,
@@ -55,6 +55,13 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const AI_DIR = resolve(SCRIPT_DIR, "..")
 const POLL_MS = 30_000
 const EVAL_CACHE = join(homedir(), ".cache", "maple-security-eval")
+const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
+class ClaimTakenError extends Schema.TaggedError<ClaimTakenError>()("@maple/ai/scripts/ClaimTakenError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
 
 /** `path` with symlinks resolved, through its nearest existing ancestor when it does not exist yet. */
 const realPath = (path: string): string =>
@@ -210,12 +217,12 @@ const readJsonLines = (path: string) => (existsSync(path) ? parseEventLines(read
 
 const readFindings = (runDir: string): ReadonlyArray<Finding> => {
 	const path = join(runDir, "findings.json")
-	return existsSync(path) ? decodeFindings(JSON.parse(readFileSync(path, "utf8"))) : []
+	return existsSync(path) ? decodeFindings(decodeJson(readFileSync(path, "utf8"))) : []
 }
 
 const readStatus = (runDir: string) => {
 	const path = join(runDir, "run-metadata.json")
-	return existsSync(path) ? decodeRunStatus(JSON.parse(readFileSync(path, "utf8"))).run_status : "missing"
+	return existsSync(path) ? decodeRunStatus(decodeJson(readFileSync(path, "utf8"))).run_status : "missing"
 }
 
 const loadResults = (results: string): ReadonlyArray<CaseResult> =>
@@ -223,7 +230,7 @@ const loadResults = (results: string): ReadonlyArray<CaseResult> =>
 		? readdirSync(results)
 				.map((name) => join(results, name, "result.json"))
 				.filter((path) => existsSync(path))
-				.map((path) => decodeCaseResult(JSON.parse(readFileSync(path, "utf8"))))
+				.map((path) => decodeCaseResult(decodeJson(readFileSync(path, "utf8"))))
 		: []
 
 /**
@@ -249,9 +256,10 @@ const spentUsd = (results: string) =>
 const claim = (results: string, key: string) =>
 	Effect.runSync(
 		Effect.result(
-			Effect.try(() =>
-				writeFileSync(join(results, `${key}.claim`), `${process.pid}\n`, { flag: "wx" }),
-			),
+			Effect.try({
+				try: () => writeFileSync(join(results, `${key}.claim`), `${process.pid}\n`, { flag: "wx" }),
+				catch: (cause) => new ClaimTakenError({ message: `Could not claim ${key}`, cause }),
+			}),
 		),
 	)._tag === "Success"
 
@@ -336,14 +344,14 @@ const runCase = (
 				locationMatches: locationMatches(findings, c.bugs),
 				models: { discovery: args.discoveryModel ?? null, validation: args.validationModel ?? null },
 			}
-			writeFileSync(join(out, "result.json"), `${JSON.stringify(result, null, 2)}\n`)
+			writeFileSync(join(out, "result.json"), `${encodePrettyJson(result)}\n`)
 			done(result)
 		})
 	})
 }
 
 const loadGrades = (path: string): Grades =>
-	existsSync(path) ? decodeGrades(JSON.parse(readFileSync(path, "utf8"))) : { bugs: [], spotChecks: [] }
+	existsSync(path) ? decodeGrades(decodeJson(readFileSync(path, "utf8"))) : { bugs: [], spotChecks: [] }
 
 const writeSummary = (args: Args) => {
 	const results = loadResults(args.results)
@@ -354,7 +362,7 @@ const writeSummary = (args: Args) => {
 	const total = aggregate(runs, () => "all")
 	writeFileSync(
 		join(args.results, "results.json"),
-		`${JSON.stringify({ generatedAt: new Date().toISOString(), byLanguage, byCorpus, total, runs }, null, 2)}\n`,
+		`${encodePrettyJson({ generatedAt: new Date().toISOString(), byLanguage, byCorpus, total, runs })}\n`,
 	)
 	const summary = [
 		"# Security audit eval",
@@ -419,7 +427,7 @@ const main = async () => {
 		console.error("OPENROUTER_API_KEY is not set; run under `infisical run --env dev --`.")
 		return process.exit(1)
 	}
-	const files = args.caseFiles.map((path) => decodeCaseFile(JSON.parse(readFileSync(path, "utf8"))))
+	const files = args.caseFiles.map((path) => decodeCaseFile(decodeJson(readFileSync(path, "utf8"))))
 	const queue = files.flatMap((file) =>
 		file.cases
 			.filter((c) => args.only === null || args.only.has(c.id))

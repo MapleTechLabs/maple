@@ -17,14 +17,15 @@ export type TracedService = typeof TracedService.Type
 
 export const loadTraced = (window: TimeWindow) =>
 	getServiceOverview({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-		Effect.map((response): ReadonlyArray<TracedService> =>
-			response.data.map((row) => ({
-				serviceName: row.serviceName,
-				errorRate: row.errorRate,
-				throughput: row.throughput,
-				p95LatencyMs: row.p95LatencyMs,
-			})),
-		),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<TracedService> =>
+				response.data.map((row) => ({
+					serviceName: row.serviceName,
+					errorRate: row.errorRate,
+					throughput: row.throughput,
+					p95LatencyMs: row.p95LatencyMs,
+				})),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
