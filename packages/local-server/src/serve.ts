@@ -264,11 +264,10 @@ export const corsHeadersForAllowedOrigin = (
 		? {
 				"access-control-allow-origin": origin,
 				"access-control-allow-methods": "GET, POST, OPTIONS",
-				// `x-maple-sdk` is the SDK identity hint every browser SDK sends on
-				// every request; a listener that does not allow it fails preflight
-				// for the whole SDK.
+				// Instrumented dashboards propagate W3C and B3 trace context on
+				// queries and status probes as well as SDK ingest requests.
 				"access-control-allow-headers":
-					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
+					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key, traceparent, tracestate, baggage, b3",
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}

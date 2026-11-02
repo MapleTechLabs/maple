@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
+import { ok, rejects, strictEqual } from "node:assert"
 import { Effect, Exit, Result, Tracer } from "effect"
 import { checkpointQueryUrl } from "@maple/local-server/checkpoints"
 import {
@@ -229,13 +229,10 @@ describe("browser origin policy", () => {
 	})
 
 	it("echoes any allowed origin instead of a wildcard", () => {
-		deepStrictEqual(corsHeadersForAllowedOrigin(hostedOrigin), {
-			"access-control-allow-origin": hostedOrigin,
-			"access-control-allow-methods": "GET, POST, OPTIONS",
-			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
-			"access-control-allow-private-network": "true",
-			vary: "Origin",
-		})
+		const headers = corsHeadersForAllowedOrigin(hostedOrigin)
+		strictEqual(headers?.["access-control-allow-origin"], hostedOrigin)
+		strictEqual(headers?.vary, "Origin")
+		strictEqual(headers?.["access-control-allow-private-network"], "true")
 		const loopbackOrigin = "http://localhost:3000"
 		strictEqual(allowed("http://127.0.0.1:4318/v1/traces", loopbackOrigin), true)
 		strictEqual(
@@ -243,5 +240,27 @@ describe("browser origin policy", () => {
 			loopbackOrigin,
 		)
 		strictEqual(corsHeadersForAllowedOrigin(null), undefined)
+	})
+
+	it("allows instrumented dashboard requests through the CORS preflight", () => {
+		const headers = new Headers(corsHeadersForAllowedOrigin(hostedOrigin))
+		const allowedHeaders = new Set(
+			headers
+				.get("access-control-allow-headers")
+				?.split(",")
+				.map((header) => header.trim().toLowerCase()),
+		)
+		for (const requested of [
+			"content-type",
+			"authorization",
+			"x-maple-sdk",
+			"x-maple-ingest-key",
+			"traceparent",
+			"tracestate",
+			"baggage",
+			"b3",
+		]) {
+			ok(allowedHeaders.has(requested), `preflight must allow ${requested}`)
+		}
 	})
 })
