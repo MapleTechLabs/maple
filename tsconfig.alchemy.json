@@ -13,6 +13,13 @@
 		"noEmit": true,
 		"strict": true,
 		"skipLibCheck": true,
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"ignoreEffectWarningsInTscExitCode": true,
+				"diagnosticSeverity": { "unstableApiUsage": "off" }
+			}
+		],
 		// workers-types is load-bearing for the binding parity gates: without the
 		// ambient globals (Workflow, Service, KVNamespace, …), the references to
 		// them inside alchemy's InferEnv .d.ts silently resolve to `any` under
