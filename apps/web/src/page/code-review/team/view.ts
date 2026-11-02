@@ -45,12 +45,14 @@ import {
 import {
 	ASCENDING,
 	highlightsOf,
+	isRanked,
 	type Metric,
 	metricOf,
 	RANK_MIN_PULL_REQUESTS,
 	RANKABLE,
 	rankedMetric,
 	scorecardRows,
+	sortOf,
 	teamMedian,
 	type TeamScores,
 } from "./derive"
@@ -291,7 +293,7 @@ const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | 
 }
 
 const sortHead = (h: H, column: Column, model: Model, ranked: boolean): Html => {
-	const sort = model.search.sort ?? "person"
+	const sort = sortOf(model.search)
 	const isActive = ranked ? rankedMetric(sort) === column.metric : sort === column.metric
 	const isAscending = ASCENDING.has(column.metric)
 	const className = cn("px-3 text-right font-normal", column.className)
@@ -319,7 +321,7 @@ const sortHead = (h: H, column: Column, model: Model, ranked: boolean): Html => 
 }
 
 const personHead = (h: H, model: Model): Html => {
-	const isActive = (model.search.sort ?? "person") === "person" && model.search.ranked !== true
+	const isActive = sortOf(model.search) === "person" && !isRanked(model.search)
 	return tableHead(
 		h,
 		[
@@ -389,9 +391,7 @@ const memberRow = (
 	)
 
 const scorecardTitle = (model: Model) =>
-	model.search.ranked === true
-		? `Ranked by ${RANKED_BY[rankedMetric(model.search.sort ?? "person")]}`
-		: "Scorecard"
+	isRanked(model.search) ? `Ranked by ${RANKED_BY[rankedMetric(sortOf(model.search))]}` : "Scorecard"
 
 const scorecardFooter = (h: H, ranked: boolean): Html =>
 	h.footer(
@@ -404,9 +404,9 @@ const scorecardFooter = (h: H, ranked: boolean): Html =>
 	)
 
 const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMember>): Html => {
-	const ranked = model.search.ranked === true
+	const ranked = isRanked(model.search)
 	const scores = teamScores(members)
-	const rows = scorecardRows(members, model.search.sort ?? "person", ranked, scores)
+	const rows = scorecardRows(members, sortOf(model.search), ranked, scores)
 	return panel(h, {}, [
 		panelHeader(h, {
 			title: scorecardTitle(model),
@@ -450,7 +450,7 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 
 /** The headline and scorecard with their real labels, columns and footer, values still loading. */
 const teamSkeleton = (h: H, model: Model): Html => {
-	const ranked = model.search.ranked === true
+	const ranked = isRanked(model.search)
 	const columns: ReadonlyArray<SkeletonColumn> = [
 		...(ranked ? [{ label: "#", head: "w-10 px-3", cell: "px-3", bar: "h-3 w-4" }] : []),
 		{ label: "Person", head: "px-4", cell: "px-4 py-2.5", bar: "h-3 w-28" },

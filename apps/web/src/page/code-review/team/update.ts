@@ -17,6 +17,7 @@ import {
 } from "../kit/frame-update"
 import { cachedStep, remember } from "../kit/page-steps"
 import type { Retained } from "../kit/retained"
+import { DEFAULT_SORT, sortOf } from "./derive"
 import { FetchTeam, Message, type Model } from "./model"
 import type { PresetValue } from "../../kit/time-controls"
 
@@ -127,9 +128,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.frame.window === null ? { model } : request(model, context, model.frame.window, "Refresh"),
 		ClickedClearFilters: () => navigate(model, { repo: undefined }),
 		// A second click on the sorted column goes back to by person.
-		ClickedSort: ({ sort }) =>
-			navigate(model, { sort: sort === "person" || sort === model.search.sort ? undefined : sort }),
-		SelectedView: ({ view }) => navigate(model, { ranked: view === "ranked" ? true : undefined }),
+		ClickedSort: ({ sort }) => {
+			const next = sort === sortOf(model.search) ? "person" : sort
+			return navigate(model, { sort: next === DEFAULT_SORT ? undefined : next })
+		},
+		SelectedView: ({ view }) => navigate(model, { ranked: view === "ranked" ? undefined : false }),
 	})
 
 /** What this tab hands the next one. */
