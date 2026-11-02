@@ -36,6 +36,7 @@ import {
 	numberCell,
 	resultCell,
 	sectionTitle,
+	RESULT_LANE,
 } from "./view-kit"
 
 // `/mcp-servers/:service/sessions` and one session: a server's requests grouped by `mcp.session.id`,
@@ -523,7 +524,7 @@ const requestsPanel = <M>(
 						hidden: "hidden @min-[800px]/panel:flex",
 					}),
 					th(h, { label: "Duration", width: "w-52 shrink-0", align: "right" }),
-					th(h, { label: "Result", width: "w-28 shrink-0 pl-4" }),
+					th(h, { label: "Result", width: RESULT_LANE }),
 					th(h, {
 						label: "Time",
 						width: "w-14 shrink-0",

@@ -48,6 +48,7 @@ import {
 	seriesRows,
 	toolColor,
 	volumeSpark,
+	RESULT_LANE,
 } from "./view-kit"
 import { typographyClass } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
@@ -263,7 +264,7 @@ const toolRow = <M>(
 		duration(h, row.p95, options.percentile === "p95", "hidden @min-[900px]/panel:block"),
 		shareCell(h, { ratio: rate, max: maxRate, label: formatErrorRate(rate), tone: errorTone(rate) }),
 		h.span(
-			[h.Class("hidden w-28 shrink-0 pl-4 @min-[640px]/panel:block")],
+			[h.Class(cn(RESULT_LANE, "hidden @min-[640px]/panel:block"))],
 			[
 				row.topError === null
 					? h.span([h.Class("font-mono text-xs text-foreground-subtle")], [EMPTY_VALUE])
@@ -317,7 +318,7 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 					}),
 					th(h, {
 						label: "Top error",
-						width: "w-28 shrink-0 pl-4",
+						width: RESULT_LANE,
 						hidden: "hidden @min-[640px]/panel:flex",
 					}),
 					th(h, {

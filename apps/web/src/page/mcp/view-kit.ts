@@ -334,10 +334,13 @@ export const durationMeterCell = <M>(
 		],
 	)
 
+/** The result lane's width, shared by its header and cells. */
+export const RESULT_LANE = "w-28 shrink-0 pl-4"
+
 /** A call's result: `ok`, or its `error.type` chip. */
 export const resultCell = <M>(h: HtmlBuilder<M>, errorType: string | null): Html =>
 	h.span(
-		[h.Class("w-28 shrink-0 pl-4")],
+		[h.Class(RESULT_LANE)],
 		[
 			errorType === null
 				? h.span([h.Class("font-mono text-xs text-foreground-subtle")], ["ok"])
