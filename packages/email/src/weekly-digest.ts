@@ -1,10 +1,10 @@
 /**
  * Runtime renderer for the weekly digest email.
  *
- * The markup lives in `emails/weekly-digest.vue` and is compiled to
- * `src/generated/weekly-digest.ts` by Maizzle (`bun run --cwd packages/email
- * build`). This module only splices those strings together, so it is safe to
- * import from a Cloudflare Worker's request path.
+ * The markup lives in `templates/` and is compiled to
+ * `src/generated/weekly-digest.ts` (`bun run --cwd packages/email build`).
+ * This module only splices those strings together, so it is safe to import
+ * from a Cloudflare Worker's request path.
  */
 import { FRAGMENTS, PAGE } from "./generated/weekly-digest"
 import { escapeHtml, fill, preheaderPadding, truncate } from "./template"

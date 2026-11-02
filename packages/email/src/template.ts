@@ -1,6 +1,6 @@
 /**
  * The whole email runtime: HTML escaping plus a token/slot splicer for the
- * Maizzle-compiled templates in `src/generated/`.
+ * templates compiled into `src/generated/`.
  *
  * Zero dependencies on purpose — this runs inside the API Worker, where
  * pulling react + react-email in just to produce a string was the problem this
