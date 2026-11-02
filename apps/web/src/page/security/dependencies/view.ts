@@ -71,7 +71,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const clock: Clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
 	return securityLayout(
 		h,
-		{ active: "dependencies", overlay: [findingSheet(h, model, clock)] },
+		{ source: "dependencies", overlay: [findingSheet(h, model, clock)] },
 		body(h, model, clock),
 	)
 })

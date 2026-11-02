@@ -24,7 +24,7 @@ import {
 	runTotalUsd,
 	shortId,
 } from "../kit/format"
-import { stack } from "../kit/layout"
+import { codeCrumbs, stack } from "../kit/layout"
 import { gateState, placeholder } from "../kit/parts"
 import {
 	areasOf,
@@ -42,7 +42,7 @@ import { phaseStrip, runActions, runStats, runTitle, stopBanner } from "./view-h
 import { findingSheet, findingsSection } from "./view-findings"
 import { eventsPanel, gapsPanel, ledgerPanel } from "./view-panels"
 
-// `/security/runs/$runId`: what the run found first, by severity; how it ran (phases, totals,
+// `/security/code/runs/$runId`: what the run found first, by severity; how it ran (phases, totals,
 // ledger, events) below, folded once it finished.
 
 type H = HtmlBuilder<Message>
@@ -199,7 +199,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								title: "Run not found",
 								description: "It may belong to another organization, or the link is stale.",
 								back: {
-									href: hrefOf(AppRoute.SecurityRuns({ search: {} })),
+									href: hrefOf(AppRoute.SecurityCodeRuns({ search: {} })),
 									label: "Back to runs",
 								},
 							})
@@ -218,15 +218,14 @@ export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const run = runOf(model)
 	const target = run === null ? null : targetOf(model, run)
 	return [
-		{ label: "Security", href: hrefOf(AppRoute.Security()) },
-		...(run === null || target === null
-			? [{ label: "Runs", href: hrefOf(AppRoute.SecurityRuns({ search: {} })) }]
-			: [
-					{
+		...codeCrumbs(
+			run === null || target === null
+				? { label: "Runs", href: hrefOf(AppRoute.SecurityCodeRuns({ search: {} })) }
+				: {
 						label: target.repository,
-						href: hrefOf(AppRoute.SecurityRuns({ search: { target: target.id } })),
+						href: hrefOf(AppRoute.SecurityCodeRuns({ search: { target: target.id } })),
 					},
-				]),
+		),
 		{ label: `Run ${shortId(model.runId)}` },
 	]
 }

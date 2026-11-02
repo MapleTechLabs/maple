@@ -269,7 +269,7 @@ const noTargets = (h: H, model: Model): Html =>
 						icon(h, "PlusIcon"),
 						"Add target",
 					])
-				: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Security()) }, [
+				: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.SecurityCode()) }, [
 						"Open the overview",
 					]),
 		],

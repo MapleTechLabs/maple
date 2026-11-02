@@ -1,5 +1,5 @@
 import { SEVERITY_FILL } from "../../errors/kit/severity"
-import { NARROW_TWO_COLUMNS } from "../kit/layout"
+import { BESIDE_RAIL_TWO_COLUMNS } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -71,7 +71,7 @@ type H = HtmlBuilder<Message>
 
 const runHref = (run: SecurityAuditRun) => hrefOf(AppRoute.SecurityRun({ runId: run.id }))
 const targetRunsHref = (target: SecurityAuditTarget) =>
-	hrefOf(AppRoute.SecurityRuns({ search: { target: target.id } }))
+	hrefOf(AppRoute.SecurityCodeRuns({ search: { target: target.id } }))
 
 const findingsOfTarget = (
 	model: Model,
@@ -167,7 +167,7 @@ const kpis = (h: H, model: Model): Html => {
 	const coverage = coverageAcross(model)
 	// Until its reads land, an empty sum is unknown, not "not mapped".
 	const coverageUnknown = coverage === null && !coverageSettled(model)
-	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
+	return statRail(h, { columns: 4, className: BESIDE_RAIL_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Open leads",
 			value: unknown ?? String(confirmed + toValidate),
@@ -543,7 +543,7 @@ const topFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAud
 				{
 					tone: "muted",
 					className: "text-xs",
-					href: hrefOf(AppRoute.SecurityFindings({ search: {} })),
+					href: hrefOf(AppRoute.SecurityCodeFindings({ search: {} })),
 				},
 				["All findings"],
 			),
@@ -612,7 +612,7 @@ const overviewLoading = (h: H): ReadonlyArray<Html> => [
 		[h.Class("relative")],
 		[
 			h.div(
-				[h.Class("grid grid-cols-2 gap-px md:grid-cols-4")],
+				[h.Class("grid grid-cols-2 gap-px 2xl:grid-cols-4")],
 				Array.from({ length: 4 }, () => placeholder(h, "h-24")),
 			),
 			skeletonSlowNote(h, "absolute inset-x-0 top-full mt-1"),

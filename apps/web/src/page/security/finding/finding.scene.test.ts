@@ -167,7 +167,10 @@ describe("security finding", () => {
 			{ update: pageUpdate, view },
 			given(missing),
 			expectView(text("Finding not found")).toExist(),
-			expectView(role("link", { name: "Back to findings" })).toHaveAttr("href", "/security/findings"),
+			expectView(role("link", { name: "Back to findings" })).toHaveAttr(
+				"href",
+				"/security/code/findings",
+			),
 			expectView(text(/^Couldn't load/)).not.toExist(),
 		)
 	})

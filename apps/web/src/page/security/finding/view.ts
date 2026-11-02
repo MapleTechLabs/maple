@@ -32,14 +32,14 @@ import {
 	refLabel,
 	VERDICT_LABEL,
 } from "../kit/format"
-import { stack } from "../kit/layout"
+import { codeCrumbs, stack } from "../kit/layout"
 import { gateState, metaItem, placeholder, securitySeverityBadge } from "../kit/parts"
 import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } from "./derive"
 import { Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
 
-// `/security/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
+// `/security/code/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
 
 type H = HtmlBuilder<Message>
 
@@ -349,7 +349,7 @@ const findingNotFound = (h: H): Html =>
 	resourceNotFound(h, {
 		title: "Finding not found",
 		description: "It may belong to another target or organization, or the link is stale.",
-		back: { href: hrefOf(AppRoute.SecurityFindings({ search: {} })), label: "Back to findings" },
+		back: { href: hrefOf(AppRoute.SecurityCodeFindings({ search: {} })), label: "Back to findings" },
 	})
 
 const failed = (h: H, failure: LoadFailure, title: string): Html => {
@@ -383,7 +383,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 )
 
 export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
-	{ label: "Security", href: hrefOf(AppRoute.Security()) },
-	{ label: "Findings", href: hrefOf(AppRoute.SecurityFindings({ search: {} })) },
+	...codeCrumbs({ label: "Findings", href: hrefOf(AppRoute.SecurityCodeFindings({ search: {} })) }),
 	{ label: findingOf(model)?.record.title ?? "Finding" },
 ]

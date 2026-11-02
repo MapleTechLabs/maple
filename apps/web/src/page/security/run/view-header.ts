@@ -160,7 +160,7 @@ const stopAction = (h: H, model: Model, action: StopAction): ReadonlyArray<Html>
 	const control =
 		action === "start"
 			? startRunButton(h, model)
-			: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Security()) }, [
+			: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.SecurityCode()) }, [
 					action === "limit" ? "Raise the limit" : "Spend & models",
 				])
 	return [alertAction(h, [control])]

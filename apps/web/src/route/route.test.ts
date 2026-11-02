@@ -135,13 +135,13 @@ describe("routes", () => {
 		expect(routeRedirect(parse("/integrations"))).toEqual(Option.none())
 	})
 
-	test("the Security Center's tabs, run and finding pages parse to their own routes", () => {
-		expect(parse("/security")._tag).toBe("Security")
-		expect(parse("/security/findings?rejected=true")).toMatchObject({
-			_tag: "SecurityFindings",
+	test("the Security Center's sources, run and finding pages parse to their own routes", () => {
+		expect(parse("/security/code")._tag).toBe("SecurityCode")
+		expect(parse("/security/code/findings?rejected=true")).toMatchObject({
+			_tag: "SecurityCodeFindings",
 			search: { rejected: true },
 		})
-		expect(parse("/security/runs")._tag).toBe("SecurityRuns")
+		expect(parse("/security/code/runs")._tag).toBe("SecurityCodeRuns")
 		expect(parse("/security/exposure")._tag).toBe("SecurityExposure")
 		expect(parse("/security/runtimes")._tag).toBe("SecurityRuntimes")
 		expect(parse("/security/dependencies")._tag).toBe("SecurityDependencies")
@@ -149,15 +149,37 @@ describe("routes", () => {
 			_tag: "SecurityDependencies",
 			search: { repo: "repo_1" },
 		})
-		expect(parse("/security/runs/run_9f3c2a1e7b")).toMatchObject({
+		expect(parse("/security/code/runs/run_9f3c2a1e7b")).toMatchObject({
 			_tag: "SecurityRun",
 			runId: "run_9f3c2a1e7b",
 		})
-		const finding = parse("/security/findings/5ec0a0d1-0000-4000-8000-000000000001/exports%2Ftenant")
+		const finding = parse("/security/code/findings/5ec0a0d1-0000-4000-8000-000000000001/exports%2Ftenant")
 		expect(finding).toMatchObject({ _tag: "SecurityFinding", fingerprint: "exports/tenant" })
 		expect(hrefOf(finding)).toBe(
-			"/security/findings/5ec0a0d1-0000-4000-8000-000000000001/exports%2Ftenant",
+			"/security/code/findings/5ec0a0d1-0000-4000-8000-000000000001/exports%2Ftenant",
 		)
+	})
+
+	test("the code audit's old links open the same page under /security/code", () => {
+		const redirectOf = (path: string) => Option.map(routeRedirect(parse(path)), ({ url }) => url)
+		expect(redirectOf("/security")).toEqual(Option.some("/security/code"))
+		expect(redirectOf("/security/findings")).toEqual(Option.some("/security/code/findings"))
+		expect(redirectOf("/security/findings?status=%22all%22&q=%22tenant%22")).toEqual(
+			Option.some(hrefOf(AppRoute.SecurityCodeFindings({ search: { status: "all", q: "tenant" } }))),
+		)
+		expect(redirectOf("/security/runs?target=%22tgt_1%22")).toEqual(
+			Option.some(hrefOf(AppRoute.SecurityCodeRuns({ search: { target: "tgt_1" } }))),
+		)
+		expect(redirectOf("/security/runs/run_9f3c2a1e7b")).toEqual(
+			Option.some("/security/code/runs/run_9f3c2a1e7b"),
+		)
+		expect(
+			redirectOf("/security/findings/5ec0a0d1-0000-4000-8000-000000000001/exports%2Ftenant"),
+		).toEqual(
+			Option.some("/security/code/findings/5ec0a0d1-0000-4000-8000-000000000001/exports%2Ftenant"),
+		)
+		expect(routeRedirect(parse("/security/code"))).toEqual(Option.none())
+		expect(routeRedirect(parse("/security/exposure"))).toEqual(Option.none())
 	})
 
 	test("an unknown path is NotFound", () => {
