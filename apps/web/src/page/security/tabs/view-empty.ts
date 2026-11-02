@@ -82,6 +82,6 @@ export const emptyOnRamp = (h: H, model: Model): Html => {
 				),
 			]),
 		],
-		"rounded-md border md:py-16",
+		"rounded-md border border-dashed md:py-14",
 	)
 }

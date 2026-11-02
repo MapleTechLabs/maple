@@ -247,7 +247,7 @@ describe("security telemetry tabs", () => {
 			expectView(text(/release line is end of life/)).toExist(),
 			// Python's only advisory is medium: listed in the table, not as an upgrade to make now.
 			expectView(role("link", { name: "CVE-2025-0938" })).toBeAbsent(),
-			expectView(text("1 medium")).toExist(),
+			expectView(text("Medium")).toExist(),
 			expectView(text("None known")).toExist(),
 			// Java's advisory read failed; Python 3.13 was past the read budget.
 			expectView(text("Unavailable")).toExist(),

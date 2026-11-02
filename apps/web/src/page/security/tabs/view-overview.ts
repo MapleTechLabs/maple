@@ -1,5 +1,5 @@
 import { SEVERITY_FILL } from "../../errors/kit/severity"
-import { BESIDE_RAIL_TWO_COLUMNS } from "../kit/layout"
+import { NARROW_TWO_COLUMNS, ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -14,7 +14,16 @@ import { meter } from "../../../ui/meter"
 import { skeletonSlowNote } from "../../../ui/skeleton"
 import { panel, panelHeader } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
-import { ROW_LINK_LIFT, rowLink, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	ROW_LINK_LIFT,
+	rowLink,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "../../../ui/table"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import {
 	formatElapsed,
@@ -167,7 +176,7 @@ const kpis = (h: H, model: Model): Html => {
 	const coverage = coverageAcross(model)
 	// Until its reads land, an empty sum is unknown, not "not mapped".
 	const coverageUnknown = coverage === null && !coverageSettled(model)
-	return statRail(h, { columns: 4, className: BESIDE_RAIL_TWO_COLUMNS }, [
+	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Open leads",
 			value: unknown ?? String(confirmed + toValidate),
@@ -175,7 +184,7 @@ const kpis = (h: H, model: Model): Html => {
 			subline: unknown === null ? leadsLine(confirmed, toValidate) : undefined,
 		}),
 		statRailItem(h, {
-			eyebrow: "Covered",
+			eyebrow: "Coverage",
 			value: coverageUnknown
 				? placeholder(h, "h-7 w-10")
 				: coverage === null
@@ -297,7 +306,13 @@ const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Htm
 		[h.Class("flex min-w-0 flex-col items-start gap-1")],
 		[
 			runStatusBadge(h, run),
-			h.span([h.Class(cn("max-w-56 truncate text-xs text-muted-foreground", ROW_LINK_LIFT)), h.Title(detail)], [detail]),
+			h.span(
+				[
+					h.Class(cn("max-w-56 truncate text-xs text-muted-foreground", ROW_LINK_LIFT)),
+					h.Title(detail),
+				],
+				[detail],
+			),
 		],
 	)
 }
@@ -334,7 +349,10 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
  */
 const metaLine = (h: H, parts: ReadonlyArray<string>, title: string): Html =>
 	h.span(
-		[h.Class(cn("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground", ROW_LINK_LIFT)), h.Title(title)],
+		[
+			h.Class(cn("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground", ROW_LINK_LIFT)),
+			h.Title(title),
+		],
 		parts.map((part, index) =>
 			h.span(
 				[
@@ -362,49 +380,46 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 	// Model first so a long scope path is what truncates.
 	const parts = [targetModelOf(model, target), ...targetParts(target)].filter((part) => part !== null)
 	const meta = parts.join(" · ")
+	const leads = isFindingsKnown
+		? run === undefined || run.status === "failed"
+			? findings.length === 0
+				? h.span([h.Class("text-xs text-muted-foreground")], ["No completed run"])
+				: leadCounts(h, findings)
+			: leadCounts(h, findings)
+		: h.span([h.Class("text-xs text-muted-foreground")], [findings === "forbidden" ? "Admins only" : ""])
 	return tableRow(
 		h,
 		[
 			tableCell(h, [
 				// The name is the row's link, stretched over the whole row.
-				rowLink(
-					h,
-					{ href, className: "flex min-w-0 items-center gap-2.5" },
-					[
-						icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-						h.span(
-							[h.Class("flex min-w-0 flex-col")],
-							[
-								repositoryName(h, target.repository, "text-sm font-medium"),
-								metaLine(h, parts, meta),
-							],
-						),
-					],
-				),
+				rowLink(h, { href, className: "flex min-w-0 items-center gap-2.5" }, [
+					icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
+					h.span(
+						[h.Class("flex min-w-0 flex-col")],
+						[
+							repositoryName(h, target.repository, "text-sm font-medium"),
+							metaLine(h, parts, meta),
+							// Phones drop the run and leads columns, so their gist rides here.
+							h.span(
+								[h.Class("mt-1.5 flex flex-wrap items-center gap-2 sm:hidden")],
+								[...(run === undefined ? [] : [runStatusBadge(h, run)]), leads],
+							),
+						],
+					),
+				]),
 			]),
-			tableCell(h, [lastRunCell(h, model, run)]),
-			tableCell(h, [
-				isFindingsKnown
-					? run === undefined || run.status === "failed"
-						? findings.length === 0
-							? h.span([h.Class("text-xs text-muted-foreground")], ["No completed run"])
-							: leadCounts(h, findings)
-						: leadCounts(h, findings)
-					: h.span(
-							[h.Class("text-xs text-muted-foreground")],
-							[findings === "forbidden" ? "Admins only" : ""],
-						),
-			]),
-			tableCell(h, [coverageCell(h, model, run)], "text-right"),
+			tableCell(h, [lastRunCell(h, model, run)], WIDE_COLUMN),
+			tableCell(h, [leads], WIDE_COLUMN),
+			tableCell(h, [coverageCell(h, model, run)], cn("text-right", WIDE_COLUMN)),
 			tableCell(
 				h,
 				[run === undefined ? "" : formatUsd(runTotalUsd(run))],
-				"text-right font-mono tabular-nums",
+				cn("text-right font-mono tabular-nums", WIDE_COLUMN),
 			),
 			tableCell(
 				h,
 				[icon(h, "ChevronRightIcon", { size: 14, className: "text-muted-foreground" })],
-				"w-8",
+				cn("w-8", ROOMY_COLUMN),
 			),
 		],
 		undefined,
@@ -418,18 +433,21 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 			title: "Targets",
 			action: h.span(
 				[h.Class("flex items-center gap-4 text-xs text-muted-foreground")],
-				[severityLegend(h), "One audit runs per target at a time"],
+				[
+					severityLegend(h),
+					h.span([h.Class("max-sm:hidden")], ["One audit runs per target at a time"]),
+				],
 			),
 		}),
 		table(h, { ariaLabel: "Audit targets" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Repository"]),
-					tableHead(h, ["Last run"]),
-					tableHead(h, ["Open leads"]),
-					tableHead(h, ["Coverage"], "text-right"),
-					tableHead(h, ["Run cost"], "text-right"),
-					tableHead(h, [h.span([h.Class("sr-only")], ["Open"])], "w-8"),
+					tableHead(h, ["Last run"], WIDE_COLUMN),
+					tableHead(h, ["Open leads"], WIDE_COLUMN),
+					tableHead(h, ["Coverage"], cn("text-right", WIDE_COLUMN)),
+					tableHead(h, ["Cost"], cn("text-right", WIDE_COLUMN)),
+					tableHead(h, [h.span([h.Class("sr-only")], ["Open"])], cn("w-8", ROOMY_COLUMN)),
 				]),
 			]),
 			tableBody(
@@ -451,7 +469,9 @@ const listLink = <M>(h: HtmlBuilder<M>, href: string, children: ReadonlyArray<Ht
 			h.a(
 				[
 					h.Href(href),
-					h.Class("flex items-center gap-4 px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken"),
+					h.Class(
+						"flex items-center gap-4 px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken",
+					),
 				],
 				children,
 			),
@@ -581,7 +601,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 								h.span(
 									[h.Class("flex min-w-0 flex-1 flex-col")],
 									[
-										h.span([h.Class("truncate text-sm")], [repository]),
+										repositoryName(h, repository, "text-sm"),
 										h.span(
 											[h.Class("truncate text-xs text-muted-foreground")],
 											[
@@ -612,7 +632,7 @@ const overviewLoading = (h: H): ReadonlyArray<Html> => [
 		[h.Class("relative")],
 		[
 			h.div(
-				[h.Class("grid grid-cols-2 gap-px 2xl:grid-cols-4")],
+				[h.Class("grid grid-cols-2 gap-px xl:grid-cols-4")],
 				Array.from({ length: 4 }, () => placeholder(h, "h-24")),
 			),
 			skeletonSlowNote(h, "absolute inset-x-0 top-full mt-1"),

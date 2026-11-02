@@ -81,7 +81,7 @@ const toolbar = (
 		leading: searchInput(h, {
 			id: "security-findings-search",
 			size: "sm",
-			className: "w-64 max-w-sm",
+			className: "w-full sm:w-64 sm:max-w-sm",
 			placeholder: "Search title, file or fingerprint…",
 			value: model.searchDraft,
 			onInput: (value) => Message.ChangedSearchDraft({ value }),

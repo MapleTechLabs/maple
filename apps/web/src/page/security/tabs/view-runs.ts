@@ -1,7 +1,9 @@
 import type { SecurityAuditRun, SecurityAuditRunDetail, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import { countLabel } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
@@ -138,40 +140,57 @@ const runRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(h, [
-				h.a(
-					[h.Href(href), h.Class("flex min-w-0 flex-col")],
-					[
-						h.span([h.Class("font-mono text-sm")], [`Run ${shortId(run.id)}`]),
-						h.span(
-							[h.Class("truncate text-xs text-muted-foreground")],
-							[
+			tableCell(
+				h,
+				[
+					h.a(
+						[h.Href(href), h.Class("flex min-w-0 flex-col")],
+						[
+							h.span([h.Class("font-mono text-sm")], [`Run ${shortId(run.id)}`]),
+							h.span(
+								[h.Class("truncate text-xs text-muted-foreground")],
 								[
-									RUN_KIND_LABEL[run.kind].toLowerCase(),
-									PROFILE_LABEL[run.profile],
-									scopeLabel(run.scopePaths),
-								].join(" · "),
-							],
-						),
-					],
-				),
-			]),
-			tableCell(h, [
-				h.span(
-					[h.Class("flex min-w-0 flex-col")],
-					[
-						repositoryName(h, repository, "text-sm"),
-						h.span(
-							[h.Class("truncate font-mono text-xs text-muted-foreground")],
-							[refLabel(run.sourceRef)],
-						),
-					],
-				),
-			]),
+									[
+										RUN_KIND_LABEL[run.kind].toLowerCase(),
+										PROFILE_LABEL[run.profile],
+										scopeLabel(run.scopePaths),
+									].join(" · "),
+								],
+							),
+							// Phones drop the target and cost columns, so they ride under the run.
+							h.span(
+								[h.Class("truncate text-xs text-muted-foreground sm:hidden")],
+								[`${repository} · ${formatUsd(runTotalUsd(run))}`],
+							),
+						],
+					),
+				],
+				"max-sm:w-full max-sm:max-w-0",
+			),
+			tableCell(
+				h,
+				[
+					h.span(
+						[h.Class("flex min-w-0 flex-col")],
+						[
+							repositoryName(h, repository, "text-sm"),
+							h.span(
+								[h.Class("truncate font-mono text-xs text-muted-foreground")],
+								[refLabel(run.sourceRef)],
+							),
+						],
+					),
+				],
+				WIDE_COLUMN,
+			),
 			tableCell(h, [statusCell(h, run)]),
-			tableCell(h, [findingsCell(h, runCountsOf(model, run.id), run)], "text-right"),
-			tableCell(h, [coverageCell(h, run, latestDetailOf(model, run.id))], "text-right"),
-			tableCell(h, [formatUsd(runTotalUsd(run))], "text-right font-mono tabular-nums"),
+			tableCell(h, [findingsCell(h, runCountsOf(model, run.id), run)], cn("text-right", WIDE_COLUMN)),
+			tableCell(
+				h,
+				[coverageCell(h, run, latestDetailOf(model, run.id))],
+				cn("text-right", ROOMY_COLUMN),
+			),
+			tableCell(h, [formatUsd(runTotalUsd(run))], cn("text-right font-mono tabular-nums", WIDE_COLUMN)),
 			tableCell(
 				h,
 				[
@@ -183,7 +202,7 @@ const runRow = (
 						],
 					),
 				],
-				"text-right font-mono text-xs text-muted-foreground",
+				cn("text-right font-mono text-xs text-muted-foreground", WIDE_COLUMN),
 			),
 		],
 		undefined,
@@ -225,9 +244,7 @@ const toolbar = (
 			},
 			toParentMessage: (message) => Message.GotRunsTargetSelectMessage({ message }),
 		}),
-		trailing: [
-			toolbarCount(h, [isCapped ? `${RUN_LIST_CAP}+ runs` : countLabel(count, "run")]),
-		],
+		trailing: [toolbarCount(h, [isCapped ? `${RUN_LIST_CAP}+ runs` : countLabel(count, "run")])],
 	})
 
 /** "Start run" for the target the list is narrowed to. */
@@ -303,7 +320,9 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 										[
 											emptyHeader(h, [
 												emptyTitle(h, ["No runs yet"]),
-												emptyDescription(h, ["Runs start manually for now: pick a target and start one."]),
+												emptyDescription(h, [
+													"Runs start manually for now: pick a target and start one.",
+												]),
 											]),
 										],
 										"rounded-md border border-dashed md:py-14",
@@ -314,12 +333,12 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 						tableHeader(h, [
 							tableRow(h, [
 								tableHead(h, ["Run"]),
-								tableHead(h, ["Target"]),
+								tableHead(h, ["Target"], WIDE_COLUMN),
 								tableHead(h, ["Status"]),
-								tableHead(h, ["Findings"], "text-right"),
-								tableHead(h, ["Coverage"], "text-right"),
-								tableHead(h, ["Cost"], "text-right"),
-								tableHead(h, ["Started"], "text-right"),
+								tableHead(h, ["Findings"], cn("text-right", WIDE_COLUMN)),
+								tableHead(h, ["Coverage"], cn("text-right", ROOMY_COLUMN)),
+								tableHead(h, ["Cost"], cn("text-right", WIDE_COLUMN)),
+								tableHead(h, ["Started"], cn("text-right", WIDE_COLUMN)),
 							]),
 						]),
 						tableBody(

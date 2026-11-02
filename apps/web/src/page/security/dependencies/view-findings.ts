@@ -3,7 +3,7 @@ import type {
 	DependencyProductionCoverage,
 	DependencyScanRepository,
 } from "@maple/domain/http"
-import { type AdvisorySeverity, displayAdvisoryId } from "@maple/domain/package-advisories"
+import { displayAdvisoryId } from "@maple/domain/package-advisories"
 import { countLabel, formatRate } from "@maple/ui/lib/format"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
@@ -19,12 +19,12 @@ import { textLink } from "../../../ui/text-link"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
 import { relativeTime } from "../../kit/relative-time"
-import { securitySeverityBadge } from "../kit/parts"
+import { ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
+import { advisorySeverityBadge, repositoryName } from "../kit/parts"
 import {
 	filteredFindings,
 	RELATION_LABEL,
 	repositoryFilterOf,
-	SEVERITY_LABEL,
 	STATUS_FILTER_LABEL,
 	STATUS_FILTERS,
 	statusFilterOf,
@@ -36,14 +36,6 @@ import { Message, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
-
-/** The code audit's severity badge; an advisory with no score reads as "Unrated". */
-export const dependencySeverityBadge = (h: H, severity: AdvisorySeverity, className?: string): Html =>
-	severity === "unknown"
-		? badge(h, { variant: "muted", className: cn("text-muted-foreground", className) }, [
-				SEVERITY_LABEL.unknown,
-			])
-		: securitySeverityBadge(h, severity, className)
 
 export const advisoryHref = (advisoryId: string): string =>
 	`https://osv.dev/vulnerability/${encodeURIComponent(advisoryId)}`
@@ -239,7 +231,7 @@ const findingRow = (
 		[
 			tableCell(
 				h,
-				[dependencySeverityBadge(h, finding.severity)],
+				[advisorySeverityBadge(h, finding.severity)],
 				cn("w-24", rowSelectedClass(isSelected)),
 			),
 			tableCell(h, [
@@ -264,14 +256,14 @@ const findingRow = (
 					],
 				),
 			]),
-			tableCell(h, [advisoryLink(h, finding)]),
-			tableCell(h, [productionCell(h, finding, production, scans)]),
+			tableCell(h, [advisoryLink(h, finding)], WIDE_COLUMN),
+			tableCell(h, [productionCell(h, finding, production, scans)], WIDE_COLUMN),
 			tableCell(h, [
 				finding.fixedIn === null
 					? muted(h, "No fix yet")
 					: h.span([h.Class("font-mono text-xs tabular-nums")], [finding.fixedIn]),
 			]),
-			tableCell(h, [muted(h, RELATION_LABEL[finding.relation])], "hidden md:table-cell"),
+			tableCell(h, [muted(h, RELATION_LABEL[finding.relation])], ROOMY_COLUMN),
 			tableCell(
 				h,
 				[
@@ -280,7 +272,7 @@ const findingRow = (
 						[
 							h.span(
 								[h.Class("truncate text-sm"), h.Title(finding.repositoryFullName)],
-								[finding.repositoryFullName],
+								[repositoryName(h, finding.repositoryFullName)],
 							),
 							middleTruncate(h, {
 								text: finding.lockfilePath,
@@ -312,7 +304,7 @@ const findingRow = (
 						className: "whitespace-nowrap text-xs text-muted-foreground",
 					}),
 				],
-				"whitespace-nowrap text-right",
+				cn("whitespace-nowrap text-right", WIDE_COLUMN),
 			),
 		],
 		cn(
@@ -336,12 +328,12 @@ const findingsTable = (
 			tableRow(h, [
 				tableHead(h, ["Severity"]),
 				tableHead(h, ["Package"]),
-				tableHead(h, ["Advisory"]),
-				tableHead(h, ["In production"]),
+				tableHead(h, ["Advisory"], WIDE_COLUMN),
+				tableHead(h, ["In production"], WIDE_COLUMN),
 				tableHead(h, ["Fixed in"]),
-				tableHead(h, ["Relation"], "hidden md:table-cell"),
+				tableHead(h, ["Relation"], ROOMY_COLUMN),
 				tableHead(h, ["Location"], "hidden lg:table-cell"),
-				tableHead(h, ["First seen"], "text-right"),
+				tableHead(h, ["First seen"], cn("text-right", WIDE_COLUMN)),
 			]),
 		]),
 		tableBody(

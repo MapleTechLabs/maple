@@ -90,7 +90,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					],
 					[options.eyebrow],
 				),
-				...(corner === undefined ? [] : [corner]),
+				...(corner === undefined ? [] : [h.span([h.Class("shrink-0 whitespace-nowrap")], [corner])]),
 			],
 		),
 		h.div(
@@ -100,8 +100,13 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					value: options.value,
 					unit: options.hint,
 					size: isSmall ? "sm" : "lg",
-					className: "shrink-0",
-					valueClassName: cn(VALUE_TONE[options.tone ?? "neutral"], options.valueClassName),
+					// A long value steps down a size on phones, and its unit wraps under it.
+					className: "min-w-0 flex-wrap",
+					valueClassName: cn(
+						VALUE_TONE[options.tone ?? "neutral"],
+						!isSmall && "max-sm:text-xl",
+						options.valueClassName,
+					),
 				}),
 				...(options.spark !== undefined && options.spark.length > 1
 					? [
@@ -144,7 +149,9 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					shell,
 					"w-full text-left",
 					rowSelectedClass(isSelected),
-					isDisabled ? "cursor-default" : "cursor-pointer hover:bg-surface-faint active:bg-surface-faint",
+					isDisabled
+						? "cursor-default"
+						: "cursor-pointer hover:bg-surface-faint active:bg-surface-faint",
 					"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),

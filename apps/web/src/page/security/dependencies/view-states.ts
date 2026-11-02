@@ -1,3 +1,4 @@
+import { SEVERITY_TEXT } from "../../errors/kit/severity"
 import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -48,7 +49,7 @@ export const notConnected = (h: H): Html =>
 				),
 			]),
 		],
-		"rounded-md border md:py-16",
+		"rounded-md border border-dashed md:py-14",
 	)
 
 /** Connected, never scanned: the first scan follows the connection or the next push. */
@@ -70,7 +71,7 @@ export const firstScan = (
 			]),
 			...(only === null ? [] : [emptyContent(h, [scanButton(h, model, only)])]),
 		],
-		"rounded-md border md:py-14",
+		"rounded-md border border-dashed md:py-14",
 	)
 }
 
@@ -114,14 +115,14 @@ export const severityRail = (
 		statRailItem(h, {
 			eyebrow: "Critical",
 			value: String(counts.critical),
-			tone: counts.critical > 0 ? "crit" : undefined,
+			valueClassName: counts.critical > 0 ? SEVERITY_TEXT.critical : undefined,
 			compact: true,
 			subline: "open, fix first",
 		}),
 		statRailItem(h, {
 			eyebrow: "High",
 			value: String(counts.high),
-			tone: counts.high > 0 ? "warn" : undefined,
+			valueClassName: counts.high > 0 ? SEVERITY_TEXT.high : undefined,
 			compact: true,
 			subline: "open",
 		}),
