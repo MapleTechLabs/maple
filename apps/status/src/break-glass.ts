@@ -72,7 +72,7 @@ const readCapped = (
 			if (chunk.done) return Effect.succeed(chunks)
 			const size = total + chunk.value.byteLength
 			if (size > MAX_FORM_BYTES) {
-				return Effect.tryPromise(() => reader.cancel()).pipe(
+				return Effect.tryPromise({ try: () => reader.cancel(), catch: unreadable }).pipe(
 					Effect.ignore,
 					Effect.andThen(reject(413, TOO_LARGE)),
 				)
@@ -123,8 +123,10 @@ export const parseForm = (request: Request): Effect.Effect<BreakGlassForm, Break
 		return decoded.value
 	})
 
-const notSaved = (message: string) => (cause: StatusStorageError) =>
+const notSaved = (message: string) => (cause: StatusStorageError | Schema.SchemaError) =>
 	new BreakGlassNotSaved({ message, cause })
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * Checks the token and the form against the page as visitors see it (overlay applied), then writes
@@ -185,9 +187,12 @@ export const postBreakGlassUpdate = (
 			body: form.body,
 			componentIds,
 		}
-		yield* env.storage
-			.kvPut(StatusPageKeys.overlayEntry(snapshot.pageId, id), JSON.stringify(entry))
-			.pipe(Effect.mapError(notSaved("The overlay could not be written.")))
+		yield* encodeJson(entry).pipe(
+			Effect.flatMap((json) =>
+				env.storage.kvPut(StatusPageKeys.overlayEntry(snapshot.pageId, id), json),
+			),
+			Effect.mapError(notSaved("The overlay could not be written.")),
+		)
 		// KV `list` lags writes, so the colo cache carries the new entry until the list catches up.
 		yield* rememberOverlay(env, snapshot.pageId, [...listed.entries, entry])
 		return entry

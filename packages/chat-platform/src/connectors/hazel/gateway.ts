@@ -53,11 +53,13 @@ const initialState: GatewayState = { awaitingAck: false }
 
 const reconnect: SocketDirective = { _tag: "reconnect", closeCode: RECONNECT_CLOSE_CODE }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const token = (config: ConnectorConfig): string => config.get(BOT_TOKEN_CONFIG) ?? ""
 
 const handshakeFrame = (state: GatewayState, config: ConnectorConfig): string => {
 	const resumeOffset = state.offset ?? FIRST_OFFSET
-	return JSON.stringify(
+	return encodeJson(
 		state.sessionId === undefined
 			? { op: "IDENTIFY", botToken: token(config), resumeOffset }
 			: { op: "RESUME", botToken: token(config), sessionId: state.sessionId, resumeOffset },
@@ -65,7 +67,7 @@ const handshakeFrame = (state: GatewayState, config: ConnectorConfig): string =>
 }
 
 const heartbeatFrame = (state: GatewayState): string =>
-	JSON.stringify(
+	encodeJson(
 		state.sessionId === undefined ? { op: "HEARTBEAT" } : { op: "HEARTBEAT", sessionId: state.sessionId },
 	)
 
@@ -106,9 +108,7 @@ const onFrame = (
 			// holding the ACK back would only have the gateway redeliver what was already handled.
 			return {
 				state: { ...state, sessionId: frame.sessionId, offset: frame.nextOffset },
-				send: [
-					JSON.stringify({ op: "ACK", sessionId: frame.sessionId, nextOffset: frame.nextOffset }),
-				],
+				send: [encodeJson({ op: "ACK", sessionId: frame.sessionId, nextOffset: frame.nextOffset })],
 				events: mapEvents(frame.events, state.botUserId),
 			}
 		case "HEARTBEAT_ACK":

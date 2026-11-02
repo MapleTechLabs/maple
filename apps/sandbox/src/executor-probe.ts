@@ -8,6 +8,9 @@
  * Durable Object that starts the container lives in `executor.ts`.
  */
 import { shellQuote } from "@maple/domain/sandbox"
+import { Schema } from "effect"
+
+const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 /**
  * Bumped when the checks change, so the next scheduled run probes again. v2: v1 found a TCP
@@ -54,7 +57,7 @@ export interface ProbeCheck {
 /** A Node one-liner that prints a response's status and body, or the fetch error, and exits non-zero on error. */
 const nodeFetch = (url: string) =>
 	`node -e ${shellQuote(
-		`fetch(${JSON.stringify(url)}, { signal: AbortSignal.timeout(8000) }).then(async (r) => console.log(r.status, (await r.text()).slice(0, 300))).catch((e) => { console.error(String(e.cause ?? e)); process.exit(1) })`,
+		`fetch(${encodeJsonString(url)}, { signal: AbortSignal.timeout(8000) }).then(async (r) => console.log(r.status, (await r.text()).slice(0, 300))).catch((e) => { console.error(String(e.cause ?? e)); process.exit(1) })`,
 	)}`
 
 const LOOPBACK = `node -e ${shellQuote(
@@ -70,7 +73,7 @@ export const LEAKED = "LEAK"
 export const BLOCKED = "blocked:"
 
 /** Shared by the detectors' Node programs: report once, then exit. */
-const REPORT = `let reported = false; const report = (leak, why) => { if (reported) return; reported = true; console.log((leak ? ${JSON.stringify(LEAKED)} + " " : ${JSON.stringify(BLOCKED)} + " ") + String(why).replace(/\\s+/g, " ").slice(0, 300)); process.exit(leak ? 0 : 1) };`
+const REPORT = `let reported = false; const report = (leak, why) => { if (reported) return; reported = true; console.log((leak ? ${encodeJsonString(LEAKED)} + " " : ${encodeJsonString(BLOCKED)} + " ") + String(why).replace(/\\s+/g, " ").slice(0, 300)); process.exit(leak ? 0 : 1) };`
 
 const node = (program: string) => `node -e ${shellQuote(program)}`
 
@@ -88,10 +91,10 @@ export const rawHttpLeak = ({ host, port, path, marker, timeoutMs = 8000 }: RawH
 	const hostHeader = host.includes(":") ? `[${host}]` : host
 	return node(
 		`${REPORT} let connected = false; let got = "";
-const s = require("node:net").connect({ host: ${JSON.stringify(host)}, port: ${port} });
+const s = require("node:net").connect({ host: ${encodeJsonString(host)}, port: ${port} });
 s.setTimeout(${timeoutMs}, () => report(false, got ? "no marker before timeout: " + got : connected ? "connected, no answer before timeout" : "connect timeout"));
-s.on("connect", () => { connected = true; s.write(${JSON.stringify(`GET ${path} HTTP/1.0\r\nHost: ${hostHeader}\r\nUser-Agent: maple-executor-probe\r\n\r\n`)}) });
-s.on("data", (chunk) => { got += chunk; if (got.includes(${JSON.stringify(marker)})) report(true, got) });
+s.on("connect", () => { connected = true; s.write(${encodeJsonString(`GET ${path} HTTP/1.0\r\nHost: ${hostHeader}\r\nUser-Agent: maple-executor-probe\r\n\r\n`)}) });
+s.on("data", (chunk) => { got += chunk; if (got.includes(${encodeJsonString(marker)})) report(true, got) });
 s.on("close", () => report(false, got ? "answered without the marker: " + got : connected ? "connected, closed without answering" : "closed"));
 s.on("error", (e) => report(false, e.code ?? e.message));`,
 	)
@@ -109,9 +112,9 @@ export interface TlsTarget {
 export const tlsLeak = ({ host, port, servername, timeoutMs = 8000 }: TlsTarget): string =>
 	node(
 		`${REPORT}
-const s = require("node:tls").connect({ host: ${JSON.stringify(host)}, port: ${port}, servername: ${JSON.stringify(servername)} });
+const s = require("node:tls").connect({ host: ${encodeJsonString(host)}, port: ${port}, servername: ${encodeJsonString(servername)} });
 s.setTimeout(${timeoutMs}, () => report(false, "no handshake before timeout"));
-s.on("secureConnect", () => report(true, "handshake with a trusted certificate for " + ${JSON.stringify(servername)}));
+s.on("secureConnect", () => report(true, "handshake with a trusted certificate for " + ${encodeJsonString(servername)}));
 s.on("close", () => report(false, "closed before the handshake"));
 s.on("error", (e) => report(false, e.code ?? e.message));`,
 	)
@@ -128,13 +131,13 @@ export const udpDnsLeak = ({ host, port, name, timeoutMs = 8000 }: UdpDnsTarget)
 	node(
 		`${REPORT}
 const id = 0x4d50;
-const labels = ${JSON.stringify(name)}.split(".").map((l) => Buffer.concat([Buffer.from([l.length]), Buffer.from(l)]));
+const labels = ${encodeJsonString(name)}.split(".").map((l) => Buffer.concat([Buffer.from([l.length]), Buffer.from(l)]));
 const query = Buffer.concat([Buffer.from([id >> 8, id & 255, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0]), ...labels, Buffer.from([0, 0, 1, 0, 1])]);
-const s = require("node:dgram").createSocket(${JSON.stringify(host.includes(":") ? "udp6" : "udp4")});
+const s = require("node:dgram").createSocket(${encodeJsonString(host.includes(":") ? "udp6" : "udp4")});
 setTimeout(() => report(false, "no answer before timeout"), ${timeoutMs});
 s.on("message", (m) => { if (m.readUInt16BE(0) !== id || (m[2] & 128) === 0) return; const answers = m.readUInt16BE(6); report(answers > 0, answers > 0 ? "dns answer with " + answers + " records" : "dns reply without records, rcode " + (m[3] & 15)) });
 s.on("error", (e) => report(false, e.code ?? e.message));
-s.send(query, ${port}, ${JSON.stringify(host)});`,
+s.send(query, ${port}, ${encodeJsonString(host)});`,
 	)
 
 /** Cloudflare's public resolver: every protocol answers on a known IP, and its certificate proves who answered. */

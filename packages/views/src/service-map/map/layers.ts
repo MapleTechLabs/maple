@@ -1,5 +1,5 @@
 import { getServiceMapNodeColor } from "@maple/ui/components/service-map/service-map-utils"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { handlePoint, type MeasuredNode } from "../xyflow/geometry"
 import { edgesLayer, flowEdge, flowNode, nodesLayer } from "../xyflow/view"
@@ -10,6 +10,8 @@ import { serviceMapNode } from "./nodes"
 import { type MiniMapNode, miniMapRects } from "./panels"
 import { particleCanvas } from "./particles"
 import { Message, type Positions, positionOf } from "./service-map"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The node, edge, minimap and particle layers. Each depends on the graph, layout, measurements
 // and selection only, never on the camera, so the view memoizes them across pan and zoom.
@@ -104,7 +106,7 @@ export const renderEdges = <M>(
 
 /** The edges the particle canvas animates (relation edges carry no traffic), serialized. */
 export const particleTracks = (graph: EffectiveGraph, positions: Positions, measured: Measured): string =>
-	JSON.stringify(
+	encodeJson(
 		drawableEdges(graph, positions, measured).flatMap(({ edge, source, target }) => {
 			if (edge.data?.relation !== undefined) return []
 			const geometry = edgeGeometry(edge, source, target)

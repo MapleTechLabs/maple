@@ -9,6 +9,8 @@ export const USER = "user_status_pages"
 export const NOW = Date.UTC(2026, 9, 28, 12)
 export const DAY_MS = 86_400_000
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const iso = (ms: number) => new Date(ms).toISOString()
 const sql = (testDb: TestDb, text: string, params: unknown[]) =>
 	Effect.promise(() => executeSql(testDb, text, params))
@@ -71,7 +73,7 @@ export const seedMonitor = (
 		[
 			input.id,
 			input.orgId ?? ORG,
-			JSON.stringify({
+			encodeJson({
 				_tag: "http",
 				url: "https://example.com/health",
 				method: "GET",

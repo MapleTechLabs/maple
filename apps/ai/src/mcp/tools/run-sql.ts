@@ -5,6 +5,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
 import { truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { MAX_RAW_SQL_RESULT_ROWS, maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import { rawSqlErrorText } from "../lib/raw-sql-error-text"
@@ -226,7 +227,7 @@ export function cellToString(value: Schema.Json | undefined, maxChars = DEFAULT_
 		value === null || value === undefined
 			? "null"
 			: typeof value === "object"
-				? JSON.stringify(value)
+				? (stringifyJson(value) ?? String(value))
 				: String(value)
 	return truncate(text.replace(/\r?\n/g, "\\n").replace(/\t/g, "\\t"), maxChars)
 }

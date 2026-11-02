@@ -31,9 +31,14 @@
  * GITHUB_TOKEN/GH_TOKEN for the PR-state gate.
  */
 
+import { Option, Schema } from "effect"
 import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
+
+// JSON.stringify printed "undefined" for an absent field; keep that in diagnostics.
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const showJson = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
 const fail = (message: string): never => {
 	console.error(`✗ ${message}`)
@@ -90,7 +95,7 @@ const main = async (): Promise<void> => {
 
 	const listed = await cfRequest(token, `/accounts/${accountId}/hyperdrive/configs`)
 	if (!listed.ok) {
-		fail(`Could not list Hyperdrive configs (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`)
+		fail(`Could not list Hyperdrive configs (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	// A success response whose `result` isn't an array means the API shape
 	// changed under us — fail loudly rather than green-no-op'ing the safety net.
@@ -128,7 +133,7 @@ const main = async (): Promise<void> => {
 			method: "DELETE",
 		})
 		if (!removed.ok && removed.status !== 404) {
-			console.log(`✗ delete failed (HTTP ${removed.status}): ${JSON.stringify(removed.errors)}`)
+			console.log(`✗ delete failed (HTTP ${removed.status}): ${showJson(removed.errors)}`)
 			failures.push(name)
 		}
 	}

@@ -483,7 +483,8 @@ const make: Effect.Effect<
 		callbackUrl: string,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
-		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
+		const connector = yield* requireConnector(connectorId)
+		const identity = yield* requireIdentity(connector)
 		const state = randomBytes(24).toString("base64url")
 		// The URL first, as the install does: an unconfigured connector fails here,
 		// before a state row nobody will ever redeem is written.
@@ -521,7 +522,8 @@ const make: Effect.Effect<
 		initiator: OAuthFlowInitiator,
 	) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
-		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
+		const connector = yield* requireConnector(connectorId)
+		const identity = yield* requireIdentity(connector)
 		const row = yield* consumeState(params, identityStateProvider(connectorId), initiator)
 		const now = yield* Clock.currentTimeMillis
 		const orgId = yield* decodeOrgId(row.orgId).pipe(

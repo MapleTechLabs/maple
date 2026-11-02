@@ -51,7 +51,7 @@ const freePort = () => {
 }
 
 /** The `SESSION ` line a fixture prints once started or refused. */
-const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log: string[]) => {
+const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log: string[], drain = true) => {
 	const reader = child.stdout.getReader()
 	const decoder = new TextDecoder()
 	let buffered = ""
@@ -66,9 +66,10 @@ const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log:
 		if (line !== undefined) {
 			reader.releaseLock()
 			// Keep draining so the child never blocks on a full pipe.
-			void child.stdout.pipeTo(
-				new WritableStream({ write: (bytes) => void log.push(decoder.decode(bytes)) }),
-			)
+			if (drain)
+				void child.stdout.pipeTo(
+					new WritableStream({ write: (bytes) => void log.push(decoder.decode(bytes)) }),
+				)
 			return decodeSessionLine(line.slice("SESSION ".length))
 		}
 	}
@@ -186,6 +187,131 @@ class Stop implements fc.AsyncCommand<{ running: number }, World> {
 const commands = [fc.constant(new Start()), fc.nat(5).map((pick) => new Stop(pick))]
 
 describeWithChdb("several alchemy dev sessions on one store", () => {
+	it.each(["foreign-exit", "lost-stdout"])(
+		"reopens cleanly after %s",
+		async (mode) => {
+			const root = mkdtempSync(join(tmpdir(), "maple-local-exit-"))
+			const dataDir = join(root, "data")
+			const children: Bun.Subprocess<"ignore", "pipe", "pipe">[] = []
+			const log: string[] = []
+			const spawn = (exitMode: string) => {
+				const child = Bun.spawn(["bun", SESSION, dataDir, "0", exitMode], {
+					stdin: "ignore",
+					stdout: "pipe",
+					stderr: "pipe",
+				})
+				children.push(child)
+				void child.stderr.pipeTo(
+					new WritableStream({ write: (bytes) => void log.push(new TextDecoder().decode(bytes)) }),
+				)
+				return child
+			}
+			try {
+				const child = spawn(mode)
+				const started = await readSession(child, [], false)
+				expect(started.error).toBeUndefined()
+				const ingested = await fetch(`${started.endpoint}/v1/logs`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({
+						resourceLogs: [
+							{
+								scopeLogs: [
+									{
+										logRecords: [
+											{
+												timeUnixNano: String(BigInt(Date.now()) * 1_000_000n),
+												body: { stringValue: "survives-exit" },
+											},
+										],
+									},
+								],
+							},
+						],
+					}),
+				})
+				expect(ingested.status).toBe(200)
+				const readLog = async (endpoint: string) => {
+					const response = await fetch(`${endpoint}/local/query`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({
+							sql: "SELECT Body FROM logs WHERE OrgId = 'local' AND Body = 'survives-exit'",
+						}),
+					})
+					expect(response.status).toBe(200)
+					return response.json()
+				}
+				// A query flushes the ingest batch before the host exits.
+				expect(await readLog(started.endpoint!)).toEqual([{ Body: "survives-exit" }])
+				if (mode === "lost-stdout") {
+					await child.stdout.cancel()
+					child.kill("SIGUSR2")
+				} else child.kill("SIGTERM")
+				const exited = await Promise.race([child.exited, Bun.sleep(10_000).then(() => "timeout")])
+				expect(existsSync(storeOpenMarkerPath(dataDir)), log.join("")).toBe(false)
+				if (mode === "foreign-exit") expect(exited, log.join("")).toBe(143)
+				// Bun versions differ on whether EPIPE is an unhandled error or a native exit.
+				else expect([0, 1], log.join("")).toContain(exited)
+				const reopened = spawn("scoped")
+				const printed = await readSession(reopened, [])
+				expect(printed.error).toBeUndefined()
+				expect(await healthy(printed.endpoint!)).toBe(true)
+				expect(await readLog(printed.endpoint!)).toEqual([{ Body: "survives-exit" }])
+				reopened.kill("SIGTERM")
+				expect(await reopened.exited).toBe(0)
+			} finally {
+				for (const child of children) if (child.exitCode === null) child.kill("SIGKILL")
+				await Promise.all(children.map((child) => child.exited))
+				rmSync(root, { recursive: true, force: true })
+			}
+		},
+		60_000,
+	)
+
+	it("refuses a dirty takeover once without retrying", async () => {
+		const root = mkdtempSync(join(tmpdir(), "maple-local-dirty-takeover-"))
+		const dataDir = join(root, "data")
+		const children: Bun.Subprocess<"ignore", "pipe", "pipe">[] = []
+		const port = freePort()
+		const spawn = () => {
+			const child = Bun.spawn(["bun", SESSION, dataDir, String(port)], {
+				stdin: "ignore",
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			children.push(child)
+			return child
+		}
+		try {
+			const owner = spawn()
+			void owner.stderr.pipeTo(new WritableStream({ write() {} }))
+			expect((await readSession(owner, [])).error).toBeUndefined()
+			const sharer = spawn()
+			const log: string[] = []
+			void sharer.stderr.pipeTo(
+				new WritableStream({ write: (bytes) => void log.push(new TextDecoder().decode(bytes)) }),
+			)
+			expect((await readSession(sharer, log)).error).toBeUndefined()
+			owner.kill("SIGKILL")
+			await owner.exited
+			expect(existsSync(storeOpenMarkerPath(dataDir))).toBe(true)
+			// The retry clock lives in a separate Bun process; fake timers cannot drive it.
+			const deadline = Date.now() + 10_000
+			while (!log.join("").includes("not cleanly closed") && Date.now() < deadline) await Bun.sleep(50)
+			expect(log.join("")).toContain("not cleanly closed")
+			await Bun.sleep(3500)
+			const output = log.join("")
+			expect(output.match(/cannot take over Maple Local/g)).toHaveLength(1)
+			expect(output).toContain('onDirtyStore: "wipe"')
+			expect(output).not.toContain("; retrying")
+		} finally {
+			for (const child of children) if (child.exitCode === null) child.kill("SIGKILL")
+			await Promise.all(children.map((child) => child.exited))
+			rmSync(root, { recursive: true, force: true })
+		}
+	}, 60_000)
+
 	it("always have exactly one owner, one live endpoint, and a clean store at the end", async () => {
 		await fc.assert(
 			fc.asyncProperty(fc.commands(commands, { maxCommands: 7 }), async (sequence) => {

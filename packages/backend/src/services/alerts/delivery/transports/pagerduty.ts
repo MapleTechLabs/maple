@@ -1,9 +1,11 @@
-import { Duration, Effect } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { AlertSeverity } from "@maple/domain/http"
 import { displayGroupKey, formatAlertHeadline, truncate, uptimeSummaryLine } from "../../alert-formatting"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Config = SecretConfigOf<"pagerduty">
 
@@ -44,7 +46,7 @@ const resolveRequest = (integrationKey: string, dedupKey: string): HttpRequestSp
 	headers: { "content-type": "application/json" },
 	guarded: false,
 	sensitivePath: false,
-	body: JSON.stringify({ routing_key: integrationKey, event_action: "resolve", dedup_key: dedupKey }),
+	body: encodeJson({ routing_key: integrationKey, event_action: "resolve", dedup_key: dedupKey }),
 })
 
 /**
@@ -67,7 +69,7 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 			headers: { "content-type": "application/json" },
 			guarded: false,
 			sensitivePath: false,
-			body: JSON.stringify({
+			body: encodeJson({
 				routing_key: input.config.integrationKey,
 				event_action: context.eventType === "resolve" ? "resolve" : "trigger",
 				// A resolve closes the warning-keyed alert here and the critical one
@@ -159,7 +161,7 @@ export const verifyPagerDutyRoutingKey = (
 	HttpClient.execute(
 		HttpClientRequest.post("https://events.pagerduty.com/v2/enqueue").pipe(
 			HttpClientRequest.bodyText(
-				JSON.stringify({
+				encodeJson({
 					routing_key: integrationKey,
 					event_action: "resolve",
 					dedup_key: dedupKey,

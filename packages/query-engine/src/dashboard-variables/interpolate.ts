@@ -18,6 +18,9 @@
 
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
 import { splitWhereClause } from "@maple/domain/where-clause"
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** Sentinel for the "All" selection, both in URLs and resolved values. */
 export const ALL_VALUE = "$__all"
@@ -158,6 +161,6 @@ export function hasUnresolvedVariableRefs(
 	values: VariableValues,
 ): boolean {
 	if (!params || definedNames.length === 0) return false
-	const refs = collectVariableRefs(JSON.stringify(params))
+	const refs = collectVariableRefs(encodeJson(params))
 	return refs.some((name) => definedNames.includes(name) && values[name] === undefined)
 }

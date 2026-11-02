@@ -1,4 +1,3 @@
-// oxlint-disable effecttsgo/strict-effect-provide -- Offline Worker entry point.
 /** Exercise actual Workers request ownership with only offline ports. */
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { IsolateAge } from "@maple/infra/isolate-age"
@@ -10,7 +9,8 @@ const initialize = () =>
 	Effect.runPromise(
 		Effect.gen(function* () {
 			const { app, queryApp } = yield* makeAppGraphs(Context.empty(), offlinePorts)
-			return Cloudflare.Workers.makeRequestHandler(yield* makeFetch(app, offlinePorts, queryApp))
+			const handler = yield* makeFetch(app, offlinePorts, queryApp)
+			return Cloudflare.Workers.makeRequestHandler(handler)
 		}).pipe(Effect.provide(IsolateAge.layer)),
 	)
 let initialized: ReturnType<typeof initialize> | undefined

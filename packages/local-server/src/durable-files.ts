@@ -3,6 +3,7 @@ import { closeSync, constants, fsyncSync, openSync, renameSync, writeSync } from
 import { access, chmod, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { Effect, Schema } from "effect"
+import { encodeJsonPretty } from "./json"
 
 export interface DurabilityFaults {
 	readonly beforeFileSync?: (path: string) => void | Promise<void>
@@ -137,7 +138,7 @@ export const durableJson = async (
 	path: string,
 	value: unknown,
 	faults: DurabilityFaults = {},
-): Promise<void> => durableWrite(path, `${JSON.stringify(value, null, 2)}\n`, faults)
+): Promise<void> => durableWrite(path, `${encodeJsonPretty(value)}\n`, faults)
 
 export const durableRemove = async (path: string, faults: DurabilityFaults = {}): Promise<void> => {
 	await faults.beforeRemove?.(path)

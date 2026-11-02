@@ -14,7 +14,10 @@ import {
 } from "@maple/domain/runtime-posture"
 import { PROBE_CATEGORIES, type ProbeCategoryInfo, probeCategoryOf } from "@maple/domain/security-telemetry"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { Schema } from "effect"
 import type { Exposure, Runtimes } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Pure readings of the two responses: the Exposure tab's totals and categories, the Runtimes
 // tab's postures in the order the table shows them.
@@ -264,7 +267,7 @@ const urgencyRank = (vulnerabilities: RuntimeVulnerabilities): number => {
 	return vulnerabilities.summary.counts.high > 0 ? 1 : 2
 }
 
-const deploymentKey = (row: RuntimeRow): string => JSON.stringify([row.service, row.environment])
+const deploymentKey = (row: RuntimeRow): string => encodeJson([row.service, row.environment])
 
 /** The hour each service and environment was last seen in, on any version. */
 const newestSeenOf = (rows: ReadonlyArray<RuntimeRow>): ReadonlyMap<string, number> =>

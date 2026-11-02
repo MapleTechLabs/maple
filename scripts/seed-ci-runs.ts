@@ -21,6 +21,10 @@ import {
 	workflowJobToOtlp,
 	workflowRunToOtlp,
 } from "../packages/backend/src/services/integrations/ci-traces/otlp"
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 const { values } = parseArgs({
 	options: {
@@ -294,7 +298,7 @@ const rows = payloads.flatMap((payload) =>
 const runs = rows.filter((row) => row.parent_span_id === "").length
 console.log(`${runs} runs, ${rows.length} spans for ${org} (${repo}, last ${days} days)`)
 if (values["dry-run"]) {
-	console.log(JSON.stringify(rows.slice(0, 2), null, 2))
+	console.log(encodeJsonPretty(rows.slice(0, 2)))
 	process.exit(0)
 }
 
@@ -303,7 +307,7 @@ if (values.ingest !== undefined && values.key !== undefined) {
 		const response = await fetch(`${values.ingest.replace(/\/+$/, "")}/v1/traces`, {
 			method: "POST",
 			headers: { "content-type": "application/json", authorization: `Bearer ${values.key}` },
-			body: JSON.stringify(payload),
+			body: encodeJson(payload),
 		})
 		if (!response.ok) {
 			console.error(`The gateway answered ${response.status}: ${await response.text()}`)
@@ -324,7 +328,7 @@ const BATCH = 2_000
 for (let start = 0; start < rows.length; start += BATCH) {
 	const body = rows
 		.slice(start, start + BATCH)
-		.map((row) => JSON.stringify(row))
+		.map((row) => encodeJson(row))
 		.join("\n")
 	const response = await fetch(`${host.replace(/\/+$/, "")}/v0/events?name=traces&wait=true`, {
 		method: "POST",

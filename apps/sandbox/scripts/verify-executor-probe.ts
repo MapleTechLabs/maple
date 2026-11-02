@@ -15,6 +15,7 @@
  * holds every capability (probe v1: CapEff 000001ffffffffff) and a writable cgroup2 root. Exits
  * non-zero when either run has a check that did not behave as expected.
  */
+import { Schema } from "effect"
 import { execFileSync, spawnSync } from "node:child_process"
 import {
 	type AssessedCheck,
@@ -27,6 +28,8 @@ import {
 	probeScript,
 	unexpectedChecks,
 } from "../src/executor-probe.ts"
+
+const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 /**
  * Built for the host's platform, not the deployed amd64: under emulation an address-space limit
@@ -74,7 +77,7 @@ const report = (title: string, checks: ReadonlyArray<AssessedCheck>, expectation
 }
 
 /** The control's stand-in for `RegistryGateway`: same answer shape, reached by the same name. */
-const GATEWAY_SERVER = `require("node:http").createServer((req, res) => res.end(${JSON.stringify(GATEWAY_MARKER)} + " " + req.method + " " + req.headers.host + req.url)).listen(80)`
+const GATEWAY_SERVER = `require("node:http").createServer((req, res) => res.end(${encodeJsonString(GATEWAY_MARKER)} + " " + req.method + " " + req.headers.host + req.url)).listen(80)`
 
 const cleanup = () => {
 	docker(["rm", "--force", GATEWAY])

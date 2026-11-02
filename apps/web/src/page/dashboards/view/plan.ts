@@ -1,6 +1,6 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "../../../data/keyed"
 import type { PageContext } from "../../contract"
@@ -16,6 +16,8 @@ import {
 	planVariablesOf,
 } from "../kit/variables"
 import type { Model, WidgetSlot } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Which tiles fetch what: the window every tile shares, and each revealed tile's request.
 
@@ -109,7 +111,7 @@ const requestKeyOf = (gate: WidgetGate | null | undefined): string | null =>
 const isSameGate = (a: WidgetGate, b: WidgetGate): boolean =>
 	a._tag === "Request" || b._tag === "Request"
 		? requestKeyOf(a) !== null && requestKeyOf(a) === requestKeyOf(b)
-		: JSON.stringify(a) === JSON.stringify(b)
+		: encodeJson(a) === encodeJson(b)
 
 /** The previous gate while it still says the same thing, so memoized tiles see the same object. */
 const keptGate = (next: WidgetGate, previous: WidgetGate | null | undefined): WidgetGate =>

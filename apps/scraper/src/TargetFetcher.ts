@@ -59,7 +59,9 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 			// SSRF protection with per-hop redirect re-validation, and each hop dials the
 			// address it validated: this runs inside a VPC, so a re-resolved name could
 			// otherwise reach it. `Effect.timeout` aborts the in-flight fetch.
-			const client = guardPinned(yield* HttpClient.HttpClient, yield* HostResolver)
+			const httpClient = yield* HttpClient.HttpClient
+			const hostResolver = yield* HostResolver
+			const client = guardPinned(httpClient, hostResolver)
 
 			// `server.address` + `url.path`, never `url.full`: PlanetScale authenticates
 			// its metrics data plane with `?sig=&exp=` query params, i.e. credentials.

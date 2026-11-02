@@ -147,11 +147,13 @@ const htmlOrNull = (element: Element | null): HTMLElement | null =>
 
 const SCROLL_EDGE_TOLERANCE_PX = 1
 
-type MountMessage =
-	| typeof Message.CompletedMountSelect.Type
-	| typeof Message.ChangedPlacement.Type
-	| typeof Message.ChangedScrollArrows.Type
-	| typeof Message.PressedOutside.Type
+const MountMessage = Schema.Union([
+	Message.CompletedMountSelect,
+	Message.ChangedPlacement,
+	Message.ChangedScrollArrows,
+	Message.PressedOutside,
+])
+type MountMessage = typeof MountMessage.Type
 
 /** `handleScrollArrowVisibility`: an arrow per direction the list can still scroll. */
 const scrollArrowsOf = (scroller: HTMLElement | null) => {

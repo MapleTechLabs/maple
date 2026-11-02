@@ -158,9 +158,12 @@ const fromMap = (map: AttrMap, original: ReadonlyArray<KeyValue> | undefined): K
 	})
 }
 const sameValue = (original: AnyValue | undefined, value: AttrValue): boolean =>
-	JSON.stringify(toValue(original), jsonSafe) === JSON.stringify(value, jsonSafe)
+	safeJson(toValue(original)) === safeJson(value)
 const jsonSafe = (_key: string, value: unknown) =>
 	typeof value === "bigint" ? `${value}n` : value instanceof Uint8Array ? Array.from(value) : value
+// `undefined` when the value has no JSON form, as `JSON.stringify` returns.
+const encodeSafeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { replacer: jsonSafe }))
+const safeJson = (value: unknown): string | undefined => Option.getOrUndefined(encodeSafeJson(value))
 
 const safeTraceId = (raw: string | undefined): string | undefined =>
 	Option.getOrUndefined(Result.getSuccess(Result.try(() => traceIdHex(raw, "traceId"))))

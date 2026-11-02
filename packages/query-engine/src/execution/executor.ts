@@ -110,6 +110,8 @@ type TrustedSqlError = WarehouseReadExecutionError
 type BoundedTrustedSqlError = TrustedSqlError | WarehouseResponseLimitError
 type RawSqlError = WarehouseExecutionError | RawSqlValidationError
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 const sqlClientCacheKey = (config: ResolvedWarehouseConfig): string =>
 	config.kind === "tinybird"
 		? `tinybird:${config.host}:${config.token}`
@@ -222,7 +224,8 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 	): Effect.Effect<WarehouseSqlClient, WarehouseDriverError> =>
 		Effect.gen(function* () {
 			const configKey = sqlClientCacheKey(config)
-			const cached = Option.getOrUndefined(HashMap.get(yield* Ref.get(clientCache), cacheKey))
+			const clients = yield* Ref.get(clientCache)
+			const cached = Option.getOrUndefined(HashMap.get(clients, cacheKey))
 			if (cached && cached.cacheKey === configKey && cached.expiresAt > nowMs) {
 				return cached.client
 			}
@@ -541,13 +544,14 @@ WHERE name = 'enable_full_text_index'`,
 		if (operation !== "") yield* Effect.annotateCurrentSpan("db.operation.name", operation)
 		if (collection !== "") yield* Effect.annotateCurrentSpan("db.collection.name", collection)
 		if (summary !== "") yield* Effect.annotateCurrentSpan("db.query.summary", summary)
-		if (settings) yield* Effect.annotateCurrentSpan("ch.settings", JSON.stringify(settings))
+		if (settings)
+			yield* encodeJson(settings).pipe(
+				Effect.flatMap((json) => Effect.annotateCurrentSpan("ch.settings", json)),
+				Effect.ignore,
+			)
 
-		const client = yield* getCachedOrCreateClient(
-			resolved.clientCacheKey,
-			resolved.config,
-			yield* Clock.currentTimeMillis,
-		).pipe(
+		const nowMs = yield* Clock.currentTimeMillis
+		const client = yield* getCachedOrCreateClient(resolved.clientCacheKey, resolved.config, nowMs).pipe(
 			Effect.mapError((error) =>
 				mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple"),
 			),
@@ -660,7 +664,8 @@ WHERE name = 'enable_full_text_index'`,
 		const completedAtMs = yield* Clock.currentTimeMillis
 		yield* Effect.annotateCurrentSpan("db.duration_ms", completedAtMs - sqlStartedMs)
 		yield* Effect.annotateCurrentSpan("db.total_duration_ms", completedAtMs - startedAtMs)
-		yield* Effect.annotateCurrentSpan("db.retry.attempts", yield* Ref.get(retryAttempts))
+		const attempts = yield* Ref.get(retryAttempts)
+		yield* Effect.annotateCurrentSpan("db.retry.attempts", attempts)
 		return result.data
 	})
 
@@ -1231,11 +1236,10 @@ WHERE name = 'enable_full_text_index'`,
 		// Tinybird) so the wire protocol is handled correctly — a hand-rolled
 		// `?query=INSERT … FORMAT JSONEachRow` POST had its query param dropped
 		// by managed ClickHouse, which then parsed the NDJSON body as SQL.
-		const client = yield* getCachedOrCreateClient(
-			resolved.clientCacheKey,
-			resolved.config,
-			yield* Clock.currentTimeMillis,
-		).pipe(Effect.mapError((error) => mapWarehouseError(label, error)))
+		const nowMs = yield* Clock.currentTimeMillis
+		const client = yield* getCachedOrCreateClient(resolved.clientCacheKey, resolved.config, nowMs).pipe(
+			Effect.mapError((error) => mapWarehouseError(label, error)),
+		)
 		const insertStartedAtMs = yield* Clock.currentTimeMillis
 
 		yield* client.insert(datasource, rows).pipe(

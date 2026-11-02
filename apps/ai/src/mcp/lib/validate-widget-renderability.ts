@@ -9,6 +9,7 @@ import {
 import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
 import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import { isGroupByRequested } from "./inspect-widget"
+import { stringifyJson } from "./json"
 
 type DashboardWidget = typeof DashboardWidgetSchema.Type
 
@@ -151,7 +152,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 		const windowSeconds = widget.display.funnel?.windowSeconds
 		if (windowSeconds !== undefined && (!Number.isFinite(windowSeconds) || windowSeconds <= 0)) {
 			fatal.push(
-				`\`display_json.funnel.windowSeconds\` is the conversion window and must be a positive number of seconds (got ${JSON.stringify(windowSeconds)}). Omit it to use the default 86400 (24h).`,
+				`\`display_json.funnel.windowSeconds\` is the conversion window and must be a positive number of seconds (got ${stringifyJson(windowSeconds)}). Omit it to use the default 86400 (24h).`,
 			)
 		}
 	}
@@ -176,13 +177,13 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 			(!Number.isInteger(paths.depth) || paths.depth < 1 || paths.depth > PATHS_MAX_DEPTH)
 		) {
 			fatal.push(
-				`\`display_json.paths.depth\` must be an integer in 1..${PATHS_MAX_DEPTH} (got ${JSON.stringify(paths.depth)}).`,
+				`\`display_json.paths.depth\` must be an integer in 1..${PATHS_MAX_DEPTH} (got ${stringifyJson(paths.depth)}).`,
 			)
 		}
 		const pathsWindow = paths?.windowSeconds
 		if (pathsWindow !== undefined && (!Number.isFinite(pathsWindow) || pathsWindow <= 0)) {
 			fatal.push(
-				`\`display_json.paths.windowSeconds\` bounds how far from the anchor a hop may be and must be a positive number of seconds (got ${JSON.stringify(pathsWindow)}). Omit it to use the default 86400 (24h).`,
+				`\`display_json.paths.windowSeconds\` bounds how far from the anchor a hop may be and must be a positive number of seconds (got ${stringifyJson(pathsWindow)}). Omit it to use the default 86400 (24h).`,
 			)
 		}
 		if (
@@ -190,7 +191,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 			(!Number.isInteger(paths.branches) || paths.branches < 1 || paths.branches > PATHS_MAX_BRANCHES)
 		) {
 			fatal.push(
-				`\`display_json.paths.branches\` must be an integer in 1..${PATHS_MAX_BRANCHES} (got ${JSON.stringify(paths.branches)}).`,
+				`\`display_json.paths.branches\` must be an integer in 1..${PATHS_MAX_BRANCHES} (got ${stringifyJson(paths.branches)}).`,
 			)
 		}
 	}

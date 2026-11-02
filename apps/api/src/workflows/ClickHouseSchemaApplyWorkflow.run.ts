@@ -192,7 +192,8 @@ const planMigrationSteps = (
 	migration: (typeof clickHouseMigrations)[number],
 ): Effect.Effect<ReadonlyArray<ApplyStep>, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
-		const run = Effect.runPromiseWith(yield* Effect.context<HttpClient.HttpClient>())
+		const context = yield* Effect.context<HttpClient.HttpClient>()
+		const run = Effect.runPromiseWith(context)
 		return yield* Effect.tryPromise({
 			try: (signal) =>
 				expandMigrationToSteps(migration, cfg.database, (sql) =>
@@ -429,18 +430,16 @@ const fetchActualSchema = (
 ): Effect.Effect<Map<string, ActualTable>, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const dbLit = cfg.database.replace(/'/g, "''")
-		const tableRows = parseTableRows(
-			yield* execClickHouse(
-				cfg,
-				`SELECT name, engine FROM system.tables WHERE database = '${dbLit}' FORMAT JSONEachRow`,
-			),
+		const tablesBody = yield* execClickHouse(
+			cfg,
+			`SELECT name, engine FROM system.tables WHERE database = '${dbLit}' FORMAT JSONEachRow`,
 		)
-		const columnRows = parseColumnRows(
-			yield* execClickHouse(
-				cfg,
-				`SELECT table, name, type FROM system.columns WHERE database = '${dbLit}' FORMAT JSONEachRow`,
-			),
+		const tableRows = parseTableRows(tablesBody)
+		const columnsBody = yield* execClickHouse(
+			cfg,
+			`SELECT table, name, type FROM system.columns WHERE database = '${dbLit}' FORMAT JSONEachRow`,
 		)
+		const columnRows = parseColumnRows(columnsBody)
 		const colsByTable = new Map<string, Array<{ name: string; type: string }>>()
 		for (const r of columnRows) {
 			const list = colsByTable.get(r.table) ?? []

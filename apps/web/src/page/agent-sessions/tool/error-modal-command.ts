@@ -43,8 +43,10 @@ export const FetchErrorSamples = Command.define("FetchAgentToolErrorSamples", {
 				before,
 			},
 		}).pipe(
-			Effect.map((page) => ({ occurrences: page.occurrences, nextCursor: page.nextCursor })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (page) => ({ occurrences: page.occurrences, nextCursor: page.nextCursor }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSamples({ key, result })),
 		),

@@ -1,6 +1,8 @@
 import { STRUCTURED_MARKER } from "./structured-marker"
 import { Array, Option, Predicate, Schema } from "effect"
 
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 // A tool call's one-line summary, and
 // its output split into the report text and the structured `__maple_ui` payload.
 
@@ -121,11 +123,11 @@ export const extractOutputText = (output: unknown): string | null => {
 		return start === -1 ? output : output.slice(0, start).trimEnd()
 	}
 	return Option.match(decodeRecord(output), {
-		onNone: () => JSON.stringify(output, null, 2),
+		onNone: () => encodePrettyJson(output),
 		onSome: (record) => {
 			if (Predicate.isString(record.text)) return record.text
 			return Option.match(contentTexts(record), {
-				onNone: () => JSON.stringify(output, null, 2),
+				onNone: () => encodePrettyJson(output),
 				onSome: (texts) =>
 					texts.filter((text) => Option.isNone(parseStructuredFromText(text))).join("\n"),
 			})

@@ -25,7 +25,8 @@ export const getErrorRateByService = Effect.fn("QueryEngine.getErrorRateByServic
 }) {
 	const input = yield* decodeInput(GetErrorRateByServiceInput, data ?? {}, "getErrorRateByService")
 
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQuery("errorRateByService", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp

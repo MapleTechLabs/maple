@@ -322,7 +322,8 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 						`The checkout of ${checkout.fullName} at ${checkout.sha} is still being cloned after ${Duration.toSeconds(CHECKOUT_WAIT)}s. The clone continues in the background: gather other evidence first and come back to this repository later rather than calling again immediately.`,
 						answered.value,
 					)
-				return Stream.fromIterable(yield* toEvents(request, answered.value))
+				const events = yield* toEvents(request, answered.value)
+				return Stream.fromIterable(events)
 			}),
 		),
 })

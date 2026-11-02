@@ -2,6 +2,9 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { cpus, loadavg, platform, release, totalmem } from "node:os"
 import { dirname, resolve } from "node:path"
+import { Schema } from "effect"
+
+const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
 
 export interface Summary {
 	readonly n: number
@@ -52,7 +55,7 @@ export const numbers = (name: string, fallback: string): number[] => list(name, 
 export const writeReport = (defaultName: string, report: unknown): string => {
 	const out = resolve(flag("out", resolve(import.meta.dir, "../../../docs/benchmarks", defaultName)))
 	mkdirSync(dirname(out), { recursive: true })
-	writeFileSync(out, `${JSON.stringify(report, null, "\t")}\n`)
+	writeFileSync(out, `${encodeJsonTabbed(report)}\n`)
 	return out
 }
 
