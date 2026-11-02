@@ -14,24 +14,31 @@ import { Context, Effect, Layer } from "effect"
 export const LogSourceLive = Layer.effect(
 	LogSource,
 	Effect.gen(function* () {
-		const services = Context.make(WarehouseExecutor, yield* WarehouseExecutor).pipe(
-			Context.add(MapleInternalHttp, yield* MapleInternalHttp),
-			Context.add(MapleApiV2Http, yield* MapleApiV2Http),
+		const executor = yield* WarehouseExecutor
+		const internalHttp = yield* MapleInternalHttp
+		const apiV2Http = yield* MapleApiV2Http
+		const services = Context.make(WarehouseExecutor, executor).pipe(
+			Context.add(MapleInternalHttp, internalHttp),
+			Context.add(MapleApiV2Http, apiV2Http),
 		)
 		return LogSource.of({
 			listLogs: (request) =>
 				listLogs({ data: request }).pipe(
-					Effect.map((response) => response.data),
-					Effect.mapError(toLoadFailure),
+					Effect.mapBoth({
+						onSuccess: (response) => response.data,
+						onFailure: toLoadFailure,
+					}),
 					Effect.provideContext(services),
 				),
 			traceSpans: ({ traceId, timestamp }) =>
 				getSpanHierarchy({ data: { traceId, timestamp } }).pipe(
-					Effect.map((response) => ({
-						traceStartTime: response.traceStartTime ?? null,
-						spanNames: response.spans.map((span) => ({ spanId: span.spanId, spanName: span.spanName })),
-					})),
-					Effect.mapError(toLoadFailure),
+					Effect.mapBoth({
+						onSuccess: (response) => ({
+							traceStartTime: response.traceStartTime ?? null,
+							spanNames: response.spans.map((span) => ({ spanId: span.spanId, spanName: span.spanName })),
+						}),
+						onFailure: toLoadFailure,
+					}),
 					Effect.provideContext(services),
 				),
 		})
