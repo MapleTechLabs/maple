@@ -5,7 +5,7 @@ import { eyebrow } from "../../../../ui/eyebrow"
 import { depthControls } from "../depth-controls"
 import { Message, type Model } from "./model"
 import { spanRow } from "./row"
-import { flattenTree } from "./tree"
+import { flatTreeOf } from "./tree"
 import { KEYS_ATTRIBUTE, SELECTED_ATTRIBUTE, VirtualizeWaterfall } from "./virtualize"
 
 // `SpanHierarchy` (packages/ui/src/components/traces/span-hierarchy.tsx): the Waterfall tab's body.
@@ -68,8 +68,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, _inp
 			"No spans found for this trace",
 		])
 	}
-	const expanded = new Set(model.expanded)
-	const flat = flattenTree(model.rootSpans, expanded)
+	const { rows: flat, expanded, keys } = flatTreeOf(model.rootSpans, model.expanded)
 	return h.div(
 		[h.Class("flex h-full flex-col overflow-hidden rounded-md border")],
 		[
@@ -77,7 +76,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, _inp
 			h.div(
 				[
 					h.Class("flex-1 min-h-0 overflow-auto"),
-					h.DataAttribute(KEYS_ATTRIBUTE, flat.map((row) => row.node.spanId).join(" ")),
+					h.DataAttribute(KEYS_ATTRIBUTE, keys),
 					h.DataAttribute(SELECTED_ATTRIBUTE, model.selectedSpanId ?? ""),
 					h.OnMount(VirtualizeWaterfall()),
 				],

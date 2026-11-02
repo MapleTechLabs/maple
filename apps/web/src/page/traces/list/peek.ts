@@ -125,6 +125,7 @@ const carried = (
 					logsCount: previous.logsCount,
 					replaySessionId: previous.replaySessionId,
 				},
+				commands: (step.commands ?? []).filter(({ name }) => name !== "FetchTraceReplays"),
 			}
 
 /** The search's peek, applied: a new trace starts the page over, a new span re-routes it. */

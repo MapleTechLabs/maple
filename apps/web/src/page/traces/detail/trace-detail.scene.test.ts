@@ -70,10 +70,19 @@ const loaded = (search = {}) => {
 }
 
 describe("trace detail", () => {
-	test("entry reads the clock and asks for the span hierarchy", () => {
+	test("entry reads the clock and asks for the span hierarchy and replays together", () => {
 		expect(names(entered().commands)).toEqual(
-			expect.arrayContaining(["ReadTraceDetailClock", "ReadTraceListQuery", "FetchSpanHierarchy"]),
+			expect.arrayContaining([
+				"ReadTraceDetailClock",
+				"ReadTraceListQuery",
+				"FetchSpanHierarchy",
+				"FetchTraceReplays",
+			]),
 		)
+	})
+
+	test("a loaded trace does not ask for replays a second time", () => {
+		expect(names(loaded().commands)).not.toContain("FetchTraceReplays")
 	})
 
 	test("an id that is not a trace id renders not found without a request", () => {
@@ -86,12 +95,11 @@ describe("trace detail", () => {
 		)
 	})
 
-	test("a loaded trace asks for its events, replays, logs and product events", () => {
+	test("a loaded trace asks for its events, logs and product events", () => {
 		const commands = names(loaded().commands)
 		expect(commands).toEqual(
 			expect.arrayContaining([
 				"FetchTraceSpanEvents",
-				"FetchTraceReplays",
 				"FetchTraceLogsCount",
 				"FetchTraceProductEvents",
 			]),
