@@ -93,12 +93,12 @@ const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: Sessions
 						[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
 						[row.sessionId],
 					)
-				: // Who it was, since the User column hides in a narrow panel.
+				: // Who it was only while the User column is hidden in a narrow panel.
 					h.span(
 						[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
 						[
 							h.span(
-								[h.Class("truncate text-foreground")],
+								[h.Class("truncate text-foreground @min-[800px]/panel:hidden")],
 								[row.userName ?? row.user ?? "anonymous"],
 							),
 							h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["user session"]),
@@ -182,7 +182,7 @@ const sessionsOverview = <M>(
 	const { totals } = data
 	const median = medianLengthMs(data.sessions)
 	return [
-		statRail(h, { columns: 4, className: "border-b border-border" }, [
+		statRail(h, { columns: 4, isFlush: true }, [
 			statRailItem(h, {
 				eyebrow: "Sessions",
 				value: formatNumber(totals.sessions),
@@ -580,7 +580,7 @@ const sessionStats = <M>(h: HtmlBuilder<M>, data: McpSessionResponse): Html => {
 	const failed = calls.filter((row) => row.errorType !== null).length
 	const callTime = calls.reduce((sum, row) => sum + row.durationNs, 0)
 	const requests = `${data.isTruncated ? "the first " : ""}${formatNumber(data.requests.length)} ${pluralize(data.requests.length, "request")}`
-	return statRail(h, { columns: 4, className: "border-b border-border" }, [
+	return statRail(h, { columns: 4, isFlush: true }, [
 		statRailItem(h, {
 			eyebrow: "Tool calls",
 			value: formatNumber(calls.length),
