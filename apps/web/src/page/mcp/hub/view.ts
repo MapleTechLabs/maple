@@ -294,21 +294,12 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 			if (response.allClients.length === 0)
 				return quietWindow(h, {
 					service,
-					window: window.label.replace(/^Last /, "last "),
+					window: windowWords(window),
 					hasOtherSpans: response.methods.length > 0,
 					connected: response.clients
 						.filter((client) => client.connects > 0)
 						.map((client) => client.name),
-					widen: Option.match(
-						Option.fromUndefinedOr(widerPreset(model.window, shownPreset(model.search))),
-						{
-							onNone: () => undefined,
-							onSome: (preset) => ({
-								onWiden: Message.ClickedWiden(),
-								label: `Show the ${presetLabel(preset).toLowerCase()}`,
-							}),
-						},
-					),
+					widen: widenOf(model),
 				})
 			return chartsReady(h, model, (theme) =>
 				serverBody(h, overviewOf(response, model.nowMs), {
@@ -390,7 +381,7 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 	const description =
 		data === undefined || data.totals.sessions === 0
 			? "MCP sessions"
-			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} tool calls`
+			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} ${data.totals.calls === 1 ? "tool call" : "tool calls"}`
 	const body = AsyncData.matchData(sessions, {
 		onEmpty: () => sessionsLoading(h),
 		onFailure: (failure) =>
@@ -434,6 +425,10 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 	)
 }
 
+/** The session's tool calls, as "the first" ones when the read was cut. */
+const callCountText = (calls: number, isTruncated: boolean): string =>
+	`${isTruncated ? "the first " : ""}${calls.toLocaleString()} ${calls === 1 ? "tool call" : "tool calls"}`
+
 const sessionView = (h: H, model: Model, service: string, sessionId: string, timeZone: string): Html => {
 	const session = dataFor(
 		model.session.data,
@@ -452,7 +447,7 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 					...(isUserSession
 						? ["User session, no session id: split after 30 idle minutes"]
 						: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
-					`${sessionCalls(data.requests).length.toLocaleString()} tool calls`,
+					callCountText(sessionCalls(data.requests).length, data.isTruncated),
 					`started ${formatClock(first.timeMs, timeZone)}`,
 					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
 				].join(" · ")
