@@ -63,7 +63,8 @@ const fetchSpanDetail = (request: SpanDetailRequest, apiBase: string) =>
 			resourceAttributes: parseAttributes(row.resourceAttributes),
 			events,
 		}
-		yield* recordCached(spanDetailCacheKey(request), detail, yield* Clock.currentTimeMillis)
+		const now = yield* Clock.currentTimeMillis
+		yield* recordCached(spanDetailCacheKey(request), detail, now)
 		return Option.some(detail)
 	})
 
@@ -79,8 +80,10 @@ export const fetchSpanLogRecords = (request: LogsRequest, apiBase: string) => {
 				}
 	const query = CH.logsListQuery({ traceId: request.traceId, spanId: request.spanId, limit: request.limit })
 	return Effect.gen(function* () {
-		const logs = (yield* queryRows(CH.compile(query, localParams(bounds)), apiBase)).map(normalizeLog)
-		yield* recordCached(spanLogsCacheKey(request), logs, yield* Clock.currentTimeMillis)
+		const rows = yield* queryRows(CH.compile(query, localParams(bounds)), apiBase)
+		const logs = rows.map(normalizeLog)
+		const now = yield* Clock.currentTimeMillis
+		yield* recordCached(spanLogsCacheKey(request), logs, now)
 		return logs
 	})
 }
