@@ -131,6 +131,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/skeleton.ts` `skeleton`, `skeletonSlowNote`, `skeletonList`: Port of packages/ui/src/components/ui/skeleton.tsx.
 - `ui/spinner.ts` `spinner`: Port of packages/ui/src/components/ui/spinner.tsx: the loader glyph, spinning, as a status.
 - `ui/sql-editor.ts` `sqlEditor`: `SqlEditor`: a SQL textarea whose text is drawn, syntax-highlighted, by a `<pre>` laid under it.
+- `ui/stack.ts` `hstack`, `vstack`: `HStack` and `VStack`: a flex row (items centred by default) or column with its gap on the spacing scale, instead of a hand-written `flex items-center gap-2` string.
 - `ui/stat-figure.ts` `statFigure`: Port of packages/ui/src/components/ui/stat-figure.tsx: a headline number with a muted unit.
 - `ui/status-dot.ts` `statusDot`: `<StatusDot>`: a static, decorative status dot.
 - `ui/switch.ts` `switchControl`, `labelId`, `view` (stateful: Model, init, update): Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox.
@@ -149,6 +150,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/trace.ts` `trace`, `traceLine`, `traceIcon`, `traceTitle`, `traceCollapsible`, `traceDescription`: Port of packages/ui/src/components/ui/trace.tsx: a list of agent tool-call lines.
 - `ui/truncated-id.ts` `truncatedId`: Port of packages/ui/src/components/ui/truncated-id.tsx: a shortened id in mono with the full value as the native tooltip.
 - `ui/truncated-text.ts` `truncatedText`: Port of packages/ui/src/components/ui/truncated-text.tsx, `tooltip="title" | "none"`.
+- `ui/typography.ts` `typographyClass`, `typography`: `Typography`: a run of text on the type scale and the text tones, instead of a hand-written `text-xs text-muted-foreground` string.
 - `ui/values.ts` `emptyValue`, `measure`, `latencyValue`, `errorRateValue`, `serviceDot`: Small value components from packages/ui/src/components: LatencyValue, ErrorRateValue, ServiceDot.
 
 ## page/kit

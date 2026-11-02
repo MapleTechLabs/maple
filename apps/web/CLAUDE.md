@@ -18,6 +18,19 @@ pieces). The design rules are in `docs/design-rules.md`; the `maple/*` lint rule
    Show before and after screenshots of the pages you touched.
 5. Run `bun run ui:index` after adding or renaming a kit export (CI checks it is current).
 
+## Text and layout
+
+Type and flex layout go through the kit too: `typography` (ui/typography: `size`, `tone`,
+`weight`, `mono`, `numeric`, `truncate`) for a run of text, and `hstack` / `vstack` (ui/stack:
+`gap`, `align`, `justify`, `wrap`, `shrink`, `grow`) for a flex row or column. Write
+`typography(h, { size: "xs", tone: "muted" }, [...])`, not `h.span([h.Class("text-xs
+text-muted-foreground")], [...])`. `className` on them is for what the options don't cover.
+
+`bun run ui:patterns:check` (CI) fails when a class string spreads to more page files: every
+string in 3+ files is counted in `scripts/ui-class-patterns.json`, which only shrinks. The message
+names the kit piece to use. A repeated look that is more than type or flex (a row, a chip, a card)
+becomes its own kit component. After removing copies, run `bun run ui:patterns`.
+
 ## What lint enforces
 
 Outside `src/ui`, `src/page/kit`, `src/lab` and tests:

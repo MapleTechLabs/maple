@@ -14,7 +14,9 @@ controls (`maple/no-raw-control`), raw headings (`maple/no-raw-heading`) and bui
 from its kit styles (`maple/no-kit-styles-in-pages`). Colours and type sizes come from tokens
 (`maple/no-raw-color`, `maple/no-arbitrary-text-size`). Existing violations are counted per file in
 `scripts/oxlint-plugins/ui-kit-baseline.json`, which only shrinks (`bun run lint:ui-baseline`).
-The workflow is in `apps/web/CLAUDE.md`.
+Type and flex layout use `typography` and `hstack`/`vstack`; a class string repeated across 3+
+page files is counted in `scripts/ui-class-patterns.json` and may only shrink
+(`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CLAUDE.md`.
 
 ## State is instant, only movement eases
 
