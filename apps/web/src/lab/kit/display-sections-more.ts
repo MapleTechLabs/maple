@@ -1,6 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import type { CopyStatus } from "@maple/views/ui/copy-button"
 import { delta } from "@maple/views/ui/delta"
+import { errorState } from "@maple/views/ui/error-state"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { meter, segmentedBar } from "@maple/views/ui/meter"
 import { miniBars } from "@maple/views/ui/mini-bars"
@@ -125,4 +127,31 @@ export const typeAndStackSection = <M>(h: HtmlBuilder<M>): Html =>
 			typography(h, { size: "sm", truncate: true }, ["A long label that truncates before the value"]),
 			typography(h, { size: "sm", mono: true, numeric: true }, ["98.2%"]),
 		]),
+	])
+
+// `retryable: false` keeps the lab's Try again a plain button, without the auto-retry Mount.
+const LAB_FAILURE: LoadFailure = { ...toLoadFailure("boom"), recovery: "retry", retryable: false }
+const LONG_TOKEN_FAILURE: LoadFailure = {
+	...LAB_FAILURE,
+	code: "local_query_failed",
+	message: `Local query failed (500): {"error":"Code: 60. DB::Exception: Unknown table expression identifier 'traces'","trace":"${TRACE_ID}${TRACE_ID}${TRACE_ID}"}`,
+}
+
+export const errorStateSection = <M>(h: HtmlBuilder<M>, onRetry: M): Html =>
+	kitSection(h, "Error state", [
+		h.div(
+			[h.Class("grid grid-cols-2 gap-6")],
+			[
+				h.div(
+					[h.Class("rounded-md border")],
+					[errorState(h, { failure: LAB_FAILURE, title: "Couldn't load traces", onRetry })],
+				),
+				h.div(
+					[h.Class("rounded-md border")],
+					[errorState(h, { failure: LONG_TOKEN_FAILURE, title: "Couldn't load traces", onRetry })],
+				),
+			],
+		),
+		errorState(h, { failure: LAB_FAILURE, title: "Couldn't load services", variant: "row", onRetry }),
+		errorState(h, { failure: LAB_FAILURE, title: "Couldn't load logs", variant: "inline", onRetry }),
 	])
