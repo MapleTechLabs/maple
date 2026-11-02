@@ -407,7 +407,7 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 					env: chartEnv(model, theme, timeZone),
 					toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(sessions), {
 						inputId: "mcp-sessions-search",
-						placeholder: "Session id or user…",
+						placeholder: "Session id or user id…",
 					}),
 					scope: scopeText("all sessions", filters),
 					isWaiting: AsyncData.isRefreshing(sessions),

@@ -411,7 +411,7 @@ const failedCall = ($: TracesRow) => method($).eq("tools/call").and(failed($))
 export interface McpSessionFilter {
 	readonly client?: string
 	readonly kind?: McpClientKind
-	/** Case-insensitive substring of the session id, the user id or the user's name. */
+	/** Case-insensitive substring of the session id or the user id. */
 	readonly search?: string
 	/** Sessions with at least one failed tool call. */
 	readonly failingOnly?: boolean
@@ -423,9 +423,10 @@ const selected = ($: TracesRow, filter: McpSessionFilter) => [
 	CH.when(filter.client, (client) => mcpClientName($).eq(client)),
 	CH.when(filter.kind, (kind) => mcpClientKind($).eq(kind)),
 	CH.when(filter.user, (user) => userId($).eq(user)),
+	// Ids every request of a session carries, so a match keeps whole sessions.
 	CH.when(filter.search, (search) => {
 		const pattern = `%${likeLiteral(search)}%`
-		return sessionId($).ilike(pattern).or(userId($).ilike(pattern)).or(userLabel($).ilike(pattern))
+		return sessionId($).ilike(pattern).or(userId($).ilike(pattern))
 	}),
 ]
 
@@ -488,8 +489,8 @@ export function mcpSessionTotalsQuery(filter: McpSessionFilter = {}) {
 }
 
 /**
- * A stateless server's known users, per (user, client, minute) in order: the backend splits each
- * user and client's minutes into sessions at an idle gap. Minutes keep the rows bounded.
+ * A stateless server's known users, per (user, client, minute), the latest first so a limit drops the
+ * oldest: the backend sorts them and splits each user and client's minutes into sessions at an idle gap.
  */
 export function mcpUserActivityQuery(filter: McpSessionFilter = {}, limit = 50_000) {
 	return from(Traces)
@@ -508,7 +509,7 @@ export function mcpUserActivityQuery(filter: McpSessionFilter = {}, limit = 50_0
 		}))
 		.where(($) => userRequests($, filter))
 		.groupBy("user", "client", "minute")
-		.orderBy(["user", "asc"], ["client", "asc"], ["minute", "asc"])
+		.orderBy(["minute", "desc"])
 		.limit(limit)
 		.format("JSON")
 }

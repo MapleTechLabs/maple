@@ -16,6 +16,8 @@ import { recordExpectedMcpFailure } from "../expected-failures"
 
 /** Exported so the audit layer classifies the same token the same way. */
 export const INTERNAL_SERVICE_PREFIX = "maple_svc_"
+/** The user every internal service call resolves to: a credential, not a person. */
+export const INTERNAL_SERVICE_USER_ID = "internal-service"
 
 /**
  * The tenant plus the rate-limit identity of the credential that produced it,
@@ -151,7 +153,7 @@ const resolveInternalServiceTenant = Effect.fn("McpTenant.resolveInternalService
 					}),
 			),
 		)
-		const validUserId = yield* decodeUserId("internal-service").pipe(
+		const validUserId = yield* decodeUserId(INTERNAL_SERVICE_USER_ID).pipe(
 			Effect.mapError(
 				(e) =>
 					new McpInvalidTenantError({

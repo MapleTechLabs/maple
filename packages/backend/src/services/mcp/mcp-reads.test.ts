@@ -152,11 +152,12 @@ describe("stitchUserSessions", () => {
 		})
 	})
 
-	it("never joins two users or one user's two clients", () => {
+	it("never joins two users or one user's two clients, whatever order the rows arrive in", () => {
 		const sessions = stitchUserSessions([
-			minute("u1", "Claude Code", 0),
-			minute("u1", "Cursor", 1),
 			minute("u2", "Cursor", 1),
+			minute("u1", "Cursor", 1),
+			minute("u1", "Claude Code", 2),
+			minute("u1", "Claude Code", 0),
 		])
 		expect(sessions.map((s) => `${s.user} ${s.client}`)).toEqual([
 			"u1 Claude Code",
@@ -188,11 +189,10 @@ describe("parseUserSessionKey", () => {
 		expect(parseUserSessionKey("user:1700000000000:%E0%A4%A:u1")).toBeUndefined()
 	})
 
-	it("round-trips a client name with a colon", () => {
-		expect(parseUserSessionKey(userSessionKey(1, "a:b", "u1"))).toEqual({
-			startMs: 1,
-			client: "a:b",
-			user: "u1",
-		})
+	it("round-trips ids with separators, slashes and non-ASCII, keeping them out of the key", () => {
+		const user = "https://issuer.example/users/42:ü%2F"
+		const key = userSessionKey(1, "a:b", user)
+		expect(key).not.toMatch(/[/%]/)
+		expect(parseUserSessionKey(key)).toEqual({ startMs: 1, client: "a:b", user })
 	})
 })

@@ -124,6 +124,19 @@ const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: Sessions
 		],
 	)
 
+/** The read of users' activity hit its limit, so older user sessions are missing or cut short. */
+const activityCut = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): ReadonlyArray<Html> =>
+	data.isUserActivityCut
+		? [
+				h.p(
+					[h.Class("px-2.5 pt-3 font-prose text-xs text-muted-foreground")],
+					[
+						"This window has more user activity than one read holds: the oldest user sessions are missing or cut short. Narrow the time range to see them.",
+					],
+				),
+			]
+		: []
+
 /** The calls in no session: neither a session id nor a user to build one from. */
 const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): ReadonlyArray<Html> => {
 	const inSessions = Math.min(data.toolCalls, data.withSession + data.withUser)
@@ -171,7 +184,7 @@ const sessionsOverview = <M>(
 			statRailItem(h, {
 				eyebrow: "Users",
 				value: formatNumber(totals.users),
-				subline: totals.users === 0 ? "no request names its user" : "named by user.id",
+				subline: totals.users === 0 ? "no request names its user" : "from user.id",
 			}),
 			statRailItem(h, {
 				eyebrow: "Median length",
@@ -276,6 +289,7 @@ export const sessionsBody = <M>(
 						`${formatNumber(data.sessions.length)} latest of ${formatNumber(matching)}`,
 						"· each row opens the session",
 					),
+					...activityCut(h, data),
 					...partialCoverage(h, data),
 				],
 			),

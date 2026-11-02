@@ -540,28 +540,44 @@ const SESSION_REQUEST_LIMIT = 1_000
 const USER_ACTIVITY_LIMIT = 50_000
 /** An agent turn can start this long before its first MCP call, and only its first spans may name the session. */
 const AGENT_TURN_LEAD_MS = 3_600_000
+/** How far past its start a user session's page looks for the rest of it. */
+const USER_SESSION_LOOKAHEAD_MS = 86_400_000
 /** A user's stateless requests from one client this far apart start a new session. */
 export const USER_SESSION_GAP_MS = 30 * 60_000
 
 const USER_SESSION_PREFIX = "user:"
 
+/** base64url: no `/`, `:` or `%`, which the key's separator and the route path would trip on. */
+const toKeyPart = (value: string): string =>
+	btoa(Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join(""))
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "")
+
+const fromKeyPart = Option.liftThrowable((part: string): string =>
+	new TextDecoder("utf-8", { fatal: true }).decode(
+		Uint8Array.from(atob(part.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)),
+	),
+)
+
 /** A user session's key: its first request, its client and its user, so its page can find it again. */
 export const userSessionKey = (startMs: number, client: string, user: string): string =>
-	`${USER_SESSION_PREFIX}${startMs}:${encodeURIComponent(client)}:${user}`
+	`${USER_SESSION_PREFIX}${startMs}:${toKeyPart(client)}:${toKeyPart(user)}`
 
-/** The parts of a user session's key; `undefined` for an issued session's id. */
+/** The parts of a user session's key; `undefined` for anything else, an issued session's id included. */
 export const parseUserSessionKey = (
 	key: string,
 ): Readonly<{ startMs: number; client: string; user: string }> | undefined => {
 	if (!key.startsWith(USER_SESSION_PREFIX)) return undefined
-	const [start = "", client = "", ...user] = key.slice(USER_SESSION_PREFIX.length).split(":")
-	const startMs = Number(start)
-	const userId = user.join(":")
-	if (!/^\d+$/.test(start) || !Number.isSafeInteger(startMs) || client === "" || userId === "")
-		return undefined
-	return Option.match(Option.liftThrowable(decodeURIComponent)(client), {
+	const parts = key.slice(USER_SESSION_PREFIX.length).split(":")
+	const [start = "", client = "", user = ""] = parts
+	if (parts.length !== 3 || !/^\d+$/.test(start) || client === "" || user === "") return undefined
+	return Option.match(Option.all([fromKeyPart(client), fromKeyPart(user)]), {
 		onNone: () => undefined,
-		onSome: (decoded) => ({ startMs, client: decoded, user: userId }),
+		onSome: ([clientName, userId]) =>
+			clientName === "" || userId === ""
+				? undefined
+				: { startMs: Number(start), client: clientName, user: userId },
 	})
 }
 
@@ -582,13 +598,19 @@ type UserSession = McpSessionItem & Readonly<{ user: string }>
 
 /**
  * A stateless server's sessions: each user's minutes from one client, in order, split where the
- * user went quiet for `gapMs`. Rows arrive sorted by user, client and minute.
+ * user went quiet for `gapMs`.
  */
 export const stitchUserSessions = (
 	rows: ReadonlyArray<ActivityRow>,
 	gapMs: number = USER_SESSION_GAP_MS,
 ): ReadonlyArray<UserSession> =>
 	rows
+		.toSorted(
+			(a, b) =>
+				a.user.localeCompare(b.user) ||
+				a.client.localeCompare(b.client) ||
+				toMs(a.firstSeen) - toMs(b.firstSeen),
+		)
 		.reduce<Array<UserSession & { readonly toolSet: ReadonlySet<string> }>>((sessions, row) => {
 			const firstMs = toMs(row.firstSeen)
 			const lastMs = toMs(row.lastSeen)
@@ -713,6 +735,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 		"maple.mcp.user_sessions": userSessions.length,
 		"maple.mcp.user_activity_rows": activityRows.length,
 	})
+	const isUserActivityCut = activityRows.length >= USER_ACTIVITY_LIMIT
 	return new McpSessionsResponse({
 		service: payload.service,
 		totals: {
@@ -730,6 +753,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 		toolCalls: sumBy(calls, (row) => row.spans),
 		withSession: sumBy(calls, (row) => row.withSession),
 		withUser: sumBy(calls, (row) => row.withUser),
+		isUserActivityCut,
 		sessions,
 		allClients: clientItems(allClients),
 	})
@@ -767,7 +791,10 @@ const userSessionBounds = Effect.fn("McpReads.userSessionBounds")(function* (
 			orgId: tenant.orgId,
 			serviceName: payload.service,
 			startTime: formatWarehouseDateTime(key.startMs),
-			endTime: window.endTime,
+			// A link can carry a window that ends before the session it names: read on past it.
+			endTime: formatWarehouseDateTime(
+				Math.max(parseWarehouseDateTime(window.endTime), key.startMs + USER_SESSION_LOOKAHEAD_MS),
+			),
 		}),
 		{ profile: "list", context: "mcpUserSessionBounds" },
 	)
@@ -785,13 +812,15 @@ export const readMcpSession = Effect.fn("McpReads.session")(function* (
 		"maple.mcp.session.id": payload.sessionId,
 	})
 	const window = windowOf(payload)
-	const userKey = parseUserSessionKey(payload.sessionId)
+	const parsed = parseUserSessionKey(payload.sessionId)
+	const bounds = parsed === undefined ? undefined : yield* userSessionBounds(tenant, payload, parsed)
+	// An issued id can look like a user session's key; with no such user session it is read as issued.
+	const userKey = bounds === undefined ? undefined : parsed
 	yield* Effect.annotateCurrentSpan({
 		"maple.mcp.session.source": userKey === undefined ? "issued" : "user",
 	})
-	const bounds = userKey === undefined ? undefined : yield* userSessionBounds(tenant, payload, userKey)
 	const read =
-		userKey === undefined
+		userKey === undefined || bounds === undefined
 			? yield* warehouse.compiledQuery(
 					tenant,
 					CH.compile(CH.mcpSessionRequestsQuery(SESSION_REQUEST_LIMIT + 1), {
@@ -802,21 +831,19 @@ export const readMcpSession = Effect.fn("McpReads.session")(function* (
 					}),
 					{ profile: "list", context: "mcpSessionRequests" },
 				)
-			: bounds === undefined
-				? []
-				: yield* warehouse.compiledQuery(
-						tenant,
-						CH.compile(CH.mcpUserSessionRequestsQuery(SESSION_REQUEST_LIMIT + 1), {
-							orgId: tenant.orgId,
-							serviceName: payload.service,
-							userId: userKey.user,
-							client: userKey.client,
-							// Whole seconds around the session's own first and last request.
-							startTime: formatWarehouseDateTime(bounds.firstSeenMs),
-							endTime: formatWarehouseDateTime(bounds.lastSeenMs + 1_000),
-						}),
-						{ profile: "list", context: "mcpUserSessionRequests" },
-					)
+			: yield* warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.mcpUserSessionRequestsQuery(SESSION_REQUEST_LIMIT + 1), {
+						orgId: tenant.orgId,
+						serviceName: payload.service,
+						userId: userKey.user,
+						client: userKey.client,
+						// Whole seconds around the session's own first and last request.
+						startTime: formatWarehouseDateTime(bounds.firstSeenMs),
+						endTime: formatWarehouseDateTime(bounds.lastSeenMs + 1_000),
+					}),
+					{ profile: "list", context: "mcpUserSessionRequests" },
+				)
 	const rows = read.slice(0, SESSION_REQUEST_LIMIT)
 	const traceIds = [...new Set(rows.flatMap(callerTraces))]
 	const firstMs = rows[0] === undefined ? parseWarehouseDateTime(window.startTime) : toMs(rows[0].timestamp)

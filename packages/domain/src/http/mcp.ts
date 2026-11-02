@@ -216,7 +216,7 @@ export class McpSessionsRequest extends Schema.Class<McpSessionsRequest>("McpSes
 	service: selectionText,
 	...windowFields,
 	...selectionFields,
-	/** Case-insensitive substring of the session id, the user id or the user's name. */
+	/** Case-insensitive substring of the session id or the user id. */
 	search: Schema.optionalKey(selectionText),
 	failingOnly: Schema.optionalKey(Schema.Boolean),
 }) {}
@@ -265,6 +265,8 @@ export class McpSessionsResponse extends Schema.Class<McpSessionsResponse>("McpS
 	toolCalls: Schema.Number,
 	withSession: Schema.Number,
 	withUser: Schema.Number,
+	/** The read of users' activity hit its limit: the oldest user sessions are missing or cut short. */
+	isUserActivityCut: Schema.Boolean,
 	/** The latest sessions under the selection, at most the list's limit. */
 	sessions: Schema.Array(McpSessionItem),
 	/** Every client in the window, for the client and kind facets. */
