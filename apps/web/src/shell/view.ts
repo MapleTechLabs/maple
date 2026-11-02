@@ -127,7 +127,7 @@ const appUpdatePill = (h: HtmlBuilder<Message>): Html =>
 			gap: "3",
 			attributes: [h.Role("status")],
 			// Dark popover barely clears the page, so it lifts a step and takes the control highlight.
-			// z-1: every page action bar (save bars z-10, bulk bar z-40) covers it, so it never eats a click.
+			// z-1: page action bars carry a z-index (save bars and footers z-10+, bulk bar z-40), so they cover it.
 			className:
 				"fixed right-4 bottom-4 z-1 rounded-full border border-input bg-popover py-1 pr-1 pl-3.5 shadow-popup before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:shadow-control dark:bg-secondary sm:right-8 sm:bottom-8",
 		},
