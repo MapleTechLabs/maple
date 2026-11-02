@@ -7,8 +7,10 @@
  * `docs-mcp` follows the OpenTelemetry MCP conventions with `mcp.session.id`: a Claude Code session
  * whose calls carry the agent's trace in `params._meta` (so the agent's spans, stamped the way the
  * ingest gateway stamps them, make an Agent Session), a Cursor session with a JSON-RPC failure, a
- * Codex session with tool errors, and two curl calls without a session. `notes-mcp` answers tool
- * calls with no session id at all. Rows go to TINYBIRD_HOST with TINYBIRD_TOKEN (`.env.local`).
+ * Codex session with tool errors, and two curl calls without a session. `billing-mcp` is stateless
+ * (MCP 2026-07-28: no `initialize`, `clientInfo` on every request) and builds sessions from `user.id`.
+ * `notes-mcp` answers tool calls with neither a session id nor a user. Rows go to TINYBIRD_HOST
+ * with TINYBIRD_TOKEN (`.env.local`).
  */
 import { parseArgs } from "node:util"
 
@@ -102,6 +104,9 @@ const request = (
 		sessionId?: string
 		user?: Readonly<{ id: string; name?: string }>
 		userAgent: string
+		/** `clientInfo.name`: on `initialize`, or on every request of a stateless (2026-07-28) server. */
+		clientInfo?: string
+		isStateless?: boolean
 		startMs: number
 		id: number
 	}>,
@@ -122,13 +127,17 @@ const request = (
 	const attributes = Object.fromEntries(
 		[
 			["mcp.method.name", req.method],
-			["mcp.protocol.version", "2025-06-18"],
+			["mcp.protocol.version", options.isStateless === true ? "2026-07-28" : "2025-06-18"],
 			["jsonrpc.request.id", String(options.id)],
 			["network.transport", "tcp"],
 			["user_agent.original", options.userAgent],
 			["mcp.session.id", options.sessionId],
 			["user.id", options.user?.id],
 			["user.name", options.user?.name],
+			[
+				"maple.mcp.client.name",
+				options.isStateless === true || req.method === "initialize" ? options.clientInfo : undefined,
+			],
 			["gen_ai.tool.name", req.tool],
 			["gen_ai.operation.name", req.tool === undefined ? undefined : "execute_tool"],
 			["error.type", req.errorType],
@@ -156,6 +165,9 @@ const session = (
 		sessionId?: string
 		user?: Readonly<{ id: string; name?: string }>
 		userAgent: string
+		/** `clientInfo.name`: on `initialize`, or on every request of a stateless (2026-07-28) server. */
+		clientInfo?: string
+		isStateless?: boolean
 		startMs: number
 		gapMs: number
 	}>,
@@ -227,6 +239,7 @@ session(
 	"docs-mcp",
 	{
 		sessionId: "3f6c1d2a-8b4e-4f7a-9c21-5d0e7b9a4c11",
+		clientInfo: "claude-code",
 		user: { id: "user_2ada", name: "Ada Lovelace" },
 		userAgent: "claude-code/2.1.314 (cli)",
 		startMs: claudeStart,
@@ -240,6 +253,7 @@ session(
 	"docs-mcp",
 	{
 		sessionId: "b81e2c90-1f3d-4a6b-8e57-2c4d9f0a7e33",
+		clientInfo: "cursor",
 		userAgent: "cursor/1.7.2",
 		startMs: now - 50 * MIN,
 		gapMs: 25_000,
@@ -294,29 +308,33 @@ session("docs-mcp", { userAgent: "curl/8.7.1", startMs: now - 10 * MIN, gapMs: 5
 	{ method: "tools/call", tool: "list_sections", durationMs: 44 },
 ])
 
-// A stateless server naming its users: Ada's calls split into two sessions by an hour's quiet,
+// A stateless server on MCP 2026-07-28 (no initialize, clientInfo on every request) naming its users: Ada's calls split into two sessions by an hour's quiet,
 // Grace's one session fails a call, and an anonymous script belongs to no session.
 const ada = { id: "user_2ada", name: "Ada Lovelace" }
+const STATELESS_CLAUDE = {
+	userAgent: "claude-code/2.1.314 (cli)",
+	clientInfo: "claude-code",
+	isStateless: true,
+} as const
+session("billing-mcp", { ...STATELESS_CLAUDE, user: ada, startMs: now - 150 * MIN, gapMs: 3 * MIN }, [
+	{ method: "tools/call", tool: "list_invoices", durationMs: 120 },
+	{ method: "tools/call", tool: "get_invoice", durationMs: 64 },
+	{ method: "tools/call", tool: "get_invoice", durationMs: 71 },
+])
+session("billing-mcp", { ...STATELESS_CLAUDE, user: ada, startMs: now - 80 * MIN, gapMs: 2 * MIN }, [
+	{ method: "tools/call", tool: "refund_invoice", durationMs: 410 },
+	{ method: "tools/call", tool: "get_invoice", durationMs: 58 },
+])
 session(
 	"billing-mcp",
-	{ user: ada, userAgent: "claude-code/2.1.314 (cli)", startMs: now - 150 * MIN, gapMs: 3 * MIN },
-	[
-		{ method: "tools/call", tool: "list_invoices", durationMs: 120 },
-		{ method: "tools/call", tool: "get_invoice", durationMs: 64 },
-		{ method: "tools/call", tool: "get_invoice", durationMs: 71 },
-	],
-)
-session(
-	"billing-mcp",
-	{ user: ada, userAgent: "claude-code/2.1.314 (cli)", startMs: now - 80 * MIN, gapMs: 2 * MIN },
-	[
-		{ method: "tools/call", tool: "refund_invoice", durationMs: 410 },
-		{ method: "tools/call", tool: "get_invoice", durationMs: 58 },
-	],
-)
-session(
-	"billing-mcp",
-	{ user: { id: "user_2grace" }, userAgent: "cursor/1.7.2", startMs: now - 35 * MIN, gapMs: 90_000 },
+	{
+		user: { id: "user_2grace" },
+		userAgent: "cursor/1.7.2",
+		clientInfo: "cursor",
+		isStateless: true,
+		startMs: now - 35 * MIN,
+		gapMs: 90_000,
+	},
 	[
 		{ method: "tools/call", tool: "list_invoices", durationMs: 95 },
 		{
@@ -328,9 +346,11 @@ session(
 		},
 	],
 )
-session("billing-mcp", { userAgent: "curl/8.7.1", startMs: now - 12 * MIN, gapMs: 4_000 }, [
-	{ method: "tools/call", tool: "list_invoices", durationMs: 88 },
-])
+session(
+	"billing-mcp",
+	{ userAgent: "curl/8.7.1", isStateless: true, startMs: now - 12 * MIN, gapMs: 4_000 },
+	[{ method: "tools/call", tool: "list_invoices", durationMs: 88 }],
+)
 
 // A server that issues no sessions at all.
 session("notes-mcp", { userAgent: "claude-code/2.1.314 (cli)", startMs: now - 30 * MIN, gapMs: 20_000 }, [

@@ -688,7 +688,7 @@ export {
 	mcpErrorGroupsQuery,
 	mcpErrorTrendQuery,
 	mcpFirstSeenQuery,
-	mcpInitializersQuery,
+	mcpClientInfoQuery,
 	mcpMethodsQuery,
 	mcpServerClientsQuery,
 	mcpServerSparkQuery,

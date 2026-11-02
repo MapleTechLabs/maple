@@ -76,7 +76,8 @@ export type McpServerOverview = Readonly<{
 	}>
 	tools: ReadonlyArray<McpToolRow>
 	clients: ReadonlyArray<McpClientRow>
-	initializers: ReadonlyArray<Readonly<{ name: string; count: number }>>
+	clientInfo: ReadonlyArray<Readonly<{ name: string; count: number; connects: number }>>
+	clientInfoUnit: "connect" | "request"
 	failures: ReadonlyArray<McpFailureKind>
 	methods: ReadonlyArray<McpMethodRow>
 	coverage: ReadonlyArray<McpCoverageRow>

@@ -318,14 +318,15 @@ export const MCP_OVERVIEW: McpServerOverview = {
 			lastSeenMs: at(11, 40),
 		},
 	],
-	initializers: [
-		{ name: "Claude Code", count: 75 },
-		{ name: "estate-console", count: 10 },
-		{ name: "executor-mcp", count: 5 },
-		{ name: "factory-cli", count: 1 },
-		{ name: "preview-verifier", count: 1 },
-		{ name: "pi", count: 1 },
+	clientInfo: [
+		{ name: "Claude Code", count: 75, connects: 75 },
+		{ name: "estate-console", count: 10, connects: 10 },
+		{ name: "executor-mcp", count: 5, connects: 5 },
+		{ name: "factory-cli", count: 1, connects: 1 },
+		{ name: "preview-verifier", count: 1, connects: 1 },
+		{ name: "pi", count: 1, connects: 1 },
 	],
+	clientInfoUnit: "connect",
 	failures: [
 		{
 			label: "Tool errors",
@@ -370,7 +371,7 @@ export const MCP_OVERVIEW: McpServerOverview = {
 			isPresent: true,
 			label: "Client per call",
 			attributes: ["user_agent.original"],
-			detail: "On every call; clientInfo on initialize only.",
+			detail: "On every call.",
 		},
 		{
 			isPresent: true,

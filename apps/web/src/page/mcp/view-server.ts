@@ -374,7 +374,8 @@ const note = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Htm
 /** Callers the panel lists before "N more": the rest are a long tail of one-off agents. */
 const CLIENT_ROWS = 8
 
-const clientsHead = <M>(h: HtmlBuilder<M>): Html => {
+/** `hasConnects` is false on a stateless server: with no `initialize`, nothing to count. */
+const clientsHead = <M>(h: HtmlBuilder<M>, hasConnects: boolean): Html => {
 	const label = (text: string, width: string, title?: string) =>
 		eyebrow(
 			h,
@@ -386,14 +387,14 @@ const clientsHead = <M>(h: HtmlBuilder<M>): Html => {
 		[
 			label("Client", "w-0 flex-1"),
 			label("Calls", "w-14 text-right"),
-			label("Connects", "w-16 text-right", "initialize requests"),
+			...(hasConnects ? [label("Connects", "w-16 text-right", "initialize requests")] : []),
 			label("Sources", "w-14 text-right", "distinct client.address values"),
 			label("Failed", "w-14 text-right"),
 		],
 	)
 }
 
-const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number): Html => {
+const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number, hasConnects: boolean): Html => {
 	const rate = errorRate(row)
 	const isQuiet = row.calls === 0
 	return h.div(
@@ -428,11 +429,15 @@ const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number): Html =
 				isQuiet ? EMPTY_VALUE : formatNumber(row.calls),
 				cn("w-14", isQuiet ? "text-foreground-subtle" : "text-foreground"),
 			),
-			numberCell(
-				h,
-				row.connects === 0 ? EMPTY_VALUE : formatNumber(row.connects),
-				"w-16 text-muted-foreground",
-			),
+			...(hasConnects
+				? [
+						numberCell(
+							h,
+							row.connects === 0 ? EMPTY_VALUE : formatNumber(row.connects),
+							"w-16 text-muted-foreground",
+						),
+					]
+				: []),
 			numberCell(
 				h,
 				row.sources === 0 ? EMPTY_VALUE : formatNumber(row.sources),
@@ -454,8 +459,8 @@ const clientGroupLabel = <M>(h: HtmlBuilder<M>, text: string): Html =>
 		[eyebrow(h, { variant: "mono" }, [text])],
 	)
 
-/** One `clientInfo.name` and how many initialize requests sent it. */
-const initializerRow = <M>(
+/** One `clientInfo.name` and how many requests sent it. */
+const clientInfoRow = <M>(
 	h: HtmlBuilder<M>,
 	row: Readonly<{ name: string; count: number }>,
 	max: number,
@@ -591,15 +596,29 @@ const statusNote = (errors: number, statusErrors: number): string | undefined =>
 	return `${lead} span status Ok: the spec keeps tool errors off the status, so a status-only view ${reading}.`
 }
 
+/** The window's `initialize` requests: none on a stateless server (MCP 2026-07-28). */
+const handshakesOf = (data: McpServerOverview): number =>
+	data.methods.find((method) => method.method === "initialize")?.calls ?? 0
+
 const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
-	if (options.clientIdentity === "info") {
-		const max = Math.max(...data.initializers.map((entry) => entry.count), 1)
-		return half(h, "Clients", options.clientToggle, [
-			...data.initializers.map((entry) => initializerRow(h, entry, max)),
-			note(h, [
-				attr(h, "clientInfo"),
-				" arrives on initialize only, so these count handshakes, not tool calls.",
-			]),
+	const handshakes = handshakesOf(data)
+	const hasConnects = handshakes > 0
+	const isPerConnect = data.clientInfoUnit === "connect"
+	// Without any `clientInfo` there is nothing to switch to.
+	const toggle = data.clientInfo.length === 0 ? undefined : options.clientToggle
+	if (options.clientIdentity === "info" && toggle !== undefined) {
+		const max = Math.max(...data.clientInfo.map((entry) => entry.count), 1)
+		return half(h, "Clients", toggle, [
+			...data.clientInfo.map((entry) => clientInfoRow(h, entry, max)),
+			note(
+				h,
+				isPerConnect
+					? [
+							attr(h, "clientInfo"),
+							" arrives on initialize, so these count handshakes; a stateless request sends it with each call.",
+						]
+					: [attr(h, "clientInfo"), " came with these requests, handshakes included."],
+			),
 		])
 	}
 	const callers = data.clients.filter((client) => client.calls > 0)
@@ -607,14 +626,14 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 	const max = Math.max(...callers.map((client) => client.calls), 1)
 	const shown = callers.slice(0, CLIENT_ROWS)
 	const hidden = callers.slice(CLIENT_ROWS)
-	const initializers = data.initializers
+	const named = data.clientInfo
 		.slice(0, 3)
 		.map((entry) => `${entry.name} ${entry.count}`)
 		.join(" · ")
-	const rest = data.initializers.length - 3
-	return half(h, "Clients", options.clientToggle, [
-		clientsHead(h),
-		...shown.map((client) => clientRow(h, client, max)),
+	const rest = data.clientInfo.length - 3
+	return half(h, "Clients", toggle, [
+		clientsHead(h, hasConnects),
+		...shown.map((client) => clientRow(h, client, max, hasConnects)),
 		...(hidden.length === 0
 			? []
 			: [
@@ -628,24 +647,27 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			? []
 			: [
 					clientGroupLabel(h, `Connected, no tool calls · ${quiet.length}`),
-					...quiet.map((client) => clientRow(h, client, max)),
+					...quiet.map((client) => clientRow(h, client, max, hasConnects)),
 				]),
 		note(h, [
 			"Calls carry ",
 			attr(h, "user_agent.original"),
-			"; a connect is one ",
-			attr(h, "initialize"),
-			", and agents reconnect often. ",
-			attr(h, "clientInfo"),
-			initializers === ""
-				? " arrives on initialize only; none seen in this window."
-				: ` arrives on initialize only: ${initializers}${rest > 0 ? ` · ${rest} more` : ""}.`,
+			...(hasConnects
+				? ["; a connect is one ", attr(h, "initialize"), ", and agents reconnect often."]
+				: ["."]),
+			...(named === ""
+				? []
+				: [
+						" ",
+						attr(h, "clientInfo"),
+						` ${isPerConnect ? "per connect" : "per request"}: ${named}${rest > 0 ? ` · ${rest} more` : ""}.`,
+					]),
 		]),
 	])
 }
 
 const detailGrid = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
-	const handshakes = data.methods.find((method) => method.method === "initialize")?.calls ?? 0
+	const handshakes = handshakesOf(data)
 	const toolCalls = data.methods.find((method) => method.method === "tools/call")?.calls ?? 0
 	const status = statusNote(data.totals.errors, data.totals.statusErrors)
 	return h.div(
@@ -659,7 +681,7 @@ const detailGrid = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 			half(
 				h,
 				"Protocol methods",
-				toolCalls === 0
+				toolCalls === 0 || handshakes === 0
 					? undefined
 					: headingNote(h, `${(handshakes / toolCalls).toFixed(2)} initialize per tool call`),
 				[methodsHead(h), ...data.methods.map((row) => methodRow(h, row))],

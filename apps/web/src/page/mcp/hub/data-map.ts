@@ -69,7 +69,7 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 			isPresent: calls > 0 && coverage.withUserAgent === calls,
 			label: "Client per call",
 			attributes: ["user_agent.original"],
-			detail: `${every(coverage.withUserAgent, "tool call")} clientInfo rides on initialize only.`,
+			detail: every(coverage.withUserAgent, "tool call"),
 		},
 		{
 			isPresent: coverage.protocolVersion !== "",
@@ -81,6 +81,15 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 					: `${coverage.protocolVersion}${coverage.transport === "" ? "" : ` over ${coverage.transport}`}.`,
 		},
 		{
+			isPresent: coverage.withUser > 0,
+			label: "Users",
+			attributes: ["user.id"],
+			detail:
+				coverage.withUser > 0
+					? every(coverage.withUser, "tool call")
+					: "Not sent: calls can't be counted or grouped by who made them.",
+		},
+		{
 			isPresent: coverage.withSession > 0,
 			label: "Sessions",
 			attributes: ["mcp.session.id"],
@@ -89,16 +98,7 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 					? every(coverage.withSession, "tool call")
 					: coverage.withUser > 0
 						? "Not sent: sessions are built from each user's calls instead."
-						: "Not sent: send it, or the user below, for a sessions view.",
-		},
-		{
-			isPresent: coverage.withUser > 0,
-			label: "Users",
-			attributes: ["user.id"],
-			detail:
-				coverage.withUser > 0
-					? every(coverage.withUser, "tool call")
-					: "Not sent: calls can't be counted or grouped by who made them.",
+						: "Only older, stateful servers have one: send user.id above for sessions.",
 		},
 		{
 			isPresent: coverage.withCallerTrace > 0,
@@ -118,6 +118,11 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 	]
 }
 
+/** What the clientInfo counts are: handshakes while every one came on `initialize`, else requests. */
+export const clientInfoUnit = (
+	entries: ReadonlyArray<Readonly<{ count: number; connects: number }>>,
+): "connect" | "request" => (entries.every((entry) => entry.count === entry.connects) ? "connect" : "request")
+
 export const overviewOf = (response: Overview, nowMs: number): McpServerOverview => ({
 	service: response.service,
 	protocolVersion: response.protocolVersion,
@@ -129,7 +134,8 @@ export const overviewOf = (response: Overview, nowMs: number): McpServerOverview
 	totals: response.totals,
 	tools: response.tools,
 	clients: response.clients,
-	initializers: response.initializers,
+	clientInfo: response.clientInfo,
+	clientInfoUnit: clientInfoUnit(response.clientInfo),
 	failures: failureKinds(response.failures),
 	methods: response.methods,
 	coverage: coverageRows(response.coverage),

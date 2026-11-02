@@ -13,8 +13,9 @@ import { SEMCONV_MCP_URL } from "./view-kit"
 const SPAN_EXAMPLE: ReadonlyArray<readonly [string, string, string]> = [
 	["mcp.method.name", "tools/call", ""],
 	["gen_ai.tool.name", "run_sql", ""],
-	["error.type", "tool_error", "# the result had isError"],
-	["mcp.session.id", "7f3c…", "# unlocks sessions"],
+	["error.type", "tool_error", "# isError result"],
+	["user.id", "user_42", "# users, sessions"],
+	["mcp.session.id", "7f3c…", "# older servers"],
 ]
 
 /** The span Maple reads, drawn as the on-ramp's example. */
@@ -37,7 +38,7 @@ const spanExample = <M>(h: HtmlBuilder<M>): Html =>
 				h.div(
 					[h.Class("flex gap-3 pl-3")],
 					[
-						h.span([h.Class("w-32 shrink-0 text-muted-foreground")], [key]),
+						h.span([h.Class("w-28 shrink-0 text-muted-foreground")], [key]),
 						h.span([h.Class("w-20 shrink-0 text-foreground")], [value]),
 						h.span([h.Class("text-foreground-subtle")], [comment]),
 					],
@@ -191,9 +192,9 @@ export const noSessionsState = <M>(
 			empty(h, [
 				emptyHeader(h, [
 					emptyMedia(h, { variant: "icon" }, [icon(h, "LayersIcon")]),
-					emptyTitle(h, ["No session ids yet"]),
+					emptyTitle(h, ["No sessions yet"]),
 					emptyDescription(h, [
-						`${options.service} answers tool calls, but none carries mcp.session.id. A server on a stateful transport issues an Mcp-Session-Id; record it on every server span and each client's calls group into a session here.`,
+						`${options.service} answers tool calls, but none names its user. Set user.id on every server span, from the key or token that authenticates the request, and each user's calls from one client group into sessions. A server on an older, stateful transport can record its Mcp-Session-Id as mcp.session.id instead.`,
 					]),
 				]),
 				emptyContent(h, [

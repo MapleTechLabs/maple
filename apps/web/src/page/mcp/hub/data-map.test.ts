@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { coverageRows, failureKinds, sessionsScreen } from "./data-map"
+import { clientInfoUnit, coverageRows, failureKinds, sessionsScreen } from "./data-map"
 
 const coverage = {
 	toolCalls: 100,
@@ -38,6 +38,15 @@ describe("coverageRows", () => {
 		expect(row("Users")).toMatchObject({ isPresent: true, detail: "On 40 of 100 tool calls." })
 	})
 
+	it("points a server with neither a session id nor a user at user.id, which stateless MCP keeps", () => {
+		const rows = coverageRows({ ...coverage, withUser: 0 })
+		expect(rows.find((entry) => entry.label === "Sessions")?.detail).toBe(
+			"Only older, stateful servers have one: send user.id above for sessions.",
+		)
+		const labels = rows.map((entry) => entry.label)
+		expect(labels.indexOf("Users")).toBeLessThan(labels.indexOf("Sessions"))
+	})
+
 	it("says failures can't be grouped when no failed call carries a message", () => {
 		expect(row("Why a tool failed")?.isPresent).toBe(false)
 	})
@@ -51,6 +60,21 @@ describe("failureKinds", () => {
 		])
 		expect(tool?.count).toBe(7)
 		expect(rpc).toMatchObject({ codes: ["-32603"], count: 2 })
+	})
+})
+
+describe("clientInfoUnit", () => {
+	it("counts handshakes only while every clientInfo came on initialize", () => {
+		expect(clientInfoUnit([{ count: 3, connects: 3 }])).toBe("connect")
+	})
+
+	it("counts requests once any clientInfo came on a later request", () => {
+		expect(
+			clientInfoUnit([
+				{ count: 3, connects: 3 },
+				{ count: 6, connects: 1 },
+			]),
+		).toBe("request")
 	})
 })
 

@@ -256,7 +256,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 	const aggregate = { profile: "aggregation" } as const
 	const [
 		summary,
-		initializers,
+		clientInfo,
 		methods,
 		allClients,
 		clients,
@@ -275,9 +275,9 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				...aggregate,
 				context: "mcpSpanSummary",
 			}),
-			warehouse.compiledQuery(tenant, CH.compile(CH.mcpInitializersQuery(), params), {
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientInfoQuery(), params), {
 				...aggregate,
-				context: "mcpInitializers",
+				context: "mcpClientInfo",
 			}),
 			warehouse.compiledQuery(tenant, CH.compile(CH.mcpMethodsQuery(), params), {
 				...aggregate,
@@ -389,7 +389,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 		}),
 		clients: clientItems(clients, reach, quiet),
 		allClients: clientItems(allClients, reach),
-		initializers,
+		clientInfo,
 		failures: Object.entries(failures)
 			.map(([errorType, rows]) => ({ errorType, count: sumBy(rows, (row) => row.count) }))
 			.sort((a, b) => b.count - a.count),
