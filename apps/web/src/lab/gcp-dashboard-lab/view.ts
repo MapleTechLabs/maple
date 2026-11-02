@@ -1,7 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import type { VariableValues } from "@maple/query-engine"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { WIDGET_CHART_TOKENS } from "../../page/dashboards/kit/chart-tokens"
 import { widgetTile } from "../../page/dashboards/kit/tiles"
 import * as VariablesManagerView from "../../page/dashboards/kit/variables-manager/view"

@@ -2,13 +2,13 @@ import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { label } from "../../../ui/label"
-import { refreshButton } from "../../../ui/refresh-button"
-import { switchControl } from "../../../ui/switch"
+import { label } from "@maple/views/ui/label"
+import { refreshButton } from "@maple/views/ui/refresh-button"
+import { switchControl } from "@maple/views/ui/switch"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { searchInput } from "../../../ui/search-input"
+import { searchInput } from "@maple/views/ui/search-input"
 
 // The agent sessions toolbar, its search over `SearchInput`.
 // TODO(tooltip): the count's and the switch's tooltips are drawn as triggers only.

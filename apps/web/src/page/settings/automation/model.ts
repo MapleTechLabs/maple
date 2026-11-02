@@ -9,8 +9,8 @@ import {
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Select from "../../../ui/select"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Select from "@maple/views/ui/select"
 
 // `AutomationSection` and `EscalationPolicySection` (apps/web/src/components/settings/).
 

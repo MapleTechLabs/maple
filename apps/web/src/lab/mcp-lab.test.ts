@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
-import * as Select from "../ui/select"
-import * as ToggleGroup from "../ui/toggle-group"
+import * as Select from "@maple/views/ui/select"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { filteredOverview, filteredTool } from "./mcp-filter"
 import { filtersOf, init, Message, update } from "./mcp-lab"
 

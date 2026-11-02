@@ -1,11 +1,11 @@
 import type { SecurityAuditFinding } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { middleTruncate } from "../../../ui/middle-truncate"
-import { pressable } from "../../../ui/pressable"
-import { segmentedSelect } from "../../../ui/segmented-select"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { pressable } from "@maple/views/ui/pressable"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
 import { locationOf } from "./format"
 import {
@@ -18,7 +18,7 @@ import {
 	SCORED_BUCKETS,
 } from "./findings"
 import { securitySeverityBadge } from "./parts"
-import { typography, typographyClass } from "../../../ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // The findings list the run page and the Findings tab share, laid out like Linear's issue list:
 // severity tabs on top, collapsible groups, one dense line per finding.

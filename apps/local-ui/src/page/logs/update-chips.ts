@@ -1,4 +1,4 @@
-import * as Tooltip from "@maple/web/ui/tooltip"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { Duration, Effect, Option, Record, Schema } from "effect"
 import { Command } from "foldkit"
 import { Message } from "./message"

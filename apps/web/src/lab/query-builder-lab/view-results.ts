@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../ui/display"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../ui/table"
+import { badge } from "@maple/views/ui/display"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { seriesKeysOf } from "./derive"
 import type { Message, Model, RunResult } from "./model"
 

@@ -1,9 +1,9 @@
 import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
-import type * as MenuView from "../../../ui/menu-view"
-import { rowActionsMenu } from "../../../ui/row-actions-menu"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import type * as MenuView from "@maple/views/ui/menu-view"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { refreshControls as sharedRefreshControls } from "../../kit/refresh-controls"
 import { presetLabel } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -12,7 +12,7 @@ import type { Model } from "./model"
 import { isEditing } from "./update"
 import { variableSelects } from "./view-variables"
 import type { PageContext } from "../../contract"
-import { hstack } from "../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // The dashboard toolbar and `RefreshControls`.
 

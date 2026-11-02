@@ -7,7 +7,7 @@ import {
 } from "../../../../components/infra/cloudflare/filters"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { scopeChip } from "../../kit/scope-chip"
-import { hstack } from "../../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PanelScope`: what a panel is actually scoped to.
 

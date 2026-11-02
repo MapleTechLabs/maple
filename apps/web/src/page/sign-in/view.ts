@@ -2,9 +2,9 @@ import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { accountLayout } from "../../layout/account-layout"
-import { button } from "../../ui/button"
-import { heading } from "../../ui/heading"
-import { field, fieldError, fieldLabel, input, type FieldIds, type FieldState } from "../../ui/field"
+import { button } from "@maple/views/ui/button"
+import { heading } from "@maple/views/ui/heading"
+import { field, fieldError, fieldLabel, input, type FieldIds, type FieldState } from "@maple/views/ui/field"
 import { Message, type Model, SignInFailure, Submission } from "./sign-in"
 
 // NOTE: fixed ids for the password field. Base UI's `dirty` compares with the initial value, which is

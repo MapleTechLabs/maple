@@ -1,15 +1,15 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { heading } from "../../../ui/heading"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
-import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
-import { label } from "../../../ui/label"
-import { nativeOption, nativeSelect } from "../../../ui/native-select"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
+import { label } from "@maple/views/ui/label"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { textarea } from "@maple/views/ui/textarea"
 import {
 	ASSERTION_OPS,
 	ASSERTION_TYPES,
@@ -21,8 +21,8 @@ import {
 } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // The form's inputs and the HTTP and schedule sections.
 

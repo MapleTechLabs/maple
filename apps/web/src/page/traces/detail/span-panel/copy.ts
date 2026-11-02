@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { copyButton as sharedCopyButton } from "../../../../ui/copy-button"
-import type { IconName } from "../../../../ui/icon"
-import { pressable } from "../../../../ui/pressable"
+import { copyButton as sharedCopyButton } from "@maple/views/ui/copy-button"
+import type { IconName } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
 import { Message } from "./message"
 import type { CopyStatus, PanelState as Model } from "./model"
 

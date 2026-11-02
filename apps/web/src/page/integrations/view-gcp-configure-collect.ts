@@ -1,15 +1,15 @@
 import { cn } from "@maple/ui/lib/utils"
 import { type GcpDraftEffect, gcpCollectLock } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { label } from "../../ui/label"
-import { labelIdOf } from "../../ui/choice"
-import { icon } from "../../ui/icon"
-import * as Switch from "../../ui/switch"
+import { label } from "@maple/views/ui/label"
+import { labelIdOf } from "@maple/views/ui/choice"
+import { icon } from "@maple/views/ui/icon"
+import * as Switch from "@maple/views/ui/switch"
 import { CAPABILITIES, CAPABILITY_IDS, LOCK_NOTES } from "./gcp-configure-copy"
 import type { Capability, GcpFlags } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
-import { vstack, vstackClass } from "../../ui/stack"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `CollectFields`: a switch per capability, with the log filter under Logs. Nothing is saved here.
 

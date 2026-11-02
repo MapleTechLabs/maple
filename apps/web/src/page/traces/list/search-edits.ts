@@ -1,4 +1,4 @@
-import { formatCompact } from "../../../ui/filters/range-format"
+import { formatCompact } from "@maple/views/ui/filters/range-format"
 import { excludedOf, type Search } from "./derive"
 import type { Facet } from "./message"
 

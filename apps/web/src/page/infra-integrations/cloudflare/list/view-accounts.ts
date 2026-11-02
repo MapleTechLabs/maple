@@ -2,14 +2,14 @@ import type { AccountTone, CloudflareAccount } from "../../../../components/infr
 import { formatPercentColumn } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { pressable } from "../../../../ui/pressable"
+import { pressable } from "@maple/views/ui/pressable"
 import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
-import type * as Menu from "../../../../ui/menu"
-import * as MenuView from "../../../../ui/menu-view"
-import { statusDot } from "../../../../ui/status-dot"
+import type * as Menu from "@maple/views/ui/menu"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
-import { hstack } from "../../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // Multi-account Cloudflare: these only render with two or more accounts; a single-account org keeps
 // a plain chip.

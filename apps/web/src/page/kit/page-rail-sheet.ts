@@ -5,8 +5,8 @@ import {
 	pageRightSheetStyles,
 } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as Dialog from "../../ui/dialog"
-import * as DialogView from "../../ui/dialog-view"
+import type * as Dialog from "@maple/views/ui/dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
 
 /**
  * `PageLayout.FilterSidebar` / `RightSidebar` below `lg`: the page's rail in a side sheet

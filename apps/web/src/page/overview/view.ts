@@ -1,12 +1,12 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option } from "effect"
-import { isChartRuntimeReady } from "../../charts/chart-runtime"
-import { ResolveThemeColors } from "../../charts/theme-colors"
-import { FAILURE_KEY_SEPARATOR, failureKey, isSameFailure, type LoadFailure } from "../../data/load-failure"
-import { errorState } from "../../ui/error-state"
-import * as Select from "../../ui/select"
-import * as SelectView from "../../ui/select-view"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { FAILURE_KEY_SEPARATOR, failureKey, isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { signalEmptyState } from "../kit/signal-empty-state"
@@ -28,7 +28,7 @@ import { usageCards } from "./view-usage"
 
 import { Message as SetupMessage } from "./setup-checklist"
 import * as SetupChecklistView from "./setup-checklist-view"
-import { hstack } from "../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 const EMPTY_COLORS = {}
 

@@ -6,11 +6,11 @@ import {
 	describeCloudflareIngestPhase,
 	FIRST_DATA_MINUTES,
 } from "../../components/infra/cloudflare/ingest-phase"
-import { alert, alertAction, alertDescription, alertTitle } from "../../ui/alert"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { meter } from "../../ui/meter"
-import { truncatedText } from "../../ui/truncated-text"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { meter } from "@maple/views/ui/meter"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import {
 	type CheckRow,
 	flowColumns,
@@ -31,8 +31,8 @@ import type { FlowStage } from "./flow"
 import { cloudflarePhaseOf, cloudflareReach, cloudflareStatusOf, cloudflareUsageOf } from "./flow-cloudflare"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typography } from "../../ui/typography"
-import { hstack, vstack } from "../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // Cloudflare in the connect flow: approve Maple on Cloudflare's consent screen, then watch the
 // poller find zones and Workers and fill in the first data.

@@ -1,15 +1,15 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { field, fieldDescription, fieldLabel } from "../../../ui/field"
-import { inlineCode } from "../../../ui/inline-code"
-import { settingRow } from "../../../ui/setting-row"
+import { field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { settingRow } from "@maple/views/ui/setting-row"
 import { bar } from "../kit/skeletons"
 import { RULES_COPY } from "./copy"
 import { ALL_CATEGORIES } from "./state"
 import { valueState } from "./view-fields"
-import { typography } from "../../../ui/typography"
-import { vstack } from "../../../ui/stack"
-import { skeletonSwitchClass } from "../../../ui/skeleton"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+import { skeletonSwitchClass } from "@maple/views/ui/skeleton"
 
 // `RulesFormView` before its config loads: the real field labels and hints, bars for the values.
 

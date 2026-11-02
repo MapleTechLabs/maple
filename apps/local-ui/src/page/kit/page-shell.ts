@@ -1,6 +1,6 @@
-import { button } from "@maple/web/ui/button"
-import { triggerId } from "@maple/web/ui/dialog"
-import { icon } from "@maple/web/ui/icon"
+import { button } from "@maple/views/ui/button"
+import { triggerId } from "@maple/views/ui/dialog"
+import { icon } from "@maple/views/ui/icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The page shell: filter rail beside a toolbar over the scrolling

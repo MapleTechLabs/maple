@@ -1,8 +1,8 @@
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { panelBody } from "../../../ui/panel"
+import { badge } from "@maple/views/ui/display"
+import { panelBody } from "@maple/views/ui/panel"
 import {
 	type CheckHealth,
 	checkHealth,

@@ -10,9 +10,9 @@ import {
 	breadcrumbList,
 	breadcrumbPage,
 	breadcrumbSeparator,
-} from "../ui/breadcrumb"
-import { separator } from "../ui/display"
-import { sidebarTrigger } from "../ui/sidebar"
+} from "@maple/views/ui/breadcrumb"
+import { separator } from "@maple/views/ui/display"
+import { sidebarTrigger } from "@maple/views/ui/sidebar"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type SourceLink, sourceLinkButton } from "./source-link"

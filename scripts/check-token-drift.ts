@@ -27,7 +27,7 @@ if (sharedTokens.size === 0) {
 	process.exit(1)
 }
 
-const SCAN_ROOTS = ["apps/web/src", "apps/landing/src", "apps/local-ui/src"]
+const SCAN_ROOTS = ["apps/web/src", "packages/views/src", "apps/landing/src", "apps/local-ui/src"]
 const SCAN_EXT = /\.(css|astro)$/
 
 function* walk(dir: string): Generator<string> {

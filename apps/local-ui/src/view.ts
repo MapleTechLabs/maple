@@ -1,5 +1,5 @@
-import { sidebarInset, sidebarTrigger, sidebarWrapper } from "@maple/web/ui/sidebar"
-import * as ToastView from "@maple/web/ui/toast-view"
+import { sidebarInset, sidebarTrigger, sidebarWrapper } from "@maple/views/ui/sidebar"
+import * as ToastView from "@maple/views/ui/toast-view"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"

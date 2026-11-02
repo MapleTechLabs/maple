@@ -1,12 +1,12 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { chipsView } from "../../../../ui/combobox-view"
-import { errorState } from "../../../../ui/error-state"
-import { field, fieldDescription, fieldLabel, type FieldState } from "../../../../ui/field"
-import { icon } from "../../../../ui/icon"
-import { nativeOption, nativeSelect } from "../../../../ui/native-select"
-import { panel } from "../../../../ui/panel"
+import { button } from "@maple/views/ui/button"
+import { chipsView } from "@maple/views/ui/combobox-view"
+import { errorState } from "@maple/views/ui/error-state"
+import { field, fieldDescription, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { panel } from "@maple/views/ui/panel"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { saveBar } from "../../kit/save-bar"
 import { settingsSection, settingsSections } from "../../kit/section"
@@ -23,7 +23,7 @@ import {
 	isOpsEnabled,
 	isWebEnabled,
 } from "./update"
-import { typography } from "../../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 

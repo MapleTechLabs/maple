@@ -11,7 +11,7 @@ import {
 	type V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 import { listMonitors } from "../../alerts/shared/uptime-commands"

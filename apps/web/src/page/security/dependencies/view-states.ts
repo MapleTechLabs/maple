@@ -3,7 +3,7 @@ import type { DependencyFindingView, DependencyScanRepository } from "@maple/dom
 import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { linkButton } from "../../../ui/button"
+import { linkButton } from "@maple/views/ui/button"
 import {
 	empty,
 	emptyContent,
@@ -12,15 +12,15 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { textLink } from "../../../ui/text-link"
+} from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { textLink } from "@maple/views/ui/text-link"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { placeholder } from "../kit/parts"
 import { openSeverityCounts, planSummaryOf, scannedCount, upgradePlanOf } from "./derive"
 import type { Message, Model } from "./model"
 import { scanButton } from "./view-repositories"
-import { typography } from "../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // The Dependencies tab's rail and its whole-tab states: loading, no GitHub, first scan pending.
 

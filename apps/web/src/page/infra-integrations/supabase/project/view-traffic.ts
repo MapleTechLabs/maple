@@ -3,17 +3,17 @@ import { formatErrorRate, formatLatency, formatNumber, formatPercent } from "@ma
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { textLink } from "../../../../ui/text-link"
-import * as BarChart from "../../../../charts/bar-chart"
-import * as Chart from "../../../../charts/chart"
-import type { ThemeColors } from "../../../../charts/theme-colors"
-import { chartLoading, chartPlotArea } from "../../../../ui/chart-state"
+import { textLink } from "@maple/views/ui/text-link"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import * as Chart from "@maple/views/charts/chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartLoading, chartPlotArea } from "@maple/views/ui/chart-state"
 import { ERROR_RATE_LIMIT } from "../health"
 import { STATUS_CLASSES, trafficRows, trafficShares } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../panel"
-import { typography } from "../../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // "API requests": the gateway's requests by status class, its totals, and the busiest paths.
 

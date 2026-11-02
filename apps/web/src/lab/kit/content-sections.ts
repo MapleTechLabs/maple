@@ -7,16 +7,16 @@ import {
 	breadcrumbList,
 	breadcrumbPage,
 	breadcrumbSeparator,
-} from "../../ui/breadcrumb"
-import { button } from "../../ui/button"
-import type * as CopyButton from "../../ui/copy-button"
-import type { CopyStatus } from "../../ui/copy-button"
-import { eyebrow } from "../../ui/eyebrow"
-import { pageHeader, pageHeaderActions, pageLayoutRoot } from "../../ui/page-layout"
-import { spinner } from "../../ui/spinner"
-import { icon } from "../../ui/icon"
-import { marker, markerContent, markerIcon } from "../../ui/marker"
-import { avatarFallback } from "../../ui/display"
+} from "@maple/views/ui/breadcrumb"
+import { button } from "@maple/views/ui/button"
+import type * as CopyButton from "@maple/views/ui/copy-button"
+import type { CopyStatus } from "@maple/views/ui/copy-button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { pageHeader, pageHeaderActions, pageLayoutRoot } from "@maple/views/ui/page-layout"
+import { spinner } from "@maple/views/ui/spinner"
+import { icon } from "@maple/views/ui/icon"
+import { marker, markerContent, markerIcon } from "@maple/views/ui/marker"
+import { avatarFallback } from "@maple/views/ui/display"
 import { codeSection } from "./code-section"
 import { kitRow, kitSection } from "./kit-layout"
 import {

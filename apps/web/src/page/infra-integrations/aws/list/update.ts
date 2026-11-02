@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
+import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"

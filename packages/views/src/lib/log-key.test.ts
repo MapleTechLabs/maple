@@ -62,8 +62,7 @@ describe("log-key", () => {
 		// sanity: the valid token decodes
 		expect(decodeLogKey(validToken)).not.toBeNull()
 		// a token whose payload is a 2-tuple is rejected
-		const shortTuple = Buffer.from(JSON.stringify(["a", "b"]))
-			.toString("base64")
+		const shortTuple = btoa(JSON.stringify(["a", "b"]))
 			.replace(/\+/g, "-")
 			.replace(/\//g, "_")
 			.replace(/=+$/, "")

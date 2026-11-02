@@ -8,12 +8,12 @@ import {
 	toolsTableFooter,
 } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { skeletonList } from "../../../ui/skeleton"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeletonList } from "@maple/views/ui/skeleton"
 import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../tools-kit/model"
 import { volumeSparkCell } from "../tools-kit/spark"
 import { toolDetailLinkSearch } from "../tools-kit/model"
@@ -31,10 +31,10 @@ import {
 } from "../tools-kit/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
-import { columnClass } from "../../../ui/column"
-import { swatch } from "../../../ui/swatch"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
+import { swatch } from "@maple/views/ui/swatch"
 
 type H = HtmlBuilder<Message>
 

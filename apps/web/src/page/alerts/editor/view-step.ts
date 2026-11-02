@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../../ui/heading"
-import { typography } from "../../../ui/typography"
+import { heading } from "@maple/views/ui/heading"
+import { typography } from "@maple/views/ui/typography"
 
 // `RuleStep` and the editor's shared width.
 

@@ -1,7 +1,7 @@
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { sidebarMobileHeaderStyles, sidebarMobileInnerStyles, sidebarMobileStyles } from "@maple/ui/styles/ui/sidebar"
-import { icon } from "@maple/web/ui/icon"
-import { leftSheet } from "@maple/web/ui/sheet"
+import { icon } from "@maple/views/ui/icon"
+import { leftSheet } from "@maple/views/ui/sheet"
 import {
 	sidebarContent,
 	sidebarDesktop,
@@ -15,7 +15,7 @@ import {
 	sidebarMenuItem,
 	sidebarRail,
 	sidebarTrigger,
-} from "@maple/web/ui/sidebar"
+} from "@maple/views/ui/sidebar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "../message"
 import type { Model } from "../model"

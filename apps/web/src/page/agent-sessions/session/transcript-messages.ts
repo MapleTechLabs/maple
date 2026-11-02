@@ -1,17 +1,17 @@
 import type { TranscriptRow } from "@maple/agent-sessions"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import { pressable } from "../../../ui/pressable"
-import { textLink } from "../../../ui/text-link"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { textLink } from "@maple/views/ui/text-link"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, messageBody, viewSwitch } from "./payload-view"
 import { firstLine } from "./clamped-text"
 import { clampedBody, messageBodyView, payloadCopyButton } from "./transcript-kit"
 import { avatar, CLOCK, clockOf, LABEL, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
-import { typography } from "../../../ui/typography"
-import { vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // The transcript's people and prompts: `UserBlock`, `SystemBlock`, `ThinkingBlock`.
 

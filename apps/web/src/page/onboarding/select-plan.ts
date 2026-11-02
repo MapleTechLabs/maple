@@ -6,12 +6,12 @@ import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../../platform/resources"
-import { badge } from "../../ui/display"
-import { heading } from "../../ui/heading"
-import { icon } from "../../ui/icon"
+import { badge } from "@maple/views/ui/display"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
 import * as PricingCards from "./pricing-cards"
 import * as PricingCardsView from "./pricing-cards-view"
-import { layer } from "../../ui/layer"
+import { layer } from "@maple/views/ui/layer"
 
 // `/select-plan`: the trial pitch, or for a returning subscriber whose plan lapsed, the reactivation framing,
 // over the same pricing cards.

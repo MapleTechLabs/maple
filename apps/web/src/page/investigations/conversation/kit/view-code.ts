@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { iconButton } from "../../../../ui/icon-button"
+import { iconButton } from "@maple/views/ui/icon-button"
 import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../../kit/message-response"
 import { type HighlightedCode, highlightKey } from "./code-highlight"
-import { typographyClass } from "../../../../ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // Streamdown's full code block, its lines coloured by `code-highlight.ts`.
 

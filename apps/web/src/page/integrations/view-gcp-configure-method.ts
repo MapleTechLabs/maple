@@ -5,9 +5,9 @@ import { gcpAgentPrompt, gcpManualSteps, gcpRemovalList } from "../../components
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
-import { button } from "../../ui/button"
-import { skeleton } from "../../ui/skeleton"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { IAC_DOCS, MANUAL_DOCS } from "./gcp-configure-copy"
 import type { ApplyOpened, ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
@@ -27,7 +27,7 @@ import { fileCard, loadFailure } from "./view-gcp-configure-script"
 import { runStatus } from "./view-gcp-configure-status"
 import { type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { manualSteps, removalItem } from "./view-gcp-setup-methods"
-import { vstack, vstackClass } from "../../ui/stack"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `GcpMethodStage` and `GcpMethodApplyView`: how Google Cloud is set up, and the setup without the script.
 

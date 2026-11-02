@@ -1,5 +1,5 @@
 import { Command } from "foldkit"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext, PageReturn } from "../../contract"
 import { initialization } from "./draft"
 import type { RuleForm } from "./form"

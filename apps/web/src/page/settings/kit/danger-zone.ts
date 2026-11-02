@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { panel } from "../../../ui/panel"
+import { panel } from "@maple/views/ui/panel"
 import { settingsSection } from "./section"
-import { typography } from "../../../ui/typography"
-import { vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // The one "Danger zone" section: a destructive-edged panel of rows, each a title, what it does, and its action.
 

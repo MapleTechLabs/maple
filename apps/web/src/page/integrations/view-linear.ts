@@ -1,13 +1,13 @@
 import type { LinearIntegrationStatus } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { itemContent, mediaCard } from "../../ui/item"
-import { skeletonBlock } from "../../ui/skeleton"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { itemContent, mediaCard } from "@maple/views/ui/item"
+import { skeletonBlock } from "@maple/views/ui/skeleton"
 import {
 	integrationEmpty,
 	integrationEmptyCard,
@@ -21,8 +21,8 @@ import { LINEAR_ACCENT } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
-import { typography } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The Linear card: connect, the connected workspace, and a revoked grant that needs a reconnect.
 

@@ -1,5 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { confirmDialog } from "../../../ui/confirm-dialog"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { Message } from "./message"
 import type { Model } from "./model"
 

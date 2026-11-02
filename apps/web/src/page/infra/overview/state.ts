@@ -5,7 +5,7 @@ import {
 	probeOf,
 	resolveInfraSurfaces,
 } from "../../../data/infra-surfaces"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { NavSurface } from "../../../shell/nav"
 import type { PageContext } from "../../contract"
 import type { Model, SourceId, SourceSummary } from "./model"

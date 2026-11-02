@@ -5,8 +5,8 @@ import * as Timeline from "../../page/traces/detail/timeline"
 import { TraceData, toSpanNode } from "../../page/traces/detail/trace-data"
 import * as Waterfall from "../../page/traces/detail/waterfall"
 import type { Resources } from "../../platform/resources"
-import * as TraceFlow from "../../service-map/trace-flow/trace-flow"
-import * as Tabs from "../../ui/tabs"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import * as Tabs from "@maple/views/ui/tabs"
 
 // `TraceBox`: a controlled `TraceViewTabs` over one trace, its
 // own tab and selected span, the way `/lab/timeline` hosts the trace page's Submodels.

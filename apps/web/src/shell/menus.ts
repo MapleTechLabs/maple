@@ -1,4 +1,4 @@
-import type { Align, Side } from "../ui/anchor"
+import type { Align, Side } from "@maple/views/ui/anchor"
 import { Menu } from "./message"
 
 /** Trigger element id: the positioning Mount anchors to it and focus returns to it on Escape. */

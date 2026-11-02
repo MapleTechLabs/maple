@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Effect, Schema } from "effect"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleAiClient, MapleInternalApiClient } from "../../../platform/api-clients"
 
 // The `securityAudit` group on the ai Worker as Effects the Security Center's Commands wrap. Every

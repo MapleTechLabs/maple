@@ -9,12 +9,12 @@ import {
 import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../../ui/button"
-import { collapsible } from "../../../ui/collapsible"
-import { confirmDialog } from "../../../ui/confirm-dialog"
-import { badge } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import * as Field from "../../../ui/field"
+import { button, linkButton } from "@maple/views/ui/button"
+import { collapsible } from "@maple/views/ui/collapsible"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import * as Field from "@maple/views/ui/field"
 import {
 	field,
 	fieldDescription,
@@ -23,23 +23,23 @@ import {
 	fieldLabel,
 	input,
 	type FieldState,
-} from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { input as plainInput } from "../../../ui/input"
-import { label } from "../../../ui/label"
-import { meter } from "../../../ui/meter"
-import { panel } from "../../../ui/panel"
-import * as RadioGroup from "../../../ui/radio-group"
-import { settingRow } from "../../../ui/setting-row"
-import { skeleton } from "../../../ui/skeleton"
-import { switchControl } from "../../../ui/switch"
+} from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { input as plainInput } from "@maple/views/ui/input"
+import { label } from "@maple/views/ui/label"
+import { meter } from "@maple/views/ui/meter"
+import { panel } from "@maple/views/ui/panel"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import { settingRow } from "@maple/views/ui/setting-row"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { switchControl } from "@maple/views/ui/switch"
 import { saveBar } from "../kit/save-bar"
 import { settingsSection, settingsSections } from "../kit/section"
 import { Message, type Model, type Provider } from "./model"
 import { isLimitsDirty, limitsDraftOf } from "./update"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, vstack, vstackClass } from "../../../ui/stack"
-import { gridClass } from "../../../ui/grid"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { gridClass } from "@maple/views/ui/grid"
 
 type H = HtmlBuilder<Message>
 

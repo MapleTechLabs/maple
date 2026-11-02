@@ -11,12 +11,12 @@ import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/l
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { delta } from "../../ui/delta"
-import { errorState } from "../../ui/error-state"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
-import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
-import { skeleton } from "../../ui/skeleton"
+import { delta } from "@maple/views/ui/delta"
+import { errorState } from "@maple/views/ui/error-state"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { sectionHeading } from "../kit/section-heading"
 import { docsLink, emptyActions } from "../kit/signal-empty-state"
 import { statRail, statRailItem } from "../kit/stat-rail"
@@ -36,7 +36,7 @@ import {
 	rankingTable,
 } from "./view-ai-parts"
 import { favicon } from "./view-icons"
-import { hstack } from "../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // `AnalyticsAiTab`: the AI traffic tab.
 

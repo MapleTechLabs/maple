@@ -1,15 +1,15 @@
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as Checkbox from "../../../ui/checkbox"
-import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
-import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
-import { label } from "../../../ui/label"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import { button } from "@maple/views/ui/button"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
+import { label } from "@maple/views/ui/label"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import {
 	type AttributeDraft,
 	expiryChoicesOf,
@@ -22,8 +22,8 @@ import {
 	toggleModel,
 } from "./rules"
 import { MODE_LABELS, SIGNALS } from "./shared"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `RulesFields` and `AttributeRows`.
 

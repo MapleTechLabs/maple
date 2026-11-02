@@ -1,8 +1,8 @@
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { errorState } from "../../../ui/error-state"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { errorState } from "@maple/views/ui/error-state"
 import type { PageContext } from "../../contract"
 import { environmentsOf, ISSUES_DETAIL_LIMIT_MS } from "./derive"
 import { Message } from "./message"
@@ -12,8 +12,8 @@ import { deploysPanel, issuesPanel } from "./view-deploys"
 import { dependencyStrip, runsOnPanel, usagePanel } from "./view-footprint"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
 import { uptimePanel } from "./view-uptime"
-import { vstack } from "../../../ui/stack"
-import { grid } from "../../../ui/grid"
+import { vstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // The Overview tab: the chart grid, then the quiet panels and the "Talks to" strip.
 

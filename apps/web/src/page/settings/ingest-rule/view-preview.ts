@@ -1,14 +1,14 @@
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
-import { alert, alertDescription } from "../../../ui/alert"
-import { badge } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { nativeOption, nativeSelect } from "../../../ui/native-select"
-import { panel, panelHeader } from "../../../ui/panel"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { draftProblems, specOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,8 +21,8 @@ import {
 	type ValueChange,
 } from "./preview"
 import type { H } from "./view-form"
-import { typography } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The right column: the draft run over recent records, plus the callouts that apply.
 

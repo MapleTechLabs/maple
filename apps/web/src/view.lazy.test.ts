@@ -15,7 +15,7 @@ import { pages } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 import { settle } from "./update"
 import { view } from "./view"
 

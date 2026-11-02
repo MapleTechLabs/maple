@@ -1,13 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import type { FlowStage } from "../../integrations/flow"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { flowSpecOf, isReceiving } from "./update"
 import { integrationMeta } from "./view-picker"
-import { hstackClass } from "../../../ui/stack"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The connect flow's progress: one line under the title. A finished step shows its answer, not its name.
 

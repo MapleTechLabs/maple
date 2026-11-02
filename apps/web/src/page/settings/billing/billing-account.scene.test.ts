@@ -6,7 +6,7 @@ import { expect as expectView, given, role, scene, text, withViewInputs } from "
 import { describe, expect, test } from "vitest"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { view as billingView } from "./view"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>

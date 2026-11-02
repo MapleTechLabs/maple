@@ -2,7 +2,7 @@ import type { AdvisorySeverity } from "@maple/domain/runtime-advisories"
 import type { SecurityAuditRunStatus, SecurityAuditSeverity } from "@maple/domain/security-audit"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
+import { badge } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -10,8 +10,8 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../ui/empty"
-import { icon, type IconName } from "../../../ui/icon"
+} from "@maple/views/ui/empty"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import { severityBadge, severityIcon } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
 

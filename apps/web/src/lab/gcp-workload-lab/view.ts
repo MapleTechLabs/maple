@@ -6,7 +6,7 @@ import { type PageData, workloadData } from "../../page/infra-integrations/gcp/w
 import type * as Workload from "../../page/infra-integrations/gcp/workload/model"
 import { workloadPageView } from "../../page/infra-integrations/gcp/workload/view"
 import type * as Shell from "../../shell"
-import { segmentedSelect } from "../../ui/segmented-select"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { type LabPage, Message, type Model, SPAN_STATES } from "./model"
 import { workloadOf } from "./update"
 

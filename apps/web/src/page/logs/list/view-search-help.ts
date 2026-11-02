@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { highlightedText } from "../../../ui/logs/highlight"
-import * as Popover from "../../../ui/popover"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { highlightedText } from "@maple/views/ui/logs/highlight"
+import * as Popover from "@maple/views/ui/popover"
 import { Message } from "./message"
-import { typography } from "../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // What the log search box
 // accepts, from the info affordance beside the SEARCH label (a hover popover, 200 ms).

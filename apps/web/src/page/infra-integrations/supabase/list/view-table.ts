@@ -2,13 +2,13 @@ import { EMPTY_VALUE, formatPercent, formatRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { meter } from "../../../../ui/meter"
-import { skeleton } from "../../../../ui/skeleton"
+import { meter } from "@maple/views/ui/meter"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import { collectingLabel, healthPill, SATURATION } from "../health"
 import type { ProjectView } from "./derive"
 import type { Message } from "./message"
-import { typography, typographyClass } from "../../../../ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // The project table and its loading state.
 

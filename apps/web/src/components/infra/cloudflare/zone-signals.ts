@@ -3,7 +3,7 @@ import type {
 	CloudflareZoneLatencyBucket,
 	CloudflareZoneStatusBucket,
 } from "@maple/web-data/warehouse/cloudflare-infra"
-import { EDGE_SERVED_STATUSES } from "./constants"
+import { EDGE_SERVED_STATUSES } from "@maple/views/lib/cloudflare-constants"
 
 type StripRow = { bucket: string; attributeValue: string; value: number }
 

@@ -1,13 +1,13 @@
-import { FLOW_LAB_TRACE } from "../../lab/flow-fixture"
+import { FLOW_LAB_TRACE } from "@maple/views/fixtures/flow-fixture"
 import { Option } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { click, expect, given, hover, Mount, role, scene, selector, testId, within } from "foldkit/scene"
 import { describe, test, expect as expectValue } from "vitest"
-import { AttachFlowCanvas } from "../xyflow/attach"
-import * as Canvas from "../xyflow/canvas"
-import * as TraceFlow from "./trace-flow"
-import { view } from "./view"
-import * as FlowLab from "../../lab/flow-lab"
+import { AttachFlowCanvas } from "@maple/views/service-map/xyflow/attach"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import { view } from "@maple/views/service-map/trace-flow/view"
+import * as FlowLab from "./flow-lab"
 
 const graph = TraceFlow.buildFlowGraph({
 	rootSpans: FLOW_LAB_TRACE.rootSpans,

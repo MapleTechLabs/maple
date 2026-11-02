@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { File } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as Dialog from "../../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { AccountUser } from "../user"
 
 // The Profile tab.

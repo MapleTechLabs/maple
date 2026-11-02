@@ -3,9 +3,9 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { statusDot } from "../../../ui/status-dot"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
 import {
 	table,
 	tableBody,
@@ -14,14 +14,14 @@ import {
 	tableHeader,
 	tableRow,
 	truncatedTableCell,
-} from "../../../ui/table"
-import { truncatedId } from "../../../ui/truncated-id"
-import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+} from "@maple/views/ui/table"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
-import { typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The issue incidents and occurrences tables.
 // TODO(tooltip): the incident status's explanation popup; its trigger is ported.

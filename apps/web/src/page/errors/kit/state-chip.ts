@@ -2,8 +2,8 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import type { InvestigationSummary, SignalState } from "../../../lib/models/error-signal"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { statusDot } from "../../../ui/status-dot"
-import { textLink } from "../../../ui/text-link"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { textLink } from "@maple/views/ui/text-link"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
 
 // The signal state and investigation chips.

@@ -8,17 +8,17 @@ import {
 	gcpSetupRunning,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
-import { icon } from "../../ui/icon"
-import { spinner } from "../../ui/spinner"
-import { statusDot } from "../../ui/status-dot"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { spinner } from "@maple/views/ui/spinner"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { CAPABILITIES, CAPABILITY_IDS, DOCS } from "./gcp-configure-copy"
 import type { ApplyOpened, SetupMethod } from "./gcp-configure-schema"
 import type { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { SMALL } from "./view-gcp-parts"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack, vstack } from "../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `RunStatus` (what Maple has heard from the script) and `Applied` (the confirmed run).
 

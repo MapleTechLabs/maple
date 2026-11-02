@@ -1,6 +1,6 @@
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { type ChipTone, pickImportantAttributes } from "@maple/ui/lib/log-attributes"
-import { ROW_LINE_CHARS, textWindow, tryParseJson } from "@maple/web/lib/display-text"
+import { ROW_LINE_CHARS, textWindow, tryParseJson } from "@maple/views/lib/display-text"
 import { Option } from "effect"
 import type { LocalLog } from "./model"
 

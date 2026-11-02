@@ -7,12 +7,12 @@ import { conditionPhrase, incidentGroup, signalTitle } from "@maple/web-data/ale
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { eyebrow } from "../../../ui/eyebrow"
-import { statusDot } from "../../../ui/status-dot"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { createHref, incidentHref, ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `IncidentRail`: the incident detail's side rail.
 

@@ -8,7 +8,7 @@ import {
 } from "@maple/web-data/warehouse/mcp"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { SEMCONV_MCP_URL } from "../view-kit"
 import { Message, RequestMode } from "./message"

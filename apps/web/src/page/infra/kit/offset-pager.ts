@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { listFooter } from "../../../ui/list-footer"
-import { hstack } from "../../../ui/stack"
+import { button } from "@maple/views/ui/button"
+import { listFooter } from "@maple/views/ui/list-footer"
+import { hstack } from "@maple/views/ui/stack"
 
 // `OffsetPager` and `pageRangeLabel`, on `ListFooter align="start"` with children only. Counts
 // use `toLocaleString()` (en-US).

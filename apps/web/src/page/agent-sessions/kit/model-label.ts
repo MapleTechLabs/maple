@@ -1,10 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, iconColor } from "../../../ui/icon"
+import { icon, iconColor } from "@maple/views/ui/icon"
 import { type DetectedModel, modelTitle } from "./detected-models"
 import { modelVendorColor, modelVendorIcon } from "./vendor"
 import { moreChip } from "./more-chip"
-import { hstackClass } from "../../../ui/stack"
+import { hstackClass } from "@maple/views/ui/stack"
 
 /** The vendor's mark and the model's name. */
 export const modelLabel = <M>(

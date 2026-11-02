@@ -1,14 +1,14 @@
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import type { V2ChatConnector } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { emptyMessage } from "../../ui/empty"
-import { item, itemActions, itemContent, itemDescription, itemTitle } from "../../ui/item"
-import { skeleton } from "../../ui/skeleton"
-import { manifestGlyph } from "../../ui/manifest-glyph"
+import { button } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { item, itemActions, itemContent, itemDescription, itemTitle } from "@maple/views/ui/item"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typographyClass } from "../../ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The chat card's parts; the card is view-chat-card.ts.
 

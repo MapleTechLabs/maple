@@ -1,8 +1,8 @@
 import { isReleaseHealth, RELEASE_HEALTH_ORDER } from "../../../components/releases/release-model"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { filterSection } from "../../../ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -10,8 +10,8 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../ui/filters/filter-sidebar"
-import { statusDot } from "../../../ui/status-dot"
+} from "@maple/views/ui/filters/filter-sidebar"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { RELEASE_HEALTH_DESCRIPTION, RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL } from "../kit"
 import { facetsOf, hasFilters } from "./derive"
 import { Message } from "./message"

@@ -1,5 +1,5 @@
 import type { AgentTimeKind, AiSpanCategory } from "@maple/agent-sessions"
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 
 // Span visuals, as icon names: one token
 // per kind of work, read by the time breakdown, the waterfall and the flow.

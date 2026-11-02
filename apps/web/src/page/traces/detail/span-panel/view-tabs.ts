@@ -2,21 +2,21 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../../ui/display"
-import { emptyMessage } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon, type IconName } from "../../../../ui/icon"
-import { severityBadge } from "../../../../ui/logs/severity-badge"
-import { pressable } from "../../../../ui/pressable"
-import { skeleton, skeletonList } from "../../../../ui/skeleton"
-import * as TabsView from "../../../../ui/tabs-view"
+import { badge } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { severityBadge } from "@maple/views/ui/logs/severity-badge"
+import { pressable } from "@maple/views/ui/pressable"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { LOG_LIMIT } from "./command"
 import { Message } from "./message"
 import type { LogEntry, Model } from "./model"
 import { TAB_VALUES } from "./update"
 
-// The panel's Details / Logs / Infrastructure tabs on `ui/tabs-view.ts`, with icon labels and the
+// The panel's Details / Logs / Infrastructure tabs on `@maple/views/ui/tabs-view.ts`, with icon labels and the
 // logs count badge.
 
 type H = HtmlBuilder<Message>

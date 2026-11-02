@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { avatarFallback } from "../../../ui/display"
+import { avatarFallback } from "@maple/views/ui/display"
 
 /** A GitHub login's avatar, from GitHub's public `<login>.png` redirect; the initial while it loads. */
 export const authorAvatar = <M>(h: HtmlBuilder<M>, login: string, className?: string): Html =>

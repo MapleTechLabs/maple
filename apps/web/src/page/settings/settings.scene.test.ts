@@ -16,7 +16,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Tabs from "../../ui/tabs"
+import * as Tabs from "@maple/views/ui/tabs"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import * as Billing from "./billing/update"

@@ -1,9 +1,9 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as ContextMenu from "../../../ui/context-menu"
-import { type Entry, view as contextMenuView } from "../../../ui/context-menu-view"
-import { button } from "../../../ui/button"
-import * as MenuView from "../../../ui/menu-view"
-import type { MenuEntry } from "../../../ui/menu-view"
+import type * as ContextMenu from "@maple/views/ui/context-menu"
+import { type Entry, view as contextMenuView } from "@maple/views/ui/context-menu-view"
+import { button } from "@maple/views/ui/button"
+import * as MenuView from "@maple/views/ui/menu-view"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { Message, type Model } from "./model"
 
 // `KitContextMenu` (opened by a right-click in the scenario).

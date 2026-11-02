@@ -1,9 +1,9 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Shell from "../../shell"
-import * as LogsStream from "../../ui/logs/logs-stream"
-import * as Menu from "../../ui/menu"
-import * as Toast from "../../ui/toast"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import * as Menu from "@maple/views/ui/menu"
+import * as Toast from "@maple/views/ui/toast"
 
 /** The lab's header toggles, pins aside. */
 export const Toggle = Schema.Literals(["Wrap", "Comfortable", "Search", "Empty"])

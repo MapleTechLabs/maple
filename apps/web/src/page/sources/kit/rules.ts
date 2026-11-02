@@ -4,7 +4,7 @@ import { SourceAttributeMode, SourceSignal } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SIGNALS } from "./shared"
 
 // The rules draft and its outcome.

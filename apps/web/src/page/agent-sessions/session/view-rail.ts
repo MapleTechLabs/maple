@@ -3,9 +3,9 @@ import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { meter, segmentedBar } from "../../../ui/meter"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { meter, segmentedBar } from "@maple/views/ui/meter"
 import type { DetectedModel } from "../kit/detected-models"
 import { modelLabel } from "../kit/model-label"
 import { TOKEN_BUCKETS } from "../kit/token-buckets"
@@ -18,8 +18,8 @@ import {
 	type TimeBandKind,
 } from "./span-visuals"
 import { sectionHeading } from "../../kit/section-heading"
-import { typography } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The overview rail and its time composition: where the time, cost and tokens went.
 

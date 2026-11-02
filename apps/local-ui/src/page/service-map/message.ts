@@ -1,5 +1,5 @@
-import * as ServiceMap from "@maple/web/service-map/map/service-map"
-import * as CopyButton from "@maple/web/ui/copy-button"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"

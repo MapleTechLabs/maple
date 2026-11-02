@@ -1,10 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { label } from "../../ui/label"
-import * as OtpField from "../../ui/otp-field"
+import { button } from "@maple/views/ui/button"
+import { label } from "@maple/views/ui/label"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { CODE_FIELD_ID, CODE_LABEL_ID, Message, type Model, type DeviceInfo } from "./cli-login"
-import { typography } from "../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 

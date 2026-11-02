@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 
 // `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
 

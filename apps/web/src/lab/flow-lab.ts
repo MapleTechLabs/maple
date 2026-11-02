@@ -1,10 +1,10 @@
-import { FLOW_LAB_TRACE } from "./flow-fixture"
+import { FLOW_LAB_TRACE } from "@maple/views/fixtures/flow-fixture"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../page/kit/dashboard-page"
-import { findSpanById } from "../service-map/trace-flow/flow-graph"
-import * as TraceFlow from "../service-map/trace-flow/trace-flow"
-import { view as traceFlowView } from "../service-map/trace-flow/view"
+import { findSpanById } from "@maple/views/service-map/trace-flow/flow-graph"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import { view as traceFlowView } from "@maple/views/service-map/trace-flow/view"
 
 // The flow lab under the shell: the synthetic trace in the flow view, with the
 // selected span's name in the header. Shell-free so scene tests can render it.

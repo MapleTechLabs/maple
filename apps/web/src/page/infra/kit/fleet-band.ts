@@ -3,12 +3,12 @@ import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { segmentedBar } from "../../../ui/meter"
-import { skeleton, skeletonMeter } from "../../../ui/skeleton"
-import { statFigure } from "../../../ui/stat-figure"
+import { segmentedBar } from "@maple/views/ui/meter"
+import { skeleton, skeletonMeter } from "@maple/views/ui/skeleton"
+import { statFigure } from "@maple/views/ui/stat-figure"
 import { statRailItem } from "../../kit/stat-rail"
-import { typography } from "../../../ui/typography"
-import { borderedBoxClass } from "../../../ui/bordered-box"
+import { typography } from "@maple/views/ui/typography"
+import { borderedBoxClass } from "@maple/views/ui/bordered-box"
 
 // `FleetBand` and `FleetBandLoading`.
 

@@ -35,7 +35,7 @@ import { Menu, Message, OutMessage } from "./message"
 import { DashboardsData, init, type Model, NamespacesData } from "./model"
 import { MeasureSidebarOverflow, MountNamespaceSearch, PositionMenu } from "./mounts"
 import { enter, update } from "./update"
-import * as Tooltip from "../ui/tooltip"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { CheckDeployedCommit, ReloadPage } from "./version"
 import { frameView, menuLayerView, sheetLayerView } from "./view"
 

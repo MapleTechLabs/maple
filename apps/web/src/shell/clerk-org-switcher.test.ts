@@ -1,8 +1,8 @@
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../ui/dialog"
-import * as Menu from "../ui/menu"
-import * as RadioGroup from "../ui/radio-group"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as RadioGroup from "@maple/views/ui/radio-group"
 import {
 	CREATE_VALUE,
 	createdTargetOf,

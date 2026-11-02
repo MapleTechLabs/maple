@@ -14,7 +14,7 @@ import {
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { utilizationLevel, type UtilizationLevel } from "@maple/ui/lib/utilization"
 
-import { formatValueWithUnit, type ChartUnit } from "../chart-units"
+import { formatValueWithUnit, type ChartUnit } from "@maple/views/lib/infra-chart-units"
 import {
 	GCP_INFRA_CHARTS,
 	gcpBuckets,

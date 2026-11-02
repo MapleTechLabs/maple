@@ -8,7 +8,7 @@ import { SUPABASE_ACCENT } from "../connect"
 import { SATURATION } from "../health"
 import type { HealthStrip } from "./derive"
 import type { Message } from "./message"
-import { typography } from "../../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // The health strip: six tiles, each value over a line spark of the window and a caption.
 

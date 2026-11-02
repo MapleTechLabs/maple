@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pageBody, pageContent } from "../../page/kit/dashboard-page"
 import { viewportView } from "../../page/service-map/view-scene3d"
-import { statusDot } from "../../ui/status-dot"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model } from "./update"
 import { inspector } from "./view-inspector"
 import { inventory, topology } from "./view-inventory"

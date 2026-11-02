@@ -7,7 +7,7 @@ import { getSpanHierarchy, getTraceSpanEvents } from "@maple/web-data/warehouse/
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { requestKey, type RequestKey } from "../../../data/request-key"
 import { writeClipboard } from "../../kit/clipboard"

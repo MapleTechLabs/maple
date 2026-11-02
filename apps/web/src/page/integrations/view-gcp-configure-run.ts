@@ -8,8 +8,8 @@ import {
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
-import { button } from "../../ui/button"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
 import { relativeTime } from "../kit/relative-time"
 import { DOCS } from "./gcp-configure-copy"
 import { runConfirmed } from "./gcp-configure-derive"
@@ -29,7 +29,7 @@ import {
 import { fileCard } from "./view-gcp-configure-script"
 import { applied, runStatus } from "./view-gcp-configure-status"
 import { openCloudShellButton, type ScriptFailure, SMALL } from "./view-gcp-parts"
-import { hstack, vstack, vstackClass } from "../../ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `ApplyStage` / `GcpApplyView`: the script and the run's status, or the confirmed run.
 

@@ -1,19 +1,19 @@
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as Dialog from "../../ui/dialog"
+import type * as Dialog from "@maple/views/ui/dialog"
 import {
 	dialogDescription,
 	dialogHeader,
 	dialogPanel,
 	dialogTitle,
 	view as dialogView,
-} from "../../ui/dialog-view"
-import { kbd, kbdGroup } from "../../ui/display"
-import { eyebrow } from "../../ui/eyebrow"
+} from "@maple/views/ui/dialog-view"
+import { kbd, kbdGroup } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { MeasurePaletteList } from "./command"
 import { displayAlternates, type Platform, SHORTCUT_GROUPS, SHORTCUTS, type ShortcutDef } from "./shortcuts"
-import { typography } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The keyboard shortcuts dialog.
 

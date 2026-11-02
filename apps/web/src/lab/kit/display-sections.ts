@@ -1,9 +1,9 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../ui/alert"
-import { button } from "../../ui/button"
-import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "../../ui/card"
-import { delta } from "../../ui/delta"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../ui/empty"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "@maple/views/ui/card"
+import { delta } from "@maple/views/ui/delta"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "@maple/views/ui/empty"
 import {
 	item,
 	itemActions,
@@ -12,12 +12,12 @@ import {
 	itemGroup,
 	itemMedia,
 	itemTitle,
-} from "../../ui/item"
-import { listRow } from "../../ui/list-row"
-import { panel, panelBody, panelHeader } from "../../ui/panel"
-import { statFigure } from "../../ui/stat-figure"
-import { type IconName, icon } from "../../ui/icon"
-import { badge } from "../../ui/display"
+} from "@maple/views/ui/item"
+import { listRow } from "@maple/views/ui/list-row"
+import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
+import { statFigure } from "@maple/views/ui/stat-figure"
+import { type IconName, icon } from "@maple/views/ui/icon"
+import { badge } from "@maple/views/ui/display"
 import { kitSection } from "./kit-layout"
 
 // The first half of `/lab/kit/display`: surfaces, alerts, empty states and rows.

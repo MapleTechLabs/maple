@@ -1,7 +1,7 @@
 import { Effect, Option, type Scope } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { input } from "../ui/input"
-import { typography } from "../ui/typography"
+import { input } from "@maple/views/ui/input"
+import { typography } from "@maple/views/ui/typography"
 
 /** `NamespaceScopeList`'s search: it only earns its row once the list is this long. */
 export const SEARCH_THRESHOLD = 8

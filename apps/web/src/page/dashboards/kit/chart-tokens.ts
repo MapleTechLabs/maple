@@ -1,7 +1,7 @@
-import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
-import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
-import { HEATMAP_TOKENS } from "../../../charts/heatmap-chart"
-import { HISTOGRAM_BAR_TOKEN } from "../../../charts/histogram-chart"
+import { AREA_CHART_TOKENS } from "@maple/views/charts/area-chart"
+import { BAR_CHART_TOKENS } from "@maple/views/charts/bar-chart"
+import { HEATMAP_TOKENS } from "@maple/views/charts/heatmap-chart"
+import { HISTOGRAM_BAR_TOKEN } from "@maple/views/charts/histogram-chart"
 import { SERVICE_CHART_TOKENS } from "./tiles-service"
 
 // Every custom property a dashboard tile's canvas chart can resolve a colour from: the series

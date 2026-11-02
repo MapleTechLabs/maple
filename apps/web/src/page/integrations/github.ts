@@ -7,10 +7,10 @@ import {
 } from "@maple/domain/http"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../platform/api-clients"
-import * as Dialog from "../../ui/dialog"
-import * as Popover from "../../ui/popover"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Popover from "@maple/views/ui/popover"
 import { Message } from "./message"
 
 // `GithubIntegrationCard`: state and writes.

@@ -2,7 +2,7 @@ import type { RailwayEnvironmentStatus } from "@maple/domain/http"
 import { formatBytes, pluralize } from "@maple/ui/lib/format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { skeleton } from "../../../../ui/skeleton"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, skeletonRows, ROW_LINK_CLASS } from "../../../infra/kit/data-table"
 import { meterRows } from "../../../infra/kit/meter-rows"
 import { avgPeak } from "../../../infra/kit/avg-peak"
@@ -12,7 +12,7 @@ import type { RailwayServiceRow } from "../model"
 import { formatVcpu, groupedRows, type RailwayRowView, type RailwaySync, rowKey } from "./derive"
 import { Message } from "./message"
 import type { SortKey } from "./model"
-import { typography, typographyClass } from "../../../../ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `RailwayServiceTable` and `RailwayServiceTableLoading`.
 

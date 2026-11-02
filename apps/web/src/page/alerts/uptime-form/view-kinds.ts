@@ -1,15 +1,15 @@
 import type { Html } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import * as MenuView from "../../../ui/menu-view"
-import { panel } from "../../../ui/panel"
-import { pressable } from "../../../ui/pressable"
-import { segmentedSelect } from "../../../ui/segmented-select"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, nameSection, section, selectField, textField } from "./view-fields"
-import { hstack } from "../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // The TCP, DNS and heartbeat sections, and the Service and Notify sections every kind shares.
 

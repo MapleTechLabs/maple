@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../ui/empty"
-import { icon } from "../../ui/icon"
+import { linkButton } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
 
 export const resourceNotFound = <M>(
 	h: HtmlBuilder<M>,

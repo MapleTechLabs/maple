@@ -7,8 +7,8 @@ import {
 	type StatusPageThemePreset,
 } from "@maple/domain/status-page"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { cardButton } from "../../../ui/card-button"
-import { hstack } from "../../../ui/stack"
+import { cardButton } from "@maple/views/ui/card-button"
+import { hstack } from "@maple/views/ui/stack"
 
 // The theme presets as small cards, shared by the builder's Look and the Settings appearance.
 

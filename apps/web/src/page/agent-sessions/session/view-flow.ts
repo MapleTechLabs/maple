@@ -3,7 +3,7 @@ import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSmoothStepPath, Position } from "@xyflow/system"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Canvas from "../../../service-map/xyflow/canvas"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
 import {
 	edgesLayer,
 	flowCanvas,
@@ -11,12 +11,12 @@ import {
 	flowHandle,
 	flowNode,
 	nodesLayer,
-} from "../../../service-map/xyflow/view"
-import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { pressable } from "../../../ui/pressable"
+} from "@maple/views/service-map/xyflow/view"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { pressable } from "@maple/views/ui/pressable"
 import type { SessionData } from "./derive"
 import {
 	CANVAS_PADDING,
@@ -32,8 +32,8 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The session flow: one lane per turn on the xyflow canvas.
 // TODO(list-navigation): the arrow-key node cursor is not ported.

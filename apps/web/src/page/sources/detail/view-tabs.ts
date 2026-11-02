@@ -1,9 +1,9 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { type FieldIds, type FieldState, field, fieldLabel, input } from "../../../ui/field"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import { type FieldIds, type FieldState, field, fieldLabel, input } from "@maple/views/ui/field"
+import { textarea } from "@maple/views/ui/textarea"
 import { dangerRow, dangerZone } from "../../settings/kit/danger-zone"
 import { saveBar } from "../../settings/kit/save-bar"
 import { settingsSection, settingsSections } from "../../settings/kit/section"
@@ -17,8 +17,8 @@ import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
 import { isSettingsDirty } from "./update"
 import type { Model, RevealedToken, SettingsForm } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `SourceSetupTab` and `SourceSettings`.
 

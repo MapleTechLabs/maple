@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Popover from "../../../ui/popover"
-import { hstack } from "../../../ui/stack"
+import { button } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Popover from "@maple/views/ui/popover"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ErrorDetailsPopover`: the card clamps a failed tile's
 // message to two lines; the full SQL or ClickHouse message lives behind "Details", with a copy button.

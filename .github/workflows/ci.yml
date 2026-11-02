@@ -79,8 +79,9 @@ jobs:
                         - 'apps/cli/**'
                         - 'packages/local-server/**'
                         - 'apps/local-ui/**'
-                        # local-ui renders apps/web's source modules.
+                        # local-ui renders apps/web's source modules and the shared kit.
                         - 'apps/web/src/**'
+                        - 'packages/views/**'
                         - 'packages/effect-sdk/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'
@@ -261,7 +262,7 @@ jobs:
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun run check:tokens
 
-                  # apps/web/src/ui/INDEX.md is how agents find a kit component before building one.
+                  # packages/views/src/ui/INDEX.md is how agents find a kit component before building one.
                   - name: Validate the dashboard kit index
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun run ui:index:check

@@ -2,14 +2,14 @@ import { formatCost, type SessionTurn, tokenFlowLabel, type TranscriptRow } from
 import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../../ui/heading"
-import { icon } from "../../../ui/icon"
-import { pressable } from "../../../ui/pressable"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
 import { Message } from "./message"
 import { clockOf, indentLanes, META, row } from "./transcript-shell"
 import { failedBadge } from "./view-kit"
-import { typography } from "../../../ui/typography"
-import { fillRule } from "../../../ui/rule"
+import { typography } from "@maple/views/ui/typography"
+import { fillRule } from "@maple/views/ui/rule"
 
 // The transcript's turn chapters (`TurnChapter`, `EmptyTurnRow`, `summariseTurn`).
 

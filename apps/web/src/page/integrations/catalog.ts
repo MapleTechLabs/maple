@@ -2,7 +2,7 @@ import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-
 import { ChatConnectorId } from "@maple/domain/primitives"
 import { docsUrl } from "../../lib/docs"
 import { Array, Option, Schema } from "effect"
-import type { IconName } from "../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"
 import { SUPABASE_ACCENT } from "../infra-integrations/supabase/connect"
 

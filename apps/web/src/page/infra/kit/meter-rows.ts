@@ -3,8 +3,8 @@ import { BAR_FILL, BAR_VALUE_TONE } from "../../../components/infra/severity-tok
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { meter } from "../../../ui/meter"
-import { vstackClass } from "../../../ui/stack"
+import { meter } from "@maple/views/ui/meter"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // `MeterRows`.
 

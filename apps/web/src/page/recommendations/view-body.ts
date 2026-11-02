@@ -1,14 +1,14 @@
 import type { V2Recommendation } from "@maple/domain/http/v2"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../ui/copy-button"
-import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
-import { panel } from "../../ui/panel"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel } from "@maple/views/ui/panel"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { sectionHeading } from "../kit/section-heading"
-import { typography, typographyClass } from "../../ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // The body of `RecommendationDetailPage`: Summary, ChangeBreakdown, CautionCallout and the fix block.
 

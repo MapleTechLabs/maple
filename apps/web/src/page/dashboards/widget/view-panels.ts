@@ -2,9 +2,9 @@ import { PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AsyncData } from "foldkit"
 import { Option } from "effect"
-import { eyebrow } from "../../../ui/eyebrow"
-import { input } from "../../../ui/input"
-import { segmentedSelect } from "../../../ui/segmented-select"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { input } from "@maple/views/ui/input"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import type { EditorState } from "./editor-state"
 import { validationErrorOf } from "./lowering"
 import type { Message } from "./message"
@@ -25,8 +25,8 @@ import {
 } from "./view-product"
 import { FUNNEL_MAX_STEPS, stepBuilder } from "./view-steps"
 import { lookupField } from "../../kit/autocomplete-lookups"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `FunnelQueryPanel` and `PathsQueryPanel`, each
 // with the Run preview row the editor page puts under it.

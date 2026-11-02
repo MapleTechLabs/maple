@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as Select from "../../../ui/select"
-import { type SelectEntry, type SelectOption, view as selectView } from "../../../ui/select-view"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, type SelectOption, view as selectView } from "@maple/views/ui/select-view"
 import { type PresetValue, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "./author"

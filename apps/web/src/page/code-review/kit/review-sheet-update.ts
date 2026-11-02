@@ -2,10 +2,10 @@ import type { CodeReviewCiRunsResponse, CodeReviewDetail, PrReviewId } from "@ma
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import type { Resources } from "../../../platform/resources"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import { cachedStep, remember } from "./page-steps"
 import {

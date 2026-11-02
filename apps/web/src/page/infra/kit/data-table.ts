@@ -1,8 +1,8 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../../ui/empty"
-import { divTableHead, sortButton } from "../../../ui/table"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { divTableHead, sortButton } from "@maple/views/ui/table"
 import type { SortDir } from "../../kit/table-sort"
 
 // `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.

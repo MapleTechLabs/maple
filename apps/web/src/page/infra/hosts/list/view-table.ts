@@ -1,8 +1,8 @@
 import { formatLoad } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { middleTruncate } from "../../../../ui/middle-truncate"
-import { skeleton, skeletonLine } from "../../../../ui/skeleton"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { skeleton, skeletonLine } from "@maple/views/ui/skeleton"
 import {
 	columnHead,
 	dataTable,
@@ -18,9 +18,9 @@ import type { SortDir, SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import type { HostSortKey } from "./message"
 import type { HostRow } from "./model"
-import { typographyClass } from "../../../../ui/typography"
-import { hstack } from "../../../../ui/stack"
-import { column, columnClass } from "../../../../ui/column"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { column, columnClass } from "@maple/views/ui/column"
 
 // `HostTable` / `HostTableLoading`, generic over the host's Message: /infra/hosts sorts through its Model,
 // `/lab/worst-case` through its own.

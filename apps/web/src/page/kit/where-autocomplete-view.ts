@@ -2,7 +2,7 @@ import type { WhereClauseAutocompleteSuggestion } from "../../lib/query-builder/
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { type AnchorRect, listboxStyle } from "./where-autocomplete"
 
 // `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
