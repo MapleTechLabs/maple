@@ -1,0 +1,41 @@
+---
+import { formatStars, GITHUB_REPO_URL, OCTOCAT_PATH } from "../lib/github-stars";
+
+interface Props {
+	stars?: number | null;
+	/** Must carry a flex display (`inline-flex`, `hidden sm:inline-flex`) so the cells lay out. */
+	class?: string;
+}
+
+// The star count beside the octocat; a plain octocat link when the build-time fetch failed.
+const { stars, class: className = "" } = Astro.props;
+---
+
+{
+	stars == null ? (
+		<a
+			href={GITHUB_REPO_URL}
+			target="_blank"
+			rel="noopener noreferrer"
+			aria-label="GitHub"
+			class={`items-center text-fg-muted transition-colors hover:text-fg ${className}`}
+		>
+			<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={OCTOCAT_PATH} /></svg>
+		</a>
+	) : (
+		<a
+			href={GITHUB_REPO_URL}
+			target="_blank"
+			rel="noopener noreferrer"
+			aria-label={`Star Maple on GitHub, ${formatStars(stars)} stars`}
+			class={`items-stretch h-7 overflow-hidden rounded-lg border border-border text-fg-muted transition-colors hover:border-fg-muted/40 hover:text-fg ${className}`}
+		>
+			<span class="flex items-center px-2.5">
+				<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={OCTOCAT_PATH} /></svg>
+			</span>
+			<span class="flex items-center border-l border-border px-2.5 text-xs font-medium tabular-nums">
+				{formatStars(stars)}
+			</span>
+		</a>
+	)
+}

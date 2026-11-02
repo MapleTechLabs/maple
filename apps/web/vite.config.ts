@@ -3,7 +3,7 @@ import { foldkit } from "@foldkit/vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig, loadEnv, type Plugin } from "vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
-import { clerkJsUrl } from "./src/platform/clerk-js-url.ts"
+import { clerkJsUrl } from "../../packages/domain/src/clerk-js-url.ts"
 import { versionManifest } from "./vite-plugin-version-manifest.ts"
 
 const envDir = path.resolve(import.meta.dirname, "../..")
