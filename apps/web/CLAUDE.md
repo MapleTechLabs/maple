@@ -23,8 +23,10 @@ pieces). The design rules are in `docs/design-rules.md`; the `maple/*` lint rule
 Outside `src/ui`, `src/page/kit`, `src/lab` and tests:
 
 - `maple/no-raw-control`: no `h.button`, `h.input`, `h.textarea`, `h.select`, `h.table`,
-  `h.dialog` or `h.label`; the message names the kit component to use.
-- `maple/no-raw-heading`: no `h.h1` to `h.h4`; use `sectionHeading`, `pageTitle` or `detailTitle`.
+  `h.dialog` or `h.label`; the message names the kit component to use. `pressable` is the click
+  target for something that draws its own look; reach for it only when no styled control fits.
+- `maple/no-raw-heading`: no `h.h1` to `h.h4`; use `heading` (its variants are the heading ramp),
+  `sectionHeading`, `pageTitle` or `detailTitle`.
 - `maple/no-kit-styles-in-pages`: no `@maple/ui/styles/ui/*` imports; call the wrapper.
 
 Everywhere in `src` and `packages/ui/src`: `maple/no-raw-color` (no hex, `rgb()`, `oklch()` in
