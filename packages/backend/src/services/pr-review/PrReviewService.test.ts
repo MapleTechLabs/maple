@@ -1074,8 +1074,9 @@ describe("PrReviewService.submitReview", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published, comments })))
 	})
 
-	// A re-review reads only what changed, so a fix holds confidence at 8 until a pass re-reads every file.
-	it.effect("re-reads the whole diff after a fix, and a clean whole-diff pass lifts the cap", () => {
+	// A fix holds confidence at 8 until a pass re-reads every file, so the push that may fix a defect
+	// is due the whole diff: a fix it reads clean is not held back.
+	it.effect("re-reads the whole diff while a defect is open or a fix is unchecked", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
 		const begun: Array<Begun> = []
@@ -1111,29 +1112,19 @@ describe("PrReviewService.submitReview", () => {
 				}),
 			)
 
-			// Fixed in a pass that read only what changed: held at 8.
+			// The push that fixes it is due every file; read whole, the fix lifts nothing to wait for.
 			const fixed = yield* push(HEAD_2)
-			assert.notInclude(begun.at(-1)!.text, "review the whole diff")
-			yield* reviews.submitReview(
-				orgId,
-				fixed.reviewId!,
-				new SubmitPrReviewRequest({ resolved: ["F1"], report: report([]) }),
-			)
-			assert.equal(
-				yield* confidenceOf(fixed.reviewId!),
-				"Held at 8 because a fix has not been re-checked against the whole diff yet.",
-			)
-
-			// The next push re-reads every file; read clean, the cap is gone.
-			const recheck = yield* push(HEAD_3)
 			assert.include(begun.at(-1)!.text, "review the whole diff")
 			assert.notInclude(begun.at(-1)!.text, "Files changed since then")
 			yield* reviews.submitReview(
 				orgId,
-				recheck.reviewId!,
-				new SubmitPrReviewRequest({ report: new PrReviewReport({ ...report([]), wholeDiff: true }) }),
+				fixed.reviewId!,
+				new SubmitPrReviewRequest({
+					resolved: ["F1"],
+					report: new PrReviewReport({ ...report([]), wholeDiff: true }),
+				}),
 			)
-			assert.notInclude((yield* confidenceOf(recheck.reviewId!)) ?? "", "Held at")
+			assert.notInclude((yield* confidenceOf(fixed.reviewId!)) ?? "", "Held at")
 
 			// After that, a push is reviewed incrementally again and nothing holds it.
 			const later = yield* push(HEAD_4)

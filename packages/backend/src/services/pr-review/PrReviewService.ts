@@ -1629,8 +1629,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const previousSha = history.find((review) => review.headSha !== headSha)?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
-				// A defect fixed since the last whole-diff pass: this pass re-reads every file.
-				const recheck = uncheckedFixes(history, tracked) > 0
 				const upstream = yield* providerFor(orgId, repo)
 				let changes: PullRequestDelta | undefined
 				if (Option.isSome(upstream)) {
@@ -1650,6 +1648,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const changedPaths =
 					changes?.paths === undefined || changes.rewritten ? undefined : new Set(changes.paths)
 				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs, changedPaths)
+				// A defect fixed since the last whole-diff pass, or one still open that this push may
+				// fix: this pass re-reads every file, so the fix is checked in the pass that sees it.
+				const recheck = uncheckedFixes(history, tracked) > 0 || open.some(isPrReviewDefectHistory)
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.carried_open": open.length,
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
