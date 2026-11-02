@@ -10,7 +10,8 @@ import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { inputId, Message, type Model } from "./combobox"
 import { dismissButton, hiddenInput, inputAttributes, listPopup } from "./combobox-view"
-import { icon } from "./icon"
+import { MagnifierIcon, XmarkIcon } from "./control-icons"
+import { iconNode } from "./icon"
 import { isMounted } from "./overlay/transition"
 
 /**
@@ -75,7 +76,7 @@ export const autocompleteField = <M>(
 								h.Class(A.autocompleteStartAddonStyles),
 								h.DataAttribute("slot", "autocomplete-start-addon"),
 							],
-							[icon(h, "MagnifierIcon")],
+							[iconNode(h, MagnifierIcon, "MagnifierIcon")],
 						),
 					]
 				: []),
@@ -127,7 +128,7 @@ export const autocompleteField = <M>(
 								h.DataAttribute("slot", "autocomplete-clear"),
 								h.OnClick(options.onClear),
 							],
-							[icon(h, "XmarkIcon")],
+							[iconNode(h, XmarkIcon, "XmarkIcon")],
 						),
 					]),
 		],

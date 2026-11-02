@@ -15,7 +15,8 @@ import {
 	queryOf,
 	visibleItems,
 } from "./combobox"
-import { icon } from "./icon"
+import { ChevronExpandYIcon, XmarkIcon } from "./control-icons"
+import { iconNode } from "./icon"
 import { portalId } from "./overlay/popup-state"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { inputControlClassName } from "./input"
@@ -419,7 +420,7 @@ const chip = (
 					h.Type("button"),
 					h.OnClick(Message.RemovedChip({ value })),
 				],
-				[icon(h, "XmarkIcon")],
+				[iconNode(h, XmarkIcon, "XmarkIcon")],
 			),
 		],
 	)
@@ -626,7 +627,7 @@ const triggerButton = (h: H, model: Model, size: "sm" | "default"): Html =>
 		[
 			h.span(
 				[h.AriaHidden(true), h.DataAttribute("slot", "combobox-icon")],
-				[icon(h, "ChevronExpandYIcon")],
+				[iconNode(h, ChevronExpandYIcon, "ChevronExpandYIcon")],
 			),
 		],
 	)
