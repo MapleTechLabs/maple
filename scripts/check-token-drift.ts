@@ -11,6 +11,7 @@
  */
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
+import { HTTP_METHOD_HEX } from "../packages/ui/src/lib/http"
 
 const root = join(import.meta.dir, "..")
 const sharedFile = join(root, "packages/ui/src/styles/tokens.css")
@@ -57,6 +58,17 @@ if (violations.length > 0) {
 			"Edit the shared file instead (both apps import it):\n",
 	)
 	for (const v of violations) console.error(`  ${v}`)
+	process.exit(1)
+}
+
+// Charts and the mobile app read HTTP_METHOD_HEX; the badges read the `--http-*` tokens. Keep them equal.
+const methodDrift = [...readFileSync(sharedFile, "utf8").matchAll(/^\s*--http-([a-z]+)\s*:\s*([^;]+);/gm)].filter(
+	([, method, value]) => HTTP_METHOD_HEX[method.toUpperCase()]?.toLowerCase() !== value.trim().toLowerCase(),
+)
+if (methodDrift.length > 0) {
+	console.error("--http-* tokens in tokens.css differ from HTTP_METHOD_HEX in packages/ui/src/lib/http.ts:\n")
+	for (const [, method, value] of methodDrift)
+		console.error(`  --http-${method}: ${value.trim()} (HTTP_METHOD_HEX: ${HTTP_METHOD_HEX[method.toUpperCase()] ?? "missing"})`)
 	process.exit(1)
 }
 

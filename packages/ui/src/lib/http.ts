@@ -188,8 +188,8 @@ export const HTTP_METHOD_HEX: Record<string, string> = {
 	OPTIONS: "#5A5248",
 } satisfies Record<string, string>
 
-// The `--color-http-*` tokens in tokens.css carry the HTTP_METHOD_HEX values. Kept as literals
-// because Tailwind's JIT scanner can't see class names built from template strings.
+// The `--color-http-*` tokens in tokens.css carry the HTTP_METHOD_HEX values (`check:tokens` keeps
+// them equal). Literals because Tailwind's JIT scanner can't see class names built from templates.
 export const HTTP_METHOD_COLORS: Record<string, string> = {
 	GET: "bg-http-get",
 	POST: "bg-http-post",

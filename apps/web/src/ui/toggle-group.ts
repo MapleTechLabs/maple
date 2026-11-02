@@ -184,7 +184,7 @@ export type ControlledToggleGroupItem<M> = Readonly<{
 
 /**
  * A connected `<ToggleGroup>` whose pressed item lives in the owner's Model (a tab strip of
- * toggles): no Submodel, and the pressed item is the tab stop.
+ * toggles): no Submodel and no arrow-key roving, so every item stays a tab stop.
  */
 export const controlledView = <M>(
 	h: HtmlBuilder<M>,
@@ -217,7 +217,6 @@ export const controlledView = <M>(
 					onClick: item.onClick,
 					className: cn(toggleVariants({ size, variant: "default" }), config.itemClassName),
 					slot: "toggle",
-					tabIndex: item.isPressed ? 0 : -1,
 					attributes: [
 						h.AriaDisabled(false),
 						h.DataAttribute("size", size),
