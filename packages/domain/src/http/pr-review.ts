@@ -872,7 +872,8 @@ export const PR_REVIEW_UNREAD_CAP_FILES = 3
 
 /**
  * What each signal takes off a 10, in whole points. A note costs nothing and medium risk costs
- * nothing: nearly every change is medium, so charging it only made 10 unreachable.
+ * nothing: nearly every change is medium, so charging it only made 10 unreachable. High risk costs
+ * its point only beside another deduction, so a clean, tested change in a risky area can read 10.
  */
 export const PR_REVIEW_CONFIDENCE_DEDUCTION = {
 	critical: 3,
@@ -927,7 +928,7 @@ export const isPrReviewDefectHistory = (finding: { readonly category?: string })
  * so the same findings and signals always give the same number, and the comment can show the sum.
  *
  * It starts at 10 and takes whole points off per critical and warning, for untested behavior, a
- * high-risk area and new work that cannot be observed. Caps hold it down: a critical at 4 (2 with
+ * high-risk area (only beside another deduction) and new work that cannot be observed. Caps hold it down: a critical at 4 (2 with
  * more than one), a security warning at 4, a correctness or performance warning at 6, any other
  * warning at 8, a review that ended early at 6, reviewed files left unread at 8 (6 from three
  * files), and defects fixed since the last pass that read the whole diff at 8: a re-review reads
@@ -961,6 +962,13 @@ export const confidencePrReview = (
 	const unobservable = report.coverage.filter((unit) => !unit.instrumented).length
 	const unread = report.unreviewed?.length ?? 0
 	const D = PR_REVIEW_CONFIDENCE_DEDUCTION
+	// A high-risk area costs a point only beside another signal: a clean, tested change there is a 10.
+	const otherPoints =
+		criticals * D.critical +
+		warns * D.warn +
+		(report.tests === undefined ? 0 : D.tests[report.tests]) +
+		(unobservable > 0 ? D.unobservable : 0)
+	const riskPoints = report.risk === undefined || otherPoints === 0 ? 0 : D.risk[report.risk]
 
 	const deductions: ReadonlyArray<readonly [label: string, points: number]> = [
 		...(criticals > 0 ? [[findingPhrase(criticals, "critical"), criticals * D.critical] as const] : []),
@@ -970,7 +978,7 @@ export const confidencePrReview = (
 		...(report.tests === undefined
 			? []
 			: [[`tests ${report.tests.replace("_", " ")}`, D.tests[report.tests]] as const]),
-		...(report.risk === undefined ? [] : [[`risk ${report.risk}`, D.risk[report.risk]] as const]),
+		...(report.risk === undefined ? [] : [[`risk ${report.risk}`, riskPoints] as const]),
 		...(report.coverage.length > 0
 			? [
 					[
