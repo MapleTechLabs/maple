@@ -209,6 +209,7 @@ const McpTransportLive = Layer.unwrap(
 			path: "/mcp",
 			protocol: NEGOTIATED_PROTOCOL,
 			registerTools: tools.ensureRegistered,
+			loadToolExecutor: tools.ensureExecutor,
 		})
 	}),
 ).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))

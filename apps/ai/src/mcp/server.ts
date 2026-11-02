@@ -1,9 +1,7 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
 import { Context, Effect, Layer } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import type { McpToolExecutorApi } from "./dispatcher"
 import { McpToolExecutorLoader, type McpToolsUnavailableError } from "./executor-loader"
-import { listMcpTools } from "./tool-catalog"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
@@ -31,18 +29,23 @@ const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message:
 	})
 
 /**
- * Public MCP transport backed by the same dispatcher as internal Worker RPC. Loading the catalog,
- * its JSON Schemas and the executor's service graph is costly, so tools register once per
- * isolate, before the first authorized `tools/*` request.
+ * Public MCP transport backed by the same dispatcher as internal Worker RPC. Tools register from
+ * the generated descriptors, so `tools/list` imports neither the catalog nor the executor's
+ * service graph; the executor loads on the first `tools/call` (`McpToolExecutorLoader`).
  */
 export class McpToolRegistration extends Context.Service<
 	McpToolRegistration,
-	{ readonly ensureRegistered: Effect.Effect<void, McpToolsUnavailableError> }
+	{
+		/** Adds every public tool to the server, once per isolate, before the first `tools/*` request. */
+		readonly ensureRegistered: Effect.Effect<void>
+		/** Builds the executor before a `tools/call`; `built` marks the request that paid for it. */
+		readonly ensureExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
+	}
 >()("@maple/ai/mcp/McpToolRegistration", {
 	make: Effect.gen(function* () {
 		const server = yield* EffectMcpServer.McpServer
 		const loader = yield* McpToolExecutorLoader
-		const addTool = (executor: McpToolExecutorApi) => (descriptor: McpToolDescriptor) =>
+		const addTool = (descriptor: McpToolDescriptor) =>
 			server.addTool({
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
@@ -67,13 +70,18 @@ export class McpToolRegistration extends Context.Service<
 							})
 						}
 
-						return yield* executor.execute(tenant, descriptor.name, payload, "mcp").pipe(
-							Effect.map(toCallToolResult),
-							Effect.catchTag("@maple/mcp/ToolNotFoundError", (error) =>
-								Effect.succeed(toBoundaryErrorResult(error)),
-							),
-						)
+						// Already built by the transport before the call; this reads the cached executor.
+						const executor = yield* loader.load
+						return yield* executor
+							.execute(tenant, descriptor.name, payload, "mcp")
+							.pipe(Effect.map(toCallToolResult))
 					}).pipe(
+						Effect.catchTags({
+							"@maple/mcp/ToolNotFoundError": (error) =>
+								Effect.succeed(toBoundaryErrorResult(error)),
+							"@maple/mcp/errors/McpToolsUnavailableError": (error) =>
+								Effect.succeed(toBoundaryErrorResult(error)),
+						}),
 						// Runs on the `tools/call` server span: an `isError` result is a successful
 						// JSON-RPC call, so the MCP conventions mark it with `error.type` alone.
 						Effect.tap((result) =>
@@ -83,13 +91,15 @@ export class McpToolRegistration extends Context.Service<
 						),
 					),
 			})
-		const register = Effect.gen(function* () {
-			const executor = yield* loader.load
-			const descriptors = yield* listMcpTools
-			yield* Effect.forEach(descriptors, addTool(executor), { discard: true })
-		})
-		// Recoverable: a graph that failed to build is retried by the next `tools/*` request.
-		return { ensureRegistered: yield* cachedRecoverable(register) }
+		const register = Effect.promise(() => import("./tool-descriptors.generated")).pipe(
+			Effect.flatMap(({ MCP_TOOL_DESCRIPTORS }) =>
+				Effect.forEach(MCP_TOOL_DESCRIPTORS, addTool, { discard: true }),
+			),
+		)
+		return {
+			ensureRegistered: yield* cachedRecoverable(register),
+			ensureExecutor: Effect.map(loader.loadReportingBuild, ({ built }) => ({ built })),
+		}
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
