@@ -16,12 +16,13 @@ import { type SelectEntry, view as selectView } from "../../../ui/select-view"
 import type { PageViewInputs } from "../../contract"
 import { seriesTokens } from "../kit/analytics-panel"
 import { filtersView } from "../kit/filters-view"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
 import { sectionHeading } from "../../kit/section-heading"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { presetSpanLabel } from "../../kit/time-controls"
 import { runsList } from "./view-runs"
 import { ciSkeleton } from "../kit/skeletons"
 import { chartsRow, headlineStrip, RESULT_SERIES } from "./view-stats"
@@ -103,7 +104,9 @@ const runsActions = (h: H, model: Model): Html =>
 
 const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, timeZone: string): Html => {
 	const windowLabel =
-		model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
+		model.search.startTime !== undefined
+				? "period"
+				: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
 	const theme = model.themeColors
 	const time = { nowMs: model.frame.nowMs, timeZone }
 	if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return ciSkeleton(h)
@@ -158,13 +161,23 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				return analyticsView(h, model, analytics, timeZone)
 			const filtered = model.search.repo !== undefined || model.search.pipeline !== undefined
 			if (!filtered && !ciTracesOn(model)) return noCiRuns(h)
-			return nothingInWindow(h, {
-				title: "No CI runs in this window",
-				description: filtered
-					? "Nothing matches these filters. Widen the window or clear the filters."
-					: "No GitHub Actions run finished in this window. Widen the window.",
-				onClear: filtered ? Message.ClickedClearFilters() : undefined,
-			})
+			if (filtered)
+				return filteredEmpty(h, {
+					noun: "CI runs",
+					description: "Widen the window or clear the filters.",
+					onClear: Message.ClickedClearFilters(),
+					className: "rounded-md border border-dashed md:py-14",
+				})
+			return empty(
+				h,
+				[
+					emptyHeader(h, [
+						emptyTitle(h, ["No CI runs in this window"]),
+						emptyDescription(h, ["No GitHub Actions run finished in this window. Widen the window."]),
+					]),
+				],
+				"rounded-md border border-dashed md:py-14",
+			)
 		},
 	})
 

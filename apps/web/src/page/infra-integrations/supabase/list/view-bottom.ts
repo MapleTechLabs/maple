@@ -91,7 +91,7 @@ export const issuesPanel = (
 									.map((issue) => issueRow(h, issue, options.names, model.search)),
 							)
 						: options.hasLogs
-							? panelEmpty(h, ["No warnings or errors in this time range."])
+							? panelEmpty(h, ["No warnings or errors in this window"])
 							: panelEmpty(h, [
 									"Turn on Logs for a project to see its warnings and errors here. ",
 									panelLink(h, MANAGE_HREF, "Manage projects"),
@@ -147,9 +147,9 @@ const findingsBody = (
 					findings.slice(0, MAX_ROWS).map((finding) => findingRow(h, finding)),
 				)
 			: advisorsChecked(fleet)
-				? panelEmpty(h, ["No security or performance findings."])
+				? panelEmpty(h, ["No security or performance findings"])
 				: fleet.insights.length === 0 && fleet.failedRefs.length > 0
-					? panelEmpty(h, ["Advisors could not be read."])
+					? panelEmpty(h, ["Advisors could not be read"])
 					: panelEmpty(h, ["Advisors are checked every hour. The first check has not run yet."])
 	return h.div(
 		[],

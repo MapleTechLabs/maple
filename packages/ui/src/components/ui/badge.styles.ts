@@ -39,6 +39,7 @@ export const badgeVariants = cva(
 				crit: TONE_SOFT.crit,
 				info: TONE_SOFT.info,
 				done: TONE_SOFT.done,
+				live: TONE_SOFT.live,
 				// Neutral tinted chip: counts, kinds, quiet metadata.
 				muted: "bg-muted text-muted-foreground [button&,a&]:hover:bg-surface-strong [button&,a&]:active:bg-surface-strong",
 				// Bordered meta chip on the page surface: services, environments, reopen markers.

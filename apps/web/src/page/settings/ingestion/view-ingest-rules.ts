@@ -88,6 +88,10 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 				h.span([h.Class("text-xs tabular-nums")], [count]),
 				miniBars(h, {
 					values: hourlyMatches(stats, rule.id),
+					// Empty hours draw a baseline so a single busy hour reads as a chart, not a stray tick.
+					floor: 12.5,
+					floorColor: "var(--input)",
+					gap: 1,
 					className: "text-muted-foreground h-3 w-full",
 					label: `${rule.name} matches per hour`,
 				}),
@@ -280,7 +284,7 @@ export const deleteRuleDialog = (h: H, model: Model): Html =>
 			h.span([h.Class("text-foreground font-medium")], [model.deleting?.name ?? ""]),
 			"? Data already stored is unchanged.",
 		],
-		confirmLabel: "Delete",
+		confirmLabel: "Delete rule",
 		onConfirm: lift(RulesMessage.ClickedConfirmDelete()),
 		isPending: model.isDeleting,
 	})

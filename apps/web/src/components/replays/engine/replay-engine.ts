@@ -6,7 +6,7 @@
 // each one in rrweb-*shaped* events so the chunk pipeline carries them
 // untouched — but there is no DOM to rebuild, so rrweb renders nothing.
 //
-// Everything above this interface (the provider's transport state, the trimmed
+// Everything above this interface (the provider's transport state, the
 // timeline, markers, idle bands, the chunk loader) is format-agnostic and stays
 // exactly as it was. Everything rrweb-specific lives in `rrweb-engine.ts`;
 // everything video-specific in `video-engine.ts`.

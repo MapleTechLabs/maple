@@ -82,14 +82,10 @@ const title = (
 	timeZone: string,
 ): Html =>
 	detailTitle(h, {
-		kind: [
-			h.span(
-				[h.Class("flex flex-wrap items-center gap-1.5 normal-case tracking-normal")],
-				headerBadges(h, finding),
-			),
-		],
+		kind: ["Finding"],
 		title: [finding.record.title],
 		meta: [
+			...headerBadges(h, finding),
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground")],
 				[

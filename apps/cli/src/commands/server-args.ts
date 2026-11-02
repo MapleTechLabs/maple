@@ -1,9 +1,11 @@
 import { Schema } from "effect"
 import { homedir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { DEFAULT_LOCAL_PORT, normalizeHost, resolveBindHost } from "../lib/local-address"
+import { DEFAULT_LOCAL_PORT, normalizeHost, resolveBindHost } from "@maple/local-server/local-address"
 
-export type DirtyStorePolicy = "wipe" | "fail" | "restore-checkpoint"
+import type { DirtyStorePolicy } from "@maple/local-server/store-errors"
+
+export type { DirtyStorePolicy }
 
 export {
 	canonicalUrlHostname,
@@ -16,7 +18,7 @@ export {
 	serverProbeUrl,
 	serverUrl,
 	validateHost,
-} from "../lib/local-address"
+} from "@maple/local-server/local-address"
 
 export const defaultDataDir = (): string => join(homedir(), ".maple", "data")
 
@@ -104,46 +106,7 @@ export const LocalStatus = Schema.Struct({
 })
 export type LocalStatus = typeof LocalStatus.Type
 
-/** `<sidecar>/maple-server.json`, written once a server is listening. */
-export const ServerDiscovery = Schema.Struct({
-	pid: Schema.Int,
-	url: Schema.String,
-	dataDir: Schema.String,
-	startedAt: Schema.String,
-})
-export type ServerDiscovery = typeof ServerDiscovery.Type
-
-/** Parse `ps -o etime=` (`[[dd-]hh:]mm:ss`) into whole seconds. */
-export const parseElapsedSeconds = (raw: string): number | undefined => {
-	const match = raw.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)
-	if (!match) return undefined
-	const [, days, hours, minutes, seconds] = match
-	return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes) * 60 + Number(seconds)
-}
-
-/**
- * Start time of a Linux process from `/proc/<pid>/stat` (field 22, ticks since
- * boot) and `/proc/stat` (`btime`), for images that ship no `ps`. Fields are
- * counted after the last `)` because the command name may hold spaces and parens.
- */
-export const parseProcStartedAtMs = (pidStat: string, systemStat: string): number | undefined => {
-	const commEnd = pidStat.lastIndexOf(")")
-	// `state` is field 3, so `starttime` (field 22) is index 19 after the comm.
-	const ticks = pidStat.slice(commEnd + 2).split(" ")[19] ?? ""
-	const boot = systemStat.match(/^btime (\d+)$/m)
-	if (commEnd < 0 || !boot || !/^\d+$/.test(ticks)) return undefined
-	// /proc reports times in USER_HZ, which the kernel ABI fixes at 100 per second.
-	return Number(boot[1]) * 1000 + Number(ticks) * 10
-}
-
-/**
- * Could a live process that started at `startedAtMs` have written a PID file
- * last modified at `writtenAtMs`? A reused PID belongs to a process started
- * after the writer died, so after the write. The slack covers `etime`'s
- * whole-second resolution.
- */
-export const startedBeforeWrite = (startedAtMs: number, writtenAtMs: number): boolean =>
-	startedAtMs <= writtenAtMs + 2_000
+export { ServerDiscovery } from "@maple/local-server/server-discovery"
 
 /** Does telemetry ingested since `sinceMs` need a fresh checkpoint? Unknown
  * ingest state (`undefined`) always does. */
@@ -230,24 +193,3 @@ export const buildCheckpointChildArgs = (options: {
 	"--data-dir",
 	options.dataDir,
 ]
-
-/** Liveness probe via signal 0: a process primitive with no FileSystem
- *  equivalent. Never throws (errors mean "not alive").
- *
- *  A PID file naming *this* process is stale by definition: the previous server
- *  is the one that wrote it, so if its number is ours it has died and the OS
- *  reused the PID. In a container that is the common case, not the edge case:
- *  `maple start` is PID 1 on every restart, the file survives on the data
- *  volume, and `kill(1, 0)` always succeeds, so without this check a container
- *  whose server died once refuses to start forever ("already running (PID 1)").
- *  Non-positive PIDs are rejected for the same reason: `kill(0, 0)` and
- *  `kill(-n, 0)` signal process groups and "succeed" for a group that exists. */
-export const isProcessAlive = (pid: number): boolean => {
-	if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
-	try {
-		process.kill(pid, 0)
-		return true
-	} catch {
-		return false
-	}
-}

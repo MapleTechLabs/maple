@@ -1,3 +1,5 @@
+import { formDialogFormStyles } from "@maple/ui/styles/ui/form-dialog"
+import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
@@ -56,7 +58,6 @@ const textField = (
 		placeholder: string
 		model: Field.Model
 		toMessage: (message: Field.Message) => Message
-		onKeyDown?: (key: string) => Message
 	}>,
 ): Html => {
 	const state = Field.stateOf(options.model, false)
@@ -69,7 +70,6 @@ const textField = (
 			attributes: [
 				h.Placeholder(options.placeholder),
 				...Field.controlAttributes(h, options.model, options.toMessage),
-				...(options.onKeyDown === undefined ? [] : [h.OnKeyDown(options.onKeyDown)]),
 			],
 		}),
 	])
@@ -190,7 +190,15 @@ const accessField = (h: H, model: Model): Html => {
 							value: model.scopeFilter,
 							onInput: (value) => Message.ChangedScopeFilter({ value }),
 							onClear: Message.ClickedClearScopeFilter(),
-							placeholder: "Filter resource families",
+							placeholder: "Filter resource families…",
+							// Enter in the filter stays a filter, not a submit of the create form.
+							attributes: [
+								h.OnKeyDownPreventDefault((key) =>
+									key === "Enter"
+										? Option.some(Message.ChangedScopeFilter({ value: model.scopeFilter }))
+										: Option.none(),
+								),
+							],
 						}),
 						...scopeRows(h, model),
 						fieldDescription(
@@ -230,7 +238,6 @@ const formContent = (h: H, model: Model): ReadonlyArray<Html> => {
 					placeholder: "e.g. CI/CD Pipeline",
 					model: model.name,
 					toMessage: (message) => Message.GotNameMessage({ message }),
-					onKeyDown: (key) => Message.PressedNameKey({ key }),
 				}),
 				textField(h, {
 					name: "description",
@@ -250,15 +257,15 @@ const formContent = (h: H, model: Model): ReadonlyArray<Html> => {
 		),
 		DialogView.dialogFooter(h, "dialog", [
 			...(reason === null ? [] : [DialogView.dialogFooterHint(h, reason)]),
-			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, ["Cancel"]),
 			button(
 				h,
-				{
-					isLoading: model.isCreating,
-					isDisabled: !canCreate(model),
-					attributes: [h.OnClick(Message.ClickedCreate())],
-				},
-				["Create"],
+				{ variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] },
+				["Cancel"],
+			),
+			button(
+				h,
+				{ type: "submit", isLoading: model.isCreating, isDisabled: !canCreate(model) },
+				["Create key"],
 			),
 		]),
 	]
@@ -326,7 +333,11 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 		viewInputs: {
 			hasTrigger: false,
 			toView: ({ portal }) => portal ?? h.empty,
-			toContent: () => (model.created === null ? formContent(h, model) : createdContent(h, model)),
+			// One dialog across both steps (a remount replays the open animation); only the create step is a form.
+			toContent: () =>
+				model.created === null
+					? [h.form([h.Class(formDialogFormStyles), h.OnSubmit(Message.ClickedCreate())], formContent(h, model))]
+					: createdContent(h, model),
 		},
 	}),
 )

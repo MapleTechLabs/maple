@@ -15,11 +15,12 @@ import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { AsyncData } from "foldkit"
 import type { ReleasesSearch } from "../../../route/search"
 import { commitRangesKey, commitsQueryKey } from "../kit"
+import type { PresetValue } from "../../kit/time-controls"
 import type { IssuePage, Model, ReleasesData } from "./model"
 
 export type Search = typeof ReleasesSearch.Type
 
-export const DEFAULT_PRESET = "7d"
+export const DEFAULT_PRESET: PresetValue = "1w"
 /** The bulk VCS lookup takes one page of shas; rows past it fall back to the sha. */
 export const COMMIT_RESOLVE_LIMIT = 50
 

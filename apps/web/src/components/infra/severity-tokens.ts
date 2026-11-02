@@ -16,6 +16,7 @@ export const VALUE_TONE: Record<Tone, string> = {
 	crit: TONE_TEXT.crit,
 	info: TONE_TEXT.info,
 	done: TONE_TEXT.done,
+	live: TONE_TEXT.live,
 } satisfies Record<Tone, string>
 
 /** Sparkline fill — a raw CSS var string (consumed as an SVG `fill`, not a class). */
@@ -26,6 +27,7 @@ export const SPARK_COLOR: Record<Tone, string> = {
 	crit: TONE_COLOR.crit,
 	info: TONE_COLOR.info,
 	done: TONE_COLOR.done,
+	live: TONE_COLOR.live,
 } satisfies Record<Tone, string>
 
 /** Solid severity fill for inline meter bars. */

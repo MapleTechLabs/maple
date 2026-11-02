@@ -95,7 +95,7 @@ const noData = (h: H, model: Model): Html =>
 		h.p(
 			[],
 			[
-				"This container sent no metrics in the selected window. It may have stopped earlier: try a wider range, or go back to the containers list.",
+				"This container sent no metrics in this window. It may have stopped earlier: try a wider range, or go back to the containers list.",
 			],
 		),
 		h.div(

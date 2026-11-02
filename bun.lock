@@ -139,7 +139,7 @@
     },
     "apps/cli": {
       "name": "@maple/cli",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "bin": {
         "maple": "./src/bin.ts",
       },
@@ -148,15 +148,15 @@
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/eventing-core": "workspace:*",
-        "@maple/ingest-rules": "workspace:*",
+        "@maple/local-server": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "effect": "catalog:effect",
-        "protobufjs": "^8.8.1",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:effect",
         "@types/bun": "^1.4.4",
         "@types/node": "catalog:tooling",
+        "fast-check": "^4.10.2",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
@@ -389,7 +389,7 @@
     },
     "examples/effect-todo": {
       "name": "@maple-examples/effect-todo",
-      "version": "0.0.6",
+      "version": "0.0.7",
       "dependencies": {
         "@effect/atom-react": "4.1.0",
         "@effect/platform-bun": "catalog:effect",
@@ -534,13 +534,16 @@
     },
     "packages/alchemy-maple": {
       "name": "@maple-dev/alchemy",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@maple-dev/effect-sdk": "workspace:*",
       },
       "devDependencies": {
+        "@effect/platform-bun": "catalog:effect",
         "@effect/vitest": "catalog:effect",
         "@maple/domain": "workspace:*",
+        "@maple/local-server": "workspace:*",
+        "@types/bun": "^1.4.4",
         "@types/node": "catalog:tooling",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
@@ -549,9 +552,13 @@
         "vitest": "catalog:",
       },
       "peerDependencies": {
+        "@effect/platform-bun": "^4.0.0",
         "alchemy": ">=2.0.0-beta.80 <3",
         "effect": "^4.0.0",
       },
+      "optionalPeers": [
+        "@effect/platform-bun",
+      ],
     },
     "packages/alerting-core": {
       "name": "@maple/alerting-core",
@@ -619,6 +626,7 @@
         "@effect/vitest": "catalog:effect",
         "@electric-sql/pglite": "^0.5.12",
         "@types/node": "catalog:tooling",
+        "fast-check": "^4.10.2",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
@@ -738,13 +746,14 @@
       },
       "devDependencies": {
         "@types/node": "catalog:tooling",
+        "fast-check": "^4.10.2",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
     },
     "packages/effect-sdk": {
       "name": "@maple-dev/effect-sdk",
-      "version": "0.13.0",
+      "version": "0.13.1",
       "dependencies": {
         "std-env": "^4.0.0",
       },
@@ -815,6 +824,26 @@
       "devDependencies": {
         "@effect/vitest": "catalog:effect",
         "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/local-server": {
+      "name": "@maple/local-server",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform-bun": "catalog:effect",
+        "@maple/domain": "workspace:*",
+        "@maple/eventing-core": "workspace:*",
+        "@maple/ingest-rules": "workspace:*",
+        "@maple/query-engine": "workspace:*",
+        "effect": "catalog:effect",
+        "protobufjs": "^8.8.1",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.4",
+        "@types/node": "catalog:tooling",
+        "fast-check": "^4.10.2",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
@@ -1583,6 +1612,8 @@
     "@maple/ingest-rules": ["@maple/ingest-rules@workspace:packages/ingest-rules"],
 
     "@maple/landing": ["@maple/landing@workspace:apps/landing"],
+
+    "@maple/local-server": ["@maple/local-server@workspace:packages/local-server"],
 
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
 

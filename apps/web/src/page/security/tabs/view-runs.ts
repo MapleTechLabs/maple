@@ -9,8 +9,7 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import * as SelectView from "../../../ui/select-view"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { nothingInWindow } from "../../kit/nothing-in-window"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import {
 	formatElapsed,
 	formatUsd,
@@ -179,13 +178,7 @@ const runRow = (
 					h.span(
 						[h.Class("flex flex-col items-end")],
 						[
-							relativeTime(h, {
-								value: run.startedAt,
-								nowMs,
-								timeZone,
-								variant: "short",
-								tooltip: "title",
-							}),
+							listRelativeTime(h, { value: run.startedAt, nowMs, timeZone, variant: "short" }),
 							h.span([h.Title("Duration")], [formatElapsed(runElapsed(run, nowMs))]),
 						],
 					),
@@ -233,7 +226,7 @@ const toolbar = (
 			toParentMessage: (message) => Message.GotRunsTargetSelectMessage({ message }),
 		}),
 		trailing: [
-			toolbarCount(h, [isCapped ? `showing the ${RUN_LIST_CAP} newest` : countLabel(count, "run")]),
+			toolbarCount(h, [isCapped ? `${RUN_LIST_CAP}+ runs` : countLabel(count, "run")]),
 		],
 	})
 
@@ -305,11 +298,16 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 						[
 							targets.length === 0
 								? noTargets(h, model)
-								: nothingInWindow(h, {
-										title: "No runs yet",
-										description:
-											"Runs start manually for now: pick a target and start one.",
-									}),
+								: empty(
+										h,
+										[
+											emptyHeader(h, [
+												emptyTitle(h, ["No runs yet"]),
+												emptyDescription(h, ["Runs start manually for now: pick a target and start one."]),
+											]),
+										],
+										"rounded-md border border-dashed md:py-14",
+									),
 						],
 					)
 				: table(h, { variant: "bare", ariaLabel: "Audit runs" }, [

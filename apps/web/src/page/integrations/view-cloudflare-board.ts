@@ -273,8 +273,8 @@ export const zoneBoard = (
 				sorted.length === 0
 					? emptyMessage(h, { className: "px-3 py-10" }, [
 							query !== ""
-								? `No zones match "${card.zoneSearch.trim()}".`
-								: "No zones in this state.",
+								? `No zones match "${card.zoneSearch.trim()}"`
+								: "No zones in this state",
 						])
 					: h.div(
 							[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],

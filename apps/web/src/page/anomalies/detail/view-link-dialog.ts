@@ -106,10 +106,10 @@ const listBody = (
 				],
 				[
 					query.length > 0
-						? `No issues matching “${query}”.`
+						? `No issues matching “${query}”`
 						: model.linkAllServices
-							? "No issues found."
-							: `No issues for ${incident.serviceName}.`,
+							? "No issues found"
+							: `No issues for ${incident.serviceName}`,
 				],
 			),
 		]

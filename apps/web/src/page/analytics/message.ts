@@ -67,6 +67,8 @@ export const Message = defineMessageUnion({
 	ClickedRetryBreakdowns: {},
 	/** The one page block shown when summary and breakdowns fail the same way: retries both. */
 	ClickedRetrySummaryAndBreakdowns: {},
+	ClickedRetryAiReferrals: {},
+	ClickedRetryAiCrawlers: {},
 	/** A sidebar option or a breakdown row: the value toggles in or out of the URL. */
 	ToggledFilter: { key: FilterKey, value: Schema.String },
 	/** A sidebar section picked a single value (or cleared it). */

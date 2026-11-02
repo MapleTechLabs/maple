@@ -108,6 +108,7 @@ import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCre
 export const OrgMembersServiceStubLayer = Layer.succeed(OrgMembersService, {
 	listMembers: () => Effect.succeed([]),
 	listOrganizationsOf: () => Effect.succeed([]),
+	listMemberActivity: () => Effect.succeed([]),
 	resolveMembers: () => Effect.succeed([]),
 })
 

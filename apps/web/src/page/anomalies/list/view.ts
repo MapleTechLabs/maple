@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "../../../ui/error-state"
 import { filterChip } from "../../../ui/filter-chip"
 import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
-import { skeletonList } from "../../../ui/skeleton"
+import { skeleton } from "../../../ui/skeleton"
 import * as TabsView from "../../../ui/tabs-view"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -46,8 +46,10 @@ const liveChip = (h: H, isLive: boolean): Html =>
 	)
 
 /** `ListToolbar`: the status tabs and the count readout. */
+// The sticky area pads the page edge, so the toolbar adds no gap under itself.
 const toolbar = (h: H, model: Model, count: number | null): Html =>
 	listToolbar(h, {
+		className: "pb-0",
 		leading: h.submodel({
 			slotId: "anomalies-status-tabs",
 			model: model.tabs,
@@ -66,6 +68,36 @@ const toolbar = (h: H, model: Model, count: number | null): Html =>
 				: [toolbarCount(h, [String(count), " ", pluralize(count, "anomaly", "anomalies")])],
 	})
 
+const SKELETON_WIDTHS = ["w-24", "w-20", "w-28", "w-16", "w-24", "w-20"]
+
+/** The list before its first page: a group header and rows in the lanes `anomalyRow` draws. */
+const listSkeleton = (h: H): Html =>
+	h.div(
+		[h.AriaBusy(true), h.AriaLabel("Loading anomalies")],
+		[
+			h.div(
+				[h.Class("flex h-8 items-center gap-2 border-b border-border-subtle bg-surface-sunken px-2")],
+				[skeleton(h, "size-3.5 rounded-sm"), skeleton(h, "h-3 w-16")],
+			),
+			h.div(
+				[h.Class("divide-y divide-border-subtle")],
+				SKELETON_WIDTHS.map((width) =>
+					h.div(
+						[h.Class("flex h-9 items-center gap-2 px-3"), h.AriaHidden(true)],
+						[
+							h.span([h.Class("flex w-3 shrink-0 justify-center")], [skeleton(h, "size-2 rounded-full")]),
+							h.span([h.Class("flex flex-1 items-center sm:w-32 sm:flex-none")], [skeleton(h, `h-3.5 ${width}`)]),
+							h.span([h.Class("flex w-28 shrink-0 justify-end")], [skeleton(h, "h-3 w-14")]),
+							h.span([h.Class("hidden md:flex")], [skeleton(h, "h-4 w-24 rounded-full")]),
+							h.span([h.Class("hidden min-w-0 flex-1 sm:block")]),
+							h.span([h.Class("flex w-28 shrink-0 justify-end")], [skeleton(h, "h-3 w-12")]),
+						],
+					),
+				),
+			),
+		],
+	)
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const all = allIncidentsOf(model)
 	const filtered = filteredOf(model, all)
@@ -74,8 +106,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const data = model.firstPage.data
 	const hasFirstPage = AsyncData.hasData(data) && !AsyncData.isFailure(data)
 	const body = AsyncData.match(data, {
-		onIdle: () => skeletonList(h, { rows: 5, rowClassName: "h-9", className: "p-2" }),
-		onLoading: () => skeletonList(h, { rows: 5, rowClassName: "h-9", className: "p-2" }),
+		onIdle: () => listSkeleton(h),
+		onLoading: () => listSkeleton(h),
 		onFailure: (failure) => failed(h, failure),
 		onStale: ({ error }) => failed(h, error),
 		onSuccess: () => loaded(),
@@ -114,14 +146,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			filters: filtersRail(h, model, all, AsyncData.isLoading(data) || AsyncData.isIdle(data)),
 			// The live toggle is an action; while reads fail the error block owns the retry status.
 			actions: AsyncData.hasError(data) ? undefined : liveChip(h, isLiveOf(model.search)),
-			// The toolbar sits one header gap under the title, as tabs do on tabbed pages.
-			scrollClassName: "pt-0",
+			sticky: toolbar(h, model, hasFirstPage ? filtered.length : null),
 		},
 		[
 			h.div(
 				[],
 				[
-					toolbar(h, model, hasFirstPage ? filtered.length : null),
 					...(chipBar === null ? [] : [chipBar]),
 					body,
 				],

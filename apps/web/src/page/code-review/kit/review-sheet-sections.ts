@@ -8,14 +8,13 @@ import {
 import {
 	CATEGORY_LABELS,
 	FINDING_STATUS_LABELS,
-	formatCount,
 	formatSpan,
 	outcomeOf,
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
 	SKIP_LABELS,
 } from "../../../components/code-review/code-review-format"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -75,13 +74,13 @@ const stats = (h: H, detail: CodeReviewDetail, nowMs: number): Html => {
 			review.confidence === null ? EMPTY_VALUE : `${review.confidence}/10`,
 		),
 		stat(h, SHEET_STAT_LABELS.quality, review.score === null ? EMPTY_VALUE : `${review.score}/100`),
-		stat(h, SHEET_STAT_LABELS.issues, formatCount(review.findings)),
+		stat(h, SHEET_STAT_LABELS.issues, formatNumber(review.findings)),
 		stat(h, SHEET_STAT_LABELS.duration, formatSpan(durationSeconds)),
 		stat(h, SHEET_STAT_LABELS.model, modelLabel(review.model)),
 		stat(
 			h,
 			SHEET_STAT_LABELS.tokens,
-			formatCount((detail.inputTokens ?? 0) + (detail.outputTokens ?? 0)),
+			formatNumber((detail.inputTokens ?? 0) + (detail.outputTokens ?? 0)),
 		),
 		stat(h, SHEET_STAT_LABELS.reviewed, formatRelativeFrom(review.createdAt, nowMs)),
 	])
@@ -184,7 +183,7 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 			: []),
 		section(h, `Issues (${report.findings.length})`, [
 			report.findings.length === 0
-				? emptyMessage(h, {}, ["No issues filed on this head."])
+				? emptyMessage(h, {}, ["No issues filed on this head"])
 				: h.ul(
 						[h.Class("flex flex-col gap-3")],
 						report.findings.map((finding) =>

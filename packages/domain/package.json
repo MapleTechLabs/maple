@@ -37,6 +37,7 @@
 		"./status-page": "./src/status-page.ts",
 		"./uptime": "./src/uptime.ts",
 		"./url-redaction": "./src/url-redaction.ts",
+		"./mcp-clients": "./src/mcp-clients.ts",
 		"./mcp-manifest": "./src/mcp-manifest.ts",
 		"./mcp-tool-contract": "./src/mcp-tool-contract.ts",
 		"./mcp-outputs": "./src/mcp-outputs/index.ts",
@@ -91,6 +92,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "catalog:tooling",
+		"fast-check": "^4.10.2",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}

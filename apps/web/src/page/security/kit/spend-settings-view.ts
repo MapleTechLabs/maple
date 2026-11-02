@@ -121,7 +121,7 @@ const modelsField = (h: H, model: Model, error?: string): Html =>
 			),
 			...(error === undefined
 				? []
-				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive")], [error])]),
+				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive-foreground")], [error])]),
 		],
 	)
 

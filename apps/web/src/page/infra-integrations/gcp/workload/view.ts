@@ -32,6 +32,7 @@ import { CHART_HEIGHT } from "../../kit/chart-card"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
+import type { PresetValue } from "../../../kit/time-controls"
 import { sectionHeading } from "../../../kit/section-heading"
 import { gcpServiceIcon } from "../service-icon"
 import { type PageData, pageOf } from "./derive"
@@ -258,7 +259,7 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 	}
 	if (data.points.length === 0) {
 		return emptyMessage(h, { dashed: true, className: "py-12" }, [
-			`No metrics arrived for this ${gcpWorkloadNoun(model.service)} in the selected window.`,
+			`No metrics arrived for this ${gcpWorkloadNoun(model.service)} in this window`,
 		])
 	}
 	const isWaiting = AsyncData.isRefreshing(slot)
@@ -388,7 +389,7 @@ export const workloadPageView = (
 	h: H,
 	model: Model,
 	data: PageData,
-	options: Readonly<{ timeZone: string; defaultPreset: string }>,
+	options: Readonly<{ timeZone: string; defaultPreset: PresetValue }>,
 ): Html => {
 	const timeSearch = {
 		startTime: model.search.startTime,

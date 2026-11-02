@@ -34,7 +34,7 @@ export const titleContent = (h: HtmlBuilder<Message>, trace: LoadedTrace): Html 
 		: pageTitle(h, { title: root.spanName }, [root.spanName])
 }
 
-/** `TraceLogsLink`: "View Logs (N)" when any log carries the trace id; silent otherwise. */
+/** `TraceLogsLink`: "View logs (N)" when any log carries the trace id; silent otherwise. */
 export const logsLink = (h: HtmlBuilder<Message>, model: Model, trace: LoadedTrace): Html | null =>
 	Option.match(correlationWindow(trace.traceStartTime, trace.data.totalDurationMs), {
 		onNone: () => null,
@@ -46,17 +46,17 @@ export const logsLink = (h: HtmlBuilder<Message>, model: Model, trace: LoadedTra
 						h,
 						{
 							variant: "outline",
-							size: "xs",
+							size: "sm",
 							href: hrefOf(
 								AppRoute.Logs({ search: { traceId: model.traceId, startTime, endTime } }),
 							),
 						},
-						[icon(h, "FileIcon"), " View Logs (", String(total), ")"],
+						[icon(h, "FileIcon"), " View logs (", String(total), ")"],
 					)
 		},
 	})
 
-/** `TraceReplayLink`: "View Session Replay" when a browser session observed the trace. */
+/** `TraceReplayLink`: "View session replay" when a browser session observed the trace. */
 export const replayLink = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 	Option.match(
 		Option.flatMapNullishOr(AsyncData.getData(model.replaySessionId.data), (id) => id),
@@ -67,10 +67,10 @@ export const replayLink = (h: HtmlBuilder<Message>, model: Model): Html | null =
 					h,
 					{
 						variant: "outline",
-						size: "xs",
+						size: "sm",
 						href: hrefOf(AppRoute.Replay({ sessionId, search: {} })),
 					},
-					[icon(h, "EyeIcon"), " View Session Replay"],
+					[icon(h, "EyeIcon"), " View session replay"],
 				),
 		},
 	)

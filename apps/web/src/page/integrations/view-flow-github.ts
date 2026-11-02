@@ -74,7 +74,7 @@ const showsUpRail = (h: H): Html =>
 				detail: "Deploys to the tracked branch as markers",
 			},
 			{ icon: "LayersIcon", title: "Traces", detail: "Spans with a commit SHA link to GitHub" },
-			{ icon: "PullRequestIcon", title: "Code Review", detail: "Rules, models and analytics" },
+			{ icon: "PullRequestIcon", title: "Code review", detail: "Rules, models and analytics" },
 			{ icon: "GearIcon", title: "Source page", detail: "Edit data, tracked branches, Disconnect" },
 		],
 		trust: "Large repos can take a few minutes to backfill. Nothing here needs you to stay.",
@@ -304,7 +304,7 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 			columnHead(h, { label: "Status", width: "w-28", align: "right" }),
 		],
 		repos.length === 0
-			? [dataTableEmpty(h, ["No repositories granted yet."])]
+			? [dataTableEmpty(h, ["No repositories granted yet"])]
 			: repos.map((repo) => {
 					const presentation = SYNC_PRESENTATION[repo.syncStatus]
 					return h.div(

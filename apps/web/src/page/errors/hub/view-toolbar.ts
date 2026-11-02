@@ -131,8 +131,14 @@ const toolbarSearch = (h: H, draft: string): Html =>
 	})
 
 /** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
-export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null): Html =>
+export const toolbar = (
+	h: H,
+	model: Model,
+	count: ReadonlyArray<string> | null,
+	className?: string,
+): Html =>
 	listToolbar(h, {
+		className,
 		leading: h.submodel({
 			slotId: "errors-view-tabs",
 			model: model.tabs,

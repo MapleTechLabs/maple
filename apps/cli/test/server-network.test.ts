@@ -1,13 +1,13 @@
 import { describe, it } from "@effect/vitest"
 import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
 import { Effect, Exit, Result, Tracer } from "effect"
-import { checkpointQueryUrl } from "../src/server/checkpoints"
+import { checkpointQueryUrl } from "@maple/local-server/checkpoints"
 import {
 	__testables,
 	corsHeadersForAllowedOrigin,
 	isBrowserOriginAllowed,
 	makeBrowserOriginPolicy,
-} from "../src/server/serve"
+} from "@maple/local-server/serve"
 import { serverProbeUrl } from "../src/commands/server-args"
 
 const makeRecordingTracer = () => {

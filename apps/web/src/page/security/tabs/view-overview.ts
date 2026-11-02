@@ -1,3 +1,4 @@
+import { SEVERITY_FILL } from "../../errors/kit/severity"
 import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -37,7 +38,6 @@ import {
 	placeholderRows,
 	repositoryName,
 	runStatusBadge,
-	SECURITY_SEVERITY_FILL,
 	securitySeverityBadge,
 } from "../kit/parts"
 import {
@@ -110,7 +110,7 @@ const spendTile = (h: H, model: Model): Html => {
 			valueClassName: "text-base",
 			compact: true,
 			action: textLink(h, { tone: "muted", className: "text-2xs", onClick: Message.ClickedRetry() }, [
-				"Retry",
+				"Try again",
 			]),
 			subline: "Couldn't load the spend limit",
 		})
@@ -248,7 +248,7 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 						statusDot(h, {
 							tone: "custom",
 							size: "lg",
-							className: SECURITY_SEVERITY_FILL[severity],
+							className: SEVERITY_FILL[severity],
 						}),
 						String(counts[severity]),
 					],
@@ -277,7 +277,7 @@ const severityLegend = (h: H): Html =>
 			h.span(
 				[h.Key(severity), h.Class("inline-flex items-center gap-1.5")],
 				[
-					statusDot(h, { tone: "custom", className: SECURITY_SEVERITY_FILL[severity] }),
+					statusDot(h, { tone: "custom", className: SEVERITY_FILL[severity] }),
 					SECURITY_SEVERITY_LABEL[severity],
 				],
 			),
@@ -504,7 +504,7 @@ const topFindingsList = (
 	return rows.length === 0
 		? emptyMessage(h, {}, [
 				coverage === null
-					? "No open leads yet."
+					? "No open leads yet"
 					: `No open leads. The latest runs closed ${coverage.closed} of ${coverage.total} units.`,
 			])
 		: h.ul(

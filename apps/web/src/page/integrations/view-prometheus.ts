@@ -45,8 +45,8 @@ type H = HtmlBuilder<Message>
 
 export const AUTH_TYPE_LABELS = {
 	none: "None",
-	bearer: "Bearer Token",
-	basic: "Basic Auth",
+	bearer: "Bearer token",
+	basic: "Basic auth",
 	token: "Service Token",
 	planetscale_oauth: "PlanetScale OAuth",
 	supabase_oauth: "Supabase OAuth",
@@ -292,7 +292,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 							{
 								_tag: "Item",
 								value: "delete",
-								label: "Disconnect",
+								label: "Delete scrape target",
 								icon: "TrashIcon",
 								variant: "destructive",
 								isDisabled: isManaged,

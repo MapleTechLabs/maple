@@ -1,3 +1,4 @@
+import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { QueryEngineTimeoutError } from "@maple/domain/http"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Effect, Option } from "effect"
@@ -96,19 +97,20 @@ const serverTitle = (h: H, name: string, description: string): Html =>
 const SERVER_DESCRIPTION = `MCP ${MCP_OVERVIEW.protocolVersion} over ${MCP_OVERVIEW.transport} · ${MCP_OVERVIEW.tools.length} tools called · first MCP spans today ${formatClock(MCP_OVERVIEW.firstSpanMs, TIME_ZONE)}`
 const TOOL_DESCRIPTION = `${MCP_RUN_SQL.calls} calls from ${MCP_RUN_SQL.clients} clients · first call today ${formatClock(MCP_RUN_SQL.firstCallMs, TIME_ZONE)} · last call ${formatRelativeTime(MCP_RUN_SQL.lastCallMs, MCP_NOW)}`
 
+/** The facets list callers only, as the API's `allClients` does. */
+const CALLERS = MCP_OVERVIEW.clients.filter((client) => client.calls > 0)
+
 /** The kind facet's counts: calls per client kind. */
-const KIND_OPTIONS = ["agent", "script", "unknown"].map((kind) => ({
+const KIND_OPTIONS = MCP_CLIENT_KINDS.map((kind) => ({
 	name: kind,
-	count: MCP_OVERVIEW.clients
-		.filter((client) => client.kind === kind)
-		.reduce((sum, client) => sum + client.calls, 0),
-}))
+	count: CALLERS.filter((client) => client.kind === kind).reduce((sum, client) => sum + client.calls, 0),
+})).filter((option) => option.count > 0)
 
 const toolbar = (h: H, model: Model, withSearch: boolean): Html => {
 	const clientSelect = facetSelect(h, {
 		label: "client",
 		value: model.client,
-		options: MCP_OVERVIEW.clients.map((client) => ({ name: client.name, count: client.calls })),
+		options: CALLERS.map((client) => ({ name: client.name, count: client.calls })),
 		model: model.clientSelect,
 		toMessage: (message) => Message.GotSelectMessage({ facet: "client", message }),
 	})
@@ -222,7 +224,7 @@ const pageView = (model: Model, h: H): Html => {
 			return dashboardPage(
 				h,
 				{
-					title: "MCP Servers",
+					title: "MCP servers",
 					description:
 						"Every service that answers MCP requests: the tools agents call, the clients calling them, and why calls fail.",
 					actions: timeActions(h, model),
@@ -377,8 +379,10 @@ const pageView = (model: Model, h: H): Html => {
 					service: MCP_OVERVIEW.service,
 					window: "last 15 minutes",
 					lastCall: "42 minutes ago",
-					onWiden: Message.ClickedView({ view: "server" }),
-					widenLabel: "Show the last 6 hours",
+					widen: {
+						onWiden: Message.ClickedView({ view: "server" }),
+						label: "Show the last 6 hours",
+					},
 				}),
 			)
 	}
@@ -439,8 +443,8 @@ export const lab = defineShellLab("MCP hub", {
 		model.view === "service"
 			? [{ label: "Services" }, { label: MCP_OVERVIEW.service }]
 			: model.view === "list" || model.view === "empty"
-				? [{ label: "MCP Servers", isPageHeading: true }]
+				? [{ label: "MCP servers", isPageHeading: true }]
 				: model.view === "tool"
-					? [{ label: "MCP Servers" }, { label: MCP_OVERVIEW.service }, { label: MCP_RUN_SQL.tool }]
-					: [{ label: "MCP Servers" }],
+					? [{ label: "MCP servers" }, { label: MCP_OVERVIEW.service }, { label: MCP_RUN_SQL.tool }]
+					: [{ label: "MCP servers" }],
 })

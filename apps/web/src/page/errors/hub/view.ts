@@ -42,7 +42,6 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 		[],
 		[
 			...(strip === null ? [] : [strip]),
-			toolbar(h, model, countReadout(model, signals.length)),
 			...listBody(h, model, {
 				status,
 				signals,
@@ -74,8 +73,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Errors",
 			filters: filtersRail(h, model),
-			// The toolbar sits one header gap under the title, as tabs do on tabbed pages.
-			scrollClassName: "pt-0",
+			// Only the toolbar row is pinned, like replays and anomalies; the stats scroll with the list.
+			// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+			sticky: toolbar(h, model, countReadout(model, signalsOf(model).length), "pb-0"),
 			actions: refreshButton(h, {
 				onRefresh: Message.ClickedReload(),
 				isPending: model.isReloading,

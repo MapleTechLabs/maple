@@ -25,7 +25,7 @@ import {
 import type { SortDir } from "../../kit/table-sort"
 import { meterRows } from "../kit/meter-rows"
 import { metaLine } from "../kit/meta-line"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import { hostStatusBadge } from "../kit/status"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { PodRow } from "./pod-data"
@@ -227,7 +227,7 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 			h.div(
 				[h.Class("w-24 text-right")],
 				[
-					relativeTime(h, {
+					listRelativeTime(h, {
 						value: pod.lastSeen,
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
@@ -250,6 +250,6 @@ export const podTable = <M>(
 		{ ariaLabel: "Pods", isWaiting: inputs.isWaiting },
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }, inputs.onSort),
 		pods.length === 0
-			? [dataTableEmpty(h, ["No pods match your filter."])]
+			? [dataTableEmpty(h, ["No pods match these filters"])]
 			: pods.map((pod) => podRow(h, pod, inputs)),
 	)

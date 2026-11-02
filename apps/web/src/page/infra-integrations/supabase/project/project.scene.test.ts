@@ -137,9 +137,9 @@ describe("supabase project", () => {
 			{ update: pageUpdate, view },
 			given(quiet(true)),
 			themeResolved(),
-			expectView(text("Nothing needs attention.")).toExist(),
-			expectView(text("No API requests in this time range.")).toExist(),
-			expectView(text("No warnings or errors in this time range.")).toExist(),
+			expectView(text("Nothing needs attention")).toExist(),
+			expectView(text("No API requests in this window")).toExist(),
+			expectView(text("No warnings or errors in this window")).toExist(),
 			expectView(role("link", { name: "Instrument a service" })).toExist(),
 			expectView(role("link", { name: "View logs" })).toExist(),
 		)
@@ -150,7 +150,7 @@ describe("supabase project", () => {
 			{ update: pageUpdate, view },
 			given(quiet(false)),
 			themeResolved(),
-			expectView(text("No API requests in this time range.")).toBeAbsent(),
+			expectView(text("No API requests in this window")).toBeAbsent(),
 			expectView(role("link", { name: "View logs" })).toBeAbsent(),
 			expectView(role("link", { name: "Open in Supabase" })).toExist(),
 		)
@@ -170,7 +170,7 @@ describe("supabase project", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themeResolved(),
-			expectView(text("Nothing needs attention.")).toBeAbsent(),
+			expectView(text("Nothing needs attention")).toBeAbsent(),
 		)
 	})
 

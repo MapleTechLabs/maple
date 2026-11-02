@@ -14,6 +14,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { gcpConnectors, neverReported } from "./update-gcp"
 import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } from "./view-gcp-parts"
+import { disconnectConfirm } from "./view-disconnect"
 import { removalItem } from "./view-gcp-setup-methods"
 
 // `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
@@ -25,12 +26,12 @@ const toDialog = (message: Parameters<typeof Message.GotGcpDisconnectDialogMessa
 
 /** Nothing reported: the delete alone, with what it leaves behind. */
 const quietDisconnect = (h: H, model: Model, connector: V2GcpConnector): Html =>
-	confirmDialog(h, {
+	disconnectConfirm(h, {
+		provider: "gcp",
 		slotId: "gcp-disconnect",
 		model: model.gcpCard.disconnectDialog,
 		toParentMessage: toDialog,
-		title: `Disconnect ${gcpScopeLabel(connector)}?`,
-		confirmLabel: "Disconnect",
+		subject: gcpScopeLabel(connector),
 		onConfirm: Message.ConfirmedGcpDisconnect(),
 		isPending: model.gcpCard.isDisconnecting,
 		children: [
@@ -106,7 +107,7 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 						[
 							`Disconnect ${GCP_SCOPE_NAMES[connector.scope_type]}`,
 							" ",
-							h.span([h.Class("whitespace-nowrap")], [connector.scope_id]),
+							h.span([h.Class("whitespace-nowrap")], [`${connector.scope_id}?`]),
 						],
 						"pr-8",
 					),

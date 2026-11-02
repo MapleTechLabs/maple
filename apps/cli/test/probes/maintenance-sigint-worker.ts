@@ -21,7 +21,7 @@
 
 import { BunRuntime } from "@effect/platform-bun"
 import { Effect } from "effect"
-import { maintenanceOperation, withMaintenanceLock } from "../../src/server/checkpoints"
+import { maintenanceOperation, withMaintenanceLock } from "@maple/local-server/checkpoints"
 
 const arg = (name: string): string | undefined => {
 	const index = process.argv.indexOf(`--${name}`)

@@ -1,8 +1,8 @@
 import { describe, it } from "@effect/vitest"
 import { ok, rejects, strictEqual } from "node:assert"
 import { createHash, randomUUID } from "node:crypto"
-import { MAPLE_VERSION, CHDB_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+import { MAPLE_VERSION, CHDB_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 import {
 	existsSync,
 	lstatSync,
@@ -18,8 +18,8 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { runArchiveReconciliation } from "../src/server/archives/generation"
-import type { ReconciliationDecision } from "../src/server/archives/reconcile"
+import { runArchiveReconciliation } from "@maple/local-server/archives/generation"
+import type { ReconciliationDecision } from "@maple/local-server/archives/reconcile"
 
 const withRoots = async (
 	run: (archiveDir: string, dataDir: string, scratchRoot: string) => Promise<void> | void,
@@ -272,7 +272,7 @@ describe("archive reconciliation protocol (Gate 3b r5)", () => {
 	})
 	it("dry-run fails nonzero while a live owner holds the lock", async () => {
 		await withRoots(async (archiveDir, dataDir, scratchRoot) => {
-			const { withMaintenanceLock } = await import("../src/server/checkpoints")
+			const { withMaintenanceLock } = await import("@maple/local-server/checkpoints")
 			const { record } = validV2(archiveDir, dataDir, scratchRoot)
 			writeActiveIntent(archiveDir, record.operationId as string, record)
 			await withMaintenanceLock(dataDir, randomUUID(), async () => {

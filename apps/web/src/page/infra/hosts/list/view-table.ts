@@ -13,7 +13,7 @@ import {
 } from "../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine, platformLabel } from "../../kit/meta-line"
-import { relativeTime } from "../../../kit/relative-time"
+import { listRelativeTime } from "../../../kit/relative-time"
 import type { SortDir, SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import type { HostSortKey } from "./message"
@@ -123,7 +123,7 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 			h.div(
 				[h.Class("w-24 text-right")],
 				[
-					relativeTime(h, {
+					listRelativeTime(h, {
 						value: host.lastSeen,
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
@@ -145,6 +145,6 @@ export const hostTable = <M>(
 		{ ariaLabel: "Hosts", isWaiting: inputs.isWaiting },
 		columns(h, inputs.sort, inputs.onSort),
 		hosts.length === 0
-			? [dataTableEmpty(h, ["No hosts match your search."])]
+			? [dataTableEmpty(h, ["No hosts match your search"])]
 			: hosts.map((host) => hostRow(h, host, inputs)),
 	)

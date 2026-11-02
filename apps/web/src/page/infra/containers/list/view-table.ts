@@ -8,7 +8,7 @@ import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skelet
 import type { SortDir } from "../../../kit/table-sort"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
-import { relativeTime } from "../../../kit/relative-time"
+import { listRelativeTime } from "../../../kit/relative-time"
 import { hostStatusBadge } from "../../kit/status"
 import { type ContainerSortKey, Message } from "./message"
 import type { ContainerRow } from "./model"
@@ -117,7 +117,7 @@ const containerRow = (h: H, container: ContainerRow, inputs: ContainerTableInput
 			h.div(
 				[h.Class("w-24 text-right")],
 				[
-					relativeTime(h, {
+					listRelativeTime(h, {
 						value: container.lastSeen,
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
@@ -135,6 +135,6 @@ export const containerTable = (h: H, containers: ReadonlyArray<ContainerRow>, in
 		{ ariaLabel: "Containers", isWaiting: inputs.isWaiting },
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }),
 		containers.length === 0
-			? [dataTableEmpty(h, ["No containers match your filter."])]
+			? [dataTableEmpty(h, ["No containers match these filters"])]
 			: containers.map((container) => containerRow(h, container, inputs)),
 	)

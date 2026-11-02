@@ -24,7 +24,7 @@ import {
 import { MARKER_STYLES } from "../kit/replay-meta"
 import { replayFormat } from "../kit/replay-window"
 import { FeedEvents, MountEngine } from "./command"
-import { type PlayerStatus, timelineFrom, timelineOf } from "./derive"
+import type { PlayerStatus } from "./derive"
 import {
 	hasMoreChunks,
 	isBuffering,
@@ -46,41 +46,38 @@ type H = HtmlBuilder<Message>
 
 const SPEED_OPTIONS = [0.5, 1, 2, 4, 8].map((s) => ({ value: String(s), label: `${s}×` }))
 
-/** The playhead on the trimmed (display) timeline: the only part a playback tick moves. */
+/**
+ * The playhead on the recording's own clock: the only part a playback tick moves. Skip-idle jumps the
+ * engine over idle gaps but never shortens the scrubber, so its length holds still as ranges load.
+ */
 export type Playhead = Readonly<{ currentMs: number; totalMs: number }>
 
-export const playheadOf = (model: Model): Playhead => {
-	const timeline = timelineOf(model)
-	return { currentMs: timeline.toDisplay(model.player.currentMs), totalMs: timeline.activeTotalMs }
-}
+export const playheadOf = (model: Model): Playhead => ({
+	currentMs: model.player.currentMs,
+	totalMs: model.player.totalMs,
+})
 
 type Marker = Model["meta"]["actionMarkers"][number]
 type Interval = Model["meta"]["inactiveIntervals"][number]
 
 const IDLE_HATCH = "repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)"
 
-const idleBandsView = (
-	h: H,
-	intervals: ReadonlyArray<Interval>,
-	totalMs: number,
-	isSkippingIdle: boolean,
-): Html => {
-	const timeline = timelineFrom({ inactiveIntervals: intervals, totalMs, isSkippingIdle })
-	const total = timeline.activeTotalMs
-	return h.div(
+/** `[left, width]` in percent of `totalMs` for the span `[fromMs, untilMs]`, clamped to the track. */
+const spanPct = (fromMs: number, untilMs: number, totalMs: number): readonly [number, number] => {
+	const leftPct = Math.max(0, Math.min(100, (fromMs / totalMs) * 100))
+	return [leftPct, Math.max(0, Math.min(100 - leftPct, ((untilMs - fromMs) / totalMs) * 100))]
+}
+
+const idleBandsView = (h: H, intervals: ReadonlyArray<Interval>, totalMs: number): Html =>
+	h.div(
 		[h.Class("absolute inset-0")],
-		total <= 0
+		totalMs <= 0
 			? []
 			: intervals.map((interval, i) => {
-					const start = timeline.toDisplay(interval.start)
-					const leftPct = Math.max(0, Math.min(100, (start / total) * 100))
-					const widthPct = Math.max(
-						0,
-						Math.min(100 - leftPct, ((timeline.toDisplay(interval.end) - start) / total) * 100),
-					)
+					const [leftPct, widthPct] = spanPct(interval.start, interval.end, totalMs)
 					return h.span(
 						[
-							h.Key(`idle-${start}-${i}`),
+							h.Key(`idle-${interval.start}-${i}`),
 							h.Class("absolute inset-y-0 bg-foreground/25"),
 							h.Style({
 								left: `${leftPct}%`,
@@ -94,58 +91,33 @@ const idleBandsView = (
 					)
 				}),
 	)
-}
 
-const markersView = (
-	h: H,
-	markers: ReadonlyArray<Marker>,
-	intervals: ReadonlyArray<Interval>,
-	totalMs: number,
-	isSkippingIdle: boolean,
-): Html => {
-	const timeline = timelineFrom({ inactiveIntervals: intervals, totalMs, isSkippingIdle })
-	const total = timeline.activeTotalMs
-	return h.div(
+const markersView = (h: H, markers: ReadonlyArray<Marker>, totalMs: number): Html =>
+	h.div(
 		[h.Class("absolute inset-0")],
-		total <= 0
+		totalMs <= 0
 			? []
-			: markers.map((marker, i) => {
-					const ms = timeline.toDisplay(marker.ms)
-					return h.span(
+			: markers.map((marker, i) =>
+					h.span(
 						[
-							h.Key(`${marker.kind}-${ms}-${i}`),
+							h.Key(`${marker.kind}-${marker.ms}-${i}`),
 							h.Class(
 								cn(
 									"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
 									MARKER_STYLES[marker.kind],
 								),
 							),
-							h.Style({ left: `${Math.min(100, Math.max(0, (ms / total) * 100))}%` }),
+							h.Style({ left: `${Math.min(100, Math.max(0, (marker.ms / totalMs) * 100))}%` }),
 							h.Title(marker.kind),
 						],
 						[],
-					)
-				}),
+					),
+				),
 	)
-}
 
-const bufferedView = (
-	h: H,
-	fromMs: number,
-	untilMs: number,
-	intervals: ReadonlyArray<Interval>,
-	totalMs: number,
-	isSkippingIdle: boolean,
-): Html => {
-	const timeline = timelineFrom({ inactiveIntervals: intervals, totalMs, isSkippingIdle })
-	const total = timeline.activeTotalMs
-	if (total <= 0 || untilMs <= fromMs) return h.div([h.Class("absolute inset-0")], [])
-	const start = timeline.toDisplay(fromMs)
-	const leftPct = Math.max(0, Math.min(100, (start / total) * 100))
-	const widthPct = Math.max(
-		0,
-		Math.min(100 - leftPct, ((timeline.toDisplay(untilMs) - start) / total) * 100),
-	)
+const bufferedView = (h: H, fromMs: number, untilMs: number, totalMs: number): Html => {
+	if (totalMs <= 0 || untilMs <= fromMs) return h.div([h.Class("absolute inset-0")], [])
+	const [leftPct, widthPct] = spanPct(fromMs, untilMs, totalMs)
 	return h.div(
 		[h.Class("absolute inset-0")],
 		[
@@ -167,12 +139,7 @@ const trackSlots = createKeyedLazy()
 export type TrackSurface = "docked" | "fullscreen" | "timeline"
 
 export const idleBandsTrack = (h: H, model: Model, surface: TrackSurface): Html =>
-	trackSlots(`idle-${surface}`, idleBandsView, [
-		h,
-		model.meta.inactiveIntervals,
-		model.player.totalMs,
-		model.player.isSkippingIdle,
-	])
+	trackSlots(`idle-${surface}`, idleBandsView, [h, model.meta.inactiveIntervals, model.player.totalMs])
 
 /** The downloaded, playable span under the progress fill, like a video's buffered range. */
 export const bufferedTrack = (h: H, model: Model, surface: TrackSurface): Html =>
@@ -180,19 +147,11 @@ export const bufferedTrack = (h: H, model: Model, surface: TrackSurface): Html =
 		h,
 		model.loader.seedCount === 0 ? 0 : loadedFromMs(model),
 		model.loader.seedCount === 0 ? 0 : Math.min(loadedUntilMs(model), model.player.totalMs),
-		model.meta.inactiveIntervals,
 		model.player.totalMs,
-		model.player.isSkippingIdle,
 	])
 
 export const markersTrack = (h: H, model: Model, surface: TrackSurface): Html =>
-	trackSlots(`markers-${surface}`, markersView, [
-		h,
-		model.meta.actionMarkers,
-		model.meta.inactiveIntervals,
-		model.player.totalMs,
-		model.player.isSkippingIdle,
-	])
+	trackSlots(`markers-${surface}`, markersView, [h, model.meta.actionMarkers, model.player.totalMs])
 
 /** `PlayerMessage`: the surface's centred note when there is nothing to play. */
 const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner = false): Html =>

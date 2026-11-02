@@ -306,7 +306,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						),
 						dialogFooter(h, "dialog", [
 							button(h, { variant: "outline", attributes: close }, ["Cancel"]),
-							button(h, { type: "submit" }, ["Save"]),
+							button(h, { type: "submit" }, ["Save tags"]),
 						]),
 					],
 				),

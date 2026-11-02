@@ -148,6 +148,7 @@ export const WidgetFailure = Schema.Struct({
 })
 export type WidgetFailure = typeof WidgetFailure.Type
 
+/** The warehouse's own no-data messages (wire strings), read as an empty tile. */
 const EXPECTED_EMPTY_MESSAGES = new Set([
 	"No query data found in selected time range",
 	"No breakdown data found in selected time range",
@@ -177,7 +178,7 @@ export const toWidgetFailure = (error: unknown): WidgetFailure => {
 			kind: "config",
 		}
 	if (message !== undefined && EXPECTED_EMPTY_MESSAGES.has(message))
-		return { title: null, message: "No query data found in selected time range", kind: "empty" }
+		return { title: null, message: "No data in this window", kind: "empty" }
 	const shown = displayError(error)
 	const kind = isRangeError(error) ? "range" : isDecodeError(error) ? "decode" : "runtime"
 	return { title: shown.title, message: shown.message, kind }

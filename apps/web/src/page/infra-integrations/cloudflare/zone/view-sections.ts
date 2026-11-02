@@ -154,7 +154,7 @@ export const dnsSection = (
 				columnHead(h, { label: "NXDOMAIN", align: "right", width: "w-28" }),
 			],
 			rows.length === 0
-				? [dataTableEmpty(h, ["No DNS queries in the selected window."])]
+				? [dataTableEmpty(h, ["No DNS queries in this window"])]
 				: rows.map((row) =>
 						h.div(
 							[h.Key(row.queryName), h.Class(ROW_CLASS)],
@@ -268,7 +268,7 @@ export const securitySection = (
 				columnHead(h, { label: "Events", align: "right", width: "w-24" }),
 			],
 			rows.length === 0
-				? [dataTableEmpty(h, ["No security events in the selected window."])]
+				? [dataTableEmpty(h, ["No security events in this window"])]
 				: rows.map((row) =>
 						h.div(
 							[

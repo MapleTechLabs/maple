@@ -78,7 +78,7 @@ describe("formatting", () => {
 	})
 
 	it("formats each metric in its own units", () => {
-		expect(formatToolMetric(1200, "calls")).toBe("1,200")
+		expect(formatToolMetric(1200, "calls")).toBe("1.2K")
 		expect(formatToolMetric(0.05, "error_rate")).toBe("5.0%")
 		expect(formatToolMetric(2_000_000_000, "duration")).toBe("2.00s")
 	})
@@ -205,12 +205,12 @@ describe("toolChartTitle", () => {
 describe("scopeSummary", () => {
 	it("says how much of the window the selection accounts for", () => {
 		expect(scopeSummary(measures({ calls: 120, sessions: 8 }), 4000)).toBe(
-			"120 of 4,000 calls match · 8 sessions",
+			"120 of 4K calls match · 8 sessions",
 		)
 	})
 
 	it("drops the denominator when nothing is narrowing it", () => {
-		expect(scopeSummary(measures({ calls: 4000, sessions: 8 }), 4000)).toBe("4,000 calls · 8 sessions")
+		expect(scopeSummary(measures({ calls: 4000, sessions: 8 }), 4000)).toBe("4K calls · 8 sessions")
 	})
 
 	it("counts one session in the singular", () => {

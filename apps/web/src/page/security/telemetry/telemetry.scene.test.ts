@@ -178,7 +178,10 @@ describe("security telemetry tabs", () => {
 			"ledger",
 			"realtime",
 			"billing-worker",
+			"crawler",
 			"edge-router",
+			// Replaced by its 1.4.4 row: listed last, as history.
+			"crawler",
 		])
 		scene(
 			{ update: pageUpdate, view },
@@ -216,6 +219,18 @@ describe("security telemetry tabs", () => {
 			expectView(text("Unavailable")).toExist(),
 			expectView(text("Not checked yet")).toExist(),
 			expectView(role("link", { name: "OSV.dev" })).toExist(),
+		)
+	})
+
+	test("a version a service upgraded away from shows as replaced, not as an upgrade to make", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes()),
+			expectView(text("Replaced")).toExist(),
+			expectView(text("2 high")).toExist(),
+			// crawler ran Bun 1.4.0 until three hours ago; only scraper still does.
+			expectView(text("3 runtime versions to upgrade now")).toExist(),
+			expectView(text("crawler, scraper")).toBeAbsent(),
 		)
 	})
 

@@ -332,7 +332,7 @@ const timeseriesSettings = (h: H, model: Model, state: EditorState): ReadonlyArr
 	]
 }
 
-/** The "Panel Options" rail: the shared fields, then the panel type's own (`ConfigPanel`). */
+/** The "Panel options" rail: the shared fields, then the panel type's own (`ConfigPanel`). */
 export const settingsRail = (h: H, model: Model, timeZone: string): Html => {
 	const state = model.state
 	if (state === null) return h.empty
@@ -342,7 +342,7 @@ export const settingsRail = (h: H, model: Model, timeZone: string): Html => {
 		[
 			h.p(
 				[h.Class(eyebrowVariants({ variant: "label" })), h.DataAttribute("slot", "eyebrow")],
-				["Panel Options"],
+				["Panel options"],
 			),
 			nameField(h, state),
 			descriptionField(h, state),

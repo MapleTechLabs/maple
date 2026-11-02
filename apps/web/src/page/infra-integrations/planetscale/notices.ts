@@ -27,7 +27,7 @@ import { relativeTime } from "../../kit/relative-time"
 export const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 export const BRANCH_ABSENCE_COPY = {
 	excluded: "Excluded from metrics collection by this connection's branch filters.",
-	"no-data": "No metrics for this branch in the selected window.",
+	"no-data": "No metrics for this branch in this window",
 } as const
 
 const INTEGRATION_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } }))

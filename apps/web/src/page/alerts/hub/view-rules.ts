@@ -17,7 +17,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../../ui/alert"
 import { button } from "../../../ui/button"
 import { filterChip } from "../../../ui/filter-chip"
-import { icon } from "../../../ui/icon"
 import * as Menu from "../../../ui/menu"
 import type { MenuEntry } from "../../../ui/menu-view"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
@@ -170,9 +169,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 			filtered.length === 0
 				? filteredEmpty(h, {
 						noun: "rules",
-						title: "No rules match your filters",
 						description: "Try a different search term or status.",
-						icon: icon(h, "MagnifierIcon", { size: 18 }),
 						onClear: Message.ClickedClearRuleFilters(),
 						className: "py-12",
 					})

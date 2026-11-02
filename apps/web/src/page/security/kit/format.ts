@@ -47,7 +47,7 @@ export const isCancelled = (run: Pick<SecurityAuditRun, "status" | "incompleteRe
 	run.status === "incomplete" && run.incompleteReason === CANCELLED_REASON
 
 const RUN_STATUS_TONE = {
-	in_progress: "done",
+	in_progress: "live",
 	complete: "ok",
 	incomplete: "warn",
 	failed: "crit",

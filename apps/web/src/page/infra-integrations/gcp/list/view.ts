@@ -176,8 +176,8 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 	const emptyMessage = options.failed
 		? `Maple could not read the ${options.title} metrics. Reload to try again.`
 		: rows.length === 0
-			? `No ${options.title} metrics in this time range.`
-			: `No ${options.noun} match. Clear the search or scope.`
+			? `No ${options.title} metrics in this window`
+			: `No ${options.noun} match these filters`
 	return [
 		gcpBand(h, {
 			rows,
@@ -189,7 +189,7 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 		searchToolbar(h, {
 			id: "gcp-search",
 			value: query,
-			placeholder: `Filter ${options.noun}`,
+			placeholder: `Filter ${options.noun}…`,
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:

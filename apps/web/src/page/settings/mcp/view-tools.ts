@@ -12,6 +12,7 @@ import { skeletonList } from "../../../ui/skeleton"
 import { sectionNote, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { emptyMessage } from "../../../ui/empty"
 
 // `McpToolsList`.
@@ -57,7 +58,9 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 					...(isOpen ? [h.AriaControls(panelId)] : []),
 					h.AriaDisabled(false),
 					h.AriaExpanded(isOpen),
-					h.Class("flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-sunken active:bg-surface-sunken"),
+					h.Class(
+						"flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-sunken active:bg-surface-sunken",
+					),
 					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 					h.DataAttribute("slot", "collapsible-trigger"),
 					h.Tabindex(0),
@@ -143,24 +146,32 @@ const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>):
 					value: model.toolSearch,
 					onInput: (value) => Message.ChangedToolSearch({ value }),
 					onClear: Message.ClickedClearToolSearch(),
-					placeholder: `Search ${tools.length} tools`,
+					placeholder: `Search ${tools.length} tools…`,
 					ariaLabel: "Search tools",
 				}),
 			],
 		),
-		groups.length === 0
-			? emptyMessage(h, {}, ["No tools match “", model.toolSearch, "”."])
-			: h.div(
-					[h.Class("divide-y")],
-					groups.map((group, index) =>
-						toolGroup(
-							h,
-							group,
-							isSearching || index < OPEN_GROUPS !== model.flippedGroups.includes(group.id),
-							isSearching || model.expandedGroups.includes(group.id),
+		tools.length === 0
+			? emptyMessage(h, { className: "py-10 md:py-12" }, ["No tools are registered yet"])
+			: groups.length === 0
+				? filteredEmpty(h, {
+						noun: "tools",
+						description: `Nothing matches “${model.toolSearch}”.`,
+						onClear: Message.ClickedClearToolSearch(),
+						clearLabel: "Clear search",
+						className: "py-10 md:py-12",
+					})
+				: h.div(
+						[h.Class("divide-y")],
+						groups.map((group, index) =>
+							toolGroup(
+								h,
+								group,
+								isSearching || index < OPEN_GROUPS !== model.flippedGroups.includes(group.id),
+								isSearching || model.expandedGroups.includes(group.id),
+							),
 						),
 					),
-				),
 	]
 }
 

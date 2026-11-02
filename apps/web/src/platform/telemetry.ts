@@ -38,6 +38,8 @@ const maple = MapleFoldkit.make({
 	routeName,
 	// Starts no child span, but it is the boot's longest step before the first data read.
 	keepCommands: ["LoadClerk"],
+	// One frame: a view or patch over 16ms drops a frame, which the SDK's 50ms default does not report.
+	slowPhases: { View: 16, Patch: 16 },
 	// The perf bench builds with VITE_MAPLE_REPLAY=off and VITE_MAPLE_CAPTURE=off.
 	replay: {
 		enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off",

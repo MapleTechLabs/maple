@@ -411,7 +411,7 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 			),
 			...(card.metricsError === null
 				? []
-				: [h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [card.metricsError])]),
+				: [h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [card.metricsError])]),
 			button(
 				h,
 				{

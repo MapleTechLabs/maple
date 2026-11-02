@@ -7,6 +7,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ReleasesSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // `/releases`.
@@ -68,5 +69,7 @@ export const Model = Schema.Struct({
 	timePicker: TimeRangePicker.Model,
 	/** The health pills' tooltip and the commit hover card. */
 	overlays: Overlays.Model,
+	/** Whether traces ever arrived: an empty window is then quiet, not unset up. */
+	presence: SignalPresenceData.schema,
 })
 export type Model = typeof Model.Type

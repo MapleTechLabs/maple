@@ -104,7 +104,7 @@ const stripView = (h: H, model: Model, timeZone: string): Html => {
 const noMetrics = (h: H, project: DiscoveredProject | null): Html =>
 	integrationNotConnected(h, {
 		icon: icon(h, "SupabaseIcon", { size: 16 }),
-		title: "No metrics for this project in this time range",
+		title: "No metrics for this project in this window",
 		description:
 			project !== null && !project.metricsEnabled
 				? "Metrics collection is off for this project. Turn on Metrics to start scraping it."

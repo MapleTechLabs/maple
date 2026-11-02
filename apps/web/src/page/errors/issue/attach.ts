@@ -244,7 +244,7 @@ const pickerField = (h: H, model: Model): Html => {
 			toParentMessage: (message) => Message.GotAttachComboboxMessage({ message }),
 			viewInputs: {
 				items: visible.map((pr) => pr.url),
-				placeholder: "Search by title, number, branch, or paste a link",
+				placeholder: "Search by title, number, branch, or paste a link…",
 				emptyText,
 				isUnfiltered: true,
 				className: "w-full text-xs",

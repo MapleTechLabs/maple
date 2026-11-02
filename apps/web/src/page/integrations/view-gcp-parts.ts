@@ -125,7 +125,7 @@ export const scriptBlock = (
 							[h.Class("flex flex-wrap items-center gap-2")],
 							[
 								h.p(
-									[h.Class("text-xs text-severity-error"), h.Role("alert")],
+									[h.Class("text-xs text-destructive-foreground"), h.Role("alert")],
 									[options.failure.message],
 								),
 								button(

@@ -267,7 +267,7 @@ const fireStrip = <M>(
 				],
 			),
 			shown.length === 0
-				? emptyMessage(h, { className: "border-t" }, ["No rule fired in the last 24 hours."])
+				? emptyMessage(h, { className: "border-t" }, ["No rule fired in the last 24 hours"])
 				: h.ul(
 						[h.Class("divide-y border-y")],
 						shown.map((lane) => fireLaneRow(h, lane)),

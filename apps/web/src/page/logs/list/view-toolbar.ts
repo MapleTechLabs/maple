@@ -51,7 +51,7 @@ const columnsContent = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Ht
 		return [
 			h.p(
 				[h.Class("py-2 text-xs text-muted-foreground")],
-				["No attribute keys in the selected time range."],
+				["No attribute keys in this window"],
 			),
 		]
 	const section = filterSection(h, {

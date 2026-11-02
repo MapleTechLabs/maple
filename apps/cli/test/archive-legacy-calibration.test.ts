@@ -11,11 +11,11 @@ import {
 	checkpointSnapshotDir,
 	checkpointStatePath,
 	newCheckpointId,
-} from "../src/server/checkpoints"
-import { runArchiveReconciliation } from "../src/server/archives/generation"
-import { retireLegacyCalibration } from "../src/server/archives/legacy-calibration"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
+} from "@maple/local-server/checkpoints"
+import { runArchiveReconciliation } from "@maple/local-server/archives/generation"
+import { retireLegacyCalibration } from "@maple/local-server/archives/legacy-calibration"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 
 // Calibration was removed; what an interrupted older run left must not wedge
 // anything and must be retired by the ordinary reconcile path.

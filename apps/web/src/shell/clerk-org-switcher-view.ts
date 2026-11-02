@@ -318,7 +318,7 @@ const regionField = (h: H, model: Model): Html => {
 					[
 						h.Id(RadioGroup.labelId(`${regionIdOf(model, region)}-input`)),
 						h.Class(
-							"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-accent/64",
+							"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-surface-strong",
 						),
 					],
 					[

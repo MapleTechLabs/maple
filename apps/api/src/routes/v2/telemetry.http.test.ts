@@ -1390,6 +1390,29 @@ describe("v2 reads shared with the dashboard", () => {
 })
 
 describe("v2 replay migration parity", () => {
+	it("narrows a session search to one group by its exact id", async () => {
+		const observedSql: string[] = []
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (tenant, compiled, options) => {
+				observedSql.push(compiledQueryOf(compiled).sql)
+				return warehouseStub.compiledQuery(tenant, compiled, options)
+			},
+		})
+		try {
+			const key = await harness.bootstrapKey(["session_replays:read"])
+			const search = await harness.request("POST", "/v2/session_replays/search", key.secret, {
+				...allowedWindow(),
+				group_id: "org_acme_1",
+			})
+			expect(search.status).toBe(200)
+			const replaysSql = observedSql.find((sql) => sql.includes("FROM session_replays"))
+			expect(replaysSql).toContain("GroupId = 'org_acme_1'")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("preserves attribution, recording state, detail traits and custom-event properties over HTTP", async () => {
 		const replay = {
 			sessionId: "session-browser-123",

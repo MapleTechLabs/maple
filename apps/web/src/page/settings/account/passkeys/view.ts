@@ -150,7 +150,7 @@ const loaded = (h: H, model: Model, user: AccountUser, inputs: Inputs): Html =>
 			title: "Rename passkey",
 			description: 'Give it a name you will recognise, like "MacBook Touch ID".',
 			onSubmit: Message.SubmittedRename(),
-			submitLabel: "Save",
+			submitLabel: "Save changes",
 			isPending: model.isBusy,
 			isSubmitDisabled: (model.renaming?.name.trim().length ?? 0) === 0,
 			fields: [
@@ -170,7 +170,7 @@ const loaded = (h: H, model: Model, user: AccountUser, inputs: Inputs): Html =>
 			toParentMessage: (message) => Message.GotRemoveDialogMessage({ message }),
 			title: "Remove passkey?",
 			description: `${model.removing?.name ?? "This passkey"} can no longer be used to sign in. The credential stays on your device until you delete it there too.`,
-			confirmLabel: "Remove",
+			confirmLabel: "Remove passkey",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),

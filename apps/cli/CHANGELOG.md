@@ -1,5 +1,13 @@
 # @maple/cli
 
+## 0.3.2
+
+### Patch Changes
+
+- c9fef22: `maple start` no longer refuses with "already running" in a container image without `ps` when a stale PID file names an unrelated live process (such as the container's init). `maple schema` commands run as PID 1 no longer mistake a dead server's PID file for a live server.
+- Updated dependencies [1c7c733]
+    - @maple-dev/effect-sdk@0.13.1
+
 ## 0.3.1
 
 ### Patch Changes

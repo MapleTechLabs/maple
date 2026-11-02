@@ -8,7 +8,6 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
-import { button } from "../../../ui/button"
 import { truncatedText } from "../../../ui/truncated-text"
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageViewInputs } from "../../contract"
@@ -167,21 +166,7 @@ const listFooterParts = (
 		...(hasMore
 			? [
 					isManual
-						? h.div(
-								[h.Class("flex justify-center py-3")],
-								[
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											isLoading: isFetching,
-											attributes: [h.OnClick(Message.ClickedLoadMore())],
-										},
-										["Load more sessions"],
-									),
-								],
-							)
+						? listFooter(h, { hasMore: true, isLoading: isFetching, onLoadMore: Message.ClickedLoadMore() })
 						: h.div(
 								[
 									h.Key(listEndKey(model)),
@@ -321,6 +306,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							label: "Sessions from visitor",
 							clearLabel: "Clear visitor filter",
 							onClear: Message.ClickedClearVisitor(),
+						}),
+					]
+				: []),
+			...(search.groupId !== undefined && search.groupId !== ""
+				? [
+						activeUserFilter(h, {
+							userId: search.groupId,
+							count: rowCount,
+							label: "Sessions from group",
+							clearLabel: "Clear group filter",
+							onClear: Message.ClickedClearGroupId(),
 						}),
 					]
 				: []),

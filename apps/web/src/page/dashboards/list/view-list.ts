@@ -121,7 +121,7 @@ const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, s
 			toolbarSearch(h, {
 				id: "dashboards-search",
 				draft: model.searchDraft,
-				placeholder: "Search dashboards",
+				placeholder: "Search dashboards…",
 				className: "w-full min-w-0 sm:w-70",
 				onInput: (value) => Message.ChangedSearchDraft({ value }),
 			}),
@@ -158,7 +158,7 @@ const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> 
 			{
 				_tag: "Item",
 				value: "delete",
-				label: "Delete…",
+				label: "Delete",
 				variant: "destructive",
 				isDisabled: isReadOnly,
 			},

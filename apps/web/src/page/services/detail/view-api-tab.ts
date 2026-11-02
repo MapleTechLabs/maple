@@ -395,7 +395,7 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 							),
 						)
 					: summaries.length === 0
-						? emptyMessage(h, {}, ["Every response in this window was below 400."])
+						? emptyMessage(h, {}, ["Every response in this window was below 400"])
 						: h.div(
 								[h.Class("flex flex-col gap-3")],
 								summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
@@ -562,7 +562,7 @@ const endpointsTable = (
 											h.Attribute("colspan", String(COLUMN_COUNT)),
 											h.Class("py-8 text-center text-xs text-muted-foreground"),
 										],
-										["No endpoint matches this filter."],
+										["No endpoint matches this filter"],
 									),
 								],
 								"hover:bg-transparent active:bg-transparent",
@@ -682,7 +682,11 @@ const loaded = (
 		[
 			...notes(h, endpoints.length, seconds),
 			overviewFailure !== null
-				? errorState(h, { failure: overviewFailure, title: "Couldn't load API overview" })
+				? errorState(h, {
+						failure: overviewFailure,
+						title: "Couldn't load API overview",
+						onRetry: Message.ClickedRetry({ target: "ApiOverview" }),
+					})
 				: Option.match(overview, {
 						onNone: () => kpiSkeleton(h),
 						onSome: (data) => kpiStrip(h, data, summaries, seconds, inputs, theme),
@@ -711,6 +715,7 @@ const loaded = (
 									errorState(h, {
 										failure: breakdownFailure,
 										title: "Couldn't load status codes",
+										onRetry: Message.ClickedRetry({ target: "StatusBreakdown" }),
 									}),
 								],
 							)
@@ -722,13 +727,16 @@ const loaded = (
 	)
 }
 
+const retryEndpoints = Message.ClickedRetry({ target: "Endpoints" })
+
 /** The API tab: skeleton, error, the empty explanation, or the strip, charts and table. */
 export const apiTab = (h: H, model: Model, inputs: ApiTabInputs, theme: ThemeColors | null): Html =>
 	AsyncData.match(model.endpoints.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load endpoints" }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load endpoints" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load endpoints", onRetry: retryEndpoints }),
+		onStale: ({ error }) =>
+			errorState(h, { failure: error, title: "Couldn't load endpoints", onRetry: retryEndpoints }),
 		onRefreshing: (endpoints) => loaded(h, model, endpoints, true, inputs, theme),
 		onSuccess: (endpoints) => loaded(h, model, endpoints, false, inputs, theme),
 	})

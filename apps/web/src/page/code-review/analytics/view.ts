@@ -3,17 +3,19 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { seriesTokens } from "../kit/analytics-panel"
 import { filtersView } from "../kit/filters-view"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
 import { analyticsSkeleton } from "../kit/skeletons"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { presetSpanLabel } from "../../kit/time-controls"
 import { issuesCard, SEVERITY_SERIES, volumeCard } from "./view-charts"
 import { authorsCard, categoriesCard, outcomesCard } from "./view-lists"
 import { headlineStrip, secondaryStats } from "./view-stats"
@@ -38,18 +40,30 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onData: (analytics) => {
 			if (analytics.current.reviews === 0 && analytics.current.findings === 0) {
 				const filtered = isFiltered(model)
-				return nothingInWindow(h, {
-					title: "No reviews in this window",
-					description: filtered
-						? "Nothing matches these filters. Widen the window or clear the filters."
-						: "Turn on reviews for a repository in Settings, then open a pull request against it.",
-					onClear: filtered ? Message.ClickedClearFilters() : undefined,
-				})
+				if (filtered)
+					return filteredEmpty(h, {
+						noun: "reviews",
+						description: "Widen the window or clear the filters.",
+						onClear: Message.ClickedClearFilters(),
+						className: "rounded-md border border-dashed md:py-14",
+					})
+				return empty(
+					h,
+					[
+						emptyHeader(h, [
+							emptyTitle(h, ["No reviews in this window"]),
+							emptyDescription(h, ["Turn on reviews for a repository in Settings, then open a pull request against it."]),
+						]),
+					],
+					"rounded-md border border-dashed md:py-14",
+				)
 			}
 			const theme = model.themeColors
 			if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return analyticsSkeleton(h)
 			const windowLabel =
-				model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
+				model.search.startTime !== undefined
+				? "period"
+				: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
 			return h.div(
 				[h.Class("flex flex-col gap-6")],
 				[

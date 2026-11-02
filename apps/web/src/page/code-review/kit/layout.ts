@@ -28,7 +28,7 @@ const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string; ico
 export const tabLabel = (tab: CodeReviewTab): string => TABS.find((entry) => entry.tab === tab)?.label ?? ""
 
 export const breadcrumbsOf = (tab: CodeReviewTab) => [
-	{ label: "Code Review", href: "/code-review" },
+	{ label: "Code review", href: "/code-review" },
 	{ label: tabLabel(tab) },
 ]
 
@@ -100,7 +100,7 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 	const page = dashboardPage(
 		options.h,
 		{
-			title: "Code Review",
+			title: "Code review",
 			actions: options.toolbar,
 			tabs: tabs(options),
 			gap: "lg",

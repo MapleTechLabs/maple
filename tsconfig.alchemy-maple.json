@@ -2,6 +2,9 @@
 	"extends": "./packages/alchemy-maple/tsconfig.json",
 	"include": ["packages/alchemy-maple/src/**/*.ts"],
 	"compilerOptions": {
+		// The package's own @types (bun is a devDependency there): this config lives at
+		// the repo root, so default type resolution would look only in ./node_modules/@types.
+		"typeRoots": ["./packages/alchemy-maple/node_modules/@types", "./node_modules/@types"],
 		"paths": {
 			"@maple/domain/*": ["./packages/domain/src/*"],
 			"@maple/widgets": ["./packages/widgets/src/index.ts"],

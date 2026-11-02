@@ -9,7 +9,7 @@ import { skeleton } from "../../ui/skeleton"
 import { type IntegrationBrand, integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { Message, type StatusName } from "./message"
 import type { Model } from "./model"
-import { disconnectDialog } from "./view-disconnect"
+import { disconnectDialog, type SharedDisconnect } from "./view-disconnect"
 
 // The shell of a connected integration's card (Railway, Supabase) and its status-load states.
 
@@ -17,7 +17,7 @@ type H = HtmlBuilder<Message>
 
 export type ConnectedIntegrationCardOptions = Readonly<{
 	/** Also names the integration's disconnect dialog. */
-	integration: StatusName
+	integration: SharedDisconnect
 	brand: IntegrationBrand
 	title: string
 	badge: Html
@@ -66,7 +66,7 @@ export const connectedIntegrationCard = (
 
 /** Access is gone: says what stopped and how to resume. */
 export const integrationAlertNotice = (h: H, text: string): Html =>
-	h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [text])
+	h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [text])
 
 /** The last sync error, clamped to two lines with the full text on hover. */
 export const integrationErrorNotice = (h: H, label: string, error: string): Html =>

@@ -15,9 +15,9 @@ import { panel } from "../../../ui/panel"
 import { runsTableSkeleton } from "../kit/skeletons"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { ciResultBadge, traceLink } from "../kit/parts"
-import { relativeTime } from "../../kit/relative-time"
+import { filteredEmpty } from "../../kit/signal-empty-state"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 
 // `CiRunsList`, `RunRows` and the paging footers.
@@ -152,7 +152,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			),
 			tableCell(
 				h,
-				[relativeTime(h, { tooltip: "title", value: run.startedAt, variant: "short", ...time })],
+				[listRelativeTime(h, { value: run.startedAt, variant: "short", ...time })],
 				"hidden px-3 text-right align-top text-muted-foreground tabular-nums md:table-cell",
 			),
 			tableCell(
@@ -229,9 +229,10 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 			}),
 		onData: (response) => {
 			if (response.runs.length === 0)
-				return nothingInWindow(h, {
-					title: "No runs match",
+				return filteredEmpty(h, {
+					noun: "runs",
 					description: "No run in this window has this result or branch.",
+					className: "rounded-md border border-dashed md:py-14",
 					onClear: canClear ? Message.ClickedClearRunFilters() : undefined,
 				})
 			const rows = [...response.runs, ...model.cursors.flatMap((cursor) => runsOf(model, cursor))]

@@ -19,6 +19,7 @@ import { icon } from "../../../../ui/icon"
 import { errorState } from "../../../../ui/error-state"
 import { meter } from "../../../../ui/meter"
 import { skeletonList } from "../../../../ui/skeleton"
+import { textLinkClass } from "../../../../ui/text-link"
 import { columnHead, dataTable } from "../../../infra/kit/data-table"
 import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
@@ -144,7 +145,7 @@ const statementRow = (
 }
 
 const notice = (h: H, text: string): Html =>
-	emptyMessage(h, { dashed: true, className: "bg-card/50 px-3 py-4 text-xs" }, [text])
+	emptyMessage(h, { dashed: true, className: "bg-surface-faint px-3 py-4 text-xs" }, [text])
 
 export type TopQueriesInputs = Readonly<{
 	slot: AsyncData.AsyncData<ReadonlyArray<Statement>, LoadFailure>
@@ -199,7 +200,7 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 										[
 											h.Type("button"),
 											h.OnClick(Message.ClickedShowAllQueries()),
-											h.Class("shrink-0 text-primary hover:text-primary/80 active:text-primary/80"),
+											h.Class(textLinkClass("primary", false, "shrink-0")),
 										],
 										[inputs.showAll ? "Show fewer" : `Show all ${rows.length}`],
 									),
@@ -299,9 +300,7 @@ export const appWaitCallout = (
 							figure(h, formatLatency(wait.dbP95Ms), "database"),
 							h.a(
 								[
-									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
-									),
+									h.Class(textLinkClass("primary", true, "ml-auto text-xs @2xl:ml-0")),
 									h.Href(
 										hrefOf(
 											AppRoute.Traces({

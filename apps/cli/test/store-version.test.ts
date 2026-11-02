@@ -20,7 +20,7 @@ import {
 	serverPidPath,
 	storeMarkerPath,
 	storeOpenMarkerPath,
-} from "../src/server/store-version"
+} from "@maple/local-server/store-version"
 
 // Each test gets a throwaway parent dir; the data dir is a child of it so the
 // markers (written beside the data dir) land in the temp tree, not on $HOME.
@@ -96,7 +96,7 @@ describe("clean-shutdown sentinel", () => {
 		seedData(dataDir)
 		let child: ChildProcess | undefined
 		try {
-			const moduleUrl = new URL("../src/server/store-version.ts", import.meta.url).href
+			const moduleUrl = import.meta.resolve("@maple/local-server/store-version")
 			child = spawn(
 				process.execPath,
 				[
