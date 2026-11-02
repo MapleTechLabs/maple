@@ -36,7 +36,10 @@ const fetchTraceSpans = (traceId: string, apiBase: string) =>
 		const cacheKey = traceCacheKey(traceId)
 		const cached = yield* readCached(cacheKey, traceFromCached(traceId))
 		const trace = Option.isSome(cached) ? cached.value.data : yield* fetchTrace(traceId, apiBase)
-		if (Option.isNone(cached)) yield* recordCached(cacheKey, traceToCached(trace), yield* Clock.currentTimeMillis)
+		if (Option.isNone(cached)) {
+			const now = yield* Clock.currentTimeMillis
+			yield* recordCached(cacheKey, traceToCached(trace), now)
+		}
 		return Option.match(trace, {
 			onNone: (): TraceSpans => ({ traceStartTime: null, spanNames: [] }),
 			onSome: (found): TraceSpans => ({

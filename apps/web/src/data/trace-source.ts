@@ -14,35 +14,40 @@ import { Context, Effect, Layer, Option } from "effect"
 export const TraceSourceLive = Layer.effect(
 	TraceSource,
 	Effect.gen(function* () {
-		const services = Context.make(WarehouseExecutor, yield* WarehouseExecutor).pipe(
-			Context.add(MapleInternalHttp, yield* MapleInternalHttp),
-			Context.add(MapleApiV2Http, yield* MapleApiV2Http),
+		const executor = yield* WarehouseExecutor
+		const internalHttp = yield* MapleInternalHttp
+		const apiV2Http = yield* MapleApiV2Http
+		const services = Context.make(WarehouseExecutor, executor).pipe(
+			Context.add(MapleInternalHttp, internalHttp),
+			Context.add(MapleApiV2Http, apiV2Http),
 		)
 		return TraceSource.of({
 			spanDetail: ({ traceId, spanId, timestamp }) =>
 				getSpanDetail({ data: { traceId, spanId, timestamp } }).pipe(
 					// An unknown span reads as empty maps, as the panel always showed it.
-					Effect.map((detail) =>
-						Option.some({
-							spanAttributes: detail.spanAttributes,
-							resourceAttributes: detail.resourceAttributes,
-							events: detail.events,
-						}),
-					),
-					Effect.mapError(toLoadFailure),
+					Effect.mapBoth({
+						onSuccess: (detail) =>
+							Option.some({
+								spanAttributes: detail.spanAttributes,
+								resourceAttributes: detail.resourceAttributes,
+								events: detail.events,
+							}),
+						onFailure: toLoadFailure,
+					}),
 					Effect.provideContext(services),
 				),
 			spanLogs: ({ traceId, spanId, limit }) =>
 				listLogs({ data: { traceId, spanId, limit } }).pipe(
-					Effect.map((response) =>
-						response.data.map((log, index) => ({
-							key: `${index}:${log.timestamp}`,
-							timestamp: log.timestamp,
-							severityText: log.severityText,
-							body: log.body,
-						})),
-					),
-					Effect.mapError(toLoadFailure),
+					Effect.mapBoth({
+						onSuccess: (response) =>
+							response.data.map((log, index) => ({
+								key: `${index}:${log.timestamp}`,
+								timestamp: log.timestamp,
+								severityText: log.severityText,
+								body: log.body,
+							})),
+						onFailure: toLoadFailure,
+					}),
 					Effect.provideContext(services),
 				),
 		})

@@ -42,8 +42,9 @@ export const ReadSpanLog = Command.define("ReadLocalSpanLog", {
 	execute: ({ key, apiBase, ...request }) =>
 		Effect.gen(function* () {
 			const find = (logs: ReadonlyArray<LocalLog>) => Option.fromNullishOr(logs.find((log) => logKey(log) === key))
-			const cached = Option.flatMap(yield* cachedSpanLogRecords(request), (hit) => find(hit.data))
-			const log = Option.isSome(cached) ? cached : find(yield* fetchSpanLogRecords(request, apiBase))
+			const hit = yield* cachedSpanLogRecords(request)
+			const cached = Option.flatMap(hit, (found) => find(found.data))
+			const log = Option.isSome(cached) ? cached : yield* Effect.map(fetchSpanLogRecords(request, apiBase), find)
 			return Option.match(log, { onNone: () => Message.FailedReadSpanLog(), onSome: (found) => Message.FoundSpanLog({ log: found }) })
 		}).pipe(Effect.orElseSucceed(() => Message.FailedReadSpanLog())),
 })
