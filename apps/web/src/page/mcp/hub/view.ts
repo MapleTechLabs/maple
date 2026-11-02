@@ -36,7 +36,7 @@ import { toolBody } from "../view-tool"
 import { overviewOf, serverRows, toolOf } from "./data-map"
 import { Message } from "./message"
 import { DEFAULT_MCP_PRESET, type Model } from "./model"
-import { bucketSecondsOf, hrefOfView, tabSearch, widerPreset } from "./update"
+import { bucketSecondsOf, hrefOfView, shownPreset, tabSearch, widerPreset } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -299,13 +299,16 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 					connected: response.clients
 						.filter((client) => client.connects > 0)
 						.map((client) => client.name),
-					widen: Option.match(Option.fromUndefinedOr(widerPreset(model.window)), {
-						onNone: () => undefined,
-						onSome: (preset) => ({
-							onWiden: Message.ClickedWiden(),
-							label: `Show the ${presetLabel(preset).toLowerCase()}`,
-						}),
-					}),
+					widen: Option.match(
+						Option.fromUndefinedOr(widerPreset(model.window, shownPreset(model.search))),
+						{
+							onNone: () => undefined,
+							onSome: (preset) => ({
+								onWiden: Message.ClickedWiden(),
+								label: `Show the ${presetLabel(preset).toLowerCase()}`,
+							}),
+						},
+					),
 				})
 			return chartsReady(h, model, (theme) =>
 				serverBody(h, overviewOf(response, model.nowMs), {
@@ -369,7 +372,7 @@ const serverTabs = (h: H, model: Model, service: string, current: "Server" | "Se
 }
 
 const widenOf = (model: Model) =>
-	Option.match(Option.fromUndefinedOr(widerPreset(model.window)), {
+	Option.match(Option.fromUndefinedOr(widerPreset(model.window, shownPreset(model.search))), {
 		onNone: () => undefined,
 		onSome: (preset) => ({
 			onWiden: Message.ClickedWiden(),

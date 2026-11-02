@@ -196,11 +196,20 @@ const WIDER_PRESETS = [
 	["3mo", 90 * DAY_MS],
 ] as const
 
-/** The quiet window's way out: the first preset longer than the window shown, none past three months. */
-export const widerPreset = (window: TimeWindow | null): string | undefined => {
+/**
+ * The quiet window's way out, none past three months: the preset after the one shown, else the first
+ * longer than the window. A preset's window is snapped, so its length alone can fall short of it.
+ */
+export const widerPreset = (window: TimeWindow | null, preset: string | undefined): string | undefined => {
+	const shown = WIDER_PRESETS.findIndex(([name]) => name === preset)
+	if (shown !== -1) return WIDER_PRESETS[shown + 1]?.[0]
 	const length = window === null ? 0 : toEpochMs(window.endTime) - toEpochMs(window.startTime)
 	return WIDER_PRESETS.find(([, ms]) => ms > length * 1.01)?.[0]
 }
+
+/** The preset the page shows, or none for a custom range. */
+export const shownPreset = (search: Search): string | undefined =>
+	search.startTime === undefined ? (search.timePreset ?? DEFAULT_MCP_PRESET) : undefined
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -376,7 +385,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				timePreset: DEFAULT_MCP_PRESET,
 			}),
 		ClickedWiden: () => {
-			const preset = widerPreset(model.window)
+			const preset = widerPreset(model.window, shownPreset(model.search))
 			return preset === undefined
 				? { model }
 				: navigate(model, {
