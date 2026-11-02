@@ -134,7 +134,7 @@ const toolbar = (h: H, model: Model, findings: ReadonlyArray<DependencyFindingVi
 }
 
 const muted = (h: H, text: string, className?: string): Html =>
-	h.span([h.Class(cn(typographyClass({ size: "xs", tone: "muted" }), className))], [text])
+	typography(h, { size: "xs", tone: "muted", className }, [text])
 
 export type ProductionScanState = "running" | "unscanned" | "failed"
 

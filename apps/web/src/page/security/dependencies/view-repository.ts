@@ -30,8 +30,8 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-const muted = (h: H, text: string, className = ""): Html =>
-	h.span([h.Class(`text-xs text-muted-foreground ${className}`)], [text])
+const muted = (h: H, text: string, className?: string): Html =>
+	typography(h, { size: "xs", tone: "muted", className }, [text])
 
 const advisoryNames = (findings: ReadonlyArray<DependencyFindingView>): string =>
 	findings

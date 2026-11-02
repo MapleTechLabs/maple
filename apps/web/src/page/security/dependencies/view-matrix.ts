@@ -352,20 +352,23 @@ export const allRepositoriesPane = (
 			`${countLabel(digest.open, "open advisory", "open advisories")} in ${digest.affected.length} of ${countLabel(repositories.length, "repository", "repositories")}. ${scannedCount(repositories)} / ${repositories.length} scanned.`,
 		]),
 	])
-	// Before any scan there is nothing to chart: each repository's Scan now is the way on.
-	if (scannedCount(repositories) === 0)
-		return [switcher, firstScan(h, model, repositories), repositoriesPanel(h, model, digest, clock)]
+	const hasScans = scannedCount(repositories) > 0
 	return [
 		switcher,
-		severityTally(h, findings),
-		...scanProblems(h, repositories),
+		// Before any scan there is nothing to count: say the first one is coming.
+		...(hasScans
+			? [severityTally(h, findings), ...scanProblems(h, repositories)]
+			: [firstScan(h, model, repositories)]),
 		paneTabs(h, null, model.pane, {
 			summary: { label: "Packages", count: digest.packages.length },
 			repositories: repositories.length,
 			advisories: digest.open,
 		}),
 		model.pane === "summary"
-			? matrixPanel(h, model, digest, production)
+			? // Nothing to chart yet, so the packages view is each repository with its Scan now.
+				hasScans
+				? matrixPanel(h, model, digest, production)
+				: repositoriesPanel(h, model, digest, clock)
 			: model.pane === "repositories"
 				? repositoriesPanel(h, model, digest, clock)
 				: findingsSection(h, model, state, clock),

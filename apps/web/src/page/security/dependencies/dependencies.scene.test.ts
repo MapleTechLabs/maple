@@ -154,6 +154,16 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("before any scan, the URL's tab still decides the view", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(at(loaded(neverScannedOf(NOW), noFindings), ADVISORIES)),
+			expectView(text("First scan is on its way")).toExist(),
+			expectView(role("link", { name: /^Advisories/ })).toHaveAttr("aria-current", "page"),
+			expectView(role("table", { name: "Repositories" })).toBeAbsent(),
+		)
+	})
+
 	test("names the busiest service running each finding, and says when one is not deployed", () => {
 		scene(
 			{ update: pageUpdate, view },
