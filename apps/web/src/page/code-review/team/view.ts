@@ -86,7 +86,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 	{
 		metric: "score",
 		label: "Score",
-		hint: "Every column in one 0-100 score: mostly quality, the rest merged volume. Few merged pull requests read close to the team until there is more to judge",
+		hint: "Every rate, merge time and merged volume in one 0-100 score, CI time left out: mostly quality, the rest volume. Few merged pull requests read close to the team until there is more to judge",
 		className: "w-20",
 		format: (value) => (value === null ? EMPTY_VALUE : formatNumber(Math.round(value))),
 		detail: (member, scores) => {
