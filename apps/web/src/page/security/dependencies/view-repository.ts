@@ -17,7 +17,7 @@ import { WIDE_COLUMN } from "../kit/layout"
 import { advisorySeverityBadge } from "../kit/parts"
 import { digestOf, planSummaryOf, RELATION_LABEL, type UpgradeStep, upgradePlanOf } from "./derive"
 import { Message, type Model } from "./model"
-import { findingsSection, notRunningLabel, productionScanStates } from "./view-findings"
+import { findingsSection, notRunningLabel, productionScanStates, readEverything } from "./view-findings"
 import { paneTabs, scopeSwitcher } from "./view-pane"
 import { lockfileIssue, scanButton, scanState, scanSummary, severityTally } from "./view-repositories"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -230,6 +230,14 @@ const planLine = (plan: ReadonlyArray<UpgradeStep>): string => {
 	return `${clears} ${summary.unfixed} still ${summary.unfixed === 1 ? "waits" : "wait"} on a fix upstream.`
 }
 
+/** Clean only when the latest scan read every lockfile; an empty plan says no more than what was read. */
+const emptyPlanLine = (repository: DependencyScanRepository): string =>
+	repository.latestScan === null
+		? "Not scanned yet, so there is nothing to plan."
+		: readEverything(repository)
+			? "No open advisories in this repository's latest scan"
+			: "No open advisories in what the latest scan could read."
+
 const planPanel = (
 	h: H,
 	model: Model,
@@ -239,7 +247,7 @@ const planPanel = (
 ): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		...(plan.length === 0
-			? [emptyMessage(h, {}, ["No open advisories in this repository's latest scan"])]
+			? [emptyMessage(h, {}, [emptyPlanLine(repository)])]
 			: [
 					typography(h, { size: "xs", tone: "muted", as: "p", className: stripClass("head") }, [
 						planLine(plan),

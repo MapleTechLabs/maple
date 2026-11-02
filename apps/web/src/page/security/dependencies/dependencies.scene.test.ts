@@ -761,6 +761,23 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("an empty upgrade plan does not call an unread repository clean", () => {
+		const focused = (repositories: DependencyScanRepositoriesResponse) =>
+			at(loaded(repositories, noFindings), { repo: PAYMENTS_ID })
+		scene(
+			{ update: pageUpdate, view },
+			given(focused(neverScannedOf(NOW))),
+			expectView(text("Not scanned yet, so there is nothing to plan.")).toExist(),
+			expectView(text("No open advisories in this repository's latest scan")).toBeAbsent(),
+		)
+		// The fixture's payments scan could not read one lockfile.
+		scene(
+			{ update: pageUpdate, view },
+			given(focused(repositoriesOf(NOW))),
+			expectView(text("No open advisories in what the latest scan could read.")).toExist(),
+		)
+	})
+
 	test("the switcher reads the focused repository, even before any scan", () => {
 		const routed = routeChanged(
 			loaded(neverScannedOf(NOW), noFindings),
