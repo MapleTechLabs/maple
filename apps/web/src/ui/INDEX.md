@@ -58,6 +58,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/filters/range-format.ts` `parseRange`, `formatCount`, `formatUsd`, `formatSeconds`, `formatValue`, `formatCompact`, `formatRange`: copied: the parsing and formatting half of packages/ui/src/components/filters/range-filter-section.tsx (the React module also holds the component).
 - `ui/filters/range-histogram.ts` `rangeHistogram`: `RangeHistogram` (packages/ui/src/components/filters/range-filter-section.tsx): the distribution above a range's inputs.
 - `ui/form-dialog.ts` `formDialog`: Port of `FormDialog` (packages/ui/src/components/ui/form-dialog.tsx) over the dialog Submodel: a real `<form>`, so Enter in a field submits.
+- `ui/heading.ts` `heading`: `Heading`: an `h1`-`h4` on the dashboard's heading ramp.
 - `ui/hover-card.ts` `view` (stateful: Model, init, update): Base UI `PreviewCard` (`@maple/ui/hover-card`): opens after the pointer rests on the trigger (600 ms, or the trigger's `delay`), closes after it leaves trigger and card (300 ms)...
 - `ui/http-span-label.ts` `httpSpanLabel`: Port of `HttpSpanLabel` (packages/ui/src/components/traces/http-span-label.tsx).
 - `ui/icon-button.ts` `iconButton`: `<IconButton>`: an icon-only Button that always carries a name and, by default, a tooltip.
@@ -103,6 +104,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/page-layout.ts` `pageLayoutRoot`, `pageTitle`, `pageDescription`, `pageHeader`, `pageHeaderActions`: Port of the header half of packages/ui/src/components/ui/page-layout.tsx (Root, Header, Title, Description, HeaderActions).
 - `ui/panel.ts` `panel`, `panelTitle`, `panelHeader`, `panelBody`: Port of packages/ui/src/components/ui/panel.tsx: the flat bordered section frame.
 - `ui/popover.ts` `titleId`, `descriptionId`, `open`, `close`, `view`, `popoverTitle`, `popoverDescription` (stateful: Model, init, update): Base UI `Popover` (`@maple/ui/popover`, non-modal): the trigger toggles it, Escape and a press outside close it, and it is placed under the trigger with `sideOffset` 4 and colli...
+- `ui/pressable.ts` `pressable`: `Pressable`: a click target that draws its own look (a timeline lane, a chart bar, a colour swatch, a bespoke row).
 - `ui/radio-group.ts` `radioGroup`, `labelId`, `radio` (stateful: Model, init, update): Base UI `RadioGroup`: the checked value.
 - `ui/refresh-button.ts` `refreshButton`: `<RefreshButton>`: the icon spins while pending and the button disables.
 - `ui/resizable.ts` `panelId`, `handleId`, `resize`, `view` (stateful: Model, init, update): `react-resizable-panels` 4 (`@maple/ui/resizable`): one panel group, sizes in percent.
