@@ -31,7 +31,10 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 type H = HtmlBuilder<Message>
 
 /** The virtualizer's estimate before a row is measured. */
-const ROW_HEIGHT = 53
+const ROW_HEIGHT = 55
+
+/** Rows drawn before the virtualizer reports: a tall viewport plus its overscan. */
+const FIRST_PAINT_ROWS = 30
 
 interface Column {
 	readonly id: string
@@ -277,7 +280,7 @@ const inlineModel = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<
 				h.span(
 					[
 						h.Class(
-							"ml-auto max-w-[55%] shrink-0 self-center text-muted-foreground @min-[1110px]/page:hidden",
+							"ml-auto min-w-0 max-w-[55%] self-center text-muted-foreground @min-[1110px]/page:hidden",
 						),
 					],
 					[
@@ -468,7 +471,13 @@ const windowRows = (
 	const { items, scrollMargin, totalSize } = window
 	const first = items[0]
 	const last = items.at(-1)
-	if (first === undefined || last === undefined) return []
+	// Before the virtualizer's first window, the top rows at their estimate, so the first paint is not empty.
+	if (first === undefined || last === undefined)
+		return [
+			spacer(h, "top", 0),
+			...rows.slice(0, FIRST_PAINT_ROWS).map((row, index) => sessionRow(h, row, index, context)),
+			spacer(h, "bottom", Math.max(0, rows.length - FIRST_PAINT_ROWS) * ROW_HEIGHT),
+		]
 	return [
 		spacer(h, "top", first.start - scrollMargin),
 		...items.flatMap((item) => {
