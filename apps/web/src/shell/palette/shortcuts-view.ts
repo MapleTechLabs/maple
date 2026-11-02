@@ -10,7 +10,7 @@ import {
 } from "@maple/views/ui/dialog-view"
 import { kbd, kbdGroup } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { MeasurePaletteList } from "./command"
+import { MeasureCommandList } from "@maple/views/ui/command"
 import { displayAlternates, type Platform, SHORTCUT_GROUPS, SHORTCUTS, type ShortcutDef } from "./shortcuts"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -91,7 +91,7 @@ export const shortcutsDialogView = <M>(
 					undefined,
 					{
 						viewportAttributes: [
-							h.OnMount(Mount.mapMessage(MeasurePaletteList(), () => onMeasured)),
+							h.OnMount(Mount.mapMessage(MeasureCommandList(), () => onMeasured)),
 						],
 					},
 				),

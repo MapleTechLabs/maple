@@ -9,14 +9,9 @@ export const fitPositionerToPopup = (positioner: HTMLElement, popup: HTMLElement
 	positioner.style.setProperty("--positioner-width", "max-content")
 	positioner.style.setProperty("--positioner-height", "max-content")
 	popup.style.position = "static"
-	// Measured at rest: an entry transition's `scale-98` would shrink the box.
-	const transform = popup.style.getPropertyValue("transform")
-	const scale = popup.style.getPropertyValue("scale")
-	popup.style.setProperty("transform", "none")
-	popup.style.setProperty("scale", "1")
-	const box = popup.getBoundingClientRect()
-	popup.style.setProperty("transform", transform)
-	popup.style.setProperty("scale", scale)
+	// The layout size: unlike the bounding box, an entry transition's `scale-98` does not shrink it.
+	const style = getComputedStyle(popup)
+	const box = { width: Number.parseFloat(style.width), height: Number.parseFloat(style.height) }
 	positioner.style.setProperty("--positioner-width", `${box.width}px`)
 	positioner.style.setProperty("--positioner-height", `${box.height}px`)
 	const isTop = side === "top"

@@ -23,7 +23,8 @@ import {
 	triggerId,
 } from "./dialog"
 import { button } from "./button"
-import { icon } from "./icon"
+import { XmarkIcon } from "./control-icons"
+import { iconNode } from "./icon"
 import { scrollArea } from "./scroll-area"
 import { focusGuard, isMounted, stateAttributes } from "./overlay/transition"
 
@@ -183,7 +184,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					variant: "ghost",
 					attributes: [h.AriaLabel("Close"), h.Tabindex(0), h.OnClick(Message.ClickedClose())],
 				},
-				[icon(h, "XmarkIcon")],
+				[iconNode(h, XmarkIcon, "XmarkIcon")],
 			),
 	)
 	const portal = isVisible

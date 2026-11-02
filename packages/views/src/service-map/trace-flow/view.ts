@@ -2,7 +2,7 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { Option } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
+import { flowIcon } from "./flow-icon"
 import type * as Canvas from "../xyflow/canvas"
 import { handlePoint, type PlacedNode, type Viewport } from "../xyflow/geometry"
 import { controls, dotBackground, miniMap } from "../xyflow/panels"
@@ -136,7 +136,7 @@ const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 					size: "xs",
 					attributes: [h.OnClick(onFit)],
 				},
-				[icon(h, "EyeIcon"), "Fit view"],
+				[flowIcon(h, "EyeIcon"), "Fit view"],
 			),
 		],
 	)

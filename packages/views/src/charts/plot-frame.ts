@@ -3,7 +3,7 @@ import { Option } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./chart"
 import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, type ChartSpec, encodeChartSpec } from "./chart-spec"
-import { type ChartRenderer, MountChart, PLOT_BOX_ATTRIBUTE, PortalTooltipBody } from "./chart-mounts"
+import { type ChartHostName, type ChartRenderer, MountChart, PLOT_BOX_ATTRIBUTE, PortalTooltipBody } from "./chart-mounts"
 // The tooltip shell theming, imported here because every chart goes through the frame.
 import "@maple/ui/components/plot/plot-tooltip.css"
 import { layer } from "../ui/layer"
@@ -23,8 +23,8 @@ export interface PlotFrameInputs {
 	readonly overlay?: Html
 	/** The chart reports its plot geometry (`Message.RenderedPlot`) so the page can draw `overlay`. */
 	readonly reportPlot?: boolean
-	/** The `/lab/charts` prototypes' host (`MountChart host`). */
-	readonly host?: "lab"
+	/** A named chart host (`ChartHostName`); the full host when absent. */
+	readonly host?: ChartHostName
 	/**
 	 * `renderTooltipBody(...)` for the current tooltip datum, `None` while the tooltip is hidden. The
 	 * body's root carries `portal`, the Mount that moves it into the library's tooltip shell.

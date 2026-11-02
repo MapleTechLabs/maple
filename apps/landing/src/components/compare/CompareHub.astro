@@ -11,7 +11,7 @@ import * as m from "../../paraglide/messages.js";
 import { comparePath, competitors } from "../../lib/competitors";
 import Layout from "../../layouts/Layout.astro";
 import BillComparison from "../BillComparison.astro";
-import { MapleMark } from "@maple/ui/components/icons/maple-mark";
+import Icon from "../Icon.astro";
 import { brandMark, markColor } from "../../lib/brand-marks";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
 import HubPair from "./HubPair.astro";
@@ -79,7 +79,7 @@ const cards = competitors.map((competitor, i) => ({
 							<span class="flex items-center justify-between gap-3">
 								<span class="flex shrink-0 items-center gap-1.5">
 									<span class="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-bg-elevated">
-										<MapleMark size={18} className="text-primary" />
+										<Icon name="MapleMark" size={18} class="text-primary" />
 									</span>
 									<span class="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-muted/70">vs</span>
 									<span class="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-bg-elevated transition-colors duration-300 group-hover:border-(--mark)/60">
