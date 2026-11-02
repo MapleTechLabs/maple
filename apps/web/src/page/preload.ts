@@ -56,10 +56,8 @@ export const intended = (model: Model, href: string): Option.Option<{ model: Mod
 			})
 
 /** `cancelPreload` on mouse leave or blur. */
-export const ended = (model: Model, href: string): Model => ({
-	...model,
-	intents: without(model.intents, href),
-})
+export const ended = (model: Model, href: string): Model =>
+	model.intents[href] === undefined ? model : { ...model, intents: without(model.intents, href) }
 
 /** The delay elapsed: `Some` when the link is still intended (the timer was not cancelled). */
 export const elapsed = (model: Model, href: string, version: number): Option.Option<Model> =>
@@ -113,7 +111,15 @@ export const held = (
 	const kept = !isSameHolder ? [] : isPruning ? stillLive(liveKeys()) : model.heldKeys
 	const heldKeys = [...kept, ...keys.filter((key) => !kept.includes(key))]
 	const released = isSameHolder && !isPruning ? [] : model.heldKeys.filter((key) => !heldKeys.includes(key))
-	return { model: { ...model, holder, heldKeys }, released, isNewHolder: !isSameHolder }
+	const isUnchanged =
+		isSameHolder &&
+		heldKeys.length === model.heldKeys.length &&
+		heldKeys.every((key, index) => key === model.heldKeys[index])
+	return {
+		model: isUnchanged ? model : { ...model, holder, heldKeys },
+		released,
+		isNewHolder: !isSameHolder,
+	}
 }
 
 /** The hold elapsed: the preloaded keys the open page does not hold are released. */
