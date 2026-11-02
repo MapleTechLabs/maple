@@ -1,9 +1,12 @@
-import { codeToHtml, codeToTokens, isSupportedLanguage, type Lang, type Theme } from "@pierre/highlights"
+import type { Lang as Supported, Theme } from "@pierre/highlights"
+import { Effect } from "effect"
 import { DISPLAY_MAX_CHARS } from "./display-text"
 
-export type { Lang }
+/** A language name or alias (`json`, `shell`), or a file name whose extension names one. */
+export type Lang = string
 
-// Highlighting runs in a WebAssembly lexer per language. Colours are `var(--sh-<slot>)`, the palette
+// Highlighting runs in a WebAssembly lexer per language, imported on first use so its ~250 KB of
+// wasm stays out of the entry chunk. Colours are `var(--sh-<slot>)`, the palette
 // in `theme.css`; a token type without a slot below inherits its parent's, else `--sh-foreground`.
 const theme: Theme = {
 	name: "maple",
@@ -37,41 +40,97 @@ const theme: Theme = {
 
 const decoder = new TextDecoder()
 
-/**
- * The language to highlight a block as: `label` itself (`json`, `shell`, `typescript`), else the
- * extension of a file name (`maple-aws.tf`), else plain text.
- */
-export const resolveLang = (label: string): Lang => {
+type Highlights = typeof import("@pierre/highlights")
+
+let highlights: Highlights | null = null
+let loading: Promise<Highlights> | null = null
+
+/** Text rendered before the highlighter loaded; coloured in place once it has. */
+const PENDING = "data-highlight-lang"
+
+const colourPending = () => {
+	if (typeof document === "undefined") return
+	document.querySelectorAll<HTMLElement>(`[${PENDING}]`).forEach((element) => {
+		element.outerHTML = highlightCode(element.textContent, element.getAttribute(PENDING) ?? "text")
+	})
+}
+
+const load = (): Promise<Highlights> => {
+	loading ??= import("@pierre/highlights").then(
+		(module) => {
+			highlights = module
+			colourPending()
+			return module
+		},
+		(error: unknown) => {
+			// A failed chunk load is retried by the next reader.
+			loading = null
+			return Promise.reject(error)
+		},
+	)
+	return loading
+}
+
+/** Waits for the highlighter, so a caller's synchronous highlight that follows is coloured. */
+export const awaitHighlighter: Effect.Effect<void> = Effect.promise(load).pipe(
+	Effect.asVoid,
+	Effect.orElseSucceed(() => undefined),
+)
+
+/** Whether the highlighter has loaded; tokens taken before then are plain and not worth keeping. */
+export const isHighlighterReady = (): boolean => highlights !== null
+
+/** The supported language `label` names: itself, else a file name's extension, else plain text. */
+const resolveLang = (module: Highlights, label: Lang): Supported => {
 	const name = label.trim().toLowerCase()
-	if (isSupportedLanguage(name)) return name
+	if (module.isSupportedLanguage(name)) return name
 	const extension = name.slice(name.lastIndexOf(".") + 1)
-	return name.includes(".") && isSupportedLanguage(extension) ? extension : "text"
+	return name.includes(".") && module.isSupportedLanguage(extension) ? extension : "text"
 }
 
 const escapeHtml = (text: string): string =>
 	text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 
+const escapeAttribute = (text: string): string => escapeHtml(text).replace(/"/g, "&quot;")
+
 /**
  * Highlighted HTML for `code` (token spans only, for the caller's own `<code>`). Past the display
- * cap it is escaped plain text: a span per token of a megabyte log body froze the log sheet.
+ * cap it is escaped plain text: a span per token of a megabyte log body froze the log sheet. Until
+ * the highlighter loads it is plain text too, coloured in place when it arrives.
  */
 export const highlightCode = (code: string, lang: Lang): string => {
 	if (code.length > DISPLAY_MAX_CHARS) return escapeHtml(code)
-	const html = decoder.decode(codeToHtml(code, { lang, theme }))
+	if (highlights === null) {
+		void load().catch(() => undefined)
+		return `<span ${PENDING}="${escapeAttribute(lang)}">${escapeHtml(code)}</span>`
+	}
+	const html = decoder.decode(highlights.codeToHtml(code, { lang: resolveLang(highlights, lang), theme }))
 	return html.slice(html.indexOf("<code>") + "<code>".length, html.lastIndexOf("</code>"))
 }
 
 const SLOT = /^var\(--sh-([\w-]+)\)$/
 
-/** `code` as lines of tokens with their palette slot, for a view that builds its own spans. */
+/**
+ * `code` as lines of tokens with their palette slot, for a view that builds its own spans. Plain
+ * lines until the highlighter loaded: a caller that keeps the tokens waits on `awaitHighlighter`.
+ */
 export const highlightTokens = (
 	code: string,
 	lang: Lang,
 ): ReadonlyArray<ReadonlyArray<{ readonly content: string; readonly slot: string }>> =>
-	codeToTokens(code, { lang, theme }).tokens.map((line) =>
-		line.flatMap((token) =>
-			token.content === ""
-				? []
-				: [{ content: token.content, slot: SLOT.exec(token.color ?? "")?.[1] ?? "foreground" }],
-		),
-	)
+	highlights === null
+		? code.split("\n").map((line) => (line === "" ? [] : [{ content: line, slot: "foreground" }]))
+		: highlights
+				.codeToTokens(code, { lang: resolveLang(highlights, lang), theme })
+				.tokens.map((line) =>
+					line.flatMap((token) =>
+						token.content === ""
+							? []
+							: [
+									{
+										content: token.content,
+										slot: SLOT.exec(token.color ?? "")?.[1] ?? "foreground",
+									},
+								],
+					),
+				)

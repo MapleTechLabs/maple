@@ -458,7 +458,36 @@ export type ChartSpec = typeof ChartSpec.Type
 
 const ChartSpecJson = Schema.fromJsonString(ChartSpec)
 
-export const encodeChartSpec = Schema.encodeSync(ChartSpecJson)
+const encodeUncached = Schema.encodeSync(ChartSpecJson)
+
+/** Encodings by spec: a view that hands back the same spec object skips encoding its rows. */
+const encodedCache = new WeakMap<ChartSpec, string>()
+
+export const encodeChartSpec = (spec: ChartSpec): string => {
+	const cached = encodedCache.get(spec)
+	if (cached !== undefined) return cached
+	const encoded = encodeUncached(spec)
+	encodedCache.set(spec, encoded)
+	return encoded
+}
+
+/**
+ * A spec builder that keeps the last spec per rows array, with the JSON of its other fields: a chart
+ * re-rendered over the same rows (a hover) gets the same spec back, and so the same encoding.
+ */
+export const specCache = <Rows extends ReadonlyArray<unknown>, Rest extends object, S extends ChartSpec>(
+	build: (data: Rows, rest: Rest) => S,
+): ((data: Rows, rest: Rest) => S) => {
+	const cache = new WeakMap<Rows, Readonly<{ rest: string; spec: S }>>()
+	return (data, rest) => {
+		const key = JSON.stringify(rest)
+		const cached = cache.get(data)
+		if (cached?.rest === key) return cached.spec
+		const spec = build(data, rest)
+		cache.set(data, { rest: key, spec })
+		return spec
+	}
+}
 export const decodeChartSpec = Schema.decodeUnknownOption(ChartSpecJson)
 
 /** What a tooltip body renders: the focused datum, reduced to data. */

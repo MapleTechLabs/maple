@@ -11,7 +11,15 @@ import { compareVersions } from "@maple/lockfiles/versions"
 import { Duration, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { type Model, type PendingScan, type StatusFilter, StatusFilter as StatusFilterSchema } from "./model"
+import { AppRoute, hrefOf } from "../../../route"
+import type { SecurityDependenciesSearch } from "../../../route/search"
+import {
+	type Model,
+	type Pane,
+	type PendingScan,
+	type StatusFilter,
+	StatusFilter as StatusFilterSchema,
+} from "./model"
 
 // What the Dependencies tab shows, read off its two slots.
 
@@ -42,6 +50,16 @@ export const RELATION_LABEL = {
 
 /** A pending scan stops polling after this long, whether or not a newer scan showed up. */
 export const SCAN_POLL_LIMIT = Duration.minutes(2)
+
+/** The tab's URL for a scope (null is every repository) and a pane. */
+export const dependenciesHref = (repositoryId: string | null, pane: Pane = "summary"): string => {
+	const scope: SecurityDependenciesSearch = repositoryId === null ? {} : { repo: repositoryId }
+	return hrefOf(
+		AppRoute.SecurityDependencies({
+			search: pane === "summary" ? scope : { ...scope, view: pane },
+		}),
+	)
+}
 
 export const repositoriesOf = (model: Model): ReadonlyArray<DependencyScanRepository> =>
 	Option.getOrNull(AsyncData.getData(model.repositories.data))?.repositories ?? []
@@ -102,7 +120,13 @@ export const statusFilterOf = (model: Model): StatusFilter =>
 
 /** The repository the URL focuses, once it is one of the connected ones. */
 export const focusedRepositoryOf = (model: Model): DependencyScanRepository | null =>
-	repositoriesOf(model).find((repository) => repository.id === model.repositorySelect.value) ?? null
+	repositoriesOf(model).find((repository) => repository.id === model.scope) ?? null
+
+/** The switcher's item for every repository; the others are each repository's full name. */
+export const ALL_REPOSITORIES = "All repositories"
+
+/** What the switcher reads while closed: the focused repository, or every one. */
+export const scopeLabelOf = (model: Model): string => focusedRepositoryOf(model)?.fullName ?? ALL_REPOSITORIES
 
 export const repositoryFilterOf = (model: Model): VcsRepositoryId | null =>
 	focusedRepositoryOf(model)?.id ?? null
@@ -188,6 +212,7 @@ const RELATION_RANK = {
 /** One package bump in a repository: the version that clears every open advisory it can. */
 export type UpgradeStep = Readonly<{
 	key: string
+	repositoryId: VcsRepositoryId
 	ecosystem: DependencyFindingView["ecosystem"]
 	packageName: string
 	installed: ReadonlyArray<string>
@@ -215,7 +240,11 @@ const byAdvisory = (findings: ReadonlyArray<DependencyFindingView>): ReadonlyArr
 	...new Map(findings.map((finding) => [finding.advisoryId, finding] as const)).values(),
 ]
 
-const stepOf = (key: string, findings: ReadonlyArray<DependencyFindingView>): UpgradeStep => {
+const stepOf = (
+	key: string,
+	repositoryId: VcsRepositoryId,
+	findings: ReadonlyArray<DependencyFindingView>,
+): UpgradeStep => {
 	const [first] = findings
 	const ecosystem = first?.ecosystem ?? "npm"
 	const fixable = findings.filter((finding) => finding.fixedIn !== null)
@@ -241,6 +270,7 @@ const stepOf = (key: string, findings: ReadonlyArray<DependencyFindingView>): Up
 	const services = [...spans.values()].sort((a, b) => b.spanCount - a.spanCount)
 	return {
 		key,
+		repositoryId,
 		ecosystem,
 		packageName: first?.packageName ?? "",
 		installed: unique(findings.flatMap((finding) => finding.versions)).toSorted((a, b) =>
@@ -273,14 +303,19 @@ const stepOf = (key: string, findings: ReadonlyArray<DependencyFindingView>): Up
  */
 export const upgradePlanOf = (findings: ReadonlyArray<DependencyFindingView>): ReadonlyArray<UpgradeStep> => {
 	const groups = new Map<string, ReadonlyArray<DependencyFindingView>>()
+	const repositoryOf = new Map<string, VcsRepositoryId>()
 	findings
 		.filter((finding) => finding.status === "open")
 		.forEach((finding) => {
 			const key = `${finding.repositoryId}/${finding.ecosystem}/${finding.packageName}`
 			groups.set(key, [...(groups.get(key) ?? []), finding])
+			repositoryOf.set(key, finding.repositoryId)
 		})
 	return [...groups.entries()]
-		.map(([key, group]) => stepOf(key, group))
+		.flatMap(([key, group]) => {
+			const repositoryId = repositoryOf.get(key)
+			return repositoryId === undefined ? [] : [stepOf(key, repositoryId, group)]
+		})
 		.toSorted(
 			(a, b) =>
 				Number(a.target === null) - Number(b.target === null) ||
@@ -310,3 +345,172 @@ export const runningServicesOf = (repository: DependencyScanRepository): Readonl
 	unique(
 		repository.runningCommits.flatMap((commit) => commit.services.map((service) => service.serviceName)),
 	)
+
+/** Open advisories, each once per repository and package however many lockfiles carry it. */
+export const openAdvisoryCount = (findings: ReadonlyArray<DependencyFindingView>): number =>
+	planSummaryOf(upgradePlanOf(findings)).open
+
+/** The worst open severity among the findings; null when nothing is open. */
+export const worstOpenSeverity = (
+	findings: ReadonlyArray<DependencyFindingView>,
+): AdvisorySeverity | null => {
+	const open = findings.filter((finding) => finding.status === "open")
+	return open.length === 0
+		? null
+		: worst(
+				open.map((finding) => finding.severity),
+				SEVERITY_RANK,
+				"unknown",
+			)
+}
+
+/** One vulnerable package across the repositories: its plan step in each one that has it open. */
+export type PackageRow = Readonly<{
+	key: string
+	ecosystem: DependencyFindingView["ecosystem"]
+	packageName: string
+	steps: ReadonlyMap<VcsRepositoryId, UpgradeStep>
+	severity: AdvisorySeverity
+	/** The highest version any repository needs; null when no repository has a fix to bump to. */
+	target: string | null
+	productionSpans: number
+}>
+
+const rowOf = (key: string, steps: ReadonlyArray<UpgradeStep>): PackageRow => {
+	const ecosystem = steps[0]?.ecosystem ?? "npm"
+	return {
+		key,
+		ecosystem,
+		packageName: steps[0]?.packageName ?? "",
+		steps: new Map(steps.map((step) => [step.repositoryId, step] as const)),
+		severity: worst(
+			steps.map((step) => step.severity),
+			SEVERITY_RANK,
+			"unknown",
+		),
+		target: steps.reduce<string | null>(
+			(highest, step) =>
+				step.target !== null &&
+				(highest === null || compareVersions(ecosystem, step.target, highest) > 0)
+					? step.target
+					: highest,
+			null,
+		),
+		productionSpans: steps.reduce((sum, step) => sum + step.productionSpans, 0),
+	}
+}
+
+/**
+ * The matrix's rows: every open vulnerable package, worst first, then what production runs, then
+ * the one in the most repositories.
+ */
+export const packageMatrixOf = (
+	findings: ReadonlyArray<DependencyFindingView>,
+): ReadonlyArray<PackageRow> => {
+	const groups = new Map<string, ReadonlyArray<UpgradeStep>>()
+	upgradePlanOf(findings).forEach((step) => {
+		const key = `${step.ecosystem}/${step.packageName}`
+		groups.set(key, [...(groups.get(key) ?? []), step])
+	})
+	return [...groups.entries()]
+		.map(([key, steps]) => rowOf(key, steps))
+		.toSorted(
+			(a, b) =>
+				SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+				b.productionSpans - a.productionSpans ||
+				b.steps.size - a.steps.size ||
+				a.packageName.localeCompare(b.packageName),
+		)
+}
+
+/** One repository's findings, its worst open severity and how many advisories are open. */
+export type RepositoryStats = Readonly<{
+	findings: ReadonlyArray<DependencyFindingView>
+	worst: AdvisorySeverity | null
+	open: number
+}>
+
+/** What the tab reads off one pair of answers, built once: a render reuses it. */
+export type Digest = Readonly<{
+	repositories: ReadonlyArray<DependencyScanRepository>
+	findings: ReadonlyArray<DependencyFindingView>
+	statsOf: (repositoryId: VcsRepositoryId) => RepositoryStats
+	/** Riskiest first: the worst open severity, then the most open advisories; nothing open goes last. */
+	ranked: ReadonlyArray<DependencyScanRepository>
+	/** The matrix's rows. */
+	packages: ReadonlyArray<PackageRow>
+	/** The repositories with anything open, riskiest first. */
+	affected: ReadonlyArray<DependencyScanRepository>
+	/** Every repository's open advisories. */
+	open: number
+	worst: AdvisorySeverity | null
+}>
+
+const NO_STATS: RepositoryStats = { findings: [], worst: null, open: 0 }
+
+const buildDigest = (
+	repositories: ReadonlyArray<DependencyScanRepository>,
+	findings: ReadonlyArray<DependencyFindingView>,
+): Digest => {
+	const grouped = new Map<string, Array<DependencyFindingView>>()
+	findings.forEach((finding) => {
+		const group = grouped.get(finding.repositoryId)
+		if (group === undefined) grouped.set(finding.repositoryId, [finding])
+		else group.push(finding)
+	})
+	const stats = new Map(
+		[...grouped.entries()].map(
+			([repositoryId, own]) =>
+				[
+					repositoryId,
+					{ findings: own, worst: worstOpenSeverity(own), open: openAdvisoryCount(own) },
+				] as const,
+		),
+	)
+	const statsOf = (repositoryId: VcsRepositoryId): RepositoryStats => stats.get(repositoryId) ?? NO_STATS
+	const rankOf = (repository: DependencyScanRepository) => {
+		const { worst: severity } = statsOf(repository.id)
+		return severity === null ? 5 : SEVERITY_RANK[severity]
+	}
+	const ranked = repositories.toSorted(
+		(a, b) =>
+			rankOf(a) - rankOf(b) ||
+			statsOf(b.id).open - statsOf(a.id).open ||
+			a.fullName.localeCompare(b.fullName),
+	)
+	return {
+		repositories,
+		findings,
+		statsOf,
+		ranked,
+		packages: packageMatrixOf(findings),
+		affected: ranked.filter((repository) => statsOf(repository.id).open > 0),
+		open: [...stats.values()].reduce((sum, entry) => sum + entry.open, 0),
+		worst: worstOpenSeverity(findings),
+	}
+}
+
+// The answers are immutable, so their identities key the digest: a keystroke or a click reuses it.
+const digests = new WeakMap<object, WeakMap<object, Digest>>()
+
+export const digestOf = (
+	repositories: ReadonlyArray<DependencyScanRepository>,
+	findings: ReadonlyArray<DependencyFindingView>,
+): Digest => {
+	const byFindings = digests.get(repositories) ?? new WeakMap<object, Digest>()
+	const hit = byFindings.get(findings)
+	if (hit !== undefined) return hit
+	const digest = buildDigest(repositories, findings)
+	byFindings.set(findings, digest)
+	digests.set(repositories, byFindings)
+	return digest
+}
+
+/** The matrix's column budget: past it, the riskiest repositories keep a column and the rest a count. */
+export const MATRIX_COLUMNS = 5
+
+/** An opened package lists this many repositories before "Show all". */
+export const EXPANSION_ROWS = 24
+
+/** The repositories and advisories tables render this many rows at a time. */
+export const PAGE_ROWS = 100

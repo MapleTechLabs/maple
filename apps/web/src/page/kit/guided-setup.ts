@@ -6,7 +6,7 @@ import {
 } from "../../components/ingest/onboard-skill"
 import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
 import { type DocsPage, docsUrl } from "../../lib/docs"
-import { type Lang, resolveLang } from "@maple/views/lib/highlight"
+import type { Lang } from "@maple/views/lib/highlight"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -226,7 +226,7 @@ const block = <M>(
 	language: string,
 	className?: string,
 	isPlain = false,
-	lang: Lang = resolveLang(language),
+	lang: Lang = language,
 ): Html =>
 	codeBlock(h, {
 		code,
