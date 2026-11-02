@@ -90,6 +90,12 @@ export const AppRoute = defineRouteUnion({
 	AgentSessionTool: { toolName: Schema.String, search: Search.AgentSessionToolSearch },
 	McpServer: { serviceName: Schema.String, search: Search.McpServersSearch },
 	McpServerTool: { serviceName: Schema.String, toolName: Schema.String, search: Search.McpServersSearch },
+	McpServerSessions: { serviceName: Schema.String, search: Search.McpServersSearch },
+	McpServerSession: {
+		serviceName: Schema.String,
+		sessionId: Schema.String,
+		search: Search.McpServersSearch,
+	},
 	AlertIncident: { incidentId: Schema.String, search: Search.AlertIncidentSearch },
 	ErrorIssue: { issueId: ErrorIssueId, search: Search.ErrorIssueSearch },
 	InfraCloudflareZone: { zoneName: Schema.String, search: Search.InfraCloudflareZoneSearch },

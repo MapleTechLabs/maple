@@ -1,6 +1,6 @@
 import { DateTime } from "effect"
 import { describe, expect, it } from "vitest"
-import { clientItems, quietClientsFor } from "./mcp-reads"
+import { agentSessionsOf, clientItems, quietClientsFor } from "./mcp-reads"
 
 const seen = (client: string, kind: string, connects: number, sources: number, calls = 0) => ({
 	client,
@@ -77,5 +77,27 @@ describe("quietClientsFor", () => {
 	it("drops them all under a tool search or failing-only, which only tool calls match", () => {
 		expect(quietClientsFor(reach, { search: "sql" })).toEqual([])
 		expect(quietClientsFor(reach, { failingOnly: true })).toEqual([])
+	})
+})
+
+describe("agentSessionsOf", () => {
+	const agentTrace = "a".repeat(32)
+	const httpTrace = "b".repeat(32)
+	const filed = [{ traceId: agentTrace, sessionId: "claude-session-1" }]
+
+	it("files a call parented by `params._meta` under its own trace's session", () => {
+		expect(agentSessionsOf([{ traceId: agentTrace, linkTraceId: httpTrace }], filed)).toEqual([
+			"claude-session-1",
+		])
+	})
+
+	it("falls back to the linked trace on a server that only links the caller", () => {
+		expect(agentSessionsOf([{ traceId: httpTrace, linkTraceId: agentTrace }], filed)).toEqual([
+			"claude-session-1",
+		])
+	})
+
+	it("leaves a call whose caller propagated no agent trace unlinked", () => {
+		expect(agentSessionsOf([{ traceId: httpTrace, linkTraceId: "" }], filed)).toEqual([null])
 	})
 })

@@ -8,7 +8,7 @@ import * as Select from "../../../ui/select"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { McpMetric } from "../view-server"
-import { OverviewData, ServersData, ToolData } from "./model"
+import { OverviewData, ServersData, SessionData, SessionsData, ToolData } from "./model"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
@@ -26,6 +26,8 @@ export const Message = defineMessageUnion({
 	CompletedFetchServers: result(ServersData),
 	CompletedFetchOverview: result(OverviewData),
 	CompletedFetchTool: result(ToolData),
+	CompletedFetchSessions: result(SessionsData),
+	CompletedFetchSession: result(SessionData),
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
@@ -36,6 +38,8 @@ export const Message = defineMessageUnion({
 	ClickedOpenServer: { service: Schema.String },
 	ClickedOpenTool: { tool: Schema.String },
 	ClickedOpenTrace: { traceId: Schema.String },
+	ClickedOpenSession: { sessionId: Schema.String },
+	ClickedOpenAgentSession: { sessionId: Schema.String },
 	ClickedInstrument: {},
 	ClickedMetric: { metric: McpMetric },
 	ChangedSearchInput: { value: Schema.String },

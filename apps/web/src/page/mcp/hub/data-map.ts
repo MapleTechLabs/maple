@@ -17,8 +17,7 @@ const plural = (count: number, one: string, many = `${one}s`) =>
 
 const point = (row: McpSeriesPoint): ToolSeriesPoint => ({ ...row, sessions: 0 })
 
-export const serverRows = (response: McpServersResponse): ReadonlyArray<McpServerRow> =>
-	response.servers
+export const serverRows = (response: McpServersResponse): ReadonlyArray<McpServerRow> => response.servers
 
 /** The failure panel: tool errors, server-side JSON-RPC errors, and the caller mistakes the spec exempts. */
 export const failureKinds = (failures: Overview["failures"]): ReadonlyArray<McpFailureKind> => {
@@ -139,3 +138,17 @@ export const toolOf = (response: Tool): McpToolDetail => ({
 	failed: response.failed,
 	recent: response.recent,
 })
+
+export type McpSessionsScreen = "quiet" | "noSessions" | "list"
+
+/** What the Sessions tab shows: any session lists, even one of only protocol requests. */
+export const sessionsScreen = (
+	response: Readonly<{ totals: Readonly<{ sessions: number }>; toolCalls: number; withSession: number }>,
+): McpSessionsScreen =>
+	response.totals.sessions > 0
+		? "list"
+		: response.toolCalls === 0
+			? "quiet"
+			: response.withSession === 0
+				? "noSessions"
+				: "list"

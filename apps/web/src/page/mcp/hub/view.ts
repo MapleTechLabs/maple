@@ -17,16 +17,26 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { presetLabel, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import { linkTabStrip } from "../../kit/underline-tabs"
 import type { McpFilters, McpWindow } from "../view-kit"
 import { formatClock, MCP_CHART_TOKENS, scopeText } from "../view-kit"
 import { listBody } from "../view-list"
 import { serverBody } from "../view-server"
-import { noServersState, quietWindow, serverError, serverLoading } from "../view-states"
+import { sessionBody, sessionCalls, sessionsBody } from "../view-sessions"
+import {
+	noServersState,
+	noSessionsState,
+	quietWindow,
+	serverError,
+	serverLoading,
+	sessionNotFound,
+	sessionsLoading,
+} from "../view-states"
 import { toolBody } from "../view-tool"
-import { overviewOf, serverRows, toolOf } from "./data-map"
+import { overviewOf, serverRows, sessionsScreen, toolOf } from "./data-map"
 import { Message } from "./message"
 import { DEFAULT_MCP_PRESET, type Model } from "./model"
-import { bucketSecondsOf, widerPreset } from "./update"
+import { bucketSecondsOf, hrefOfView, shownPreset, tabSearch, widerPreset } from "./update"
 import { hstack, vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
@@ -128,7 +138,7 @@ const toolbar = (
 	model: Model,
 	clients: ReadonlyArray<Readonly<{ name: string; kind: string; calls: number }>>,
 	isWaiting: boolean,
-	withSearch: boolean,
+	nameSearch?: Readonly<{ inputId: string; placeholder?: string }>,
 ): Html => {
 	const clientSelect = facetSelect(h, {
 		label: "client",
@@ -145,7 +155,8 @@ const toolbar = (
 			count: clients
 				.filter((client) => client.kind === kind)
 				.reduce((sum, client) => sum + client.calls, 0),
-		})).filter((option) => option.count > 0),
+			// A kind whose clients only connected or listed tools still filters its requests.
+		})).filter((option) => clients.some((client) => client.kind === option.name)),
 		model: model.kindSelect,
 		toMessage: (message) => Message.GotSelectMessage({ facet: "kind", message }),
 	})
@@ -155,12 +166,12 @@ const toolbar = (
 		isWaiting,
 		selects: [clientSelect, kindSelect],
 	}
-	return withSearch
+	return nameSearch !== undefined
 		? toolFilterToolbar(h, {
 				...base,
 				nameSearch: {
+					...nameSearch,
 					value: model.searchInput,
-					inputId: "mcp-tools-search",
 					onInput: (value: string) => Message.ChangedSearchInput({ value }),
 					onClear: Message.ChangedSearchInput({ value: "" }),
 				},
@@ -279,23 +290,19 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 			if (response.allClients.length === 0)
 				return quietWindow(h, {
 					service,
-					window: window.label.replace(/^Last /, "last "),
+					window: windowWords(window),
 					hasOtherSpans: response.methods.length > 0,
 					connected: response.clients
 						.filter((client) => client.connects > 0)
 						.map((client) => client.name),
-					widen: Option.match(Option.fromUndefinedOr(widerPreset(model.window)), {
-						onNone: () => undefined,
-						onSome: (preset) => ({
-							onWiden: Message.ClickedWiden(),
-							label: `Show the ${presetLabel(preset).toLowerCase()}`,
-						}),
-					}),
+					widen: widenOf(model),
 				})
 			return chartsReady(h, model, (theme) =>
 				serverBody(h, overviewOf(response, model.nowMs), {
 					env: chartEnv(model, theme, timeZone),
-					toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(overview), true),
+					toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(overview), {
+						inputId: "mcp-tools-search",
+					}),
 					scope: scopeText("all tools", filters),
 					window,
 					toolCount: response.toolCount,
@@ -331,6 +338,146 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 		{
 			titleContent: serverTitle(h, service, description),
 			actions: timeActions(h, model),
+			tabs: serverTabs(h, model, service, "Server"),
+			scrollClassName: "p-0",
+		},
+		[body],
+	)
+}
+
+/** A server's two lists: its tools (the overview) and its sessions. */
+const serverTabs = (h: H, model: Model, service: string, current: "Server" | "Sessions"): Html => {
+	const search = tabSearch(model.search)
+	const tab = (key: "Server" | "Sessions", label: string) => ({
+		key,
+		label,
+		href: hrefOfView({ _tag: key, service }, search),
+		isCurrent: key === current,
+		isRouteActive: key === current,
+	})
+	return linkTabStrip(h, "MCP server", [tab("Server", "Tools"), tab("Sessions", "Sessions")])
+}
+
+const widenOf = (model: Model) =>
+	Option.match(Option.fromUndefinedOr(widerPreset(model.window, shownPreset(model.search))), {
+		onNone: () => undefined,
+		onSome: (preset) => ({
+			onWiden: Message.ClickedWiden(),
+			label: `Show the ${presetLabel(preset).toLowerCase()}`,
+		}),
+	})
+
+const windowWords = (window: McpWindow): string => window.label.replace(/^Last /, "last ")
+
+const sessionsView = (h: H, model: Model, service: string, timeZone: string): Html => {
+	const sessions = dataFor(model.sessions.data, (value) => value.service === service)
+	const data = AsyncData.getOrElse(sessions, () => undefined)
+	const window = windowOf(model)
+	const filters = filtersOf(model)
+	const description =
+		data === undefined || data.withSession === 0
+			? "MCP sessions"
+			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} ${data.totals.calls === 1 ? "tool call" : "tool calls"}`
+	const body = AsyncData.matchData(sessions, {
+		onEmpty: () => sessionsLoading(h),
+		onFailure: (failure) =>
+			serverError(h, {
+				failure,
+				onRetry: Message.ClickedReload(),
+				title: "Couldn't load MCP sessions",
+			}),
+		onData: (response) => {
+			if (window === undefined) return sessionsLoading(h)
+			const screen = sessionsScreen(response)
+			if (screen === "quiet")
+				return quietWindow(h, {
+					service,
+					window: windowWords(window),
+					hasOtherSpans: response.otherRequests > 0,
+					widen: widenOf(model),
+				})
+			if (screen === "noSessions")
+				return noSessionsState(h, { service, onInstrument: openInstrumentDocs })
+			return sessionsBody(h, response, {
+				toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(sessions), {
+					inputId: "mcp-sessions-search",
+					placeholder: "Session id…",
+				}),
+				scope: scopeText("all sessions", filters),
+				isWaiting: AsyncData.isRefreshing(sessions),
+				isFailingOnly: filters.isFailingOnly,
+				onOpenSession: (sessionId) => Message.ClickedOpenSession({ sessionId }),
+				nowMs: model.nowMs,
+				timeZone,
+			})
+		},
+	})
+	return dashboardPage(
+		h,
+		{
+			titleContent: serverTitle(h, service, description),
+			actions: timeActions(h, model),
+			tabs: serverTabs(h, model, service, "Sessions"),
+			scrollClassName: "p-0",
+		},
+		[body],
+	)
+}
+
+/** The session's tool calls, as "the first" ones when the read was cut. */
+const callCountText = (calls: number, isTruncated: boolean): string =>
+	`${isTruncated ? "the first " : ""}${calls.toLocaleString()} ${calls === 1 ? "tool call" : "tool calls"}`
+
+const sessionView = (h: H, model: Model, service: string, sessionId: string, timeZone: string): Html => {
+	const session = dataFor(
+		model.session.data,
+		(value) => value.service === service && value.sessionId === sessionId,
+	)
+	const data = AsyncData.getOrElse(session, () => undefined)
+	const window = windowOf(model)
+	const first = data?.requests[0]
+	const description =
+		data === undefined || first === undefined
+			? `MCP session on ${service}`
+			: [
+					data.client,
+					callCountText(sessionCalls(data.requests).length, data.isTruncated),
+					`started ${formatClock(first.timeMs, timeZone)}`,
+					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
+				].join(" · ")
+	const body = AsyncData.matchData(session, {
+		onEmpty: () => serverLoading(h),
+		onFailure: (failure) =>
+			serverError(h, {
+				failure,
+				onRetry: Message.ClickedReload(),
+				title: "Couldn't load this MCP session",
+			}),
+		onData: (response) =>
+			window === undefined
+				? serverLoading(h)
+				: response.requests.length === 0
+					? sessionNotFound(h, { service, window: windowWords(window), widen: widenOf(model) })
+					: sessionBody(h, response, {
+							onOpenTrace: (traceId) => Message.ClickedOpenTrace({ traceId }),
+							onOpenAgentSession: (id) => Message.ClickedOpenAgentSession({ sessionId: id }),
+							onOpenTool: (tool) => Message.ClickedOpenTool({ tool }),
+							timeZone,
+						}),
+	})
+	return dashboardPage(
+		h,
+		{
+			titleContent: h.div(
+				[h.Class("flex min-w-0 flex-col gap-1")],
+				[
+					pageTitle(h, { title: sessionId, className: "truncate font-mono leading-8" }, [
+						sessionId,
+					]),
+					pageDescription(h, [description], "text-sm"),
+				],
+			),
+			actions: timeActions(h, model),
 			scrollClassName: "p-0",
 		},
 		[body],
@@ -355,13 +502,7 @@ const toolView = (h: H, model: Model, service: string, tool: string, timeZone: s
 				: chartsReady(h, model, (theme) =>
 						toolBody(h, toolOf(response), {
 							env: chartEnv(model, theme, timeZone),
-							toolbar: toolbar(
-								h,
-								model,
-								response.allClients,
-								AsyncData.isRefreshing(detail),
-								false,
-							),
+							toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(detail)),
 							scope: scopeText(tool, filters),
 							window,
 							percentile: model.search.percentile ?? "p90",
@@ -396,16 +537,26 @@ const toolView = (h: H, model: Model, service: string, tool: string, timeZone: s
 	)
 }
 
+const viewOf = (h: H, model: Model, timeZone: string): Html => {
+	const { view } = model
+	switch (view._tag) {
+		case "Servers":
+			return serversView(h, model, timeZone)
+		case "Server":
+			return serverView(h, model, view.service, timeZone)
+		case "Tool":
+			return toolView(h, model, view.service, view.tool, timeZone)
+		case "Sessions":
+			return sessionsView(h, model, view.service, timeZone)
+		case "Session":
+			return sessionView(h, model, view.service, view.sessionId, timeZone)
+	}
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const { timeZone } = inputs.context
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: MCP_CHART_TOKENS }))],
-		[
-			model.view._tag === "Servers"
-				? serversView(h, model, timeZone)
-				: model.view._tag === "Server"
-					? serverView(h, model, model.view.service, timeZone)
-					: toolView(h, model, model.view.service, model.view.tool, timeZone),
-		],
+		[viewOf(h, model, timeZone)],
 	)
 })

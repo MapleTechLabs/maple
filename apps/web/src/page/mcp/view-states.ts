@@ -98,21 +98,46 @@ export const serverLoading = <M>(h: HtmlBuilder<M>): Html =>
 		],
 	)
 
+/** The sessions list while its first read is out: the toolbar and the table's rows. */
+export const sessionsLoading = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-3 px-6 pt-3")],
+		[
+			skeleton(h, "h-8 max-w-2xl"),
+			skeleton(h, "mt-6 h-4 w-32"),
+			...Array.from({ length: 6 }, () => skeleton(h, "h-9")),
+		],
+	)
+
 /** The server page when its read failed. */
 export const serverError = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ failure: LoadFailure; onRetry: M }>,
+	options: Readonly<{ failure: LoadFailure; onRetry: M; title?: string }>,
 ): Html =>
 	h.div(
 		[h.Class("p-4")],
 		[
 			errorState(h, {
 				failure: options.failure,
-				title: "Couldn't load MCP server analytics",
+				title: options.title ?? "Couldn't load MCP server analytics",
 				onRetry: options.onRetry,
 			}),
 		],
 	)
+
+type Widen<M> = Readonly<{ onWiden: M; label: string }>
+
+/** The quiet states' way out: a longer window, absent at the widest the page offers. */
+const widenAction = <M>(h: HtmlBuilder<M>, widen: Widen<M> | undefined): ReadonlyArray<Html> =>
+	widen === undefined
+		? []
+		: [
+				emptyContent(h, [
+					button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(widen.onWiden)] }, [
+						widen.label,
+					]),
+				]),
+			]
 
 /** `executor`, `executor and Claude`, `executor, Claude and 2 more`. */
 export const connectedText = (names: ReadonlyArray<string>): string =>
@@ -130,7 +155,7 @@ export const quietWindow = <M>(
 		/** Clients that connected in the window without calling a tool, most connects first. */
 		connected?: ReadonlyArray<string>
 		/** Absent at the widest window the page offers. */
-		widen?: Readonly<{ onWiden: M; label: string }>
+		widen?: Widen<M>
 	}>,
 ): Html =>
 	h.div(
@@ -150,21 +175,56 @@ export const quietWindow = <M>(
 									: `No MCP server span from ${options.service} in this window.`,
 					]),
 				]),
-				...(options.widen === undefined
-					? []
-					: [
-							emptyContent(h, [
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(options.widen.onWiden)],
-									},
-									[options.widen.label],
-								),
-							]),
-						]),
+				...widenAction(h, options.widen),
+			]),
+		],
+	)
+
+/** A server whose spans carry no `mcp.session.id`: what to send so calls group into sessions. */
+export const noSessionsState = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ service: string; onInstrument: M }>,
+): Html =>
+	h.div(
+		[h.Class("border-t border-border px-6 py-14")],
+		[
+			empty(h, [
+				emptyHeader(h, [
+					emptyMedia(h, { variant: "icon" }, [icon(h, "LayersIcon")]),
+					emptyTitle(h, ["No session ids yet"]),
+					emptyDescription(h, [
+						`${options.service} answers tool calls, but none carries mcp.session.id. A server on a stateful transport issues an Mcp-Session-Id; record it on every server span and each client's calls group into a session here.`,
+					]),
+				]),
+				emptyContent(h, [
+					spanExample(h),
+					button(
+						h,
+						{ variant: "outline", size: "sm", attributes: [h.OnClick(options.onInstrument)] },
+						["MCP conventions", icon(h, "ExternalLinkIcon", { size: 12 })],
+					),
+				]),
+			]),
+		],
+	)
+
+/** A session id with no request from the server in the window. */
+export const sessionNotFound = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ service: string; window: string; widen?: Widen<M> }>,
+): Html =>
+	h.div(
+		[h.Class("border-t border-border px-6 py-14")],
+		[
+			empty(h, [
+				emptyHeader(h, [
+					emptyMedia(h, { variant: "icon" }, [icon(h, "ClockIcon")]),
+					emptyTitle(h, [`No requests in the ${options.window}`]),
+					emptyDescription(h, [
+						`No request in this session reached ${options.service} in this window. It may have run earlier.`,
+					]),
+				]),
+				...widenAction(h, options.widen),
 			]),
 		],
 	)
