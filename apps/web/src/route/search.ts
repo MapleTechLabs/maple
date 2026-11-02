@@ -130,6 +130,7 @@ const CodeReviewListSearchFields = {
 /** The Team scorecard's sort column; `person` is by login. */
 export const CodeReviewTeamSort = Schema.Literals([
 	"person",
+	"score",
 	"merged",
 	"mergeTime",
 	"fixRate",

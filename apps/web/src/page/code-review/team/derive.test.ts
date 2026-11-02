@@ -1,27 +1,7 @@
-import { CodeReviewTeamMember } from "@maple/domain/http"
 import { describe, expect, test } from "vitest"
 import { highlightsOf, metricOf, scorecardRows, teamMedian } from "./derive"
-
-const member = (login: string, counts: Partial<CodeReviewTeamMember> = {}) =>
-	new CodeReviewTeamMember({
-		login,
-		pullRequests: 0,
-		mergedPullRequests: 0,
-		medianMergeSeconds: null,
-		findings: 0,
-		criticalFindings: 0,
-		resolvedFindings: 0,
-		openAtMergeFindings: 0,
-		shippedClean: 0,
-		shippedRegressed: 0,
-		ciRuns: 0,
-		firstTryRuns: 0,
-		firstTryGreen: 0,
-		reruns: 0,
-		cancelledRuns: 0,
-		runnerMs: 0,
-		...counts,
-	})
+import { teamScores } from "./score"
+import { member } from "./team-member.fixture"
 
 const ada = member("ada", {
 	pullRequests: 8,
@@ -45,55 +25,66 @@ const sam = member("sam", { pullRequests: 2, resolvedFindings: 4 })
 const ci = member("bea", { ciRuns: 4, firstTryRuns: 3, firstTryGreen: 3 })
 const team = [ada, lin, sam, ci]
 
+const scores = teamScores(team)
+
 const logins = (rows: ReturnType<typeof scorecardRows>) => rows.map((row) => row.member.login)
 
 describe("metricOf", () => {
 	test("fix rate counts findings fixed against the ones that shipped open", () => {
-		expect(metricOf(ada, "fixRate")).toBe(0.9)
-		expect(metricOf(lin, "fixRate")).toBe(0.5)
+		expect(metricOf(ada, "fixRate", scores)).toBe(0.9)
+		expect(metricOf(lin, "fixRate", scores)).toBe(0.5)
 	})
 
 	test("a column with nothing to measure is null, not zero", () => {
-		expect(metricOf(ci, "fixRate")).toBeNull()
-		expect(metricOf(sam, "firstTryGreen")).toBeNull()
-		expect(metricOf(sam, "ciTime")).toBeNull()
+		expect(metricOf(ci, "fixRate", scores)).toBeNull()
+		expect(metricOf(sam, "firstTryGreen", scores)).toBeNull()
+		expect(metricOf(sam, "ciTime", scores)).toBeNull()
 	})
 })
 
 describe("teamMedian", () => {
 	test("is the middle person over the people the column measures", () => {
-		expect(teamMedian(team, "mergeTime")).toBe(5_400)
-		expect(teamMedian(team, "fixRate")).toBe(0.9)
+		expect(teamMedian(team, "mergeTime", scores)).toBe(5_400)
+		expect(teamMedian(team, "fixRate", scores)).toBe(0.9)
 	})
 })
 
 describe("scorecardRows", () => {
 	test("unranked by person: everyone, by login whatever the case", () => {
-		const rows = scorecardRows(team, "person", false)
+		const rows = scorecardRows(team, "person", false, scores)
 		expect(logins(rows)).toEqual(["ada", "bea", "Lin", "sam"])
 		expect(rows.every((row) => row.rank === null)).toBe(true)
 	})
 
 	test("a column reads best first: fastest merge first, unmeasured people last", () => {
-		expect(logins(scorecardRows(team, "mergeTime", false))).toEqual(["Lin", "ada", "bea", "sam"])
-		expect(logins(scorecardRows(team, "firstTryGreen", false))).toEqual(["bea", "ada", "Lin", "sam"])
+		expect(logins(scorecardRows(team, "mergeTime", false, scores))).toEqual(["Lin", "ada", "bea", "sam"])
+		expect(logins(scorecardRows(team, "firstTryGreen", false, scores))).toEqual([
+			"bea",
+			"ada",
+			"Lin",
+			"sam",
+		])
 	})
 
 	test("ranked leaves out people under five pull requests and numbers the rest", () => {
-		const rows = scorecardRows(team, "fixRate", true)
+		const rows = scorecardRows(team, "fixRate", true, scores)
 		expect(rows.map((row) => [row.member.login, row.rank])).toEqual([
 			["ada", 1],
 			["Lin", 2],
 		])
 	})
 
-	test("ranked never orders by a count: merged pull requests falls back to the fix rate", () => {
-		expect(logins(scorecardRows(team, "merged", true))).toEqual(["ada", "Lin"])
+	test("ranked never orders by a count: merged pull requests falls back to the score", () => {
+		expect(logins(scorecardRows(team, "merged", true, scores))).toEqual(["ada", "Lin"])
+	})
+
+	test("by score: best first, people with no merged pull request last", () => {
+		expect(logins(scorecardRows(team, "score", false, scores))).toEqual(["ada", "Lin", "bea", "sam"])
 	})
 
 	test("equal values share a rank", () => {
 		const twin = member("zed", { pullRequests: 5, resolvedFindings: 9, openAtMergeFindings: 1 })
-		const rows = scorecardRows([lin, ada, twin], "fixRate", true)
+		const rows = scorecardRows([lin, ada, twin], "fixRate", true, teamScores([lin, ada, twin]))
 		expect(rows.map((row) => [row.member.login, row.rank])).toEqual([
 			["ada", 1],
 			["zed", 1],

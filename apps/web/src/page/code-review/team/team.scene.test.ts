@@ -101,7 +101,7 @@ describe("code review team", () => {
 					teamOf([member("ada", 8, 9), member("lin", 2, 3)]),
 				),
 			),
-			expectView(text("Ranked by fix rate")).toExist(),
+			expectView(text("Ranked by score")).toExist(),
 			expectView(role("row", { name: /ada/ })).toExist(),
 			expectView(role("row", { name: /lin/ })).toBeAbsent(),
 			// A count is never a ranking: its header does not sort.

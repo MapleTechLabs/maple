@@ -7,11 +7,26 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "@maple/views/ui/button"
-import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyMessage, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMessage,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	sortButton,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import type { PageViewInputs } from "../../contract"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
@@ -37,7 +52,9 @@ import {
 	rankedMetric,
 	scorecardRows,
 	teamMedian,
+	type TeamScores,
 } from "./derive"
+import { teamScores } from "./score"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { typographyClass } from "@maple/views/ui/typography"
@@ -62,10 +79,23 @@ type Column = Readonly<{
 	className: string
 	format: (value: number | null) => string
 	/** The counts behind a member's value. */
-	detail: (member: CodeReviewTeamMember) => string
+	detail: (member: CodeReviewTeamMember, scores: TeamScores) => string
 }>
 
 const COLUMNS: ReadonlyArray<Column> = [
+	{
+		metric: "score",
+		label: "Score",
+		hint: "Every column in one 0-100 score: mostly quality, the rest merged volume. Few merged pull requests read close to the team until there is more to judge",
+		className: "w-20",
+		format: (value) => (value === null ? EMPTY_VALUE : formatNumber(Math.round(value))),
+		detail: (member, scores) => {
+			const score = scores.get(member.login)
+			return score === undefined
+				? "No merged pull request to score"
+				: `Quality ${Math.round(score.quality * 100)} of 100, volume ${Math.round(score.volume * 100)} of 100 over ${member.mergedPullRequests} merged pull requests`
+		},
+	},
 	{
 		metric: "merged",
 		label: "Merged",
@@ -137,6 +167,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 
 /** How the panel title names the column a ranked view orders by. */
 const RANKED_BY = {
+	score: "score",
 	merged: "pull requests merged",
 	mergeTime: "time to merge",
 	fixRate: "fix rate",
@@ -292,18 +323,21 @@ const personHead = (h: H, model: Model): Html => {
 	return tableHead(
 		h,
 		[
-			sortButton(
-				h,
-				{ isActive, direction: "asc", onClick: Message.ClickedSort({ sort: "person" }) },
-				["Person"],
-			),
+			sortButton(h, { isActive, direction: "asc", onClick: Message.ClickedSort({ sort: "person" }) }, [
+				"Person",
+			]),
 		],
 		"px-4 font-normal",
 		[h.Attribute("aria-sort", isActive ? "ascending" : "none")],
 	)
 }
 
-const medianRow = (h: H, members: ReadonlyArray<CodeReviewTeamMember>, ranked: boolean): Html =>
+const medianRow = (
+	h: H,
+	members: ReadonlyArray<CodeReviewTeamMember>,
+	scores: TeamScores,
+	ranked: boolean,
+): Html =>
 	tableRow(
 		h,
 		[
@@ -312,7 +346,7 @@ const medianRow = (h: H, members: ReadonlyArray<CodeReviewTeamMember>, ranked: b
 			...COLUMNS.map((column) =>
 				tableCell(
 					h,
-					[column.format(teamMedian(members, column.metric))],
+					[column.format(teamMedian(members, column.metric, scores))],
 					cn("px-3 text-right text-xs tabular-nums text-muted-foreground", column.className),
 				),
 			),
@@ -321,7 +355,13 @@ const medianRow = (h: H, members: ReadonlyArray<CodeReviewTeamMember>, ranked: b
 		[h.Key("median")],
 	)
 
-const memberRow = (h: H, member: CodeReviewTeamMember, rank: number | null, ranked: boolean): Html =>
+const memberRow = (
+	h: H,
+	member: CodeReviewTeamMember,
+	scores: TeamScores,
+	rank: number | null,
+	ranked: boolean,
+): Html =>
 	tableRow(
 		h,
 		[
@@ -338,9 +378,9 @@ const memberRow = (h: H, member: CodeReviewTeamMember, rank: number | null, rank
 			...COLUMNS.map((column) =>
 				tableCell(
 					h,
-					[column.format(metricOf(member, column.metric))],
+					[column.format(metricOf(member, column.metric, scores))],
 					cn(typographyClass({ numeric: true, className: "px-3 text-right" }), column.className),
-					[h.Title(column.detail(member))],
+					[h.Title(column.detail(member, scores))],
 				),
 			),
 		],
@@ -358,14 +398,15 @@ const scorecardFooter = (h: H, ranked: boolean): Html =>
 		[h.Class("border-t px-4 py-3 text-xs text-muted-foreground")],
 		[
 			ranked
-				? `Ranked on rates and medians only, people with at least ${RANK_MIN_PULL_REQUESTS} reviewed pull requests. Bots and CI runs that only waited for approval are left out.`
+				? `Ranked on rates, medians and the score, people with at least ${RANK_MIN_PULL_REQUESTS} reviewed pull requests. Bots and CI runs that only waited for approval are left out.`
 				: "Each person's numbers next to the team median. Bots, and CI runs that only waited for approval, are left out. Hover a value for the counts behind it.",
 		],
 	)
 
 const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMember>): Html => {
 	const ranked = model.search.ranked === true
-	const rows = scorecardRows(members, model.search.sort ?? "person", ranked)
+	const scores = teamScores(members)
+	const rows = scorecardRows(members, model.search.sort ?? "person", ranked, scores)
 	return panel(h, {}, [
 		panelHeader(h, {
 			title: scorecardTitle(model),
@@ -399,8 +440,8 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 						{ className: "bg-surface-sunken" },
 					),
 					tableBody(h, [
-						medianRow(h, members, ranked),
-						...rows.map((row) => memberRow(h, row.member, row.rank, ranked)),
+						medianRow(h, members, scores, ranked),
+						...rows.map((row) => memberRow(h, row.member, scores, row.rank, ranked)),
 					]),
 				]),
 		scorecardFooter(h, ranked),
@@ -467,13 +508,11 @@ const noTeamData = (h: H): Html =>
 
 const teamView = (h: H, model: Model, team: CodeReviewTeam): Html => {
 	const highlighted = highlights(h, team.members)
-	return vstack(h, { gap: "6" },
-		[
-			headlineStrip(h, team.totals),
-			...(highlighted === null ? [] : [highlighted]),
-			scorecard(h, model, team.members),
-		],
-	)
+	return vstack(h, { gap: "6" }, [
+		headlineStrip(h, team.totals),
+		...(highlighted === null ? [] : [highlighted]),
+		scorecard(h, model, team.members),
+	])
 }
 
 const content = (h: H, model: Model): Html =>
@@ -497,7 +536,9 @@ const content = (h: H, model: Model): Html =>
 				[
 					emptyHeader(h, [
 						emptyTitle(h, ["Nobody in this window"]),
-						emptyDescription(h, ["No pull request was reviewed and no CI run finished in this window. Widen the window."]),
+						emptyDescription(h, [
+							"No pull request was reviewed and no CI run finished in this window. Widen the window.",
+						]),
 					]),
 				],
 				emptyFrameClass("dashed"),
