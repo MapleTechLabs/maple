@@ -6,8 +6,7 @@ import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { toKitFailure } from "../../data/local-query"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
@@ -42,12 +41,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const rows = Option.match(maybeData, { onNone: () => [], onSome: (data) => data.pages.flat() })
 	const hasNextPage = Option.exists(maybeData, (data) => data.hasNextPage)
 	const content = (): Html => {
-		if (isPending(model.traces))
+		if (isAwaitingFirstData(model.traces))
 			return tableSkeleton(h, { className: "rounded-none border-0", rows: 12, columns: SKELETON_COLUMNS })
 		const failure = failureWithoutData(model.traces)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: toKitFailure(failure.value, "traces"),
+				failure: failure.value, title: "Couldn’t load traces",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (rows.length === 0)
@@ -62,7 +61,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				guide: { id: "traces-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 			})
 		return h.div(
-			[h.Class(cn(model.traces.isPlaceholder && "opacity-60 transition-opacity"))],
+			[h.Class(cn(model.traces.retained === true && "opacity-60 transition-opacity"))],
 			[
 				table(h, {}, [
 					tableHeader(h, [

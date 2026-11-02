@@ -6,8 +6,7 @@ import { METRIC_TYPE_COLORS } from "@maple/web/page/metrics/shared"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { toKitFailure } from "../../data/local-query"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
@@ -49,11 +48,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		0,
 	)
 	const content = (): Html => {
-		if (isPending(model.list)) return gridSkeleton(h)
+		if (isAwaitingFirstData(model.list)) return gridSkeleton(h)
 		const failure = failureWithoutData(model.list)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: toKitFailure(failure.value, "metrics"),
+				failure: failure.value, title: "Couldn’t load metrics",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (entries.length === 0)
@@ -75,10 +74,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			points: Option.getOrUndefined(
 				Option.map(sparklines, (list) => new Map(list.map((entry) => [entry.metricName, entry.points]))),
 			),
-			isLoading: isPending(model.sparklines),
+			isLoading: isAwaitingFirstData(model.sparklines),
 			isFailed: Option.isSome(failureWithoutData(model.sparklines)),
 			query: queryOf(context.location),
-			isDimmed: model.list.isPlaceholder,
+			isDimmed: model.list.retained === true,
 			viewport: model.grid,
 			theme,
 		})

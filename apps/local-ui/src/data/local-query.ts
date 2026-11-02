@@ -1,34 +1,32 @@
 import type { CompiledQuery, CompiledQueryInput } from "@maple/query-engine/ch"
 import { executeLocalQuery, LOCAL_ORG_ID, type LocalQueryError } from "@maple/query-engine/local"
-import { Duration, Effect, type Option, Schedule, Schema } from "effect"
+import { Duration, Effect, type Option, Schedule } from "effect"
 import type { HttpClient } from "effect/http"
-import type { LoadFailure as KitLoadFailure } from "@maple/views/data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { type RequestKey, requestKey } from "@maple/views/data/request-key"
 import type { TimeBounds } from "../lib/time"
 
 // Local queries as Effects: compile, POST `/local/query`, decode the rows.
 
-/** A failed load as the Model keeps it: the text `ErrorState` shows (`error.message`). */
-export const LoadFailure = Schema.Struct({ message: Schema.String })
-export type LoadFailure = typeof LoadFailure.Type
+/** A request key for one local query: the local org, its name and its input. */
+export const keyOf = (name: string, input: unknown): RequestKey => requestKey(LOCAL_ORG_ID, name, input)
 
 /**
- * The kit `ErrorState`'s failure for a local load: "Couldn't load <subject>", the query's own
- * message, and Try again without the auto-retry (the query already retried a dropped request).
+ * A failed local load: the query's own message, and Try again without the auto-retry (the query
+ * already retried a dropped request). Views name the subject in `errorState`'s title.
  */
-export const toKitFailure = (failure: LoadFailure, subject: string): KitLoadFailure => ({
+export const localFailure = (error: { readonly message: string }): LoadFailure => ({
 	_tag: "@maple/local/errors/LoadFailed",
 	type: "api_error",
 	code: "local_query_failed",
-	title: `Couldn’t load ${subject}`,
-	message: failure.message,
+	title: "Couldn’t load data",
+	message: error.message,
 	retryable: false,
 	recovery: "retry",
 })
 
-const failureOf = (error: { readonly message: string }): LoadFailure => ({ message: error.message })
-
 const resolve = <T>(compiled: CompiledQueryInput<T>): Effect.Effect<CompiledQuery<T>, LoadFailure> =>
-	(Effect.isEffect(compiled) ? compiled : Effect.succeed(compiled)).pipe(Effect.mapError(failureOf))
+	(Effect.isEffect(compiled) ? compiled : Effect.succeed(compiled)).pipe(Effect.mapError(localFailure))
 
 /**
  * `shouldRetryLocalQuery` with fixed delays: only a request that never got an
@@ -41,7 +39,7 @@ const run = (sql: string, apiBase: string) =>
 			times: 2,
 			while: (error: LocalQueryError) => error._tag === "@maple/query-engine/LocalQueryUnreachable",
 		}),
-		Effect.mapError(failureOf),
+		Effect.mapError(localFailure),
 	)
 
 /** `executeLocalCompiledQuery`: every row, decoded with the query's own row schema. */
@@ -52,7 +50,7 @@ export const queryRows = <T>(
 	Effect.gen(function* () {
 		const query = yield* resolve(compiled)
 		const rows = yield* run(query.sql, apiBase)
-		return yield* query.decodeRows(rows).pipe(Effect.mapError(failureOf))
+		return yield* query.decodeRows(rows).pipe(Effect.mapError(localFailure))
 	})
 
 /** `executeLocalCompiledFirstRow`. */
@@ -63,7 +61,7 @@ export const queryFirstRow = <T>(
 	Effect.gen(function* () {
 		const query = yield* resolve(compiled)
 		const rows = yield* run(query.sql, apiBase)
-		return yield* query.decodeFirstRow(rows).pipe(Effect.mapError(failureOf))
+		return yield* query.decodeFirstRow(rows).pipe(Effect.mapError(localFailure))
 	})
 
 /** `localParams`: the org and window nearly every local query compiles with. */

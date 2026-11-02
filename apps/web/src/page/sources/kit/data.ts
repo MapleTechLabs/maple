@@ -5,7 +5,7 @@ import { Effect, Schema } from "effect"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { type RequestKey, requestKey } from "../../../data/request-key"
+import { type RequestKey, requestKey } from "@maple/views/data/request-key"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
 // The sources list and the detail page's `retainedQueryV2("sources", "usage" | "retrieve")` reads, through

@@ -5,7 +5,7 @@ import {
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { KeyedSchema, idle } from "../../../data/keyed"
+import { KeyedSchema, idle } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { activeKeysAt, AnchorRect } from "../../kit/where-autocomplete"
 

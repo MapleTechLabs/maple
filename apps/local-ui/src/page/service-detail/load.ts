@@ -2,7 +2,9 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, chartWindow, type ChartWindow, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { keyOf, request } from "../../data/slot"
+import { type Keyed, requestKeepingFailure } from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { keyOf } from "../../data/local-query"
 import { type PageContext, rangeOf } from "../contract"
 import { FetchGoldenSignals, FetchOperations, FetchOverview, FetchTimeseries } from "./command"
 import type { Message } from "./message"
@@ -32,12 +34,14 @@ export const topSpanNames = (model: Model): ReadonlyArray<string> =>
 
 /**
  * Requests every query whose key the window, the overview's first-seen time or the top operations
- * changed. `forced` refetches those slots in place, as `invalidateQueries` or a Retry does.
+ * changed. `forced` refetches those slots in place, as `invalidateQueries` or a Retry does;
+ * `revalidated` fetches slots showing a stale cached answer, whose fetch has not started.
  */
 export const load = (
 	model: Model,
 	context: PageContext,
 	forced: ReadonlyArray<SlotName> = [],
+	revalidated: ReadonlyArray<SlotName> = [],
 ): Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }> =>
 	Option.match(boundsOf(model, context), {
 		onNone: () => ({ model }),
@@ -55,12 +59,15 @@ export const load = (
 			}
 			// A key the slot has no rows for opens on its cached result; a forced refetch does not.
 			const readsCache = (slot: SlotName) => !forced.includes(slot) && model[slot].key !== keys[slot]
-			const overview = request(model.overview, keys.overview, forced.includes("overview"))
-			const operations = request(model.operations, keys.operations, forced.includes("operations"))
+			const requested = <A>(slot: Keyed<A, LoadFailure>, name: SlotName) =>
+				revalidated.includes(name) && slot.key === keys[name]
+					? Option.some(slot)
+					: requestKeepingFailure(slot, keys[name], forced.includes(name) ? "Refresh" : "Load")
+			const overview = requested(model.overview, "overview")
+			const operations = requested(model.operations, "operations")
 			// `skipToken` while no operation is known: nothing to chart.
-			const timeseries =
-				spanNames.length === 0 ? Option.none() : request(model.timeseries, keys.timeseries, forced.includes("timeseries"))
-			const golden = request(model.golden, keys.golden, forced.includes("golden"))
+			const timeseries = spanNames.length === 0 ? Option.none() : requested(model.timeseries, "timeseries")
+			const golden = requested(model.golden, "golden")
 			return {
 				model: {
 					...model,

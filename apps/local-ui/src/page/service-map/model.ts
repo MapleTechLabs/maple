@@ -1,7 +1,8 @@
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 import { LocalServiceMapData } from "./data"
 
@@ -15,7 +16,7 @@ export const Model = Schema.TaggedStruct("ServiceMapPage", {
 	/** The time window's anchor, snapped to the minute; none until the clock is read. */
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	nowMs: Schema.Number,
-	data: SlotSchema(LocalServiceMapData),
+	data: KeyedSchema(LocalServiceMapData, LoadFailure),
 	/** `dataUpdatedAt` of the map query, for the "New data" pill. */
 	dataUpdatedAtMs: Schema.Number,
 	/** localStorage read on entry; the map is built once it and the rows are in. */

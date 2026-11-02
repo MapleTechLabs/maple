@@ -1,7 +1,7 @@
 import { V2Source } from "@maple/domain/http/v2"
 import { PushSourcePlatform } from "@maple/domain/primitives"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { SourceList } from "../kit/data"

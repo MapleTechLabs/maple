@@ -7,7 +7,7 @@ import { spinner } from "@maple/views/ui/spinner"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -25,7 +25,7 @@ const sidebarItem = (h: HtmlBuilder<Message>, title: string, sql: string, childr
 	)
 
 const tablesList = (h: HtmlBuilder<Message>, model: Model): Html => {
-	if (isPending(model.tables)) return h.div([h.Class("flex h-12 items-center justify-center")], [spinner(h, "size-4")])
+	if (isAwaitingFirstData(model.tables)) return h.div([h.Class("flex h-12 items-center justify-center")], [spinner(h, "size-4")])
 	const failure = failureWithoutData(model.tables)
 	if (Option.isSome(failure)) return h.p([h.Class("text-xs break-all text-destructive")], [failure.value.message])
 	const tables = Option.getOrElse(AsyncData.getData(model.tables.data), () => [])

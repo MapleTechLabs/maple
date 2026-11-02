@@ -2,7 +2,8 @@ import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { MetricEntry } from "../metrics/catalog"
 import { BreakdownRow, SeriesPoint } from "./fetch"
 
@@ -12,10 +13,10 @@ export const Model = Schema.TaggedStruct("MetricDetailPage", {
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	/** The clock at the last read: `chartWindow`'s "now" and relative times. */
 	nowMs: Schema.Number,
-	entry: SlotSchema(Schema.NullOr(MetricEntry)),
+	entry: KeyedSchema(Schema.NullOr(MetricEntry), LoadFailure),
 	entryUpdatedAtMs: Schema.Number,
-	timeseries: SlotSchema(Schema.Array(SeriesPoint)),
-	breakdown: SlotSchema(Schema.Array(BreakdownRow)),
+	timeseries: KeyedSchema(Schema.Array(SeriesPoint), LoadFailure),
+	breakdown: KeyedSchema(Schema.Array(BreakdownRow), LoadFailure),
 	isRefreshing: Schema.Boolean,
 	chart: Chart.Model,
 	themeColors: Schema.NullOr(ThemeColors),

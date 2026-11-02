@@ -14,8 +14,8 @@ import {
 } from "@maple/web-data/warehouse/traces"
 import { Effect, Option } from "effect"
 import { AsyncData } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { WidgetFailure } from "./widget-data"
 
 // The dashboard variables: the

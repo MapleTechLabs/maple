@@ -2,7 +2,8 @@ import { CH } from "@maple/query-engine"
 import { boundsForRange, parseClickHouseDateTime, snapToMinute, WIDEST_RANGE } from "../lib/time"
 import { Array, Clock, Effect, Option, Schema } from "effect"
 import type { HttpClient } from "effect/http"
-import { type LoadFailure, localParams, queryRows } from "./local-query"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { localParams, queryRows } from "./local-query"
 
 // Signal presence: whether the store holds a signal anywhere in the
 // widest range, so an empty list can tell "never connected" from "nothing in this window".

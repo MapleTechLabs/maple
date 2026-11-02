@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import type { Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
+import * as Keyed from "@maple/views/data/keyed"
 import type { Resources } from "../../../platform/resources"
 
 /**

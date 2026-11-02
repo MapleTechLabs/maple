@@ -138,3 +138,64 @@ describe("Keyed slots", () => {
 		)
 	})
 })
+
+describe("Keyed slots that track their data's age", () => {
+	const cached = { data: 9, updatedAtMs: 50, isStandIn: true }
+
+	test("a success records its fetch time; a failed refresh keeps the shown data's", () => {
+		const done = Keyed.accept(requested(Keyed.idle<number, string>(), morning), morning, Result.succeed(1), 100)
+		expect(done.updatedAtMs).toBe(100)
+		const failed = Keyed.accept(requested(done, morning, "Refresh"), morning, Result.fail("timeout"), 200)
+		expect([failed.data, failed.updatedAtMs]).toEqual([AsyncData.Stale({ data: 1, error: "timeout" }), 100])
+	})
+
+	test("a cached answer for another key, or after a fetch filled the slot, is ignored", () => {
+		const pending = requested(Keyed.idle<number, string>(), morning)
+		expect(Keyed.acceptCached(pending, evening, cached, false)).toEqual(pending)
+		const done = Keyed.accept(pending, morning, Result.succeed(1), 100)
+		expect(Keyed.acceptCached(done, morning, cached, false)).toEqual(done)
+		const shown = Keyed.acceptCached(pending, morning, cached, false)
+		expect([shown.data, shown.isStandIn, shown.updatedAtMs]).toEqual([AsyncData.Refreshing({ data: 9 }), true, 50])
+		expect(Keyed.acceptCached(pending, morning, cached, true).data).toEqual(AsyncData.Success({ data: 9 }))
+	})
+
+	test("a stand-in stays one through its own refetch and its failure, and ends with its key's answer", () => {
+		const shown = Keyed.acceptCached(requested(Keyed.idle<number, string>(), morning), morning, cached, false)
+		expect(Keyed.accept(shown, morning, Result.fail("timeout")).isStandIn).toBe(true)
+		expect(Keyed.accept(shown, morning, Result.succeed(2), 300)).toEqual({
+			key: morning,
+			data: AsyncData.Success({ data: 2 }),
+			updatedAtMs: 300,
+		})
+		expect(requested(shown, evening).isStandIn).toBeUndefined()
+	})
+
+	test("a cached answer replaces another key's retained data, which cannot be extended", () => {
+		const switched = requested(Keyed.accept(requested(Keyed.idle<number, string>(), morning), morning, Result.succeed(1)), evening)
+		expect(Keyed.canExtend(switched)).toBe(false)
+		const shown = Keyed.acceptCached(switched, evening, { ...cached, isStandIn: false }, true)
+		expect([shown.retained, Keyed.canExtend(shown)]).toEqual([undefined, true])
+	})
+})
+
+describe("requestKeepingFailure", () => {
+	test("a load under a failed key asks nothing; a refresh retries with the failure on screen", () => {
+		const failed = Keyed.accept(requested(Keyed.idle<number, string>(), morning), morning, Result.fail("timeout"))
+		expect(Keyed.requestKeepingFailure(failed, morning, "Load")).toEqual(Option.none())
+		expect(Option.getOrThrow(Keyed.requestKeepingFailure(failed, morning, "Refresh")).data).toEqual(
+			AsyncData.Failure({ error: "timeout" }),
+		)
+		expect(Option.getOrThrow(Keyed.requestKeepingFailure(failed, evening, "Load")).data).toEqual(AsyncData.Loading())
+	})
+
+	test("pending, failed, retrying and in-flight slots read as such", () => {
+		const pending = requested(Keyed.idle<number, string>(), morning)
+		expect([Keyed.isAwaitingFirstData(pending), Keyed.isInFlight(pending)]).toEqual([true, true])
+		const failed = Keyed.accept(pending, morning, Result.fail("timeout"))
+		expect([Keyed.isAwaitingFirstData(failed), Keyed.failureWithoutData(failed)]).toEqual([false, Option.some("timeout")])
+		const retrying = requested(failed, morning, "Refresh")
+		expect([Keyed.isInFlight(failed), Keyed.isInFlight(retrying)]).toEqual([false, true])
+		const stale = Keyed.accept(requested(loaded(morning, 1), morning, "Refresh"), morning, Result.fail("timeout"))
+		expect(Keyed.failureWithoutData(stale)).toEqual(Option.none())
+	})
+})

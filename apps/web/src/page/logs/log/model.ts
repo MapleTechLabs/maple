@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import * as LogDetail from "../detail"

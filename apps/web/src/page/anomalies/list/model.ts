@@ -1,6 +1,6 @@
 import { V2AnomalyIncident } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { AnomaliesSearch } from "../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"

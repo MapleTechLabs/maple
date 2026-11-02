@@ -1,6 +1,6 @@
 import { V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InvestigationSearch } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"

@@ -1,5 +1,4 @@
 import { errorState } from "@maple/views/ui/error-state"
-import { toKitFailure } from "../../data/local-query"
 import { isLocalSessionLive } from "../../lib/session-liveness"
 import { cn } from "@maple/ui/lib/utils"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -7,7 +6,7 @@ import { listFooter } from "@maple/views/ui/list-footer"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { hrefFor, queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
@@ -36,11 +35,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const sessions = Option.match(maybeData, { onNone: () => [], onSome: (data) => data.pages.flat() })
 	const hasNextPage = Option.exists(maybeData, (data) => data.hasNextPage)
 	const content = (): Html => {
-		if (isPending(model.sessions)) return listSkeleton(h, "card", 6)
+		if (isAwaitingFirstData(model.sessions)) return listSkeleton(h, "card", 6)
 		const failure = failureWithoutData(model.sessions)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: toKitFailure(failure.value, "sessions"),
+				failure: failure.value, title: "Couldn’t load sessions",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (sessions.length === 0)
@@ -61,7 +60,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			className: "pb-0",
 		})
 		return h.div(
-			[h.Class(cn("p-4", model.sessions.isPlaceholder && "opacity-60 transition-opacity"))],
+			[h.Class(cn("p-4", model.sessions.retained === true && "opacity-60 transition-opacity"))],
 			[
 				h.div(
 					[h.Class("space-y-2")],

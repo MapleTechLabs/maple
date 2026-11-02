@@ -8,7 +8,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { AlertsSearch } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"

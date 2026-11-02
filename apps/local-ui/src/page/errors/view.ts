@@ -5,8 +5,7 @@ import { icon } from "@maple/views/ui/icon"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { toKitFailure } from "../../data/local-query"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
@@ -36,11 +35,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const rows = Option.getOrElse(AsyncData.getData(model.byType.data), () => [])
 	const tracesPresence = inputs.presenceOf("traces")
 	const content = (): Html => {
-		if (isPending(model.byType)) return listSkeleton(h, "card", 6)
+		if (isAwaitingFirstData(model.byType)) return listSkeleton(h, "card", 6)
 		const failure = failureWithoutData(model.byType)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: toKitFailure(failure.value, "errors"),
+				failure: failure.value, title: "Couldn’t load errors",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (rows.length === 0)
@@ -63,7 +62,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						guide: { id: "errors-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 					})
 		return h.div(
-			[h.Class(cn("space-y-2 p-4", model.byType.isPlaceholder && "opacity-60 transition-opacity"))],
+			[h.Class(cn("space-y-2 p-4", model.byType.retained === true && "opacity-60 transition-opacity"))],
 			rows.map((row) => errorTypeCard(h, row, cardOf(model, row.fingerprintHash), query, Math.max(model.nowMs, inputs.clockMs))),
 		)
 	}

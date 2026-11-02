@@ -1,7 +1,7 @@
 import { Effect, Option, Schema, Stream } from "effect"
 import { AsyncData, Command, Subscription } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { baseKey } from "../../data/keyed"
+import { baseKey } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { backoffPollTicks, type Presence } from "../../data/poll"
 import { IntegrationStatuses } from "../../data/integration-statuses"

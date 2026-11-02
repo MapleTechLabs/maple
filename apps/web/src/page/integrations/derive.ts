@@ -15,7 +15,7 @@ import {
 	metricsLastCollectedAt,
 	metricsLastError,
 } from "../../components/integrations/planetscale-setup-steps"
-import type { Keyed } from "../../data/keyed"
+import type { Keyed } from "@maple/views/data/keyed"
 import { chatIntegrationId, HUB_CATALOG, type IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import type { Visibility } from "../settings/nav"

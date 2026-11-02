@@ -3,7 +3,7 @@ import { AsyncData } from "foldkit"
 import { IdleTtl } from "../../data/idle-ttl"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../data/read-cache"
-import { requestKey } from "../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import { MapleApiV2Client } from "../../platform/api-clients"
 
 // Signal presence over `telemetrySignalsAtom`.

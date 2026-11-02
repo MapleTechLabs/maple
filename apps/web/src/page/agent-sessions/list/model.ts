@@ -5,7 +5,7 @@ import {
 	AiSessionListItem,
 } from "@maple/domain/http"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { AgentSessionsSearch } from "../../../route/search"

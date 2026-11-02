@@ -1,5 +1,4 @@
 import { errorState } from "@maple/views/ui/error-state"
-import { toKitFailure } from "../../data/local-query"
 import type { TimeFormat } from "../kit/local-time"
 import * as Timeline from "@maple/web/page/traces/detail/timeline"
 import type { TraceData } from "@maple/views/traces/trace-data"
@@ -12,7 +11,7 @@ import * as TabsView from "@maple/views/ui/tabs-view"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import type { PageViewInputs } from "../kit/inputs"
 import { refreshButton } from "../kit/toolbar"
 import { Message } from "./message"
@@ -157,11 +156,11 @@ const hoverTooltip = (h: H, model: Model, trace: TraceData | undefined): Readonl
 }
 
 const body = (h: H, model: Model, timeFormat: TimeFormat): Html => {
-	if (isPending(model.trace)) return traceDetailLoading(h)
+	if (isAwaitingFirstData(model.trace)) return traceDetailLoading(h)
 	const failure = failureWithoutData(model.trace)
 	if (Option.isSome(failure))
 		return errorState(h, {
-			failure: toKitFailure(failure.value, "trace"),
+			failure: failure.value, title: "Couldn’t load trace",
 			onRetry: Message.ClickedRefresh(),
 		})
 	return Option.match(loadedTrace(model), {

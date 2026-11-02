@@ -20,7 +20,7 @@ import {
 	type WidgetDataSourceTransformSchema,
 } from "@maple/widgets/dashboard"
 import { Duration, Effect, Schedule, Schema } from "effect"
-import { requestKey } from "../../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 
 // A widget's data source: the request a widget
 // sends, the fetch with its retry policy, and the transform that turns the answer into rows.

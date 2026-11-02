@@ -62,7 +62,7 @@ export const logStream = (
 					pinnedColumns: model.columns,
 					searchText: search,
 					timeZone: timeFormat.timeZone,
-					isWaiting: model.logs.isPlaceholder,
+					isWaiting: model.logs.retained === true,
 					footerText: listFooterText(timeFormat.locale, {
 						shown: model.stream.rows.length,
 						noun: "logs",

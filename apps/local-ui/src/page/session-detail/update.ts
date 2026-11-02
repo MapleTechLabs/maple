@@ -1,7 +1,8 @@
 import type { Resources } from "../../platform/resources"
 import { Array, Option, Result } from "effect"
 import { AsyncData, type Command, type Update } from "foldkit"
-import { accept, idle, keyOf, request, acceptCached } from "../../data/slot"
+import { accept, idle, requestKeepingFailure, acceptCached } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { hrefFor, queryOf } from "../../route"
 import { type PageContext, PageOutMessage } from "../contract"
 import { updateCopy } from "../kit/copies"
@@ -21,8 +22,8 @@ const transcriptKey = (sessionId: string) => keyOf("session-transcript", session
 /** The session's detail and transcript; `force` refetches. */
 const loadSession = (model: Model, apiBase: string, force: boolean): Readonly<{ model: Model; commands?: Commands }> => {
 	const { sessionId } = model
-	const detail = request(model.detail, detailKey(sessionId), force)
-	const transcript = request(model.transcript, transcriptKey(sessionId), force)
+	const detail = requestKeepingFailure(model.detail, detailKey(sessionId), force ? "Refresh" : "Load")
+	const transcript = requestKeepingFailure(model.transcript, transcriptKey(sessionId), force ? "Refresh" : "Load")
 	return {
 		model: {
 			...model,
@@ -41,7 +42,7 @@ const loadTraces = (model: Model, apiBase: string, force: boolean): Readonly<{ m
 	const traceIds = Option.match(AsyncData.getData(model.detail.data), { onNone: () => [], onSome: (detail) => detail?.traceIds ?? [] })
 	if (traceIds.length === 0) return { model }
 	const key = keyOf("session-traces", traceIds)
-	return Option.match(request(model.traces, key, force), {
+	return Option.match(requestKeepingFailure(model.traces, key, force ? "Refresh" : "Load"), {
 		onNone: () => ({ model }),
 		onSome: (traces) => ({ model: { ...model, traces }, commands: [FetchTraces({ key, traceIds, apiBase, readsCache: !force && model.traces.key !== key })] }),
 	})
@@ -149,7 +150,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ClickedBack: () => back(model, context),
 		ClickedRefresh: () => refresh(model, context),
 		ClickedRetryDetail: () => {
-			const detail = request(model.detail, detailKey(model.sessionId), true)
+			const detail = requestKeepingFailure(model.detail, detailKey(model.sessionId), "Refresh")
 			return Option.match(detail, {
 				onNone: () => ({ model }),
 				onSome: (next) => ({

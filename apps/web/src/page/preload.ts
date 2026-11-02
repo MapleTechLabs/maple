@@ -1,7 +1,7 @@
 import { Option, Predicate, Schema, Stream } from "effect"
 import type { Command } from "foldkit"
 import { Dom } from "foldkit"
-import { baseKey } from "../data/keyed"
+import { baseKey } from "@maple/views/data/keyed"
 import type { Resources } from "../platform/resources"
 import type { PageMessage } from "./registry"
 

@@ -1,7 +1,7 @@
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
+import * as Keyed from "@maple/views/data/keyed"
 import type { AppRoute } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tooltip from "@maple/views/ui/tooltip"

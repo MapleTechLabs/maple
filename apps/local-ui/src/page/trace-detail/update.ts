@@ -8,8 +8,9 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { Cached } from "../../data/cached"
-import { accept, acceptCached, idle, keyOf, request } from "../../data/slot"
-import type { LoadFailure } from "../../data/local-query"
+import { accept, acceptCached, idle, requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../platform/resources"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams } from "../contract"
@@ -124,12 +125,17 @@ const selectSpan = (model: Model, context: PageContext, spanId: string): UpdateR
 /** `RefreshButton` without `advance`: `invalidateQueries(["local"])` refetches the trace in place. */
 const refresh = (model: Model, context: PageContext): UpdateReturn => {
 	if (model.isRefreshing || model.trace.key === null) return { model }
-	const trace = Option.getOrElse(request(model.trace, model.trace.key, true), () => model.trace)
+	const requested = requestKeepingFailure(model.trace, model.trace.key, "Refresh")
+	const trace = Option.getOrElse(requested, () => model.trace)
 	const panel = model.panel === null ? null : SpanPanel.refresh(model.panel)
+	// A trace already in flight (the first load) is not asked twice.
+	const fetch = Option.map(requested, ({ key }) =>
+		FetchTrace({ key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false }),
+	)
 	return {
 		model: { ...model, trace, isRefreshing: true, panel: panel === null ? null : panel.model },
 		commands: [
-			FetchTrace({ key: model.trace.key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false }),
+			...Option.toArray(fetch),
 			...liftPanel(panel?.commands),
 		],
 		outMessage: PageOutMessage.RefetchedInPlace(),
@@ -167,7 +173,7 @@ const settleTrace = (model: Model, context: PageContext, key: string, result: Re
 	const hadData = Option.isSome(AsyncData.getData(model.trace.data))
 	const next: Model = {
 		...model,
-		trace: accept(model.trace, key, result, Result.isSuccess(result) ? fetchedAtMs : null),
+		trace: accept(model.trace, key, result, Result.isSuccess(result) ? fetchedAtMs : undefined),
 		traceUpdatedAtMs: Result.isSuccess(result) ? fetchedAtMs : model.traceUpdatedAtMs,
 		isRefreshing: false,
 	}

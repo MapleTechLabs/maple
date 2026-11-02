@@ -2,7 +2,7 @@ import { getTracesFacetValues } from "@maple/web-data/warehouse/traces"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { ReadCache } from "../../data/read-cache"
-import { requestKey } from "../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import { Message } from "./model"
 
 /** `getTracesFacetValuesResultAtom`'s `staleTime`, counted from the palette closing (its unmount). */

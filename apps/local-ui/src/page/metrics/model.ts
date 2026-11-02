@@ -2,7 +2,8 @@ import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 import { MetricsListData } from "./catalog"
 import { GridViewport } from "./derive"
@@ -17,11 +18,11 @@ export const Model = Schema.TaggedStruct("MetricsPage", {
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	/** The clock at the last read: `chartWindow`'s "now". */
 	nowMs: Schema.Number,
-	list: SlotSchema(MetricsListData),
+	list: KeyedSchema(MetricsListData, LoadFailure),
 	/** `dataUpdatedAt` of the list, for the "New data" pill. */
 	listUpdatedAtMs: Schema.Number,
-	summary: SlotSchema(Schema.Array(SummaryRow)),
-	sparklines: SlotSchema(Schema.Array(MetricSparkline)),
+	summary: KeyedSchema(Schema.Array(SummaryRow), LoadFailure),
+	sparklines: KeyedSchema(Schema.Array(MetricSparkline), LoadFailure),
 	search: Draft,
 	sections: FilterSections.Model,
 	isRefreshing: Schema.Boolean,

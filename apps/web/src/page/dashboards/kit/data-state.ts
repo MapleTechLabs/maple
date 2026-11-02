@@ -1,6 +1,6 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import type { Keyed } from "../../../data/keyed"
+import type { Keyed } from "@maple/views/data/keyed"
 import {
 	dataSourceTransform,
 	isEmptyEnvelope,

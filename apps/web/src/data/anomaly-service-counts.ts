@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { MapleApiV2Client } from "../platform/api-clients"
 import { IdleTtl } from "./idle-ttl"
 import { ReadCache } from "./read-cache"
-import type { RequestKey } from "./request-key"
+import type { RequestKey } from "@maple/views/data/request-key"
 
 /**
  * `openAnomalyServiceCountsAtom`, which the Overview and the services list both read: through the

@@ -6,7 +6,7 @@ import {
 } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { KeyedSchema } from "../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import * as Dialog from "@maple/views/ui/dialog"

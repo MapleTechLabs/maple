@@ -16,7 +16,7 @@ import {
 import { describe, expect, test } from "vitest"
 import { ThemeMessage, ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
-import { requestKey } from "../../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchAnomalies,

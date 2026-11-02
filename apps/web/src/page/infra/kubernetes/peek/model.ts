@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
-import { KeyedSchema } from "../../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import { ChartModels, SeriesSlots } from "../../kit/series"

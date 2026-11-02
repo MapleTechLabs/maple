@@ -2,7 +2,8 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { keyOf, request } from "../../data/slot"
+import { requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { queryOf } from "../../route"
 import { type PageContext, rangeOf } from "../contract"
 import { FetchList, FetchSparklines, FetchSummary } from "./command"
@@ -39,7 +40,7 @@ export const loadSparklines = (model: Model, context: PageContext, force = false
 			if (groups.length === 0) return { model }
 			const { bucketSeconds } = sparklineWindow(data.entries, bounds, model.nowMs)
 			const key = keyOf("metrics-sparklines", { groups, bucketSeconds, bounds: boundsKey(bounds) })
-			return Option.match(request(model.sparklines, key, force), {
+			return Option.match(requestKeepingFailure(model.sparklines, key, force ? "Refresh" : "Load"), {
 				onNone: () => ({ model }),
 				onSome: (sparklines) => ({
 					model: { ...model, sparklines },
@@ -58,8 +59,8 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 			const apiBase = context.env.apiBase
 			const listKey = keyOf("metrics-list", { type: type ?? null, search: search ?? null, bounds: boundsKey(bounds) })
 			const summaryKey = keyOf("metrics-summary", { service: service ?? null, bounds: boundsKey(bounds) })
-			const list = request(model.list, listKey, force)
-			const summary = request(model.summary, summaryKey, force)
+			const list = requestKeepingFailure(model.list, listKey, force ? "Refresh" : "Load")
+			const summary = requestKeepingFailure(model.summary, summaryKey, force ? "Refresh" : "Load")
 			const next = {
 				...model,
 				list: Option.getOrElse(list, () => model.list),

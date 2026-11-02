@@ -11,7 +11,7 @@ import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { KeyedSchema } from "../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import * as CopyButton from "@maple/views/ui/copy-button"

@@ -7,8 +7,7 @@ import { errorRateValue, latencyValue } from "@maple/views/ui/values"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { toKitFailure } from "../../data/local-query"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { linkRow, rowLink } from "../kit/row-link"
 import { Message } from "./message"
 import type { Model, OperationRow } from "./model"
@@ -38,12 +37,12 @@ const operationRow = (h: HtmlBuilder<Message>, serviceName: string, range: strin
 	])
 
 const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): Html => {
-	if (isPending(model.operations))
+	if (isAwaitingFirstData(model.operations))
 		return h.div([h.Class("flex h-24 items-center justify-center rounded-md border")], [spinner(h)])
 	const failure = failureWithoutData(model.operations)
 	if (Option.isSome(failure))
 		return errorState(h, {
-			failure: toKitFailure(failure.value, "operations"),
+			failure: failure.value, title: "Couldn’t load operations",
 			onRetry: Message.ClickedRetryOperations(),
 		})
 	const operations = Option.getOrElse(AsyncData.getData(model.operations.data), () => [])

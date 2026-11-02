@@ -1,4 +1,4 @@
-import * as Keyed from "../../../data/keyed"
+import * as Keyed from "@maple/views/data/keyed"
 import { resolveWindow } from "../../../data/time-range"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tooltip from "@maple/views/ui/tooltip"

@@ -8,7 +8,7 @@ import {
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CodeReviewIssuesSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"

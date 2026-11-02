@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TraceSearch } from "../../../route/search"
 import type { FlowGraph } from "@maple/views/service-map/trace-flow/trace-flow"

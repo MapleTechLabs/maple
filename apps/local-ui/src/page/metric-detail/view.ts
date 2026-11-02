@@ -1,5 +1,4 @@
 import { errorState } from "@maple/views/ui/error-state"
-import { toKitFailure } from "../../data/local-query"
 import { WIDEST_RANGE } from "../../lib/time"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { button } from "@maple/views/ui/button"
@@ -7,7 +6,7 @@ import { spinner } from "@maple/views/ui/spinner"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { emptyNotice } from "../kit/placeholders"
@@ -25,11 +24,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const range = rangeOf(context)
 	const entry = entryOf(model)
 	const content = (): Html => {
-		if (isPending(model.entry)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
+		if (isAwaitingFirstData(model.entry)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
 		const failure = failureWithoutData(model.entry)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: toKitFailure(failure.value, "metric"),
+				failure: failure.value, title: "Couldn’t load metric",
 				onRetry: Message.ClickedRefresh(),
 			})
 		const maybeBounds = boundsOf(model, context)

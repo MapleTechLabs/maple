@@ -1,6 +1,7 @@
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 import { Draft } from "../traces/model"
 
@@ -29,9 +30,9 @@ export const Model = Schema.TaggedStruct("ServicesPage", {
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	nowMs: Schema.Number,
 	/** The env/ns-filtered catalog (the rows). */
-	catalog: SlotSchema(Catalog),
+	catalog: KeyedSchema(Catalog, LoadFailure),
 	/** The unfiltered catalog (the facets); unused while no filter is set, as both keys are one. */
-	unfiltered: SlotSchema(Catalog),
+	unfiltered: KeyedSchema(Catalog, LoadFailure),
 	/** `dataUpdatedAt` of the rows, for the "New data" pill. */
 	catalogUpdatedAtMs: Schema.Number,
 	search: Draft,
