@@ -20,8 +20,7 @@ export const FetchNodes = Command.define("FetchInfraNodes", {
 	messages: [Message.CompletedFetchNodes],
 	execute: ({ key, input }) =>
 		listNodes({ data: input }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchNodes({ key, result })),
 		),
@@ -32,8 +31,7 @@ export const FetchFacets = Command.define("FetchInfraNodeFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getNodeFacets({ data: window }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),

@@ -1070,15 +1070,17 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const repositories = yield* VcsRepository
 			const providers = yield* VcsProviderRegistry
 			// Present inside a Worker, absent in tests; without it a trigger records `agent_unavailable`.
-			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
+			const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
+			const chatSessions = Option.getOrUndefined(chatSessionsOption)
 			// Present where webhooks are consumed; without it a push's review starts at once.
-			const syncQueue = Option.getOrUndefined(yield* Effect.serviceOption(VcsSyncQueue))
+			const syncQueueOption = yield* Effect.serviceOption(VcsSyncQueue)
+			const syncQueue = Option.getOrUndefined(syncQueueOption)
 			// Present where the agent runs; without it the feedback filter is off.
-			const embedder = Option.getOrUndefined(yield* Effect.serviceOption(FindingEmbedder))
+			const embedderOption = yield* Effect.serviceOption(FindingEmbedder)
+			const embedder = Option.getOrUndefined(embedderOption)
 			// Present where a warehouse is wired; without it reviews read the diff alone.
-			const telemetryReader = Option.getOrUndefined(
-				yield* Effect.serviceOption(PrReviewTelemetryService),
-			)
+			const telemetryReaderOption = yield* Effect.serviceOption(PrReviewTelemetryService)
+			const telemetryReader = Option.getOrUndefined(telemetryReaderOption)
 
 			const getReview: PrReviewServiceApi["getReview"] = Effect.fn("PrReviewService.getReview")(
 				function* (orgId, reviewId) {
@@ -1481,7 +1483,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
-					const marker = prReviewCommentMarker(reviewId, yield* commentAttemptOf(orgId, reviewId))
+					const attempt = yield* commentAttemptOf(orgId, reviewId)
+					const marker = prReviewCommentMarker(reviewId, attempt)
 					const warn = (what: string) =>
 						Effect.catchCause((cause: Cause.Cause<unknown>) =>
 							Effect.logWarning(`[PrReview] could not post the review status ${what}`).pipe(
@@ -2641,10 +2644,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const unchecked =
 					settled.wholeDiff === true
 						? 0
-						: uncheckedFixes(
-								yield* loadReviewHistory(orgId, review.repositoryId, review.number),
-								tracked,
-							) + resolved.filter(isPrReviewDefectHistory).length
+						: yield* loadReviewHistory(orgId, review.repositoryId, review.number).pipe(
+								Effect.map(
+									(history) =>
+										uncheckedFixes(history, tracked) +
+										resolved.filter(isPrReviewDefectHistory).length,
+								),
+							)
 				const confidence = confidencePrReview(settled, stillOpen, request.partial === true, unchecked)
 				const { confidenceReason: _reason, ...rest } = settled
 				const report =

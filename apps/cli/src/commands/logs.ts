@@ -58,7 +58,8 @@ export const logs = Command.make("logs", {
 				offset: a.offset,
 				includeAttributes: a.attributes,
 			})
-			const output = Option.match(yield* Ops.localUiBase, {
+			const localUiBase = yield* Ops.localUiBase
+			const output = Option.match(localUiBase, {
 				onNone: () => result,
 				onSome: (base) => ({
 					// The logs page filters neither by trace nor environment: a trace id

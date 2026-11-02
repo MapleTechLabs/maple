@@ -165,7 +165,8 @@ export const getServiceDependenciesBundle = Effect.fn("QueryEngine.getServiceDep
 	data: GetServiceMapForServiceInput
 }) {
 	const input = yield* decodeInput(GetServiceMapForServiceInputSchema, data, "getServiceDependenciesBundle")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 
@@ -265,7 +266,8 @@ export const getServiceMapCloudflare = Effect.fn("QueryEngine.getServiceMapCloud
 	data: GetServiceMapInput
 }) {
 	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapCloudflare")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 
 	const result = yield* runWarehouseQuery("serviceCloudflareStats", () =>
 		Effect.gen(function* () {
@@ -333,7 +335,8 @@ export const getServiceMapPlanetScale = Effect.fn("QueryEngine.getServiceMapPlan
 	data: GetServiceMapInput
 }) {
 	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapPlanetScale")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 
 	const result = yield* runWarehouseQuery("servicePlanetScaleStats", () =>
 		Effect.gen(function* () {
@@ -366,7 +369,8 @@ export const getPlanetScaleBranchStats = Effect.fn("QueryEngine.getPlanetScaleBr
 	data: GetPlanetScaleBranchStatsInput
 }) {
 	const input = yield* decodeInput(GetPlanetScaleBranchStatsInputSchema, data, "getPlanetScaleBranchStats")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 
 	const result = yield* runWarehouseQuery("planetscaleBranchStats", () =>
 		Effect.gen(function* () {
@@ -395,7 +399,8 @@ export const getServiceDbQuerySummary = Effect.fn("QueryEngine.getServiceDbQuery
 	data: GetServiceDbQuerySummaryInput
 }) {
 	const input = yield* decodeInput(GetServiceDbQuerySummaryInputSchema, data, "getServiceDbQuerySummary")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 
 	const result = yield* runWarehouseQuery("serviceDbQuerySummary", () =>
 		Effect.gen(function* () {
@@ -428,7 +433,8 @@ export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(
 	data: GetServiceMapInput
 }) {
 	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapBundle")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 

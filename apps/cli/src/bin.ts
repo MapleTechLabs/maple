@@ -22,6 +22,7 @@ import { LocalAccessHttpClient } from "./core/local-access"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
 import { debugEnabled } from "./lib/debug"
 import { makeHelpCapture, usageHint } from "./lib/help"
+import { encodeJson } from "./lib/json"
 import { archiveErrorMessage } from "./server/archives/errors"
 import { CHECKPOINT_REOPEN_PROBE_ENV, validateCheckpointDataDir } from "./server/checkpoints"
 import { MAPLE_VERSION } from "./version"
@@ -64,7 +65,7 @@ if (checkpointProbeDataDir !== undefined) {
 	// this new process loaded the persisted restored representation and queried
 	// its core tables before closing chDB cleanly.
 	try {
-		process.stdout.write(`${JSON.stringify(validateCheckpointDataDir(checkpointProbeDataDir))}\n`)
+		process.stdout.write(`${encodeJson(validateCheckpointDataDir(checkpointProbeDataDir))}\n`)
 	} catch (error) {
 		process.stderr.write(
 			`checkpoint reopen probe failed: ${error instanceof Error ? error.message : String(error)}\n`,

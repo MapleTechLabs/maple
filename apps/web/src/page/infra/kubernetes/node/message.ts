@@ -23,15 +23,18 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-export const SummaryInput = Schema.Struct({ nodeName: Schema.String, startTime: Schema.String, endTime: Schema.String })
+export const SummaryInput = Schema.Struct({
+	nodeName: Schema.String,
+	startTime: Schema.String,
+	endTime: Schema.String,
+})
 
 export const FetchSummary = Command.define("FetchInfraNodeSummary", {
 	args: { key: Schema.String, input: SummaryInput },
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		nodeDetailSummary({ data: input }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
 		),
@@ -40,7 +43,8 @@ export const FetchSummary = Command.define("FetchInfraNodeSummary", {
 export const FetchPods = Command.define("FetchInfraNodePods", {
 	args: { key: Schema.String, input: PodsInput },
 	messages: [Message.CompletedFetchPods],
-	execute: ({ key, input }) => Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
+	execute: ({ key, input }) =>
+		Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
 })
 
 export const SeriesInput = Schema.Struct({
@@ -57,8 +61,10 @@ export const FetchSeries = Command.define("FetchInfraNodeSeries", {
 	messages: [Message.CompletedFetchSeries],
 	execute: ({ key, input }) =>
 		nodeInfraTimeseries({ data: input }).pipe(
-			Effect.map((response) => ({ rows: response.data, unit: response.unit })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({ rows: response.data, unit: response.unit }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSeries({ metric: input.metric, key, result })),
 		),

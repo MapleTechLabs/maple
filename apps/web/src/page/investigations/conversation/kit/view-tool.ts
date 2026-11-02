@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -23,6 +23,8 @@ import {
 } from "./tool-output"
 import { deriveToolStatus, type ToolStatus } from "./transcript-rows"
 import type { ToolPart } from "./ui-message"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // `Tool`, `ToolRow` and `ToolGroup`: a tool call's row and a run of them grouped.
 /** What a tool row needs from its host: whether a panel is open, and the Message that toggles it. */
@@ -96,7 +98,7 @@ const argumentRows = <M>(h: HtmlBuilder<M>, record: Readonly<Record<string, unkn
 					h.span([h.Class("shrink-0")], [key, ":"]),
 					h.span(
 						[h.Class("min-w-0 font-mono break-all whitespace-pre-wrap text-foreground")],
-						[typeof value === "string" ? value : JSON.stringify(value)],
+						[typeof value === "string" ? value : encodeJson(value)],
 					),
 				],
 			),
@@ -127,11 +129,7 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 						[
 							h.p([h.Class("mb-1 font-medium text-severity-error")], ["Error"]),
 							h.pre(
-								[
-									h.Class(
-										"max-h-40 overflow-auto whitespace-pre-wrap text-severity-error",
-									),
-								],
+								[h.Class("max-h-40 overflow-auto whitespace-pre-wrap text-severity-error")],
 								[part.errorText],
 							),
 						],

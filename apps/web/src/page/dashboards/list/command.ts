@@ -27,6 +27,15 @@ import { Message } from "./message"
 /** `dashboardSortAtom`'s key: the default sort for a URL without `?sort`. */
 const SORT_KEY = "maple.dashboards.sort"
 const decodeStoredSort = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String))
+const encodeStoredSort = Schema.encodeSync(Schema.fromJsonString(Schema.String))
+const encodeFavorites = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
+const decodeImportJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
+
+/** The picked import file could not be read. */
+export class DashboardImportFileError extends Schema.TaggedError<DashboardImportFileError>()(
+	"@maple/web/dashboards/DashboardImportFileError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
 
 export const ReadClock = Command.define("ReadDashboardsListClock", {
 	messages: [Message.CompletedReadClock],
@@ -64,10 +73,10 @@ export const SavePreferences = Command.define("SaveDashboardsPreferences", {
 	execute: ({ favorites, sort }) =>
 		Effect.sync(() => {
 			if (favorites !== null) {
-				writeLocalStorage(DASHBOARD_FAVORITES_KEY, JSON.stringify(favorites))
+				writeLocalStorage(DASHBOARD_FAVORITES_KEY, encodeFavorites(favorites))
 				window.dispatchEvent(new Event(DASHBOARD_FAVORITES_EVENT))
 			}
-			if (sort !== null) writeLocalStorage(SORT_KEY, JSON.stringify(sort))
+			if (sort !== null) writeLocalStorage(SORT_KEY, encodeStoredSort(sort))
 			return Message.CompletedSavePreferences()
 		}),
 })
@@ -154,8 +163,15 @@ export const ImportDashboard = Command.define("ImportDashboard", {
 		Effect.map(
 			toResult(
 				Effect.gen(function* () {
-					const raw = yield* Effect.tryPromise(() => file.text())
-					const parsed: unknown = yield* Effect.try(() => JSON.parse(raw))
+					const raw = yield* Effect.tryPromise({
+						try: () => file.text(),
+						catch: (cause) =>
+							new DashboardImportFileError({
+								message: "Could not read the dashboard file",
+								cause,
+							}),
+					})
+					const parsed = yield* decodeImportJson(raw)
 					if (isPersesDashboardJson(parsed)) {
 						const client = yield* MapleApiV2Client
 						const imported = yield* client.dashboards.importPerses({
@@ -169,7 +185,8 @@ export const ImportDashboard = Command.define("ImportDashboard", {
 							warnings: imported.warnings,
 						}
 					}
-					return yield* createFromPortable(orgId, yield* parsePortable(parsed))
+					const portable = yield* parsePortable(parsed)
+					return yield* createFromPortable(orgId, portable)
 				}),
 			),
 			(result) => Message.CompletedImportDashboard({ result }),

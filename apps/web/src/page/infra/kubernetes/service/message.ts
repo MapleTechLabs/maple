@@ -14,7 +14,10 @@ import { ServicePoint } from "./model"
 
 export const Message = defineMessageUnion({
 	CompletedFetchLinked: { key: Schema.String, result: Schema.Result(Rail.ServiceWorkloads, LoadFailure) },
-	CompletedFetchOverview: { key: Schema.String, result: Schema.Result(Schema.Array(ServicePoint), LoadFailure) },
+	CompletedFetchOverview: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(ServicePoint), LoadFailure),
+	},
 	CompletedFetchCpu: { key: Schema.String, result: Schema.Result(Schema.Array(SeriesRow), LoadFailure) },
 	CompletedFetchPods: { key: Schema.String, result: Schema.Result(PodsPage, LoadFailure) },
 	ClickedRetryOverview: {},
@@ -33,10 +36,16 @@ export const FetchLinked = Command.define("FetchLensLinkedWorkload", {
 	args: { key: Schema.String, input: Rail.WorkloadsInput },
 	messages: [Message.CompletedFetchLinked],
 	execute: ({ key, input }) =>
-		Effect.map(Rail.fetchServiceWorkloads(input), (result) => Message.CompletedFetchLinked({ key, result })),
+		Effect.map(Rail.fetchServiceWorkloads(input), (result) =>
+			Message.CompletedFetchLinked({ key, result }),
+		),
 })
 
-export const OverviewInput = Schema.Struct({ serviceName: Schema.String, startTime: Schema.String, endTime: Schema.String })
+export const OverviewInput = Schema.Struct({
+	serviceName: Schema.String,
+	startTime: Schema.String,
+	endTime: Schema.String,
+})
 export type OverviewInput = typeof OverviewInput.Type
 
 export const FetchOverview = Command.define("FetchLensServiceOverview", {
@@ -44,15 +53,16 @@ export const FetchOverview = Command.define("FetchLensServiceOverview", {
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, input }) =>
 		getServiceDetailOverview({ data: input }).pipe(
-			Effect.map((response) =>
-				response.data.map((point) => ({
-					bucket: point.bucket,
-					p99LatencyMs: point.p99LatencyMs,
-					throughput: point.throughput,
-					totalCount: point.totalCount,
-				})),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					response.data.map((point) => ({
+						bucket: point.bucket,
+						p99LatencyMs: point.p99LatencyMs,
+						throughput: point.throughput,
+						totalCount: point.totalCount,
+					})),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
 		),
@@ -75,8 +85,7 @@ export const FetchCpu = Command.define("FetchLensCpu", {
 	messages: [Message.CompletedFetchCpu],
 	execute: ({ key, input }) =>
 		workloadInfraTimeseries({ data: input }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchCpu({ key, result })),
 		),
@@ -85,5 +94,6 @@ export const FetchCpu = Command.define("FetchLensCpu", {
 export const FetchPods = Command.define("FetchLensPods", {
 	args: { key: Schema.String, input: PodsInput },
 	messages: [Message.CompletedFetchPods],
-	execute: ({ key, input }) => Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
+	execute: ({ key, input }) =>
+		Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
 })

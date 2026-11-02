@@ -102,7 +102,8 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 						// oxlint-disable-next-line effecttsgo/global-json-in-effect
 						const rendered = JSON.stringify(group)
 						if (index >= posted.length) {
-							posted.push(yield* transport.post(target, group, phase))
+							const postedMessage = yield* transport.post(target, group, phase)
+							posted.push(postedMessage)
 							sent.push(rendered)
 							// At least once: a run lost between the post and this report posts it again later.
 							if (options.onPosted !== undefined) yield* options.onPosted([...posted])

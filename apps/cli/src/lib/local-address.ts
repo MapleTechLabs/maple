@@ -1,3 +1,5 @@
+import { encodeJson } from "./json"
+
 export const DEFAULT_LOCAL_HOST = "127.0.0.1"
 export const DEFAULT_LOCAL_PORT = 4318
 
@@ -18,7 +20,7 @@ export const validateHost = (host: string): string => {
 		throw new Error("expected a bare hostname or IP address without a scheme, port, or path")
 	}
 	if (!URL.canParse(serverUrl(normalized, 80))) {
-		throw new Error(`invalid hostname or IP address ${JSON.stringify(host)}`)
+		throw new Error(`invalid hostname or IP address ${encodeJson(host)}`)
 	}
 	return normalized
 }
@@ -80,10 +82,10 @@ const parseHostedUiUrl = (baseUrl: string): URL => {
 	try {
 		url = new URL(baseUrl)
 	} catch {
-		throw new Error(`invalid hosted UI URL ${JSON.stringify(baseUrl)}: expected an absolute HTTP(S) URL`)
+		throw new Error(`invalid hosted UI URL ${encodeJson(baseUrl)}: expected an absolute HTTP(S) URL`)
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
-		throw new Error(`invalid hosted UI URL ${JSON.stringify(baseUrl)}: expected an absolute HTTP(S) URL`)
+		throw new Error(`invalid hosted UI URL ${encodeJson(baseUrl)}: expected an absolute HTTP(S) URL`)
 	}
 	return url
 }

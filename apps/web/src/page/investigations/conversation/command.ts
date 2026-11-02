@@ -15,12 +15,14 @@ export const LoadHistory = Command.define("LoadChatHistory", {
 	messages: [Message.CompletedLoadHistory],
 	execute: ({ sessionId, generation }) =>
 		loadHistory(sessionId).pipe(
-			Effect.map((history) => ({
-				messages: history.messages.map(historyMessageToUIMessage),
-				cursor: history.cursor,
-				running: history.running,
-			})),
-			Effect.mapError(errorText),
+			Effect.mapBoth({
+				onSuccess: (history) => ({
+					messages: history.messages.map(historyMessageToUIMessage),
+					cursor: history.cursor,
+					running: history.running,
+				}),
+				onFailure: errorText,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedLoadHistory({ generation, result })),
 		),
@@ -36,8 +38,10 @@ export const PostMessage = Command.define("PostChatMessage", {
 	messages: [Message.CompletedPostMessage],
 	execute: ({ sessionId, generation, localId, text }) =>
 		postMessage(sessionId, text).pipe(
-			Effect.map((sent) => ({ cursor: sent.cursor, messageId: sent.messageId })),
-			Effect.mapError(errorText),
+			Effect.mapBoth({
+				onSuccess: (sent) => ({ cursor: sent.cursor, messageId: sent.messageId }),
+				onFailure: errorText,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedPostMessage({ generation, localId, text, result })),
 		),

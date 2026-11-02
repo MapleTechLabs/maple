@@ -36,10 +36,14 @@ export const FetchMetrics = Command.define("FetchTemplateReadinessMetrics", {
 	messages: [Message.CompletedFetchMetrics],
 	execute: ({ key }) =>
 		listMetrics({ data: { limit: 1000 } }).pipe(
-			Effect.map((response) =>
-				response.data.map((metric) => ({ metricName: metric.metricName, lastSeen: metric.lastSeen })),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					response.data.map((metric) => ({
+						metricName: metric.metricName,
+						lastSeen: metric.lastSeen,
+					})),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMetrics({ key, result })),
 		),

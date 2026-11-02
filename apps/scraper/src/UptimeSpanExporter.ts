@@ -13,6 +13,7 @@ export const SPAN_FLUSH_BATCH = 2_000
 export const SPAN_FLUSH_INTERVAL = Duration.seconds(5)
 const REQUEST_TIMEOUT = Duration.seconds(30)
 const FINAL_FLUSH_TIMEOUT = Duration.seconds(5)
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 const ORG_CONCURRENCY = 8
 
 export class UptimeSpanExportError extends Schema.TaggedError<UptimeSpanExportError>()(
@@ -49,14 +50,18 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 
 			const post = (ingestKey: string, checks: ReadonlyArray<UptimeCheckSpan>) =>
 				Effect.gen(function* () {
-					const request = HttpClientRequest.post(`${env.MAPLE_INGEST_URL}/v1/traces`, {
-						headers: { authorization: `Bearer ${ingestKey}` },
-					}).pipe(
-						HttpClientRequest.bodyText(
-							JSON.stringify(encodeTraceExport(checks)),
-							"application/json",
+					const body = yield* encodeJson(encodeTraceExport(checks)).pipe(
+						Effect.mapError(
+							(error) =>
+								new UptimeSpanExportError({
+									message: `uptime spans not encodable: ${error.message}`,
+									status: null,
+								}),
 						),
 					)
+					const request = HttpClientRequest.post(`${env.MAPLE_INGEST_URL}/v1/traces`, {
+						headers: { authorization: `Bearer ${ingestKey}` },
+					}).pipe(HttpClientRequest.bodyText(body, "application/json"))
 					const response = yield* client.execute(request).pipe(
 						Effect.annotateSpans("peer.service", "ingest"),
 						Effect.timeout(REQUEST_TIMEOUT),

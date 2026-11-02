@@ -50,9 +50,14 @@
  * GITHUB_TOKEN/GH_TOKEN for the PR-state gate.
  */
 
+import { Option, Schema } from "effect"
 import { fetchPreviewState, hasPrStateCredentials, type PreviewState } from "./lib/pr-state.ts"
 
 const FAILURE = 1
+
+// JSON.stringify printed "undefined" for an absent field; keep that in diagnostics.
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const showJson = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
 const fail = (message: string): never => {
 	console.error(`✗ ${message}`)
@@ -139,7 +144,7 @@ const main = async (): Promise<void> => {
 	// are gone (deleting them here fails with 11005).
 	const listedQueues = await cfRequest(token, `/accounts/${accountId}/queues?per_page=100`)
 	if (!listedQueues.ok) {
-		fail(`Could not list Queues (HTTP ${listedQueues.status}): ${JSON.stringify(listedQueues.errors)}`)
+		fail(`Could not list Queues (HTTP ${listedQueues.status}): ${showJson(listedQueues.errors)}`)
 	}
 	// A success response whose `result` isn't an array means the API shape
 	// changed under us — fail loudly rather than green-no-op'ing the safety net.
@@ -176,7 +181,7 @@ const main = async (): Promise<void> => {
 		const consumers = await cfRequest(token, `/accounts/${accountId}/queues/${id}/consumers`)
 		if (!consumers.ok || !Array.isArray(consumers.result)) {
 			console.log(
-				`✗ could not list consumers of ${name} (HTTP ${consumers.status}): ${JSON.stringify(consumers.errors)}`,
+				`✗ could not list consumers of ${name} (HTTP ${consumers.status}): ${showJson(consumers.errors)}`,
 			)
 			failures.push(name)
 			continue
@@ -186,7 +191,7 @@ const main = async (): Promise<void> => {
 			// consuming script's name. Try whichever this row has.
 			const consumerRef = consumer.consumer_id ?? consumer.id ?? consumer.script ?? consumer.script_name
 			if (!consumerRef) {
-				console.log(`✗ consumer of ${name} has no usable id: ${JSON.stringify(consumer)}`)
+				console.log(`✗ consumer of ${name} has no usable id: ${showJson(consumer)}`)
 				failures.push(name)
 				continue
 			}
@@ -199,7 +204,7 @@ const main = async (): Promise<void> => {
 				{ method: "DELETE" },
 			)
 			if (!detached.ok && detached.status !== 404) {
-				console.log(`✗ detach failed (HTTP ${detached.status}): ${JSON.stringify(detached.errors)}`)
+				console.log(`✗ detach failed (HTTP ${detached.status}): ${showJson(detached.errors)}`)
 				failures.push(name)
 			}
 		}
@@ -208,7 +213,7 @@ const main = async (): Promise<void> => {
 	// Pass 2: workers.
 	const listed = await cfRequest(token, `/accounts/${accountId}/workers/scripts`)
 	if (!listed.ok) {
-		fail(`Could not list Worker scripts (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`)
+		fail(`Could not list Worker scripts (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	if (!Array.isArray(listed.result)) {
 		fail(`Unexpected Worker list response shape (result is ${typeof listed.result}, expected array)`)
@@ -242,7 +247,7 @@ const main = async (): Promise<void> => {
 			method: "DELETE",
 		})
 		if (!removed.ok && removed.status !== 404) {
-			console.log(`✗ delete failed (HTTP ${removed.status}): ${JSON.stringify(removed.errors)}`)
+			console.log(`✗ delete failed (HTTP ${removed.status}): ${showJson(removed.errors)}`)
 			failures.push(name)
 		}
 	}
@@ -254,7 +259,7 @@ const main = async (): Promise<void> => {
 			method: "DELETE",
 		})
 		if (!removed.ok && removed.status !== 404) {
-			console.log(`✗ delete failed (HTTP ${removed.status}): ${JSON.stringify(removed.errors)}`)
+			console.log(`✗ delete failed (HTTP ${removed.status}): ${showJson(removed.errors)}`)
 			failures.push(name)
 		}
 	}

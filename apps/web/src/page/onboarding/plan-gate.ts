@@ -45,24 +45,32 @@ export const planOf = (slot: CustomerSlot): boolean | null =>
 /** `selectedPlanKnownAtomFor(orgId)`: `maple.billing.selected-plan.<orgId>`. */
 export const SELECTED_PLAN_KEY_PREFIX = "maple.billing.selected-plan."
 
+/** localStorage threw while listing the remembered flags. */
+export class SelectedPlanReadError extends Schema.TaggedError<SelectedPlanReadError>()(
+	"@maple/web/onboarding/SelectedPlanReadError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** Every org's remembered flag (Atom.kvs writes JSON), read once before the first render. */
-export const readKnownToRenderApp: Effect.Effect<Record<string, boolean>> = Effect.try(() =>
-	Object.fromEntries(
-		Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-			.filter((key): key is string => key !== null && key.startsWith(SELECTED_PLAN_KEY_PREFIX))
-			.map(
-				(key) =>
-					[
-						key.slice(SELECTED_PLAN_KEY_PREFIX.length),
-						localStorage.getItem(key) === "true",
-					] as const,
-			),
-	),
-).pipe(Effect.orElseSucceed(() => ({})))
+export const readKnownToRenderApp: Effect.Effect<Record<string, boolean>> = Effect.try({
+	try: () =>
+		Object.fromEntries(
+			Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+				.filter((key): key is string => key !== null && key.startsWith(SELECTED_PLAN_KEY_PREFIX))
+				.map(
+					(key) =>
+						[
+							key.slice(SELECTED_PLAN_KEY_PREFIX.length),
+							localStorage.getItem(key) === "true",
+						] as const,
+				),
+		),
+	catch: (cause) => new SelectedPlanReadError({ message: "localStorage is not readable", cause }),
+}).pipe(Effect.orElseSucceed(() => ({})))
 
 /** Writes the per-org "may render the app" memory once the plan settles. */
 export const saveSelectedPlanKnown = (orgId: string, mayRenderApp: boolean): Effect.Effect<void> =>
-	Effect.sync(() => writeLocalStorage(`${SELECTED_PLAN_KEY_PREFIX}${orgId}`, JSON.stringify(mayRenderApp)))
+	Effect.sync(() => writeLocalStorage(`${SELECTED_PLAN_KEY_PREFIX}${orgId}`, String(mayRenderApp)))
 
 // GATE
 

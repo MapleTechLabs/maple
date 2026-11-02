@@ -2,6 +2,8 @@
 // resource with the usual service attributes and records carrying a handful of
 // semconv attributes. Timestamps are "now" so the raw-table TTL keeps every row.
 
+import { encodeJson } from "../src/lib/json"
+
 export type Signal = "traces" | "logs" | "metrics"
 
 const hex = (bytes: number): string =>
@@ -125,13 +127,13 @@ export const exportBody = (signal: Signal, count: number, service = "bench-api")
 	const scope = { name: "maple-bench", version: "1.0.0" }
 	switch (signal) {
 		case "traces":
-			return JSON.stringify({
+			return encodeJson({
 				resourceSpans: [
 					{ resource: resource(service), scopeSpans: [{ scope, spans: spans(count, now) }] },
 				],
 			})
 		case "logs":
-			return JSON.stringify({
+			return encodeJson({
 				resourceLogs: [
 					{
 						resource: resource(service),
@@ -140,7 +142,7 @@ export const exportBody = (signal: Signal, count: number, service = "bench-api")
 				],
 			})
 		case "metrics":
-			return JSON.stringify({
+			return encodeJson({
 				resourceMetrics: [
 					{ resource: resource(service), scopeMetrics: [{ scope, metrics: metrics(count, now) }] },
 				],

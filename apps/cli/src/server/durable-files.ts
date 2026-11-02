@@ -3,6 +3,7 @@ import { closeSync, constants, fsyncSync, openSync, renameSync, writeSync } from
 import { access, chmod, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { Effect, Schema } from "effect"
+import { encodeJsonPretty } from "../lib/json"
 
 export interface DurabilityFaults {
 	readonly beforeFileSync?: (path: string) => void | Promise<void>
@@ -60,7 +61,9 @@ const warnedDirectories = new Set<string>()
 const warnUnhardenedDirectory = (path: string): void => {
 	if (warnedDirectories.has(path)) return
 	warnedDirectories.add(path)
-	process.emitWarning(`cannot chmod ${path} to 0700 (owned by another user); continuing, it is already owner-only`)
+	process.emitWarning(
+		`cannot chmod ${path} to 0700 (owned by another user); continuing, it is already owner-only`,
+	)
 }
 
 /** Like {@link ensurePrivateDirectory}, but an already-existing directory keeps
@@ -135,7 +138,7 @@ export const durableJson = async (
 	path: string,
 	value: unknown,
 	faults: DurabilityFaults = {},
-): Promise<void> => durableWrite(path, `${JSON.stringify(value, null, 2)}\n`, faults)
+): Promise<void> => durableWrite(path, `${encodeJsonPretty(value)}\n`, faults)
 
 export const durableRemove = async (path: string, faults: DurabilityFaults = {}): Promise<void> => {
 	await faults.beforeRemove?.(path)

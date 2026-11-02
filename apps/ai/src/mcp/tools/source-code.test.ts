@@ -49,9 +49,7 @@ const call = (
 	service: Partial<VcsSourceService["Service"]>,
 ) =>
 	tools.get(name)!(params).pipe(
-		Effect.provide(
-			Layer.mergeAll(tenant, Layer.succeed(VcsSourceService, service as VcsSourceService["Service"])),
-		),
+		Effect.provide([tenant, Layer.succeed(VcsSourceService, service as VcsSourceService["Service"])]),
 	)
 
 const file = {

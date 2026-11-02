@@ -77,6 +77,8 @@ import { presenceOf } from "./shell/view-nav"
 import { isResolved } from "./shell/source-link"
 import * as Toast from "./ui/toast"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 type UpdateReturn = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>
 
@@ -827,7 +829,7 @@ const syncSessionTimeRange: Step = (model) =>
 				Option.filter(
 					completeRangeOf(model.route),
 					(value) =>
-						JSON.stringify(value) !== JSON.stringify(state.value) &&
+						encodeJson(value) !== encodeJson(state.value) &&
 						isWithin(value, Number.POSITIVE_INFINITY, state.nowMs, model.timeZone),
 				),
 				{

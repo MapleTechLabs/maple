@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import type {
 	AnnotationSegment,
 	InlineErrorData,
@@ -16,6 +17,8 @@ import { icon } from "../../../../ui/icon"
 import { truncatedId } from "../../../../ui/truncated-id"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { latencyValue } from "../../../../ui/values"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The inline reference cards: a service, an error
 // fingerprint, a trace and a log line the model wrote as `<<maple:…>>`.
@@ -283,7 +286,7 @@ const inlineLog = <M>(h: HtmlBuilder<M>, data: InlineLogData, timeZone: string):
 								h.a(
 									[
 										h.Href(
-											`/traces/${encodeURIComponent(data.traceId)}${data.timestamp ? `?t=${encodeURIComponent(JSON.stringify(data.timestamp))}` : ""}`,
+											`/traces/${encodeURIComponent(data.traceId)}${data.timestamp ? `?t=${encodeURIComponent(encodeJson(data.timestamp))}` : ""}`,
 										),
 										h.Target("_blank"),
 										h.Rel("noreferrer"),

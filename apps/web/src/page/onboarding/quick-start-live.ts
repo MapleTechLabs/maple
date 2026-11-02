@@ -54,16 +54,17 @@ export const LoadLiveFindings = Command.define("LoadOnboardingLiveFindings", {
 	execute: ({ timeZone }) =>
 		currentWindow({ preset: "24h", snap: false, timeZone }).pipe(
 			Effect.flatMap((window) => getServiceOverview({ data: window })),
-			Effect.map((response) =>
-				findingsOf(
-					response.data.map((row) => ({
-						serviceName: String(row.serviceName),
-						p95LatencyMs: row.p95LatencyMs,
-						errorRate: row.errorRate,
-					})),
-				),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					findingsOf(
+						response.data.map((row) => ({
+							serviceName: String(row.serviceName),
+							p95LatencyMs: row.p95LatencyMs,
+							errorRate: row.errorRate,
+						})),
+					),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => LiveMessage.LoadedFindings({ result })),
 		),

@@ -133,6 +133,8 @@ const CustomerBilling = Schema.Struct({
 })
 
 /** The upstream's own words, so the log says why and not only where. */
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 const failedAt =
 	(step: CancellationReviewError["step"], message: string) =>
 	(cause: unknown): CancellationReviewError =>
@@ -599,11 +601,14 @@ export class CancellationReviewService extends Context.Service<
 					signals: deriveSignals(snapshot),
 				})
 
+				const blocks = yield* encodeJson(message.blocks).pipe(
+					Effect.mapError(failedAt("post", "Could not encode the cancellation report")),
+				)
 				const delivered = yield* slack
 					.call("chat.postMessage", {
 						channel: channel.value,
 						text: message.text,
-						blocks: JSON.stringify(message.blocks),
+						blocks,
 						unfurl_links: false,
 					})
 					.pipe(

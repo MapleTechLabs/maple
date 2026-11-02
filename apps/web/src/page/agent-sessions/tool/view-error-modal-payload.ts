@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	type PayloadLine,
@@ -13,6 +14,8 @@ import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { statusDot } from "../../../ui/status-dot"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
+
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // `SampleBody` of `ToolErrorModal`: what the call was handed and what it gave back, and where the
 // arguments confirm a schema failure, what is wrong with them.
@@ -158,7 +161,8 @@ const argumentsBlock = (
 					{
 						variant: "ghost",
 						size: "xs",
-						className: "font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
+						className:
+							"font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
 						attributes: [h.OnClick(Message.ClickedCopyArguments({ text: row.arguments }))],
 					},
 					[copyLabel],
@@ -171,7 +175,7 @@ const argumentsBlock = (
 								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
 							),
 						],
-						[args === undefined ? row.arguments : JSON.stringify(args, null, 2)],
+						[args === undefined ? row.arguments : encodePrettyJson(args)],
 					)
 				: h.div(
 						[
@@ -182,11 +186,7 @@ const argumentsBlock = (
 						lines.map((line) => payloadLineView(h, line)),
 					),
 			h.div(
-				[
-					h.Class(
-						"flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle",
-					),
-				],
+				[h.Class("flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle")],
 				[
 					h.span([], note === undefined ? [] : [note]),
 					h.span([h.Class("grow")], []),
@@ -225,7 +225,7 @@ const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error-a3 bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
 							),
 						],
-						[parsed === undefined ? row.result : JSON.stringify(parsed, null, 2)],
+						[parsed === undefined ? row.result : encodePrettyJson(parsed)],
 					),
 			...(source === undefined
 				? []

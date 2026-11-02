@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import {
 	EMPTY_VALUE,
@@ -35,6 +36,8 @@ import {
 	tracedAs,
 } from "../derive"
 import type { Message } from "./message"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // One kind's resource table and its loading state.
 
@@ -379,7 +382,7 @@ const subline = (view: ResourceView): Html | string =>
 const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolean): Html =>
 	h.a(
 		[
-			h.Key(JSON.stringify(view.keys)),
+			h.Key(encodeJson(view.keys)),
 			h.Class(ROW_LINK_CLASS),
 			h.Href(
 				hrefOf(

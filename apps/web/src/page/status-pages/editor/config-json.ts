@@ -8,13 +8,13 @@ import { Result, Schema, SchemaIssue } from "effect"
 
 // The JSON tab's document: the page as `GET …/config` returns it, and a draft parsed back.
 
-const encodeConfig = Schema.encodeSync(StatusPageConfig)
+const encodeConfigJson = Schema.encodeSync(Schema.fromJsonString(StatusPageConfig, { space: 2 }))
 const encodeId = Schema.encodeSync(StatusPageComponentPublicId)
 
 /** Pretty-printed with public ids, two-space indent; the version rides along as `if_version`. */
 export const formatConfig = (config: StatusPageConfig): string => {
 	const { version: _version, ...document } = config
-	return JSON.stringify(encodeConfig(document), null, 2)
+	return encodeConfigJson(document)
 }
 
 export type DraftProblem =

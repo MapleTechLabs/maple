@@ -71,14 +71,16 @@ const AiGateway = Cloudflare.AI.Gateway("maple-api-ai")
  * is either on the env or not, and the others read none and call Workers AI directly.
  */
 const bindWorkersAiGateway = Effect.gen(function* () {
-	if (!globalThis.__ALCHEMY_RUNTIME__ && parseMapleDeployment(yield* Stage).stage.kind !== "prd") {
-		return Option.none()
+	if (!globalThis.__ALCHEMY_RUNTIME__) {
+		const stage = yield* Stage
+		if (parseMapleDeployment(stage).stage.kind !== "prd") return Option.none()
 	}
 	const client = yield* Cloudflare.AI.QueryGateway(AiGateway)
 	if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none()
 	const raw = yield* runtime(client.raw)
 	if (!isWorkersAiBinding(raw)) return Option.none()
-	return Option.some(viaGateway(raw, yield* runtime(client.id)))
+	const id = yield* runtime(client.id)
+	return Option.some(viaGateway(raw, id))
 })
 
 /**

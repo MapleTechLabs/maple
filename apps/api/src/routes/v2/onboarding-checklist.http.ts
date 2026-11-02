@@ -53,7 +53,8 @@ export const HttpV2OnboardingChecklistLive = HttpApiBuilder.group(
 				.handle("retrieve", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return toV2OnboardingChecklist(yield* service.read(tenant))
+						const checklist = yield* service.read(tenant)
+						return toV2OnboardingChecklist(checklist)
 					}),
 				)
 				.handle("claim", () =>

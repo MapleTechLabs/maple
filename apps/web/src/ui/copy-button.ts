@@ -52,12 +52,30 @@ export type Message = typeof Message.Type
 
 // COMMAND
 
+export class ClipboardWriteError extends Schema.TaggedError<ClipboardWriteError>()(
+	"@maple/web/ClipboardWriteError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+/** `navigator.clipboard.writeText` as an Effect, failing with `ClipboardWriteError`. */
+export const writeClipboardApi = (text: string): Effect.Effect<void, ClipboardWriteError> =>
+	Effect.tryPromise({
+		try: () => navigator.clipboard.writeText(text),
+		catch: (cause) => new ClipboardWriteError({ message: "The clipboard API refused the write", cause }),
+	})
+
 /** `useCopy`'s write: whether the text reached the clipboard. */
 export const writeClipboard = (text: string): Effect.Effect<boolean> =>
-	Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
+	writeClipboardApi(text).pipe(
 		Effect.as(true),
 		// A rejected clipboard API falls back to the `execCommand` textarea write.
-		Effect.catch(() => Effect.try(() => writeClipboardFallback(text))),
+		Effect.catch(() =>
+			Effect.try({
+				try: () => writeClipboardFallback(text),
+				catch: (cause) =>
+					new ClipboardWriteError({ message: "The fallback clipboard write failed", cause }),
+			}),
+		),
 		Effect.orElseSucceed(() => false),
 	)
 

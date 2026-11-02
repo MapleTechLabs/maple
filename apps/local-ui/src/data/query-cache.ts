@@ -96,7 +96,10 @@ export class LocalQueryCache extends Context.Service<
 						})
 						const exact = Option.fromNullishOr(current.get(hash))
 						// A page reading its own key observes it; a stand-in is only read (`getQueryData`).
-						if (Option.isSome(exact)) yield* touch(hash, yield* Clock.currentTimeMillis)
+						if (Option.isSome(exact)) {
+							const now = yield* Clock.currentTimeMillis
+							yield* touch(hash, now)
+						}
 						return Option.isSome(exact)
 							? Option.some(toHit(exact.value, false))
 							: Option.map(newestOlderWindow(current, key), (entry) => toHit(entry, true))
@@ -107,7 +110,8 @@ export class LocalQueryCache extends Context.Service<
 						onNone: () => Effect.void,
 						onSome: (value) =>
 							Effect.gen(function* () {
-								yield* touch(hashKey(key), yield* Clock.currentTimeMillis)
+								const now = yield* Clock.currentTimeMillis
+								yield* touch(hashKey(key), now)
 								yield* Ref.update(entries, (current) => new Map([...current, [hashKey(key), { key, data: value, updatedAtMs }]]))
 								yield* collect
 								yield* scheduleSave

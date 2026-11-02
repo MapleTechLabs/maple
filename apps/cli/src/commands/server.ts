@@ -60,6 +60,7 @@ import {
 	inMemoryStartFailuresKey,
 } from "./in-memory-store"
 import { debugLog } from "../lib/debug"
+import { encodeJsonPretty } from "../lib/json"
 import { MAPLE_VERSION } from "../version"
 import { jsonFormatRequested, writeJson } from "./json-output"
 import {
@@ -1314,13 +1315,10 @@ export const start = Command.make("start", {
 			}
 			// `--offline` trusts no hosted origin at all, so none is configured.
 			const hostedUiUrl = a.offline ? undefined : yield* remoteUiUrl()
+			const advertiseHostEnv = yield* optionalEnvString("MAPLE_LOCAL_ADVERTISE_HOST")
 			const advertiseHost = yield* validatedHost(
 				"--advertise-host / MAPLE_LOCAL_ADVERTISE_HOST",
-				resolveAdvertiseHost(
-					Option.getOrUndefined(a.advertiseHost),
-					yield* optionalEnvString("MAPLE_LOCAL_ADVERTISE_HOST"),
-					bindHost,
-				),
+				resolveAdvertiseHost(Option.getOrUndefined(a.advertiseHost), advertiseHostEnv, bindHost),
 			)
 			const scope = commandScope({ dataDir, port: a.port, host: bindHost })
 			const pidPath = serverPidPath(dataDir)
@@ -1614,16 +1612,12 @@ export const start = Command.make("start", {
 							try: () =>
 								durableWrite(
 									discoveryPath,
-									`${JSON.stringify(
-										{
-											pid: process.pid,
-											url: probeAddr,
-											dataDir,
-											startedAt: new Date().toISOString(),
-										} satisfies ServerDiscovery,
-										null,
-										2,
-									)}\n`,
+									`${encodeJsonPretty({
+										pid: process.pid,
+										url: probeAddr,
+										dataDir,
+										startedAt: new Date().toISOString(),
+									} satisfies ServerDiscovery)}\n`,
 								),
 							catch: stateFileError(discoveryPath, "write"),
 						}).pipe(
@@ -1728,12 +1722,12 @@ const statusConfirmsPid = (
 ): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const discovery = yield* readDiscovery(serverDiscoveryPath(dataDir))
+		const probeHost =
+			scope.host ??
+			(yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST").pipe(Effect.map(resolveBindHost)))
 		const urls = [
 			...(Option.isSome(discovery) && discovery.value.pid === pid ? [discovery.value.url] : []),
-			serverProbeUrl(
-				scope.host ?? resolveBindHost(yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST")),
-				scope.port ?? 4318,
-			),
+			serverProbeUrl(probeHost, scope.port ?? 4318),
 		]
 		for (const url of urls) {
 			const status = yield* fetchLocalStatus(url, "1 second")
@@ -1911,10 +1905,14 @@ export const checkpoint = Command.make("checkpoint", {
 			// store started on a non-default port is checkpointed without repeating it.
 			const discovered = Option.isSome(a.port)
 				? Option.none<URL>()
-				: Option.flatMap(yield* readDiscovery(serverDiscoveryPath(dataDir)), (found) =>
-						isProcessAlive(found.pid) && URL.canParse(found.url)
-							? Option.some(new URL(found.url))
-							: Option.none(),
+				: yield* readDiscovery(serverDiscoveryPath(dataDir)).pipe(
+						Effect.map(
+							Option.flatMap((found) =>
+								isProcessAlive(found.pid) && URL.canParse(found.url)
+									? Option.some(new URL(found.url))
+									: Option.none(),
+							),
+						),
 					)
 			const result = yield* createCheckpoint({
 				dataDir,

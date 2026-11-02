@@ -22,10 +22,10 @@ import { TASKS } from "./widget-eval-tasks"
 
 const decodeWidget = Schema.decodeUnknownSync(DashboardWidgetSchema)
 
-interface Submission {
-	readonly taskId: string
-	readonly widget: unknown
-}
+const Submission = Schema.Struct({ taskId: Schema.String, widget: Schema.Unknown })
+type Submission = typeof Submission.Type
+const decodeSubmissions = Schema.decodeSync(Schema.fromJsonString(Schema.Array(Submission)))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 interface Grade {
 	readonly taskId: string
@@ -73,7 +73,7 @@ const grade = (submission: Submission): Grade => {
 	}
 	if (task.expectUnit !== undefined && decoded.display.unit !== task.expectUnit) {
 		expectationFailures.push(
-			`unit: wanted "${task.expectUnit}", got ${JSON.stringify(decoded.display.unit)}`,
+			`unit: wanted "${task.expectUnit}", got ${decoded.display.unit === undefined ? "undefined" : encodeJson(decoded.display.unit)}`,
 		)
 	}
 
@@ -86,7 +86,7 @@ const grade = (submission: Submission): Grade => {
 	}
 }
 
-const submissions: ReadonlyArray<Submission> = JSON.parse(readFileSync(process.argv[2]!, "utf8"))
+const submissions = decodeSubmissions(readFileSync(process.argv[2]!, "utf8"))
 const grades = submissions.map(grade)
 
 const clean = grades.filter((g) => g.decodes && g.fatal.length === 0 && g.expectationFailures.length === 0)

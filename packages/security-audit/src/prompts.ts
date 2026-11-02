@@ -2,6 +2,7 @@
  * Prompts for every delegated role, assembled from the skill's own text in the order it requires.
  * Nothing the skill says to copy verbatim is paraphrased here: blocks come from `./skill`.
  */
+import { Option, Schema } from "effect"
 import reportSchema from "../skill/report-schema.json" with { type: "json" }
 import type { CoverageUnit, EstimatedSeverity, Finding, Severity } from "./schema"
 import {
@@ -49,11 +50,15 @@ export const VERBATIM = {
 export type ReconAgent = keyof typeof VERBATIM.recon
 export const RECON_AGENTS: ReadonlyArray<ReconAgent> = ["1a", "1b", "1c", "1d"]
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+const encodePrettyOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 type Verdict = "confirmed" | "needs_validation" | "rejected"
 
 const schemaBranch = (verdict: Verdict): string => {
 	const branch = reportSchema.items.oneOf.find((b) => b.properties.verdict.const === verdict)
-	return JSON.stringify(branch, null, 2)
+	return Option.getOrElse(encodePrettyOption(branch), () => String(branch))
 }
 
 /**
@@ -99,7 +104,7 @@ const recordVerifierEstimate = (estimate: EstimatedSeverity | null | undefined):
 				: [
 						estimate === null
 							? "The record carries no estimate yet."
-							: `The record's current estimate, which you also check: ${JSON.stringify(estimate)}`,
+							: `The record's current estimate, which you also check: ${encodeJson(estimate)}`,
 					]),
 			"A replacement whose record is needs_validation adds `estimated_severity` beside `decision`, `reason` and `record`, never inside the record. If the record is right but the estimate is not, return a replacement with the record unchanged and the corrected estimate. A verified needs_validation record keeps its current estimate.",
 		].join(" "),
@@ -257,7 +262,7 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 		`## architecture.md\n\n${input.architectureMd}`,
 		...repoTreeSection(input.repoTree),
 		// 3
-		`## Your assignment\n\n${JSON.stringify(assignment, null, 2)}`,
+		`## Your assignment\n\n${encodePretty(assignment)}`,
 		// 4
 		`## Selected attack-class blocks\n\n${selectedBlockTexts(input.units).join("\n\n")}`,
 		// 5
@@ -270,7 +275,7 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 		// 8
 		[
 			"## Exclusions",
-			`Carried same-source confirmed root causes (do not re-report): ${input.carriedExclusions.length === 0 ? "none" : JSON.stringify(input.carriedExclusions, null, 2)}`,
+			`Carried same-source confirmed root causes (do not re-report): ${input.carriedExclusions.length === 0 ? "none" : encodePretty(input.carriedExclusions)}`,
 			`Peer-owned coverage IDs you must not duplicate: ${input.peerCoverageIds.length === 0 ? "none" : input.peerCoverageIds.join(", ")}`,
 		].join("\n\n"),
 		// 9: without execution, scratch, artifacts and the confirmed branch cannot apply.
@@ -315,10 +320,10 @@ export const criticPrompt = (input: CriticInput, context: AgentContext): string 
 		VERBATIM.coverageCritic,
 		`## architecture.md\n\n${input.architectureMd}`,
 		...repoTreeSection(input.repoTree),
-		`## Coverage ledger\n\n${JSON.stringify(input.ledger, null, 2)}`,
-		`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : JSON.stringify(input.candidateStates, null, 2)}`,
+		`## Coverage ledger\n\n${encodePretty(input.ledger)}`,
+		`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : encodePretty(input.candidateStates)}`,
 		`## Prior-ledger gaps\n\n${input.priorGapSummary}`,
-		`## Surfaces hunters reported as uncovered\n\n${input.hunterUncovered.length === 0 ? "None." : JSON.stringify(input.hunterUncovered, null, 2)}\nAccept each one that is a real, unmapped coverage gap as a missing unit; ignore the rest.`,
+		`## Surfaces hunters reported as uncovered\n\n${input.hunterUncovered.length === 0 ? "None." : encodePretty(input.hunterUncovered)}\nAccept each one that is a real, unmapped coverage gap as a missing unit; ignore the rest.`,
 		`## Ordinary attack-class blocks\n\n${ORDINARY_BLOCK_REFS.join("\n")}\n\nCompanion blocks are FILE.md# plus the heading text before any parenthetical, from: ${COMPANION_FILES.join(", ")}.`,
 		[
 			"## Your result",
@@ -352,9 +357,9 @@ export const candidateVerifierPrompt = (input: CandidateVerifierInput, context: 
 				.map((block) => `### ${block.ref}\n\n${block.text}`)
 				.join("\n\n") || "None."
 		}`,
-		`## Candidate\n\n${JSON.stringify(input.candidate, null, 2)}`,
-		`## Linked coverage-unit checks\n\n${JSON.stringify(input.linkedChecks, null, 2)}`,
-		`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : JSON.stringify(input.priorRecords, null, 2)}${input.priorEstimate === undefined || input.priorEstimate === null ? "" : `\n\nThe previous run estimated this lead at \`${input.priorEstimate}\` (unverified). Keep or correct it in your estimate.`}`,
+		`## Candidate\n\n${encodePretty(input.candidate)}`,
+		`## Linked coverage-unit checks\n\n${encodePretty(input.linkedChecks)}`,
+		`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : encodePretty(input.priorRecords)}${input.priorEstimate === undefined || input.priorEstimate === null ? "" : `\n\nThe previous run estimated this lead at \`${input.priorEstimate}\` (unverified). Keep or correct it in your estimate.`}`,
 		`## report-schema.json branches\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
 		VERIFIER_ESTIMATE,
 		...(input.includeRecordChecks === true
@@ -375,7 +380,7 @@ export const recordVerifierPrompt = (
 		"You are a fresh research verifier for one final record of a defensive security audit. You check the structured record, not the hunter write-up, and remain inside source and local boundaries. You did not hunt or validate it.",
 		VERBATIM.recordVerification,
 		executionStatement(context.execution),
-		`## The record\n\n${JSON.stringify(record, null, 2)}`,
+		`## The record\n\n${encodePretty(record)}`,
 		`## report-schema.json branches (for a replacement)\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
 		recordVerifierEstimate(record.verdict === "needs_validation" ? estimate : undefined),
 		'Return exactly one JSON object and no surrounding prose: {"decision":"verified","fingerprint":"..."} or {"decision":"replace","reason":"...","record":{...}}, adding "estimated_severity":{...} beside "record" when the replacement record is needs_validation.',

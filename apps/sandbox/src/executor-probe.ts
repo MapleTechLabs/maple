@@ -8,6 +8,9 @@
  * Durable Object that starts the container lives in `executor.ts`.
  */
 import { shellQuote } from "@maple/domain/sandbox"
+import { Schema } from "effect"
+
+const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 /** Bumped when the checks change, so the next scheduled run probes again. */
 export const EXECUTOR_PROBE_VERSION = 1
@@ -40,7 +43,7 @@ export interface ProbeCheck {
 /** A Node one-liner that prints a response's status and body, or the fetch error, and exits non-zero on error. */
 const nodeFetch = (url: string) =>
 	`node -e ${shellQuote(
-		`fetch(${JSON.stringify(url)}, { signal: AbortSignal.timeout(8000) }).then(async (r) => console.log(r.status, (await r.text()).slice(0, 300))).catch((e) => { console.error(String(e.cause ?? e)); process.exit(1) })`,
+		`fetch(${encodeJsonString(url)}, { signal: AbortSignal.timeout(8000) }).then(async (r) => console.log(r.status, (await r.text()).slice(0, 300))).catch((e) => { console.error(String(e.cause ?? e)); process.exit(1) })`,
 	)}`
 
 const LOOPBACK = `node -e ${shellQuote(

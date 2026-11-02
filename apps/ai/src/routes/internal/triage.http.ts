@@ -51,7 +51,8 @@ export const HttpTriageLive = HttpApiBuilder.group(MapleAiApi, "triage", (handle
 				})
 			}
 
-			const model = resolveDecisionModel(yield* loadLlmSettings)
+			const llmSettings = yield* loadLlmSettings
+			const model = resolveDecisionModel(llmSettings)
 			if (model === undefined) {
 				return yield* new IncidentTriageModelError({
 					message: "no decision model is served in this region",

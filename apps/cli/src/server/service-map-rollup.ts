@@ -84,8 +84,10 @@ const selectBody = <A, E>(
 	label: string,
 ): Effect.Effect<string, LocalServiceMapRollupError> =>
 	compiled.pipe(
-		Effect.mapError(fail(`compile ${label}`)),
-		Effect.map((query) => query.sql.replace(/\s+FORMAT\s+\w+\s*$/, "")),
+		Effect.mapBoth({
+			onFailure: fail(`compile ${label}`),
+			onSuccess: (query) => query.sql.replace(/\s+FORMAT\s+\w+\s*$/, ""),
+		}),
 	)
 
 const runQuery = (db: LocalServiceMapRollupDeps["db"], sql: string, label: string) =>
@@ -116,11 +118,8 @@ const firstTraceHourMs = (db: LocalServiceMapRollupDeps["db"], sinceMs: number, 
 			),
 			"signal presence",
 		)
-		const rows = yield* decodeRows(
-			decodePresenceRows,
-			yield* runQuery(db, sql, "signal presence"),
-			"presence",
-		)
+		const presenceText = yield* runQuery(db, sql, "signal presence")
+		const rows = yield* decodeRows(decodePresenceRows, presenceText, "presence")
 		const firstSeen = rows.find((row) => row.signal === "traces")?.firstSeen
 		const parsed = firstSeen === undefined ? Number.NaN : Date.parse(`${firstSeen.replace(" ", "T")}Z`)
 		return Number.isFinite(parsed) && parsed >= sinceMs ? hourFloor(parsed) : undefined
@@ -136,7 +135,8 @@ const sealedHours = (db: LocalServiceMapRollupDeps["db"], oldestHourMs: number, 
 			"existing hours",
 		)
 		const text = yield* runQuery(db, sql, "existing hours")
-		return CH.serviceMapHourSet(yield* decodeRows(decodeHourRows, text, "existing hours"))
+		const hourRows = yield* decodeRows(decodeHourRows, text, "existing hours")
+		return CH.serviceMapHourSet(hourRows)
 	})
 
 /** The INSERTs that seal one hour from raw spans: resolutions, then edges (the seal). */
@@ -228,11 +228,8 @@ export const localServiceMapRollupLoop = (deps: LocalServiceMapRollupDeps): Effe
 		const state: LocalServiceMapRollupState = { catchUp: undefined }
 		yield* Effect.sleep(ROLLUP_INITIAL_DELAY)
 		while (true) {
-			const tick = yield* runLocalServiceMapRollupTick(
-				deps,
-				state,
-				yield* Clock.currentTimeMillis,
-			).pipe(
+			const nowMs = yield* Clock.currentTimeMillis
+			const tick = yield* runLocalServiceMapRollupTick(deps, state, nowMs).pipe(
 				Effect.tap((result) =>
 					result.hoursRolledUp > 0
 						? Effect.logDebug(`service map rollup sealed ${result.hoursRolledUp} hour(s)`)

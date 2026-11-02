@@ -1733,8 +1733,10 @@ const screenshotUrl = Effect.gen(function* () {
 })
 
 const program = Effect.gen(function* () {
-	const db = makeMapleDb(yield* SqlClient.SqlClient)
-	const world = buildWorld(yield* Clock.currentTimeMillis)
+	const sqlClient = yield* SqlClient.SqlClient
+	const db = makeMapleDb(sqlClient)
+	const now = yield* Clock.currentTimeMillis
+	const world = buildWorld(now)
 	const byOrg = <T extends { readonly orgId: PG.Expr<OrgId> }>($: T) => [$.orgId.eq(orgId)]
 
 	yield* db.transaction(
@@ -1764,7 +1766,9 @@ const program = Effect.gen(function* () {
 				}),
 			)
 			yield* db.run(
-				PG.insertInto(VcsInstallations).values([{ ...world.installation, sourceId: DEMO_GITHUB_SOURCE }]),
+				PG.insertInto(VcsInstallations).values([
+					{ ...world.installation, sourceId: DEMO_GITHUB_SOURCE },
+				]),
 			)
 			yield* db.run(PG.insertInto(VcsRepositories).values(world.repositories))
 			yield* db.run(PG.insertInto(VcsRepositoryBranches).values(world.branches))

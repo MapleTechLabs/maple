@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { highlightCode } from "../../lib/highlight"
 import { highlight, highlightKey } from "../../page/investigations/conversation/kit/code-highlight"
@@ -5,6 +6,8 @@ import { codeBlock as fenceBlock } from "../../page/investigations/conversation/
 import { codeBlock } from "../../page/settings/kit/code-block"
 import type * as CopyButton from "../../ui/copy-button"
 import { kitSection } from "./kit-layout"
+
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // Every highlighted surface, one sample per language the app shows: setup snippets, a chat
 // fence and a JSON log body.
@@ -30,18 +33,14 @@ const SNIPPETS: ReadonlyArray<{ readonly label: string; readonly code: string }>
 
 const FENCE = `from opentelemetry import trace\n\ntracer = trace.get_tracer(__name__)\n\ndef get_order(id: int):\n    with tracer.start_as_current_span("get_order") as span:\n        span.set_attribute("order.id", id)  # tag it\n        return db.fetch(id) or None`
 
-const LOG_BODY = JSON.stringify(
-	{
-		level: "error",
-		message: "upstream timed out after 3000ms",
-		attempt: 3,
-		retryable: true,
-		cause: null,
-		http: { method: "POST", route: "/v1/orders/:id", status: 504 },
-	},
-	null,
-	2,
-)
+const LOG_BODY = encodePrettyJson({
+	level: "error",
+	message: "upstream timed out after 3000ms",
+	attempt: 3,
+	retryable: true,
+	cause: null,
+	http: { method: "POST", route: "/v1/orders/:id", status: 504 },
+})
 
 const FENCE_HIGHLIGHTS = { [highlightKey("py", FENCE)]: highlight("py", FENCE) }
 

@@ -22,6 +22,12 @@ import { type EncodedBatch, encodeLogs, encodeMetrics, encodeTraces } from "../s
 import { LOCAL_SCHEMA_SQL } from "../src/server/schema-identity"
 import { type Signal, exportBody } from "./payloads"
 import { environment, flag, list, numbers, summarize, type Summary, writeReport } from "./report"
+import { Schema } from "effect"
+import { decodeJsonSync } from "../src/lib/json"
+
+const decodeViewLine = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ name: Schema.String, create: Schema.String })),
+)
 
 const signals = list("signals", "traces,logs,metrics") as Signal[]
 const sizes = numbers("sizes", "1,50,500")
@@ -63,7 +69,7 @@ const measure = (f: () => number): Summary => {
 
 /** Statements for one fresh export (new trace and span ids every call). */
 const statementsFor = (signal: Signal, records: number) =>
-	encoders[signal](JSON.parse(exportBody(signal, records))).flatMap((batch) =>
+	encoders[signal](decodeJsonSync(exportBody(signal, records))).flatMap((batch) =>
 		buildInsertStatements(batch.datasource, batch.ndjson).map((s) => ({
 			...s,
 			datasource: batch.datasource,
@@ -90,7 +96,7 @@ const stages = (db: Chdb) =>
 			repeat(WARMUP + iterations, () => {
 				const body = exportBody(signal, records)
 				let decoded: unknown
-				parse.push(time(() => (decoded = JSON.parse(body))))
+				parse.push(time(() => (decoded = decodeJsonSync(body))))
 				let batches: EncodedBatch[] = []
 				encode.push(time(() => (batches = encoders[signal](decoded))))
 				let sql: string[] = []
@@ -162,7 +168,7 @@ const viewsOf = (db: Chdb, source: string): ViewRow[] =>
 		)
 		.split("\n")
 		.filter(Boolean)
-		.map((line) => ({ ...JSON.parse(line), table: source }))
+		.map((line) => ({ ...decodeViewLine(line), table: source }))
 
 /** Drop every view on the source, then add each back alone and time the insert. */
 const views = (db: Chdb) => {

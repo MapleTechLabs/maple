@@ -14,6 +14,7 @@ const VIEW_PREFS_KEY = "maple-local:service-map.view-prefs"
 
 const LayoutJson = Schema.fromJsonString(Schema.Struct({ snapshots: Schema.Array(Snapshot) }))
 const PrefsJson = Schema.fromJsonString(ViewPrefs)
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 export const ReadClock = Command.define("ReadServiceMapClock", {
 	messages: [Message.CompletedReadClock],
@@ -48,20 +49,22 @@ export const SaveLayout = Command.define("SaveLocalServiceMapLayout", {
 	args: { snapshots: Schema.Array(Snapshot) },
 	messages: [Message.CompletedSaveLayout],
 	execute: ({ snapshots }) =>
-		Effect.sync(() => {
-			writeLocalStorage(LAYOUT_KEY, JSON.stringify({ snapshots }))
-			return Message.CompletedSaveLayout()
-		}),
+		encodeJson({ snapshots }).pipe(
+			Effect.flatMap((text) => Effect.sync(() => writeLocalStorage(LAYOUT_KEY, text))),
+			Effect.ignore,
+			Effect.as(Message.CompletedSaveLayout()),
+		),
 })
 
 export const SaveViewPrefs = Command.define("SaveLocalServiceMapViewPrefs", {
 	args: { prefs: ViewPrefs },
 	messages: [Message.CompletedSaveViewPrefs],
 	execute: ({ prefs }) =>
-		Effect.sync(() => {
-			writeLocalStorage(VIEW_PREFS_KEY, JSON.stringify(prefs))
-			return Message.CompletedSaveViewPrefs()
-		}),
+		encodeJson(prefs).pipe(
+			Effect.flatMap((text) => Effect.sync(() => writeLocalStorage(VIEW_PREFS_KEY, text))),
+			Effect.ignore,
+			Effect.as(Message.CompletedSaveViewPrefs()),
+		),
 })
 
 /** `useLocalServiceMap`: `windowed(["local", "service-map", durationSeconds, boundsKey(bounds)])`. */

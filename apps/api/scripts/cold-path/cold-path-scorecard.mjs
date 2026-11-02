@@ -1,3 +1,4 @@
+/* oxlint-disable effecttsgo/global-json -- measurement harness: importing effect here would skew the heap and CPU it measures */
 // cold-path-scorecard.mjs — one-shot local measurement of maple-api's cold-path cost.
 // Usage: node cold-path-scorecard.mjs <bundle-dir>   (bundle built via alchemy rolldown, SEO off)
 // Metrics: startup-graph size/eval/heap, full-graph eval/heap, registry reachability.

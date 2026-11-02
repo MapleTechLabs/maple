@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { encodeJson } from "../lib/json"
 import { normalizedSchemaSql } from "./store-version"
 
 export type LocalSchemaObjectKind = "table" | "materialized_view" | "view"
@@ -224,7 +225,7 @@ export const buildLocalSchemaManifest = (schemaSql: string): LocalSchemaManifest
 		.map(parseStatement)
 		.filter((object): object is LocalSchemaObject => object !== undefined)
 		.sort((a, b) => a.name.localeCompare(b.name))
-	const stable = JSON.stringify(objects)
+	const stable = encodeJson(objects)
 	return {
 		objects,
 		digest: createHash("sha256").update(stable).digest("hex"),

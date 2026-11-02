@@ -221,9 +221,11 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		 */
 		const orgSettings = (store: SecurityAuditOrgStore) =>
 			Effect.gen(function* () {
-				const row = Option.getOrNull(yield* orUnavailable(store.getSettings()))
+				const settings = yield* orUnavailable(store.getSettings())
+				const row = Option.getOrNull(settings)
 				const llm = yield* loadLlmSettings
-				const window = securityAuditSpendWindow(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
+				const window = securityAuditSpendWindow(now)
 				const spentUsd = yield* orUnavailable(store.orgSpendUsd(window.since))
 				const models = securityAuditModelIds(llm, {
 					discovery: row?.discoveryModel ?? null,
@@ -245,7 +247,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			Effect.gen(function* () {
 				const bytes = yield* repositorySize.bytes(orgId, repository)
 				if (Option.isNone(bytes)) return
-				const violations = hostedSizeViolations(bytes.value, yield* securityAuditLimits)
+				const limits = yield* securityAuditLimits
+				const violations = hostedSizeViolations(bytes.value, limits)
 				if (violations.length === 0) return
 				return yield* new SecurityAuditRepositoryTooLargeError({
 					message: refusalReason(violations),
@@ -410,7 +413,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						}),
 					)
 					// The target's models, else the org's, as this region serves them; fixed for the run.
-					const models = securityAuditModelIds(yield* loadLlmSettings, {
+					const llmSettings = yield* loadLlmSettings
+					const models = securityAuditModelIds(llmSettings, {
 						discovery: target.discoveryModel ?? org.discoveryModel,
 						validation: target.validationModel ?? org.validationModel,
 					})

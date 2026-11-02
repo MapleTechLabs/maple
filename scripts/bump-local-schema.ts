@@ -16,6 +16,7 @@
  */
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { Schema } from "effect"
 import { buildLocalSchemaManifest } from "../apps/cli/src/server/schema-manifest"
 import { schemaDigest, schemaFingerprint } from "../apps/cli/src/server/store-version"
 
@@ -77,6 +78,7 @@ if (process.argv.includes("--control")) {
 }
 
 const args = process.argv.slice(2)
+const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 const descriptionIndex = args.findIndex((arg) => arg === "--description")
 const description = descriptionIndex === -1 ? undefined : args[descriptionIndex + 1]
 // Guard the -1 case: with no `--description`, `descriptionIndex + 1` is 0, which
@@ -143,7 +145,7 @@ const newRow = `\t{
 \t\tid: "${moduleId}",
 \t\tfrom: ${from},
 \t\tto: ${to},
-\t\tdescription: ${JSON.stringify(description ?? `TODO(v${from} -> v${to}): what this edge does, in one line`)},
+\t\tdescription: ${encodeJsonString(description ?? `TODO(v${from} -> v${to}): what this edge does, in one line`)},
 \t\tclonedBefore: "any DDL runs",
 \t\tbeforeBootstrap: [],
 \t\tplan: [["TODO-v${to}-change", "TODO(v${from} -> v${to}): what the v${to} bootstrap changes"]],

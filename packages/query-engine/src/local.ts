@@ -74,7 +74,7 @@ export const executeLocalQuery = (
 		Effect.gen(function* () {
 			const http = yield* HttpClient.HttpClient
 			const request = HttpClientRequest.post(`${baseUrl}/local/query`).pipe(
-				HttpClientRequest.bodyText(JSON.stringify({ sql }), "application/json"),
+				HttpClientRequest.bodyJsonUnsafe({ sql }),
 			)
 			const response = yield* HttpClient.withScope(http)
 				.execute(request)

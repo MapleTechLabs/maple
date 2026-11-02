@@ -1038,8 +1038,10 @@ const observingWarehouse = (
 		return compiledQueryOf(compiled)
 			.decodeRows(rows(sql))
 			.pipe(
-				Effect.mapError(asWarehouseFailure),
-				Effect.map((decoded) => Option.fromNullishOr(decoded[0])),
+				Effect.mapBoth({
+					onFailure: asWarehouseFailure,
+					onSuccess: (decoded) => Option.fromNullishOr(decoded[0]),
+				}),
 			)
 	},
 })

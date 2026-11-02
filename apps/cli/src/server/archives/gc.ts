@@ -35,6 +35,7 @@ import {
 } from "./journal"
 import { assertCatalogExact, rebuildCatalog } from "./listing"
 import { withMaintenanceLock } from "../checkpoints"
+import { decodeJsonSync } from "../../lib/json"
 
 // Garbage collection of superseded archive generations (Gate 3b).
 //
@@ -368,7 +369,7 @@ const readActiveGenerationIdStrict = (
 	// Full pointer validation (id shape, selectedAt, signal/range binding) —
 	// the same parser every other pointer read uses, not a looser private one.
 	const pointer = parseArchiveActivePointer(
-		JSON.parse(readFileSync(pointerPath, "utf8")) as unknown,
+		decodeJsonSync(readFileSync(pointerPath, "utf8")),
 		signal,
 		rangeDate,
 	)

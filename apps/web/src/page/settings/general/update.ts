@@ -54,11 +54,13 @@ export const FetchAdmins = Command.define("FetchClerkOrganizationAdmins", {
 				organization.getMemberships({ role: ["org:admin"], pageSize: 2 }),
 			),
 		),
-		Effect.map((page): AdminsInfo => ({
-			count: page.total_count,
-			firstAdminName: otherAdminName(page.data, window.Clerk?.user?.id),
-		})),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (page): AdminsInfo => ({
+				count: page.total_count,
+				firstAdminName: otherAdminName(page.data, window.Clerk?.user?.id),
+			}),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchAdmins({ result })),
 	),

@@ -40,8 +40,10 @@ const fetchPage = (search: typeof AgentSessionsSearch.Type, window: TimeWindow, 
 	listAiSessions({
 		data: { ...presentInputs(filterInputs(search, window)), limit: PAGE_SIZE, offset },
 	}).pipe(
-		Effect.map((response) => ({ data: response.data, ranked: rankedOf(response) })),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response) => ({ data: response.data, ranked: rankedOf(response) }),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -86,8 +88,7 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 				...countedFilters(filterInputs(search, window)),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) =>
 				Message.CompletedFetchDetails({
@@ -129,8 +130,7 @@ export const FetchTabSessions = Command.define("FetchAgentSessionsTabSessions", 
 	messages: [Message.CompletedFetchTabSessions],
 	execute: ({ key, window }) =>
 		getAiToolTotals({ data: window }).pipe(
-			Effect.map((totals) => totals.allSessions),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (totals) => totals.allSessions, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTabSessions({ key, result })),
 		),
@@ -141,8 +141,7 @@ export const FetchTabTools = Command.define("FetchAgentSessionsTabTools", {
 	messages: [Message.CompletedFetchTabTools],
 	execute: ({ key, window }) =>
 		getAiToolBreakdowns({ data: window }).pipe(
-			Effect.map((breakdowns) => breakdowns.tools.length),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (breakdowns) => breakdowns.tools.length, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTabTools({ key, result })),
 		),
@@ -233,9 +232,13 @@ export const MountRowClicks = Mount.defineStream("MountAgentSessionsRowClicks", 
 							shiftKey: event.shiftKey,
 							altKey: event.altKey,
 							isInsideLink: event.target.closest("a") !== null,
-							rowUrl: event.target.closest("tr[data-session-href]")?.getAttribute("data-session-href") ?? null,
+							rowUrl:
+								event.target
+									.closest("tr[data-session-href]")
+									?.getAttribute("data-session-href") ?? null,
 						})
-						if (Option.isSome(url)) Queue.offerUnsafe(queue, Message.ClickedSessionRow({ url: url.value }))
+						if (Option.isSome(url))
+							Queue.offerUnsafe(queue, Message.ClickedSessionRow({ url: url.value }))
 					}
 					element.addEventListener("click", onClick)
 					return onClick
@@ -252,8 +255,10 @@ export const VirtualizeSessions = Mount.defineStream("VirtualizeAgentSessions", 
 		viewStateChanges.pipe(
 			Stream.switchMap((viewState) =>
 				viewState === "Live" && element instanceof HTMLElement
-					? virtualize(element, { overscan: 10, isMeasured: true, rows: ":scope > tr[data-index]" }, (window) =>
-							Message.ChangedListWindow({ window }),
+					? virtualize(
+							element,
+							{ overscan: 10, isMeasured: true, rows: ":scope > tr[data-index]" },
+							(window) => Message.ChangedListWindow({ window }),
 						)
 					: Stream.never,
 			),

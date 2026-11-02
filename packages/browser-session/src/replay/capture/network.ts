@@ -74,8 +74,10 @@ function redactJson(body: string): string | undefined {
 	const start = body.trimStart()[0]
 	if (start !== "{" && start !== "[") return undefined
 	try {
+		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		return JSON.stringify(
 			// A string value can itself carry `pass=…` or embedded JSON, so it gets the text passes.
+			// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 			JSON.parse(body, (key, value: unknown) =>
 				key !== "" && CREDENTIAL_KEY.test(key)
 					? REDACTED
@@ -297,6 +299,7 @@ function xhrResponseText(xhr: XMLHttpRequest): string | undefined {
 	if (xhr.responseType === "" || xhr.responseType === "text") return xhr.responseText
 	if (xhr.responseType === "json") {
 		try {
+			// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 			return JSON.stringify(xhr.response)
 		} catch {
 			return undefined

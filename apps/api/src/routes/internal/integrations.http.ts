@@ -43,7 +43,7 @@ import {
 	VcsPullRequestsResponse,
 } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { graphqlQuery } from "@maple/backend/services/integrations/CloudflareApi"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
@@ -86,6 +86,8 @@ import { makeOAuthCompleter } from "@/routes/oauth-complete"
  */
 const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
 	requireAdminRole(
 		roles,
@@ -114,7 +116,8 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		// client-settable header, so it must belong to the app's own host family.
 		const trustedCallbackUrl = (path: string) =>
 			Effect.gen(function* () {
-				const origin = resolveRequestOrigin(yield* HttpServerRequest.HttpServerRequest)
+				const request = yield* HttpServerRequest.HttpServerRequest
+				const origin = resolveRequestOrigin(request)
 				if (!isTrustedCallbackOrigin(origin, env)) {
 					return yield* new IntegrationsForbiddenError({
 						message: "Integrations cannot be connected from this host",
@@ -174,7 +177,8 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						return new LinearDisconnectResponse(yield* linear.disconnect(tenant.orgId))
+						const disconnected = yield* linear.disconnect(tenant.orgId)
+						return new LinearDisconnectResponse(disconnected)
 					}),
 				)
 				.handle("cloudflareStatus", () =>
@@ -351,7 +355,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						// serve one user's drill-down as another's overview. Sorted so two equivalent
 						// selections share an entry.
 						const filterDigest = isFiltered
-							? JSON.stringify(
+							? yield* encodeJson(
 									Object.fromEntries(
 										Object.entries(filterVariables)
 											.sort(([a], [b]) => a.localeCompare(b))
@@ -360,7 +364,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 												Array.isArray(value) ? [...value].sort() : value,
 											]),
 									),
-								)
+								).pipe(Effect.orDie)
 							: ""
 						const cached = yield* edgeCache.getOrCompute(
 							{
@@ -462,7 +466,8 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						return new RailwayDisconnectResponse(yield* railway.disconnect(tenant.orgId))
+						const disconnected = yield* railway.disconnect(tenant.orgId)
+						return new RailwayDisconnectResponse(disconnected)
 					}),
 				)
 				// Any member may read the status; every change is an admin action, as for Railway.
@@ -518,13 +523,15 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						return new SupabaseDisconnectResponse(yield* supabase.disconnect(tenant.orgId))
+						const disconnected = yield* supabase.disconnect(tenant.orgId)
+						return new SupabaseDisconnectResponse(disconnected)
 					}),
 				)
 				.handle("gcpResources", ({ query }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return new GcpResourcesResponse(yield* gcp.resources(tenant.orgId, query))
+						const resources = yield* gcp.resources(tenant.orgId, query)
+						return new GcpResourcesResponse(resources)
 					}),
 				)
 				.handle("githubStatus", () =>
@@ -560,12 +567,15 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						return new GithubSelectInstallationResponse(
-							yield* github.selectInstallation(payload.installationId, payload.state, {
+						const selected = yield* github.selectInstallation(
+							payload.installationId,
+							payload.state,
+							{
 								orgId: tenant.orgId,
 								userId: tenant.userId,
-							}),
+							},
 						)
+						return new GithubSelectInstallationResponse(selected)
 					}),
 				)
 				.handle("githubDisconnect", () =>

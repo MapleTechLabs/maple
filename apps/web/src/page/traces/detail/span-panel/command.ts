@@ -16,12 +16,14 @@ export const FetchSpanDetail = Command.define("FetchSpanDetail", {
 	messages: [Message.CompletedFetchDetail],
 	execute: ({ key, traceId, spanId, timestamp }) =>
 		getSpanDetail({ data: { traceId, spanId, timestamp } }).pipe(
-			Effect.map((detail) => ({
-				spanAttributes: detail.spanAttributes,
-				resourceAttributes: detail.resourceAttributes,
-				events: detail.events,
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (detail) => ({
+					spanAttributes: detail.spanAttributes,
+					resourceAttributes: detail.resourceAttributes,
+					events: detail.events,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchDetail({ key, result })),
 		),
@@ -33,14 +35,15 @@ export const FetchSpanLogs = Command.define("FetchSpanLogs", {
 	messages: [Message.CompletedFetchLogs],
 	execute: ({ key, traceId, spanId }) =>
 		listLogs({ data: { traceId, spanId, limit: LOG_LIMIT } }).pipe(
-			Effect.map((response) =>
-				response.data.map((log) => ({
-					timestamp: log.timestamp,
-					severityText: log.severityText,
-					body: log.body,
-				})),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					response.data.map((log) => ({
+						timestamp: log.timestamp,
+						severityText: log.severityText,
+						body: log.body,
+					})),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchLogs({ key, result })),
 		),

@@ -9,7 +9,8 @@ const initialize = () =>
 	Effect.runPromise(
 		Effect.gen(function* () {
 			const { app, queryApp } = yield* makeAppGraphs(Context.empty(), offlinePorts)
-			return Cloudflare.Workers.makeRequestHandler(yield* makeFetch(app, offlinePorts, queryApp))
+			const handler = yield* makeFetch(app, offlinePorts, queryApp)
+			return Cloudflare.Workers.makeRequestHandler(handler)
 		}).pipe(Effect.provide(IsolateAge.layer)),
 	)
 let initialized: ReturnType<typeof initialize> | undefined

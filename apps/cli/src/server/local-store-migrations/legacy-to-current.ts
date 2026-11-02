@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto"
 import { Schema } from "effect"
 import { decodeJsonEachRow, decodeJsonObjectRows } from "../chdb-rows"
+import { encodeJson } from "../../lib/json"
 import {
 	LOCAL_SCHEMA_V1_MANIFEST,
 	LOCAL_SCHEMA_V1_SQL,
@@ -459,9 +460,9 @@ const canonicalJson = (value: unknown): string => {
 	if (isRecord(value))
 		return `{${Object.keys(value)
 			.sort()
-			.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+			.map((key) => `${encodeJson(key)}:${canonicalJson(value[key])}`)
 			.join(",")}}`
-	return JSON.stringify(value)
+	return encodeJson(value)
 }
 
 const batchSignature = (table: string, rows: ReadonlyArray<Record<string, unknown>>): string =>
@@ -603,7 +604,7 @@ const copyTable = async (
 			delete copy.__maple_timestamp
 			delete copy.__maple_hash
 			delete copy.__maple_tie_break
-			return { row, copy, encoded: JSON.stringify(copy) }
+			return { row, copy, encoded: encodeJson(copy) }
 		})
 		const selected: typeof candidates = []
 		let byteLength = 0

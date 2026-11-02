@@ -16,8 +16,7 @@ export const FetchSummary = Command.define("FetchInfraHostSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		hostDetailSummary({ data: input }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
 		),
@@ -37,8 +36,10 @@ export const FetchSeries = Command.define("FetchInfraHostSeries", {
 	messages: [Message.CompletedFetchSeries],
 	execute: ({ key, input }) =>
 		hostInfraTimeseries({ data: input }).pipe(
-			Effect.map((response) => ({ rows: response.data, unit: response.unit })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({ rows: response.data, unit: response.unit }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSeries({ metric: input.metric, key, result })),
 		),

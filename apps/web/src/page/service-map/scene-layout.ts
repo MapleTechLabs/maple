@@ -23,10 +23,11 @@ const LayoutTopology = Schema.Struct({
 })
 export type LayoutTopology = typeof LayoutTopology.Type
 const decodeLayoutTopology = Schema.decodeUnknownSync(Schema.fromJsonString(LayoutTopology))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** Metrics can refresh without replacing the layout: it is keyed on ids, namespaces and kinds. */
 export const topologyKeyOf = (topology: Topology3D): string =>
-	JSON.stringify({
+	encodeJson({
 		nodes: topology.nodes
 			.map(({ id, namespace, kind }) => ({ id, namespace, kind }))
 			.sort((a, b) => a.id.localeCompare(b.id)),
@@ -52,18 +53,18 @@ export interface LinkLabel {
 export const linkLabels = (topology: Topology3D, layout: SpatialLayout): ReadonlyArray<LinkLabel> => {
 	const layoutTopology = layoutTopologyOf(topologyKeyOf(topology))
 	const kinds = new Map<string, Node3DKind>(layoutTopology.nodes.map((node) => [node.id, node.kind]))
-	const byId = new Map(topology.edges.map((edge) => [JSON.stringify([edge.source, edge.target]), edge]))
+	const byId = new Map(topology.edges.map((edge) => [encodeJson([edge.source, edge.target]), edge]))
 	const peak = Math.max(1, ...topology.edges.map((edge) => edge.callsPerSecond))
 	return layoutTopology.edges
 		.toSorted((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target))
 		.flatMap((route) => {
 			if (!layout.positions.get(route.source) || !layout.positions.get(route.target)) return []
-			const edge = byId.get(JSON.stringify([route.source, route.target]))
+			const edge = byId.get(encodeJson([route.source, route.target]))
 			if (!edge) return []
 			const conveyor = kinds.get(route.source) === "queue" || kinds.get(route.target) === "queue"
 			return [
 				{
-					id: `link:${JSON.stringify([route.source, route.target])}`,
+					id: `link:${encodeJson([route.source, route.target])}`,
 					edge,
 					prominent:
 						!edge.relation &&

@@ -16,12 +16,15 @@ import {
 	type SignalProjectionSpec,
 } from "@maple/eventing-core"
 import { Context, Effect, Layer, Result, Schema, type Scope } from "effect"
+import { encodeJson } from "../../lib/json"
 import { durableWrite, ensurePrivateDirectory } from "../durable-files"
 import { observeEventing } from "./telemetry"
 
 const CONTROL_DIRECTORY = "control"
 const CONTROL_DATABASE = "eventing.sqlite"
 const MAX_FAILURES_PER_TENANT = 10_000
+const stagedSourceKindKey = (tenantId: string, sourceKind: string): string =>
+	encodeJson([tenantId, sourceKind])
 export const DEFAULT_MAX_OUTBOX_EVENTS = 10_000
 export const DEFAULT_MAX_OUTBOX_BYTES = 256 * 1024 * 1024
 export const DEFAULT_RETAIN_ACKNOWLEDGED_READY_EVENTS = 1_000
@@ -676,7 +679,9 @@ export class LocalEventingControlStore extends Context.Service<
 				"SELECT DISTINCT tenant_id, source_kind FROM outbox_events WHERE state = 'staged' AND source_kind IS NOT NULL",
 			)
 			try {
-				return new Set(statement.all().map((row) => JSON.stringify([row.tenant_id, row.source_kind])))
+				return new Set(
+					statement.all().map((row) => stagedSourceKindKey(row.tenant_id, row.source_kind)),
+				)
 			} finally {
 				statement.finalize()
 			}
@@ -1163,7 +1168,7 @@ export class LocalEventingControlStore extends Context.Service<
 		const hasStagedSourceKind: LocalEventingControlStoreApi["hasStagedSourceKind"] = (
 			tenantId,
 			sourceKind,
-		) => Effect.sync(() => stagedSourceKinds.has(JSON.stringify([tenantId, sourceKind])))
+		) => Effect.sync(() => stagedSourceKinds.has(stagedSourceKindKey(tenantId, sourceKind)))
 
 		const hasStagedSourceOccurrence: LocalEventingControlStoreApi["hasStagedSourceOccurrence"] = (
 			tenantId,

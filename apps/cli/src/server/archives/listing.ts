@@ -17,6 +17,7 @@ import {
 } from "./paths"
 import { ARCHIVE_SIGNALS, type ArchiveSignalName } from "./signals"
 import { withMaintenanceLock } from "../checkpoints"
+import { decodeJsonSync, encodeJson } from "../../lib/json"
 
 // Archive read-side: listing, active-path resolution, and catalog rebuild.
 //
@@ -100,7 +101,7 @@ export const listActiveGenerations = (archiveDir: string): ArchiveListing => {
 				assertNoSymlinkSync(archiveDir, pointerPath, "archive active pointer")
 				assertRealFileSync(pointerPath, "archive active pointer")
 				const pointer = parseArchiveActivePointer(
-					JSON.parse(readFileSync(pointerPath, "utf8")) as unknown,
+					decodeJsonSync(readFileSync(pointerPath, "utf8")),
 					signal.name,
 					rangeDate,
 				)
@@ -323,7 +324,7 @@ export interface CatalogEntry {
 }
 
 const serializeCatalogEntries = (entries: ReadonlyArray<CatalogEntry>): string =>
-	`${entries.map((entry) => JSON.stringify({ ...entry, formatVersion: 1 as const })).join("\n")}\n`
+	`${entries.map((entry) => encodeJson({ ...entry, formatVersion: 1 as const })).join("\n")}\n`
 
 /**
  * Read every authoritative manifest for a signal and derive the exact canonical

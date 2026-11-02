@@ -38,6 +38,10 @@
 import { randomBytes } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { parseArgs } from "node:util"
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 const FAILURE = 1
 
@@ -354,7 +358,7 @@ const postOtlp = async (opts: Options, path: string, body: unknown): Promise<voi
 		res = await fetch(`${opts.endpoint}${path}`, {
 			method: "POST",
 			headers: { "content-type": "application/json", authorization: `Bearer ${opts.key}` },
-			body: JSON.stringify(body),
+			body: encodeJson(body),
 		})
 	} catch (err) {
 		fail(
@@ -511,14 +515,10 @@ const main = async (): Promise<void> => {
 		if (sample) {
 			console.log("\n  ── sample resourceSpans (dry-run, nothing sent) ──")
 			console.log(
-				JSON.stringify(
-					{
-						resource: { attributes: resourceAttrs(opts, sample.sha) },
-						scopeSpans: [{ scope: { name: "ingest-dummy" }, spans: sample.spans.slice(0, 4) }],
-					},
-					null,
-					2,
-				)
+				encodeJsonPretty({
+					resource: { attributes: resourceAttrs(opts, sample.sha) },
+					scopeSpans: [{ scope: { name: "ingest-dummy" }, spans: sample.spans.slice(0, 4) }],
+				})
 					.split("\n")
 					.map((l) => `  ${l}`)
 					.join("\n"),

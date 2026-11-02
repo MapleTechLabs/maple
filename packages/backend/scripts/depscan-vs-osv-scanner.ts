@@ -4,26 +4,45 @@
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { packageKey } from "@maple/domain/package-advisories"
 import { parseLockfile } from "@maple/lockfiles"
-import { Console, Effect, Layer } from "effect"
+import { Console, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { basename, dirname } from "node:path"
 import { PackageAdvisoryCatalog } from "../src/services/security/PackageAdvisoryCatalog"
 
-interface OsvScannerOutput {
-	readonly results?: ReadonlyArray<{
-		readonly packages?: ReadonlyArray<{
-			readonly package: { readonly name: string; readonly version: string; readonly ecosystem: string }
-			readonly groups?: ReadonlyArray<{
-				readonly ids: ReadonlyArray<string>
-				readonly aliases?: ReadonlyArray<string>
-			}>
-		}>
-	}>
-}
+const OsvScannerOutput = Schema.Struct({
+	results: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				packages: Schema.optionalKey(
+					Schema.Array(
+						Schema.Struct({
+							package: Schema.Struct({
+								name: Schema.String,
+								version: Schema.String,
+								ecosystem: Schema.String,
+							}),
+							groups: Schema.optionalKey(
+								Schema.Array(
+									Schema.Struct({
+										ids: Schema.Array(Schema.String),
+										aliases: Schema.optionalKey(Schema.Array(Schema.String)),
+									}),
+								),
+							),
+						}),
+					),
+				),
+			}),
+		),
+	),
+})
+type OsvScannerOutput = typeof OsvScannerOutput.Type
+
+const decodeOsvScannerOutput = Schema.decodeUnknownSync(Schema.fromJsonString(OsvScannerOutput))
 
 const osvScanner = (path: string): OsvScannerOutput => {
 	const run = Bun.spawnSync(["osv-scanner", "scan", "source", "--format", "json", "--lockfile", path])
-	return JSON.parse(run.stdout.toString() || "{}")
+	return decodeOsvScannerOutput(run.stdout.toString() || "{}")
 }
 
 const layer = PackageAdvisoryCatalog.layer.pipe(
@@ -35,8 +54,10 @@ const compare = (path: string) =>
 	Effect.gen(function* () {
 		const manifests = new Map<string, string>()
 		const manifest = Bun.file(`${dirname(path)}/package.json`)
-		if (yield* Effect.promise(() => manifest.exists()))
-			manifests.set("package.json", yield* Effect.promise(() => manifest.text()))
+		if (yield* Effect.promise(() => manifest.exists())) {
+			const manifestText = yield* Effect.promise(() => manifest.text())
+			manifests.set("package.json", manifestText)
+		}
 		const content = yield* Effect.promise(() => Bun.file(path).text())
 		const parsed = yield* parseLockfile({ path: basename(path), content, manifests })
 		const catalog = yield* PackageAdvisoryCatalog

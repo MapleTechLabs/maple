@@ -101,6 +101,7 @@ import {
 	type NormalizedArguments,
 } from "../lib/decode-issues"
 import { filterNextCalls, nextCallsOf, type NextCall, type ToolDoc } from "../lib/tool-doc"
+import { stringifyJson } from "../lib/json"
 import { renderToolDocWithinBudget } from "./tool-output"
 import { CurrentWindowNotes, WindowNotes } from "../lib/window-notes"
 import type { McpToolRequirements } from "./runtime-requirements"
@@ -147,7 +148,7 @@ export const toOutputSchema = (schema: Schema.Top): Record<string, unknown> => {
 			: document.schema
 	if (base.type !== "object" && !("$ref" in base)) {
 		throw new Error(
-			`MCP tool output schemas must have an object root; got ${JSON.stringify(base).slice(0, 200)}. Wrap the output in a Schema.Struct.`,
+			`MCP tool output schemas must have an object root; got ${String(stringifyJson(base)).slice(0, 200)}. Wrap the output in a Schema.Struct.`,
 		)
 	}
 	return base
@@ -330,7 +331,7 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 	// module init, so it surfaces in tests and at worker boot rather than in the wire.
 	if (record.type !== "object" && !("$ref" in record)) {
 		throw new Error(
-			`MCP tool input schemas must have an object root; got ${JSON.stringify(record).slice(0, 200)}. Wrap the tool input in a Schema.Struct.`,
+			`MCP tool input schemas must have an object root; got ${String(stringifyJson(record)).slice(0, 200)}. Wrap the tool input in a Schema.Struct.`,
 		)
 	}
 	return base

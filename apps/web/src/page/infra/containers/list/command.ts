@@ -34,7 +34,9 @@ export const ContainersInput = Schema.Struct({
 	excludedComposeServices: StringList,
 	excludedEnvironments: StringList,
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "stale"])),
-	sortBy: Schema.optional(Schema.Literals(["saturation", "cpuPct", "memoryPct", "containerName", "lastSeen"])),
+	sortBy: Schema.optional(
+		Schema.Literals(["saturation", "cpuPct", "memoryPct", "containerName", "lastSeen"]),
+	),
 	sortDir: Schema.optional(Schema.Literals(["asc", "desc"])),
 	limit: Schema.optional(Schema.Number),
 	offset: Schema.optional(Schema.Number),
@@ -46,8 +48,10 @@ export const FetchContainers = Command.define("FetchInfraContainers", {
 	messages: [Message.CompletedFetchContainers],
 	execute: ({ key, input }) =>
 		listContainers({ data: input satisfies ListContainersInput }).pipe(
-			Effect.map(({ data, totalCount }) => ({ data, totalCount })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: ({ data, totalCount }) => ({ data, totalCount }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchContainers({ key, result })),
 		),
@@ -65,13 +69,15 @@ export const FetchSummary = Command.define("FetchInfraContainersSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		containersSummary({ data: input satisfies ContainersSummaryInput }).pipe(
-			Effect.map((counts) => ({
-				totalContainers: counts.totalContainers,
-				saturatedContainers: counts.saturatedContainers,
-				elevatedContainers: counts.elevatedContainers,
-				staleContainers: counts.staleContainers,
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (counts) => ({
+					totalContainers: counts.totalContainers,
+					saturatedContainers: counts.saturatedContainers,
+					elevatedContainers: counts.elevatedContainers,
+					staleContainers: counts.staleContainers,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
 		),
@@ -82,8 +88,7 @@ export const FetchFacets = Command.define("FetchInfraContainerFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getContainerFacets({ data: window }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -93,5 +98,6 @@ export const FetchFacets = Command.define("FetchInfraContainerFacets", {
 export const DebounceSearch = Command.define("DebounceInfraContainersSearch", {
 	args: { query: Schema.String },
 	messages: [Message.ElapsedSearchDebounce],
-	execute: ({ query }) => Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
+	execute: ({ query }) =>
+		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
 })

@@ -19,8 +19,10 @@ type BucketedProjectWindow = ProjectWindow & { readonly bucketSeconds: number }
 
 export const loadSupabaseProjects = (window: TimeWindow) =>
 	getSupabaseProjects({ data: window }).pipe(
-		Effect.map((response): ReadonlyArray<SupabaseProjectRow> => response.projects),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<SupabaseProjectRow> => response.projects,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -33,8 +35,10 @@ export const loadSupabaseStatus = (refresh: boolean) =>
 
 export const loadSupabaseTimeseries = (input: BucketedProjectWindow) =>
 	getSupabaseProjectTimeseries({ data: { ...input } }).pipe(
-		Effect.map((response): ReadonlyArray<SupabaseProjectTimeseriesRow> => response.buckets),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<SupabaseProjectTimeseriesRow> => response.buckets,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 

@@ -3,13 +3,20 @@
 // Vitest workspace, or by a stray worktree copy, stops the run with one clear message.
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { Schema } from "effect"
 
 const root = dirname(import.meta.dir)
 
+const decodeManifest = Schema.decodeUnknownSync(
+	Schema.fromJsonString(
+		Schema.Struct({
+			scripts: Schema.optionalKey(Schema.Struct({ test: Schema.optionalKey(Schema.String) })),
+		}),
+	),
+)
+
 const runsVitest = (packageJson: string): boolean => {
-	const manifest: { scripts?: { test?: string } } = JSON.parse(
-		readFileSync(join(root, packageJson), "utf8"),
-	)
+	const manifest = decodeManifest(readFileSync(join(root, packageJson), "utf8"))
 	return /\bvitest\b/.test(manifest.scripts?.test ?? "")
 }
 

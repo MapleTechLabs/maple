@@ -8,7 +8,7 @@
  * written to `seed-demo/.last-seed.json`; screenshots pin their time ranges to it.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, DateTime, Effect, FileSystem, Layer, Option, Schema } from "effect"
+import { Console, DateTime, Effect, FileSystem, Option, Schema } from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -202,12 +202,16 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 
 // ── sending ─────────────────────────────────────────────────────────────────
 
+const encodeJsonEffect = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+const encodeStateJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+
 const post = Effect.fn("seedDemo.post")(
 	function* (target: Target, path: string, body: unknown) {
 		const client = yield* HttpClient.HttpClient
+		const json = yield* encodeJsonEffect(body).pipe(Effect.orDie)
 		const request = HttpClientRequest.post(`${target.endpoint}${path}`).pipe(
 			HttpClientRequest.bearerToken(target.key),
-			HttpClientRequest.bodyText(JSON.stringify(body), "application/json"),
+			HttpClientRequest.bodyText(json, "application/json"),
 		)
 		const response = yield* client
 			.execute(request)
@@ -301,16 +305,15 @@ const seed = Command.make(
 	Effect.fn("seedDemo")(function* (flags) {
 		const fs = yield* FileSystem.FileSystem
 		const previous = flags.resume
-			? Option.some(
-					yield* fs.readFileString(STATE_FILE).pipe(
-						Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(SeedState))),
-						Effect.mapError(
-							() =>
-								new SeedPreflightError({
-									message: `--resume: no readable state at ${STATE_FILE}`,
-								}),
-						),
-					),
+			? yield* fs.readFileString(STATE_FILE).pipe(
+					Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(SeedState))),
+					Effect.mapBoth({
+						onSuccess: Option.some,
+						onFailure: () =>
+							new SeedPreflightError({
+								message: `--resume: no readable state at ${STATE_FILE}`,
+							}),
+					}),
 				)
 			: Option.none()
 		const target: Target = { endpoint: flags.endpoint.replace(/\/$/, ""), key: flags.key }
@@ -412,18 +415,14 @@ const seed = Command.make(
 		const writeState = (followedThrough: number) =>
 			fs.writeFileString(
 				STATE_FILE,
-				`${JSON.stringify(
-					{
-						anchor: new Date(anchor).toISOString(),
-						start: new Date(world.start).toISOString(),
-						incidentAt: new Date(world.incidentAt).toISOString(),
-						followedThrough: new Date(followedThrough).toISOString(),
-						orgId: Option.getOrNull(orgId),
-						seed,
-					},
-					null,
-					"\t",
-				)}\n`,
+				`${encodeStateJson({
+					anchor: new Date(anchor).toISOString(),
+					start: new Date(world.start).toISOString(),
+					incidentAt: new Date(world.incidentAt).toISOString(),
+					followedThrough: new Date(followedThrough).toISOString(),
+					orgId: Option.getOrNull(orgId),
+					seed,
+				})}\n`,
 			)
 		let cursor = Option.match(previous, {
 			onSome: (state) => DateTime.toEpochMillis(state.followedThrough ?? state.anchor),
@@ -461,6 +460,6 @@ const seed = Command.make(
 ).pipe(Command.withDescription("Seed the local stack with the Acme Shop demo world"))
 
 Command.run(seed, { version: "1.0.0" }).pipe(
-	Effect.provide(Layer.mergeAll(FetchHttpClient.layer, NodeServices.layer)),
+	Effect.provide([FetchHttpClient.layer, NodeServices.layer]),
 	NodeRuntime.runMain,
 )

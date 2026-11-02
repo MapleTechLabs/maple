@@ -46,8 +46,10 @@ export const loadDatabases = Effect.gen(function* () {
 /** `getServiceMapPlanetScaleResultAtom({ data: window })`. */
 export const loadDatabaseStats = (window: TimeWindow) =>
 	getServiceMapPlanetScale({ data: window }).pipe(
-		Effect.map((response): ReadonlyArray<DatabaseStat> => response.databases),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<DatabaseStat> => response.databases,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -104,8 +106,10 @@ export type QueryInsights = typeof QueryInsights.Type
 /** `getPlanetScaleBranchStatsResultAtom`. */
 export const loadBranchStats = (input: TimeWindow & { readonly database: string }) =>
 	getPlanetScaleBranchStats({ data: input }).pipe(
-		Effect.map((response): ReadonlyArray<BranchStat> => response.branches),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<BranchStat> => response.branches,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -120,8 +124,10 @@ export type TimeseriesInput = typeof TimeseriesInput.Type
 
 export const loadTimeseries = (input: TimeseriesInput) =>
 	getPlanetScaleInfraTimeseries({ data: input }).pipe(
-		Effect.map((response): ReadonlyArray<TimeseriesRow> => response.buckets),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<TimeseriesRow> => response.buckets,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -136,14 +142,15 @@ export type EpochWindowInput = typeof EpochWindowInput.Type
 
 export const loadEvents = (input: EpochWindowInput) =>
 	getPlanetScaleEvents({ data: input }).pipe(
-		Effect.map((response): ReadonlyArray<EventEntry> => response.events),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<EventEntry> => response.events,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
 export const loadInsights = (input: EpochWindowInput) =>
 	getPlanetScaleQueryInsights({ data: input }).pipe(
-		Effect.map((response): QueryInsights => response),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (response): QueryInsights => response, onFailure: toLoadFailure }),
 		Effect.result,
 	)

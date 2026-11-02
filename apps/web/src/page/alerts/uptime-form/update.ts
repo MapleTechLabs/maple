@@ -20,6 +20,8 @@ import { ASSERTION_OPS, type AssertionDraft, emptyForm, type Form, MonitorKind, 
 import { Message } from "./message"
 import type { Model } from "./model"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsUptimeNew" }>
 
@@ -133,7 +135,7 @@ const updateDestinationMenu = (model: Model, message: Menu.Message): Return => {
 }
 
 /** The tested config as a comparable key; destinations and name are not part of it. */
-const configKey = (form: Form): string => JSON.stringify(wireConfig(form))
+const configKey = (form: Form): string => encodeJson(wireConfig(form))
 
 /** A test result only stands while the form still has the config it ran on. */
 const dropStaleTest = (next: Return): Return =>

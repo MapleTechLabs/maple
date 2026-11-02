@@ -442,8 +442,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// which is why the engine's lives only for this provide. A run is an entry point: the Durable Object
 		// invocation owns this scope and nothing outside it composes these layers. The model's own
 		// client stays in the requirements channel, where the Durable Object's runtime answers it.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layer)),
+		Effect.provide([handlers, ThreadHistory.layer]),
 		// The `review_files` children run on threads of their own; their spans still belong to this
 		// session, so one review is one session.
 		(run) =>

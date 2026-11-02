@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
+import { Schema } from "effect"
 import { LOCAL_CONTROL_SCHEMA_HISTORY } from "../apps/cli/src/server/local-schema-history"
 import { LOCAL_CONTROL_SCHEMA_VERSION } from "../apps/cli/src/server/local-schema-version"
 import { execFileSync } from "node:child_process"
@@ -13,6 +14,8 @@ import {
 } from "../apps/cli/src/server/schema-identity"
 import { resolveMigrationChain } from "../apps/cli/src/server/local-store-migrations"
 import { schemaDigest, schemaFingerprint } from "../apps/cli/src/server/store-version"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const fail = (message: string): never => {
 	console.error(message)
@@ -177,10 +180,7 @@ if (baseRefExists) {
 			controlSection.matchAll(/version:\s*(\d+),\s*digest:\s*"([0-9a-f]{64})"/g),
 			(match) => ({ version: Number(match[1]), digest: match[2] }),
 		)
-		if (
-			JSON.stringify(LOCAL_CONTROL_SCHEMA_HISTORY.slice(0, baseControl.length)) !==
-			JSON.stringify(baseControl)
-		)
+		if (encodeJson(LOCAL_CONTROL_SCHEMA_HISTORY.slice(0, baseControl.length)) !== encodeJson(baseControl))
 			fail("control schema history is not append-only")
 		const baseHistory = parseHistorySource(baseSource)
 		if (baseSource.includes("LOCAL_SCHEMA_HISTORY") && baseHistory.length === 0)
@@ -188,7 +188,7 @@ if (baseRefExists) {
 		const currentHistory = LOCAL_SCHEMA_HISTORY.map((entry) => ({ ...entry }))
 		if (
 			baseHistory.length > currentHistory.length ||
-			JSON.stringify(currentHistory.slice(0, baseHistory.length)) !== JSON.stringify(baseHistory)
+			encodeJson(currentHistory.slice(0, baseHistory.length)) !== encodeJson(baseHistory)
 		)
 			fail(
 				"local schema identity history is not append-only; existing base identities must remain unchanged",

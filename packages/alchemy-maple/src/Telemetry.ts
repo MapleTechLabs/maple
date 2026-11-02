@@ -118,7 +118,10 @@ export const Telemetry = (props: TelemetryProps): Layer.Layer<never> => {
 			// Plan-time only: in the deployed bundle the bound values are already
 			// in the env, and the SDK reads them from there.
 			if (rc === undefined || globalThis.__ALCHEMY_RUNTIME__) return
-			if (ingestKey !== undefined) yield* rc.set("MAPLE_INGEST_KEY", yield* ingestKeyOutput(ingestKey))
+			if (ingestKey !== undefined) {
+				const ingestKeyValue = yield* ingestKeyOutput(ingestKey)
+				yield* rc.set("MAPLE_INGEST_KEY", ingestKeyValue)
+			}
 			if (endpoint !== undefined) yield* rc.set("MAPLE_ENDPOINT", Output.asOutput(endpoint))
 			if (environment !== undefined) yield* rc.set("MAPLE_ENVIRONMENT", Output.asOutput(environment))
 		}),

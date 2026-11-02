@@ -13,6 +13,7 @@ import {
 	validateRangeDate,
 } from "./paths"
 import { isArchiveSignalName } from "./signals"
+import { decodeJsonSync } from "../../lib/json"
 
 // Versioned, strict archive manifest and pointer formats.
 //
@@ -468,7 +469,7 @@ export const readArchiveGenerationManifest = (
 	// the archive root. This is the single chokepoint for manifest reads.
 	assertNoSymlinkSync(archiveDir, path, "archive manifest")
 	assertRealFileSync(path, "archive manifest")
-	const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown
+	const parsed = decodeJsonSync(readFileSync(path, "utf8"))
 	return parseArchiveGenerationManifest(parsed, signal, rangeDate, generationId)
 }
 

@@ -14,6 +14,10 @@
  * safe for the driver-free root barrel.
  */
 
+import { Option, Schema } from "effect"
+
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 /**
  * Recursively sort object keys and drop `undefined`. Arrays preserve order —
  * element order is meaningful in a `QuerySpec` (an ORDER BY list is not a set),
@@ -43,5 +47,6 @@ export const canonicalJSON = (value: unknown): string => {
 		}
 		return String(v)
 	}
-	return JSON.stringify(walk(value))
+	// Only a top-level `undefined` has no JSON form; it keys as `null`.
+	return Option.getOrElse(encodeJsonOption(walk(value)), () => "null")
 }

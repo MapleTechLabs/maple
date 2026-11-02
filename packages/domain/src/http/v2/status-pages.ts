@@ -1,5 +1,5 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { Schema, Struct } from "effect"
+import { Option, Schema, Struct } from "effect"
 import {
 	StatusPageAutoIncidents,
 	StatusPageComponentId,
@@ -629,6 +629,10 @@ export const normalizeStatusPageConfig = (config: StatusPageConfig) => {
 	}
 }
 
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+/** `JSON.stringify`: `undefined` for a value JSON cannot represent. */
+const stringifyJson = (value: unknown): string | undefined => Option.getOrUndefined(encodeJsonOption(value))
+
 /** JSON with object keys sorted at every depth; arrays keep their order. */
 const canonicalJson = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
@@ -636,9 +640,9 @@ const canonicalJson = (value: unknown): string => {
 		return `{${Object.entries(value)
 			.filter(([, entry]) => entry !== undefined)
 			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-			.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+			.map(([key, entry]) => `${stringifyJson(key)}:${canonicalJson(entry)}`)
 			.join(",")}}`
-	return JSON.stringify(value) ?? "null"
+	return stringifyJson(value) ?? "null"
 }
 
 /** cyrb53 over UTF-16 code units: 53 bits, the same in browsers, workerd and Node. */
@@ -705,7 +709,7 @@ export interface StatusPageConfigChanges extends StatusPageConfigChangeSet {
 	readonly duplicateIds: ReadonlyArray<StatusPageComponentId>
 }
 
-const sameValue = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+const sameValue = (left: unknown, right: unknown) => stringifyJson(left) === stringifyJson(right)
 
 /** What applying `next` over the page's current config would change; components by name. */
 export const diffStatusPageConfig = (

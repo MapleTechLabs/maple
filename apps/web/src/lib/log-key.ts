@@ -7,6 +7,14 @@
 // never throws — malformed input yields `null` so the page can render its
 // "invalid link" state.
 
+import { Option, Schema } from "effect"
+
+const LogKeyJson = Schema.fromJsonString(
+	Schema.Tuple([Schema.String, Schema.String, Schema.String, Schema.String]),
+)
+const encodeLogKeyJson = Schema.encodeSync(LogKeyJson)
+const decodeLogKeyJson = Schema.decodeUnknownOption(LogKeyJson)
+
 export interface LogKey {
 	/** Raw Log.timestamp — ClickHouse DateTime64 string. */
 	timestamp: string
@@ -48,23 +56,15 @@ export function encodeLogKey(log: EncodableLog): string {
 		log.traceId ?? "",
 		log.spanId ?? "",
 	]
-	return toBase64Url(JSON.stringify(payload))
+	return toBase64Url(encodeLogKeyJson(payload))
 }
 
 /** Decode a `$logId` token back into a LogKey, or `null` if it is malformed. */
 export function decodeLogKey(token: string): LogKey | null {
 	try {
-		const parsed = JSON.parse(fromBase64Url(token)) as unknown
-		if (!Array.isArray(parsed) || parsed.length !== 4) return null
-		const [timestamp, serviceName, traceId, spanId] = parsed
-		if (
-			typeof timestamp !== "string" ||
-			typeof serviceName !== "string" ||
-			typeof traceId !== "string" ||
-			typeof spanId !== "string"
-		) {
-			return null
-		}
+		const parsed = decodeLogKeyJson(fromBase64Url(token))
+		if (Option.isNone(parsed)) return null
+		const [timestamp, serviceName, traceId, spanId] = parsed.value
 		if (timestamp === "" || serviceName === "") return null
 		return { timestamp, serviceName, traceId, spanId }
 	} catch {

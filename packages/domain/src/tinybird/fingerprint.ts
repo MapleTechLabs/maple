@@ -295,9 +295,11 @@ function tryParseJsonObject(s: string): Record<string, unknown> | undefined {
  * matching `JSONExtractKeysAndValuesRaw` for scalars. Nested objects/arrays are
  * hashed as their (compact) raw form — only top-level order is canonicalized.
  */
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 function jsonSignature(obj: Record<string, unknown>): string {
 	return Object.keys(obj)
-		.map((key) => `${key}=${applyRedactions(JSON.stringify(obj[key]), JSON_VALUE_REDACTIONS)}`)
+		.map((key) => `${key}=${applyRedactions(encodeJson(obj[key]), JSON_VALUE_REDACTIONS)}`)
 		.sort()
 		.join("|")
 }

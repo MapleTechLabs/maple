@@ -86,27 +86,29 @@ const make = Effect.gen(function* () {
 					offset,
 				}),
 			).pipe(
-				Effect.mapError(
-					(cause) =>
+				Effect.mapBoth({
+					onFailure: (cause) =>
 						new AlertMemberDirectoryUnavailableError({
 							message: `Failed to list workspace members for ${orgId}`,
 							cause,
 						}),
-				),
-				Effect.map((page) => {
-					const members = page.data.flatMap((member): Array<OrgMember> => {
-						const userId = member.publicUserData?.userId
-						const email = member.publicUserData?.identifier
-						if (!userId || !email) return []
-						const name =
-							[member.publicUserData?.firstName, member.publicUserData?.lastName]
-								.filter(Boolean)
-								.join(" ") || null
-						return [{ userId, email, name, imageUrl: member.publicUserData?.imageUrl ?? null }]
-					})
-					const next = offset + page.data.length
-					const done = next >= page.totalCount || page.data.length === 0
-					return [members, done ? Option.none<number>() : Option.some(next)] as const
+					onSuccess: (page) => {
+						const members = page.data.flatMap((member): Array<OrgMember> => {
+							const userId = member.publicUserData?.userId
+							const email = member.publicUserData?.identifier
+							if (!userId || !email) return []
+							const name =
+								[member.publicUserData?.firstName, member.publicUserData?.lastName]
+									.filter(Boolean)
+									.join(" ") || null
+							return [
+								{ userId, email, name, imageUrl: member.publicUserData?.imageUrl ?? null },
+							]
+						})
+						const next = offset + page.data.length
+						const done = next >= page.totalCount || page.data.length === 0
+						return [members, done ? Option.none<number>() : Option.some(next)] as const
+					},
 				}),
 			),
 		).pipe(Stream.runCollect)

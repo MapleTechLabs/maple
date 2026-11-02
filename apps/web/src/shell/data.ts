@@ -25,7 +25,8 @@ export const LoadInfraPresence = Command.define("LoadInfraPresence", {
 	messages: [Message.SucceededLoadInfraPresence, Message.FailedLoadInfraPresence],
 	execute: ({ orgId }) =>
 		Effect.gen(function* () {
-			const surfaces = yield* loadInfraPresence(orgId, lastHourWindow(yield* Clock.currentTimeMillis))
+			const now = yield* Clock.currentTimeMillis
+			const surfaces = yield* loadInfraPresence(orgId, lastHourWindow(now))
 			return Message.SucceededLoadInfraPresence({ orgId, surfaces })
 		}).pipe(failed(Message.FailedLoadInfraPresence({ orgId }))),
 })

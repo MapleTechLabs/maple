@@ -93,12 +93,14 @@ export const FetchOverview = Command.define("FetchServiceDetailOverview", {
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, input }) =>
 		getServiceDetailOverview({ data: { ...input, environments: mutable(input.environments) } }).pipe(
-			Effect.map((response) => ({
-				points: response.data,
-				releases: response.releases,
-				environments: response.environments,
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({
+					points: response.data,
+					releases: response.releases,
+					environments: response.environments,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
 		),
@@ -112,8 +114,7 @@ export const FetchRefinement = Command.define("FetchServiceDetailRefinement", {
 		getServiceDetailThroughputRefinement({
 			data: { ...input, environments: mutable(input.environments) },
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchRefinement({ key, result })),
 		),
@@ -125,8 +126,7 @@ export const FetchOperations = Command.define("FetchServiceOperations", {
 	messages: [Message.CompletedFetchOperations],
 	execute: ({ key, input }) =>
 		getServiceOperations({ data: input }).pipe(
-			Effect.map((response) => response.operations),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.operations, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOperations({ key, result })),
 		),
@@ -141,8 +141,7 @@ export const FetchEndpoints = Command.define("FetchServiceEndpoints", {
 	messages: [Message.CompletedFetchEndpoints],
 	execute: ({ key, input }) =>
 		getServiceEndpoints({ data: input }).pipe(
-			Effect.map((response) => response.endpoints),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.endpoints, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchEndpoints({ key, result })),
 		),
@@ -153,19 +152,21 @@ export const FetchUsage = Command.define("FetchServiceDetailUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: ({ key, input }) =>
 		getServiceUsage({ data: input }).pipe(
-			Effect.map((response) => ({
-				totals: response.data.reduce(
-					(acc, row) => ({
-						logs: acc.logs + row.totalLogs,
-						traces: acc.traces + row.totalTraces,
-						metrics: acc.metrics + row.totalMetrics,
-						dataSize: acc.dataSize + row.dataSizeBytes,
-					}),
-					{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
-				),
-				previous: response.previousTotals ?? null,
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({
+					totals: response.data.reduce(
+						(acc, row) => ({
+							logs: acc.logs + row.totalLogs,
+							traces: acc.traces + row.totalTraces,
+							metrics: acc.metrics + row.totalMetrics,
+							dataSize: acc.dataSize + row.dataSizeBytes,
+						}),
+						{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
+					),
+					previous: response.previousTotals ?? null,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchUsage({ key, result })),
 		),
@@ -176,8 +177,7 @@ export const FetchWorkloads = Command.define("FetchServiceWorkloads", {
 	messages: [Message.CompletedFetchWorkloads],
 	execute: ({ key, input }) =>
 		getServiceWorkloads({ data: input }).pipe(
-			Effect.map((response) => response.workloads),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.workloads, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchWorkloads({ key, result })),
 		),
@@ -188,8 +188,7 @@ export const FetchRuntimes = Command.define("FetchServiceRuntimes", {
 	messages: [Message.CompletedFetchRuntimes],
 	execute: ({ key, input }) =>
 		getServiceRuntimes({ data: input }).pipe(
-			Effect.map((response) => response.runtimes),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.runtimes, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchRuntimes({ key, result })),
 		),
@@ -290,8 +289,7 @@ export const FetchEndpointSeries = Command.define("FetchServiceEndpointSeries", 
 		getServiceEndpointsTimeseries({
 			data: { ...input, environments: mutable(input.environments), spanNames: [...input.spanNames] },
 		}).pipe(
-			Effect.map((response) => response.buckets),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.buckets, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchEndpointSeries({ key, result })),
 		),
@@ -305,8 +303,7 @@ export const FetchStatusBreakdown = Command.define("FetchServiceEndpointStatusBr
 		getServiceEndpointStatusBreakdown({
 			data: { ...input, environments: mutable(input.environments) },
 		}).pipe(
-			Effect.map((response) => response.rows),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.rows, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchStatusBreakdown({ key, result })),
 		),

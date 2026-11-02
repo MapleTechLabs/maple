@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -7,6 +7,9 @@ import { emitJsonPathSpec } from "../packages/domain/src/clickhouse/ddl-emitter"
 import { clickHouseSchemaVersion } from "../packages/domain/src/clickhouse/migrations"
 import { projectRevision as clickHouseProjectRevision } from "../packages/domain/src/generated/clickhouse-schema"
 import { buildTinybirdProjectManifest } from "../packages/domain/src/tinybird/project-manifest"
+
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 // Datasources the local OTLP ingest path actually writes. session_* (replay
 // ingest) and alert_checks (alerting engine) are written by subsystems the
@@ -67,15 +70,11 @@ for (const name of INGEST_DATASOURCES) {
 	ingestDatasources[name] = buildMapping(name, emitJsonPathSpec(ds))
 }
 
-const renderedLocalSource = `${JSON.stringify(
-	{
-		projectRevision: clickHouseProjectRevision,
-		orgPlaceholder: ORG_PLACEHOLDER,
-		datasources: localDatasources,
-	},
-	null,
-	2,
-)}\n`
+const renderedLocalSource = `${encodeJsonPretty({
+	projectRevision: clickHouseProjectRevision,
+	orgPlaceholder: ORG_PLACEHOLDER,
+	datasources: localDatasources,
+})}\n`
 const renderedLocalResult = await format(localOutputPath, renderedLocalSource, {
 	printWidth: 110,
 	tabWidth: 4,
@@ -235,7 +234,7 @@ function renderRustMappings(revision: string, datasources: Record<string, Dataso
 }
 
 function rustString(value: string): string {
-	return JSON.stringify(value)
+	return encodeJsonString(value)
 }
 
 function rustStringArray(values: ReadonlyArray<string>): string {

@@ -78,11 +78,17 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
 			const shares = yield* client.dashboards.listShares({ params: { id } })
-			return shares.map((share) => ({ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }))
+			return shares.map((share) => ({
+				widgetId: share.widgetId ?? null,
+				mode: share.mode,
+				token: share.token,
+			}))
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) })),
+			Effect.map((result) =>
+				Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) }),
+			),
 		),
 })
 
@@ -149,7 +155,8 @@ export const CloneWidget = Command.define("CloneDashboardWidget", {
 	execute: ({ orgId, dashboardId, widgetId }) =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
-			const newId = generateWidgetId(nowMs, yield* Random.next)
+			const random = yield* Random.next
+			const newId = generateWidgetId(nowMs, random)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
 					withClone(document, widgetId, newId, nowIso),
@@ -196,11 +203,13 @@ export const ExportDashboard = Command.define("ExportDashboardJson", {
 
 // MOUNTS
 
-type HandleMessage =
-	| typeof Message.PressedGrip.Type
-	| typeof Message.PressedResizeHandle.Type
-	| typeof Message.PressedGripKey.Type
-	| typeof Message.BlurredGrip.Type
+const HandleMessage = Schema.Union([
+	Message.PressedGrip,
+	Message.PressedResizeHandle,
+	Message.PressedGripKey,
+	Message.BlurredGrip,
+])
+type HandleMessage = typeof HandleMessage.Type
 
 /** This grid's own cell for an event target on one of its handles (`cellOf`). */
 const handleCellOf = (container: Element, target: EventTarget | null, selector: string) => {
@@ -431,8 +440,11 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 	execute: ({ orgId, dashboardId, presetId, chartId, target }) =>
 		Effect.gen(function* () {
 			const picked = pickedWidget({ presetId, chartId })
-			if (picked === null) return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
-			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
+			if (picked === null)
+				return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
+			const nowMs = yield* Clock.currentTimeMillis
+			const random = yield* Random.next
+			const id = generateWidgetId(nowMs, random)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
 					withAddedWidget(
@@ -484,7 +496,11 @@ export const SaveVariables = Command.define("SaveDashboardVariables", {
 	messages: [Message.CompletedWrite],
 	execute: ({ orgId, dashboardId, variables }) =>
 		toWriteMessage(
-			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({ ...document, variables, updatedAt: nowIso })),
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
+				...document,
+				variables,
+				updatedAt: nowIso,
+			})),
 		),
 })
 

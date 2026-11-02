@@ -50,13 +50,15 @@ export const registerQueueConsumers = (
 ) =>
 	Effect.gen(function* () {
 		// Handed to the placed fetch handler over the self binding (`./vcs-sync.ts`), inline without it.
-		yield* Cloudflare.Queues.consumeQueueMessages(yield* VcsSyncQueue, VCS_SYNC_CONSUMER, (stream) =>
+		const vcsSyncQueue = yield* VcsSyncQueue
+		yield* Cloudflare.Queues.consumeQueueMessages(vcsSyncQueue, VCS_SYNC_CONSUMER, (stream) =>
 			Effect.flatMap(Stream.runCollect(stream), (messages) =>
 				consumeVcsSyncBatch(ports, env, vcsSyncCaches, messages),
 			),
 		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
+		const planetScaleWebhookQueue = yield* PlanetScaleWebhookQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
-			yield* PlanetScaleWebhookQueue,
+			planetScaleWebhookQueue,
 			PLANETSCALE_WEBHOOKS_CONSUMER,
 			(stream) =>
 				Effect.flatMap(
@@ -76,8 +78,9 @@ export const registerQueueConsumers = (
 		// The dead-letter setting is a plan-time value: the DLQ's resolved props
 		// carry its physical name there and are empty in the isolate.
 		const auditEventsDlq = yield* AuditEventsDlq
+		const auditEventsQueue = yield* AuditEventsQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
-			yield* AuditEventsQueue,
+			auditEventsQueue,
 			auditEventsConsumer(auditEventsDlq.Props.name),
 			(stream) =>
 				Effect.flatMap(auditEventsModule, ({ AuditEventsLive, processAuditEventsBatch }) =>

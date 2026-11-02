@@ -1,12 +1,14 @@
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import * as CopyButton from "@maple/web/ui/copy-button"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../../route"
 import { type Copies, copyOf } from "../copies"
 import { Message } from "./message"
 import type { LocalLog } from "./model"
+
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // Pure helpers and the copy-on-click value of `LogDetailSheet`.
 
@@ -41,21 +43,17 @@ export const traceHrefOf = (log: LocalLog): Option.Option<string> =>
 
 /** `buildLogJsonPayload`: the full log as pretty JSON. */
 export const buildLogJsonPayload = (log: LocalLog): string =>
-	JSON.stringify(
-		{
-			timestamp: log.timestamp,
-			severityText: log.severityText,
-			severityNumber: log.severityNumber,
-			serviceName: log.serviceName,
-			body: log.body,
-			traceId: log.traceId || undefined,
-			spanId: log.spanId || undefined,
-			logAttributes: log.logAttributes,
-			resourceAttributes: log.resourceAttributes,
-		},
-		null,
-		2,
-	)
+	encodePrettyJson({
+		timestamp: log.timestamp,
+		severityText: log.severityText,
+		severityNumber: log.severityNumber,
+		serviceName: log.serviceName,
+		body: log.body,
+		traceId: log.traceId || undefined,
+		spanId: log.spanId || undefined,
+		logAttributes: log.logAttributes,
+		resourceAttributes: log.resourceAttributes,
+	})
 
 /** `CopyableValue`: inline text that copies itself, tinted by the copy's outcome. */
 export const copyableValue = (

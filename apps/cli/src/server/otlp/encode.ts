@@ -20,6 +20,7 @@
  */
 
 import { Schema } from "effect"
+import { encodeJson } from "../../lib/json"
 
 export interface EncodedBatch {
 	datasource: string
@@ -177,7 +178,7 @@ function idHex(value: string | undefined, byteLength: number, field: string): st
 		const base64Chars = Math.ceil(byteLength / 3) * 4
 		const shown = value.length > 80 ? `${value.slice(0, 80)}…` : value
 		throw OtlpFieldError.of(
-			`${field} must be ${byteLength} bytes: expected ${byteLength * 2} hex chars (OTLP/JSON) or ${base64Chars} base64 chars (OTLP/protobuf), got ${JSON.stringify(shown)} (${value.length} chars)`,
+			`${field} must be ${byteLength} bytes: expected ${byteLength * 2} hex chars (OTLP/JSON) or ${base64Chars} base64 chars (OTLP/protobuf), got ${encodeJson(shown)} (${value.length} chars)`,
 		)
 	}
 	return hexFromBytes(bytes)
@@ -257,7 +258,7 @@ export function anyValueString(value: AnyValue | undefined | null): string {
 		return bytesText(value.bytesValue)
 	}
 	if (value.arrayValue !== undefined || value.kvlistValue !== undefined) {
-		return JSON.stringify(anyValueJson(value))
+		return encodeJson(anyValueJson(value))
 	}
 	return ""
 }
@@ -482,7 +483,7 @@ function parseDouble(value: ProtoDouble): number | undefined {
 
 function requireDouble(value: ProtoDouble, field: string): number {
 	const parsed = parseDouble(value)
-	if (parsed === undefined) throw OtlpFieldError.of(`${field} is not a double: ${JSON.stringify(value)}`)
+	if (parsed === undefined) throw OtlpFieldError.of(`${field} is not a double: ${encodeJson(value)}`)
 	return parsed
 }
 
@@ -571,7 +572,7 @@ function toBatches(byDatasource: Map<string, Record<string, unknown>[]>): Encode
 		batches.push({
 			datasource,
 			rowCount: rows.length,
-			ndjson: rows.map((row) => JSON.stringify(row)).join("\n"),
+			ndjson: rows.map((row) => encodeJson(row)).join("\n"),
 		})
 	}
 	return batches

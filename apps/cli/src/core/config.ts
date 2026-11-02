@@ -3,6 +3,7 @@ import { FileSystem } from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
 import * as path from "node:path"
+import { encodeJsonPretty } from "../lib/json"
 import { defaultLocalUrl } from "../lib/local-address"
 import { durableWrite } from "../server/durable-files"
 import {
@@ -116,7 +117,7 @@ export const writeConfigFile = (
 		const current = yield* readConfig(fs, configPath)
 		const merged = { ...current.unknownFields, ...mutate(current.config) }
 		yield* Effect.tryPromise({
-			try: () => durableWrite(configPath, `${JSON.stringify(merged, null, 2)}\n`),
+			try: () => durableWrite(configPath, `${encodeJsonPretty(merged)}\n`),
 			catch: (cause) =>
 				new ConfigFileError({
 					path: configPath,
@@ -291,7 +292,8 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 				}),
 			recordUpdateCheck: (latestTag) =>
 				Effect.gen(function* () {
-					const nowIso = new Date(yield* Clock.currentTimeMillis).toISOString()
+					const nowMs = yield* Clock.currentTimeMillis
+					const nowIso = new Date(nowMs).toISOString()
 					yield* writeMerged(fs, (cur) => ({
 						...cur,
 						lastUpdateCheck: nowIso,

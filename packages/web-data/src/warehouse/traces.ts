@@ -715,7 +715,8 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 	if (input.services?.length) yield* Effect.annotateCurrentSpan("services", input.services.join(","))
 
 	const filters = buildTracesFiltersFromInput(input)
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 
@@ -832,7 +833,8 @@ const getTracesFacetValuesEffect = Effect.fn("QueryEngine.getTracesFacetValues")
 
 	yield* Effect.annotateCurrentSpan("facet", input.facet)
 
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getTracesFacetValues",
 		new QueryEngineExecuteRequest({
@@ -860,7 +862,8 @@ const getTracesDurationStatsEffect = Effect.fn("QueryEngine.getTracesDurationSta
 }) {
 	const input = yield* decodeInput(GetTracesFacetsInputSchema, data ?? {}, "getTracesDurationStats")
 	const filters = buildTracesFiltersFromInput(input)
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getTracesDurationStats",
@@ -900,7 +903,8 @@ const getSpanAttributeKeysEffect = Effect.fn("QueryEngine.getSpanAttributeKeys")
 	data: GetSpanAttributeKeysInput
 }) {
 	const input = yield* decodeInput(GetSpanAttributeKeysInputSchema, data ?? {}, "getSpanAttributeKeys")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,
@@ -943,7 +947,8 @@ const getSpanAttributeValuesEffect = Effect.fn("QueryEngine.getSpanAttributeValu
 		return { data: [] }
 	}
 
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getSpanAttributeValues",
 		new QueryEngineExecuteRequest({
@@ -987,7 +992,8 @@ const getResourceAttributeKeysEffect = Effect.fn("QueryEngine.getResourceAttribu
 		data ?? {},
 		"getResourceAttributeKeys",
 	)
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,
@@ -1034,7 +1040,8 @@ const getResourceAttributeValuesEffect = Effect.fn("QueryEngine.getResourceAttri
 		return { data: [] }
 	}
 
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getResourceAttributeValues",
 		new QueryEngineExecuteRequest({
