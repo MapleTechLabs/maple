@@ -3,10 +3,10 @@ import { callMetaLine, callMetaParts, spanModel, type TranscriptRow } from "@map
 import { formatDuration } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
-import { truncatedText } from "../../../ui/truncated-text"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
@@ -14,6 +14,8 @@ import { clampedBody, messageBodyView, payloadCopyButton } from "./transcript-ki
 import { rowViewSwitch } from "./transcript-messages"
 import { avatar, CLOCK, clockOf, inlineNote, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
 import { failedBadge } from "./view-kit"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The transcript's model calls: `AssistantBlock`, `PromptBlock`, `StructureRow`.
 
@@ -36,8 +38,7 @@ const assistantError = (
 			...(message === ""
 				? []
 				: [
-						h.div(
-							[h.Class("flex items-start gap-1.5")],
+						hstack(h, { gap: "1.5", align: "start" },
 							[
 								h.div(
 									[h.Class("min-w-0 grow")],
@@ -71,7 +72,7 @@ const assistantError = (
 							],
 						),
 					]),
-			h.p([h.Class("text-muted-foreground text-xs")], ["No reply was produced by this call."]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, ["No reply was produced by this call."]),
 		],
 	)
 }
@@ -86,13 +87,13 @@ const assistantHeader = (
 	const model = spanModel(assistant.span)
 	const timing = callMetaParts(assistant.span, { usage: false }).slice(model === undefined ? 0 : 1)
 	const { isContinued, isSelected } = state
-	return h.button(
-		[
-			h.AriaPressed(String(isSelected)),
-			h.Class("flex min-w-0 grow cursor-pointer items-center gap-2 text-left"),
-			h.Type("button"),
-			h.OnClick(Message.ClickedSpan({ spanId: isSelected ? undefined : assistant.span.spanId })),
-		],
+	return pressable(
+		h,
+		{
+			onClick: Message.ClickedSpan({ spanId: isSelected ? undefined : assistant.span.spanId }),
+			isSelected,
+			className: "flex min-w-0 grow items-center gap-2 text-left",
+		},
 		[
 			// A continued call keeps a quieter speaker label, so its clock never sits alone over the text.
 			h.span(
@@ -194,8 +195,7 @@ export const promptBlock = (
 			className: "pt-4",
 		},
 		[
-			h.div(
-				[h.Class("flex flex-col gap-1.5")],
+			vstack(h, { gap: "1.5" },
 				[
 					h.div(
 						[h.Class("flex h-6 items-center gap-2")],
@@ -262,23 +262,17 @@ export const structureRow = (
 	const meta = structureMeta(structure.span, category)
 	const { isSelected } = state
 	return row(h, { depth: structure.depth, className: "pt-0.5" }, [
-		h.div(
-			[h.Class("flex items-center gap-2.5")],
+		hstack(h, { gap: "2.5" },
 			[
-				h.button(
-					[
-						h.AriaPressed(String(isSelected)),
-						h.Class(
-							cn(
-								"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-								rowSelectedClass(isSelected),
-							),
-						),
-						h.Type("button"),
-						h.OnClick(
-							Message.ClickedSpan({ spanId: isSelected ? undefined : structure.span.spanId }),
-						),
-					],
+				pressable(
+					h,
+					{
+						onClick: Message.ClickedSpan({ spanId: isSelected ? undefined : structure.span.spanId }),
+						isSelected,
+						selectedLane: isSelected,
+						className:
+							"-mx-1.5 flex min-w-0 grow items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+					},
 					[
 						icon(h, STRUCTURE_ICON[category], {
 							size: 14,
@@ -290,7 +284,7 @@ export const structureRow = (
 						truncatedText(h, {
 							text: structure.label,
 							mono: true,
-							className: "font-medium text-foreground text-xs",
+							className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
 						}),
 						h.span([h.Class(cn(META, "shrink-0"))], [meta.shown]),
 						h.span([h.Class(cn(META, !isSelected && ON_HOVER))], [meta.onHover]),

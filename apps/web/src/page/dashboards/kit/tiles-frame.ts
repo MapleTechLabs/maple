@@ -1,4 +1,4 @@
-import { chartSkeleton } from "../../../ui/chart-skeleton"
+import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import type { FrameOptions } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { interpolateDisplayText } from "@maple/query-engine"

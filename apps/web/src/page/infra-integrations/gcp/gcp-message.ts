@@ -2,7 +2,8 @@ import { gcpMessageParts } from "../../../components/integrations/gcp-connector-
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { icon } from "../../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
+import { typography } from "@maple/views/ui/typography"
 
 // `GcpMessage`, `Linked` and `GcpExternalLink`: a failure in the API's own words, laid out to be scanned.
 
@@ -59,14 +60,20 @@ export const gcpMessage = <M>(h: HtmlBuilder<M>, text: string): Html => {
 			...(body.length === 0
 				? []
 				: body.length === 1
-					? [h.p([h.Class("text-pretty text-muted-foreground")], linked(h, body[0] ?? ""))]
+					? [
+							typography(
+								h,
+								{ tone: "muted", as: "p", className: "text-pretty" },
+								linked(h, body[0] ?? ""),
+							),
+						]
 					: [
 							h.ul(
 								[h.Class("list-disc pl-4 text-pretty text-muted-foreground")],
 								body.map((sentence) => h.li([], linked(h, sentence))),
 							),
 						]),
-			...(answer === null ? [] : [h.p([h.Class("text-2xs text-foreground-subtle")], [answer])]),
+			...(answer === null ? [] : [typography(h, { size: "2xs", tone: "subtle", as: "p" }, [answer])]),
 		],
 	)
 }

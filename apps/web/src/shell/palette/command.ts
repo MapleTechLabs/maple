@@ -3,7 +3,7 @@ import { Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { ReadCache } from "../../data/read-cache"
 import { requestKey } from "../../data/request-key"
-import { applyScrollOverflow, trackScrollbar } from "../../ui/scroll-area"
+import { applyScrollOverflow, trackScrollbar } from "@maple/views/ui/scroll-area"
 import { Message } from "./model"
 
 /** `getTracesFacetValuesResultAtom`'s `staleTime`, counted from the palette closing (its unmount). */

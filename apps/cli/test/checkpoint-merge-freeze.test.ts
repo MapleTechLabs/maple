@@ -3,9 +3,9 @@ import { ok, strictEqual } from "node:assert"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Chdb } from "../src/server/chdb"
-import { validateCheckpointDataDir } from "../src/server/checkpoints"
-import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
+import { Chdb } from "@maple/local-server/chdb"
+import { validateCheckpointDataDir } from "@maple/local-server/checkpoints"
+import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { describeWithChdb } from "./libchdb-test-support"
 
 const countRows = (db: Chdb, table: string): number => {

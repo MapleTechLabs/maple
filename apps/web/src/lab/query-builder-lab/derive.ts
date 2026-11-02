@@ -2,7 +2,7 @@ import { formulaLabel, queryLabel } from "@maple/query-engine/query-builder"
 import type { TimeseriesQuerySetDiagnostics } from "@maple/query-engine/query-set"
 import { QUERY_BUILDER_METRIC_TYPES, type QueryBuilderMetricType } from "@maple/query-model"
 import type { QueryDraft } from "../../page/kit/query-builder/draft"
-import type { ScrollAreaOverflowY } from "../../ui/scroll-area"
+import type { ScrollAreaOverflowY } from "@maple/views/ui/scroll-area"
 import type { FormulaDraft, MetricRow, RunPoint, ScrollMetrics } from "./model"
 
 // The lab's pure helpers.

@@ -1,7 +1,7 @@
 import { BillingCustomer } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { settingsTabValues } from "../../route/search"
 import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
 import { Message as AiMessage } from "./ai/model"

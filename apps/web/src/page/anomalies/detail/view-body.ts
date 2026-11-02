@@ -16,31 +16,32 @@ import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
-import type * as Chart from "../../../charts/chart"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { ChartSpec } from "../../../charts/chart-spec"
-import { plotFrame } from "../../../charts/plot-frame"
-import { resolveColor } from "../../../charts/theme-colors"
+import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import type * as Chart from "@maple/views/charts/chart"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { ChartSpec } from "@maple/views/charts/chart-spec"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { resolveColor } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { card, cardPanel } from "../../../ui/card"
-import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { pageTitle } from "../../../ui/page-layout"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { inlineCode } from "../../../ui/inline-code"
-import { skeleton } from "../../../ui/skeleton"
-import { chartError, chartLoading } from "../../../ui/chart-state"
-import { serviceDot } from "../../../ui/values"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { card, cardPanel } from "@maple/views/ui/card"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { detailTitle } from "../../kit/detail-header"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { chartError, chartLoading } from "@maple/views/ui/chart-state"
+import { serviceDot } from "@maple/views/ui/values"
 import { seriesLegend } from "../../kit/series-legend"
 import { WORKFLOW_LABEL } from "../../errors/kit/workflow"
 import { actorAvatar } from "../../errors/kit/actor"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `AnomalyHero`, `AnomalySignalChart` + `AnomalyTimeseriesChart` and `AnomalyLinkedIssueCard`.
 
@@ -57,78 +58,55 @@ export const CHART_TOKENS: ReadonlyArray<string> = [
 
 const SEVERITY_STROKE = { critical: "--severity-error", warning: "--severity-warn" } as const
 
-export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: number): Html => {
+/** The detail header's title side: the signal and service under the "Anomaly" eyebrow. */
+export const anomalyTitle = (h: H, incident: AnomalyIncidentDocument): Html =>
+	detailTitle(h, {
+		kind: ["Anomaly"],
+		title: [
+			SIGNAL_LABEL[incident.signalType],
+			h.span([h.Class("text-foreground-subtle")], [" · "]),
+			incident.serviceName,
+		],
+		titleText: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
+	})
+
+/** The observed value against its baseline, above the signal chart. */
+export const anomalySummary = (h: H, incident: AnomalyIncidentDocument, nowMs: number): Html => {
 	const tone = severityToneFor(incident)
 	const isStale = isStaleOpenIncident(incident, nowMs)
 	const dev = deviation(incident)
 	const accent = cn(
-		"font-mono font-medium",
+		typographyClass({ weight: "medium", mono: true }),
 		incident.status === "open" && !isStale ? tone.text : "text-foreground",
 	)
 	const fmt = (value: number) => formatSignalValue(incident.signalType, value)
-	return h.div(
-		[h.Class("space-y-2")],
+	return h.p(
+		[h.Class("max-w-2xl text-sm text-muted-foreground")],
 		[
-			eyebrow(h, { as: "div" }, ["Anomaly"]),
-			h.header(
-				[h.Class("flex flex-wrap items-start gap-x-6 gap-y-3")],
-				[
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-1")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-baseline gap-3")],
-								[
-									pageTitle(
-										h,
-										{
-											title: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
-											className:
-												"min-w-0 whitespace-normal break-words text-foreground",
-										},
-										[
-											SIGNAL_LABEL[incident.signalType],
-											h.span([h.Class("text-foreground-subtle")], [" · "]),
-											incident.serviceName,
-										],
-									),
-								],
-							),
-							h.p(
-								[h.Class("max-w-2xl text-sm text-muted-foreground")],
-								[
-									isStale ? "Last recorded" : "Observed",
-									" ",
-									h.span([h.Class(accent)], [fmt(incident.lastObservedValue)]),
-									" ",
-									"against a ",
-									h.span(
-										[h.Class("font-mono text-foreground")],
-										[fmt(incident.baselineMedian)],
-									),
-									" 7-day baseline:",
-									" ",
-									h.span([h.Class(accent)], [dev.label]),
-									dev.kind === "sigma"
-										? " above median"
-										: dev.kind === "percent"
-											? " vs baseline"
-											: "",
-									", threshold ",
-									h.span(
-										[h.Class("font-mono text-foreground")],
-										[fmt(incident.thresholdValue)],
-									),
-									".",
-									isStale
-										? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt, nowMs)}; this stale detector state does not represent current service health.`
-										: "",
-								],
-							),
-						],
-					),
-				],
+			isStale ? "Last recorded" : "Observed",
+			" ",
+			h.span([h.Class(accent)], [fmt(incident.lastObservedValue)]),
+			" ",
+			"against a ",
+			typography(h, { tone: "foreground", mono: true },
+				[fmt(incident.baselineMedian)],
 			),
+			" 7-day baseline:",
+			" ",
+			h.span([h.Class(accent)], [dev.label]),
+			dev.kind === "sigma"
+				? " above median"
+				: dev.kind === "percent"
+					? " vs baseline"
+					: "",
+			", threshold ",
+			typography(h, { tone: "foreground", mono: true },
+				[fmt(incident.thresholdValue)],
+			),
+			".",
+			isStale
+				? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt, nowMs)}; this stale detector state does not represent current service health.`
+				: "",
 		],
 	)
 }
@@ -176,7 +154,7 @@ export const signalChart = (
 					dashed: true,
 					className: "flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
 				},
-				["No signal data in window"],
+				["No signal data in this window"],
 			)
 		const stroke = resolveColor(colors, SEVERITY_STROKE[incident.severity])
 		// Both threshold rules draw in `--destructive`.
@@ -255,8 +233,7 @@ const cardActions = (
 	issueId: NonNullable<AnomalyIncidentDocument["errorIssueId"]>,
 	isBusy: boolean,
 ): Html =>
-	h.div(
-		[h.Class("flex shrink-0 items-center gap-1.5")],
+	hstack(h, { gap: "1.5", className: "shrink-0" },
 		[
 			linkButton(
 				h,
@@ -300,15 +277,13 @@ export const linkedIssueCard = (
 		return h.div(
 			[h.Class("rounded-md border border-dashed border-border-subtle p-4")],
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center justify-between gap-3")],
+				hstack(h, { gap: "3", justify: "between", wrap: true },
 					[
 						h.div(
 							[h.Class("space-y-1")],
 							[
-								h.p([h.Class("text-sm text-foreground")], ["Not linked to an issue"]),
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
+								typography(h, { size: "sm", tone: "foreground", as: "p" }, ["Not linked to an issue"]),
+								typography(h, { size: "xs", tone: "muted", as: "p" },
 									[
 										incident.signalType === "error_spike"
 											? "This frequency increase is fingerprint-scoped, so an issue with this fingerprint may already exist for the service."
@@ -352,15 +327,14 @@ export const linkedIssueCard = (
 		onRefreshing: (wire) => loadedIssue(wire),
 	})
 	function failedIssue(id: NonNullable<AnomalyIncidentDocument["errorIssueId"]>): Html {
-		return h.div(
-			[h.Class("flex items-center justify-between gap-3")],
+		return hstack(h, { gap: "3", justify: "between" },
 			[
 				h.p(
 					[h.Class("text-muted-foreground")],
 					[
 						"Linked to issue",
 						" ",
-						h.code([h.Class("font-mono text-xs")], [shortIssueId(id)]),
+						h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [shortIssueId(id)]),
 						". Couldn't load its details.",
 					],
 				),
@@ -377,8 +351,7 @@ export const linkedIssueCard = (
 				h.div(
 					[h.Class("min-w-0 space-y-2")],
 					[
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
+						hstack(h, { gap: "2", wrap: true },
 							[
 								badge(
 									h,
@@ -386,7 +359,7 @@ export const linkedIssueCard = (
 									[WORKFLOW_LABEL[issue.workflowState]],
 								),
 								h.code(
-									[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
+									[h.Class(typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }))],
 									[shortIssueId(issue.id)],
 								),
 								badge(
@@ -413,8 +386,7 @@ export const linkedIssueCard = (
 									: []),
 							],
 						),
-						h.div(
-							[h.Class("flex items-center gap-3 text-xs text-muted-foreground")],
+						hstack(h, { gap: "3", className: typographyClass({ size: "xs", tone: "muted" }) },
 							[
 								h.span(
 									[h.Class("tabular-nums")],
@@ -424,8 +396,7 @@ export const linkedIssueCard = (
 										pluralize(issue.occurrenceCount, "event"),
 									],
 								),
-								h.span(
-									[h.Class("flex items-center gap-1.5")],
+								hstack(h, { gap: "1.5", as: "span" },
 									actor === null ? ["Unclaimed"] : [actorAvatar(h, actor)],
 								),
 							],

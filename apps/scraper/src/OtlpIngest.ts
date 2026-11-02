@@ -5,7 +5,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { countDataPoints, encodeExportRequestChunks, type OtlpExportRequest } from "@maple/prometheus-otlp"
 import { ScraperEnv } from "./Env"
 import { scrapeError, withScrapeSpan, type ScrapeError } from "./ScrapeError"
-import { isTransientStatus, TRANSIENT_RETRY } from "./retry"
+import { executeAttempt, isTransientStatus, TRANSIENT_RETRY } from "./retry"
 
 export interface OtlpIngestApi {
 	/**
@@ -49,9 +49,20 @@ export class OtlpIngest extends Context.Service<OtlpIngest, OtlpIngestApi>()("@m
 				}).pipe(HttpClientRequest.bodyUint8Array(compressed, "application/json"))
 
 				const attempt = Effect.gen(function* () {
-					const response = yield* client.execute(request).pipe(
-						Effect.annotateSpans("peer.service", "ingest"),
-						Effect.timeout(REQUEST_TIMEOUT),
+					const { status, text } = yield* executeAttempt(
+						client,
+						request,
+						{ peerService: "ingest", timeout: REQUEST_TIMEOUT },
+						(response) =>
+							response.status >= 200 && response.status < 300
+								? Effect.succeed({ status: response.status, text: "" })
+								: // Bounded too: a stalled body after the status line would outlive the timeout.
+									response.text.pipe(
+										Effect.timeout(REQUEST_TIMEOUT),
+										Effect.orElseSucceed(() => ""),
+										Effect.map((text) => ({ status: response.status, text })),
+									),
+					).pipe(
 						Effect.mapError((error) =>
 							scrapeError({
 								message: `ingest gateway unreachable: ${error.message}`,
@@ -59,20 +70,15 @@ export class OtlpIngest extends Context.Service<OtlpIngest, OtlpIngestApi>()("@m
 							}),
 						),
 					)
-					if (response.status >= 200 && response.status < 300) return
-					// Bounded too: a stalled body after the status line would outlive the timeout.
-					const text = yield* response.text.pipe(
-						Effect.timeout(REQUEST_TIMEOUT),
-						Effect.orElseSucceed(() => ""),
-					)
+					if (status >= 200 && status < 300) return
 					return yield* Effect.fail(
 						scrapeError({
 							message:
-								response.status === 402
+								status === 402
 									? `ingest gateway rejected metrics: billing limit reached (HTTP 402): ${text.slice(0, 200)}`
-									: `ingest gateway returned HTTP ${response.status}: ${text.slice(0, 200)}`,
-							reason: response.status === 402 ? "delivery_blocked" : "scrape_failed",
-							statusCode: response.status,
+									: `ingest gateway returned HTTP ${status}: ${text.slice(0, 200)}`,
+							reason: status === 402 ? "delivery_blocked" : "scrape_failed",
+							statusCode: status,
 						}),
 					)
 				})

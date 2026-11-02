@@ -10,16 +10,14 @@
 	},
 	"dependencies": {
 		"@alchemy.run/cloudflare": "catalog:alchemy",
-		"@floating-ui/dom": "1.8.0",
 		"@fontsource-variable/geist": "^5.3.0",
 		"@fontsource-variable/geist-mono": "^5.3.0",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/ui": "workspace:*",
+		"@maple/views": "workspace:*",
 		"@maple/web": "workspace:*",
-		"@tanstack/charts": "catalog:charts",
-		"@tanstack/charts-scales": "catalog:charts",
 		"effect": "catalog:effect",
 		"foldkit": "0.170.0"
 	},

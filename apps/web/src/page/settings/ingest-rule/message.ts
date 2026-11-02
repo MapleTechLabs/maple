@@ -9,8 +9,8 @@ import {
 } from "@maple/domain/ingest-rules"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Combobox from "../../../ui/combobox"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
 import { ActionType, TextPart } from "./form"
 import { PreviewSignal, Samples } from "./preview"
 

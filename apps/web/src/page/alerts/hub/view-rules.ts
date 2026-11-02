@@ -14,15 +14,14 @@ import {
 import { type DerivedRuleStatus, worstState } from "@maple/web-data/alerts/rule-status"
 import { groupByTag, type TagGroup, UNTAGGED_KEY } from "@maple/web-data/alerts/tag-grouping"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../../ui/alert"
-import { button } from "../../../ui/button"
-import { filterChip } from "../../../ui/filter-chip"
-import { icon } from "../../../ui/icon"
-import * as Menu from "../../../ui/menu"
-import type { MenuEntry } from "../../../ui/menu-view"
-import { rowActionsMenu } from "../../../ui/row-actions-menu"
-import { statusDot } from "../../../ui/status-dot"
-import { ROW_LINK_LIFT, rowLink } from "../../../ui/table"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { filterChip } from "@maple/views/ui/filter-chip"
+import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { ruleHref } from "../shared/links"
@@ -30,7 +29,11 @@ import { isoMs } from "../shared/time"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
 import { ruleMenuId } from "./update"
-import { searchInput } from "../../../ui/search-input"
+import { searchInput } from "@maple/views/ui/search-input"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { stripClass } from "@maple/views/ui/rule"
+import { hstack } from "@maple/views/ui/stack"
+import { borderedBox } from "@maple/views/ui/bordered-box"
 
 // `RulesTab`: the hub's Rules tab.
 
@@ -130,8 +133,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 		[
 			listToolbar(h, {
 				className: "pb-0",
-				leading: h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				leading: hstack(h, { gap: "2", wrap: true },
 					[
 						rulesSearch(h, model.rulesQuery),
 						...BUCKETS.map((bucket) =>
@@ -170,14 +172,13 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 			filtered.length === 0
 				? filteredEmpty(h, {
 						noun: "rules",
-						title: "No rules match your filters",
 						description: "Try a different search term or status.",
-						icon: icon(h, "MagnifierIcon", { size: 18 }),
 						onClear: Message.ClickedClearRuleFilters(),
 						className: "py-12",
 					})
-				: h.div(
-						[h.Class("overflow-x-auto rounded-md border")],
+				: borderedBox(
+						h,
+						{ overflow: "x-auto" },
 						[
 							h.div(
 								[h.Class("min-w-[900px]")],
@@ -187,7 +188,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 											h.Class(
 												cn(
 													ROW_GRID,
-													"border-b px-4 py-2 text-xs text-muted-foreground",
+													typographyClass({ size: "xs", tone: "muted", className: stripClass("head") }),
 												),
 											),
 										],
@@ -323,8 +324,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 						},
 						[rule.name],
 					),
-					h.p(
-						[h.Class("truncate font-mono text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
 						[ruleConditionSummary(rule)],
 					),
 				],
@@ -336,7 +336,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 				[
 					h.Class(
 						cn(
-							"text-right font-mono text-xs tabular-nums",
+							typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" }),
 							row.fired === 0 && "text-muted-foreground",
 						),
 					),
@@ -367,10 +367,10 @@ const headroomMeter = (
 	derived: DerivedRuleStatus | undefined,
 	value: number | null,
 ): Html => {
-	if (!rule.enabled) return h.span([h.Class("text-xs text-muted-foreground")], ["Not evaluating"])
+	if (!rule.enabled) return typography(h, { size: "xs", tone: "muted" }, ["Not evaluating"])
 	if (derived?.status === "error")
-		return h.span([h.Class("text-xs text-severity-error")], ["Query fails to run"])
-	if (value === null) return h.span([h.Class("text-xs text-muted-foreground")], ["Waiting on data"])
+		return typography(h, { size: "xs", tone: "error" }, ["Query fails to run"])
+	if (value === null) return typography(h, { size: "xs", tone: "muted" }, ["Waiting on data"])
 	const meter = ruleHeadroom(rule, value)
 	const tone = meter.breached
 		? "bg-severity-error"
@@ -436,5 +436,5 @@ const routesTo = (h: H, destinations: ReadonlyArray<AlertDestinationDocument>, i
 			["Nobody"],
 		)
 	const names = destinations.map((d) => d.name).join(", ")
-	return h.span([h.Class("truncate text-xs"), h.Title(names)], [names])
+	return typography(h, { size: "xs", truncate: true, attributes: [h.Title(names)] }, [names])
 }

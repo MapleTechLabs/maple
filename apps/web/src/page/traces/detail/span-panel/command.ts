@@ -3,7 +3,7 @@ import { listLogs } from "@maple/web-data/warehouse/logs"
 import { getSpanDetail } from "@maple/web-data/warehouse/traces"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { writeClipboard } from "../../../kit/clipboard"
 import { Message } from "./message"
 

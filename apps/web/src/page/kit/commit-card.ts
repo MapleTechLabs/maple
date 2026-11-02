@@ -10,7 +10,7 @@ import { IdleTtl } from "../../data/idle-ttl"
 import { ReadCache } from "../../data/read-cache"
 import { requestKey, type RequestKey } from "../../data/request-key"
 import { MapleInternalApiClient } from "../../platform/api-clients"
-import { skeleton } from "../../ui/skeleton"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { relativeTime } from "./relative-time"
 
 // The commit SHA hover card: the body

@@ -1,23 +1,27 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { pluralize } from "@maple/ui/lib/format"
+import { formatBytes, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
-import { formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { orderedSearch } from "../../../route/tanstack-search"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { skeleton } from "../../../ui/skeleton"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { pressable } from "@maple/views/ui/pressable"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { textLink } from "@maple/views/ui/text-link"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
 import { currentOf, occurrencesOf, pagingOf } from "./error-modal-update"
 import { sampleBody } from "./view-error-modal-payload"
 import { sessionLink } from "./view-error-modal-rail"
 import type { ModalInputs } from "./view-error-modal"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `SamplesPane` and `Sample` of `ToolErrorModal`: the failed calls, newest first, one open at a time.
 
@@ -28,38 +32,38 @@ const SAMPLES_PAGE = 25
 
 const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	const paging = pagingOf(model)
+	const last = model.pages.at(-1)?.data
+	const failure = paging === "failed" && last !== undefined && AsyncData.isFailure(last) ? last.error : undefined
 	return h.div(
 		[h.Class("flex h-9 items-center gap-2 px-6 font-mono text-xs")],
 		[
 			h.span(
 				[h.Class("text-muted-foreground")],
-				["Showing ", formatToolCount(shown), " of ", formatToolCount(total)],
+				["Showing ", formatNumber(shown), " of ", formatNumber(total)],
 			),
 			...(paging === "more"
 				? [
-						h.button(
-							[
-								h.Class("text-foreground hover:text-primary active:text-primary"),
-								h.Type("button"),
-								h.OnClick(Message.ClickedLoadMore()),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								onClick: Message.ClickedLoadMore(),
+								className: "text-foreground hover:text-primary active:text-primary",
+							},
 							["Load ", String(Math.min(SAMPLES_PAGE, Math.max(total - shown, 1))), " more"],
 						),
 					]
 				: paging === "loading"
 					? [h.span([h.Class("text-foreground-subtle")], ["Loading…"])]
-					: paging === "failed"
+					: failure !== undefined
 						? [
-								h.button(
-									[
-										h.Class(
-											"text-severity-error hover:text-foreground active:text-foreground",
-										),
-										h.Type("button"),
-										h.OnClick(Message.ClickedLoadMore()),
-									],
-									["Couldn't load more. Retry"],
-								),
+								errorState(h, {
+									// Loading the next page again is always worth a try, whatever the cause.
+									failure: { ...failure, recovery: "retry" },
+									title: "Couldn't load more",
+									variant: "quiet",
+									onRetry: Message.ClickedLoadMore(),
+								}),
 							]
 						: []),
 		],
@@ -89,7 +93,7 @@ export const samplesPane = (
 						),
 					]
 				: rows.length === 0
-					? [emptyMessage(h, {}, ["No samples in the selected window."])]
+					? [emptyMessage(h, {}, ["No samples in this window"])]
 					: rows.map((row, index) =>
 							sampleRow(h, model, inputs, row, {
 								index,
@@ -107,14 +111,12 @@ export const samplesPane = (
 					),
 				],
 				[
-					h.div(
-						[h.Class("flex items-baseline gap-2")],
+					hstack(h, { gap: "2", align: "baseline" },
 						[
-							h.span([h.Class("text-xs font-medium text-foreground")], ["Samples"]),
-							h.span(
-								[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
+							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Samples"]),
+							typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 								[
-									formatToolCount(options.total),
+									formatNumber(options.total),
 									" failed ",
 									pluralize(options.total, "call"),
 									" · newest first",
@@ -122,8 +124,7 @@ export const samplesPane = (
 							),
 						],
 					),
-					h.div(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2" },
 						[
 							h.span(
 								[h.Class("pr-1 text-2xs text-foreground-subtle max-md:hidden")],
@@ -136,7 +137,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current === 0,
-									className: "text-muted-foreground hover:text-foreground active:text-foreground",
+									className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
 								},
 								[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
@@ -146,7 +147,7 @@ export const samplesPane = (
 								[
 									rows.length === 0 ? "0" : String(current + 1),
 									" of ",
-									formatToolCount(options.total),
+									formatNumber(options.total),
 								],
 							),
 							iconButton(
@@ -156,7 +157,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
-									className: "text-muted-foreground hover:text-foreground active:text-foreground",
+									className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
 								},
 								[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
@@ -198,16 +199,15 @@ const sampleRow = (
 					),
 				],
 				[
-					h.button(
-						[
-							h.AriaExpanded(options.isOpen),
-							h.AriaLabel(`Sample at ${time}`),
-							h.Class(
-								"absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-							),
-							h.Type("button"),
-							h.OnClick(Message.ClickedSample({ index: options.index })),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedSample({ index: options.index }),
+							label: `Sample at ${time}`,
+							className:
+								"absolute inset-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+							attributes: [h.AriaExpanded(options.isOpen)],
+						},
 						[],
 					),
 					icon(h, options.isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
@@ -266,7 +266,7 @@ const sampleRow = (
 											"hidden shrink-0 text-2xs tabular-nums text-foreground-subtle md:block",
 										),
 									],
-									["args ", formatToolCount(row.argumentsBytes), " B"],
+									["args ", formatBytes(row.argumentsBytes)],
 								),
 							]),
 					h.span(

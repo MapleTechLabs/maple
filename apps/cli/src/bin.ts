@@ -20,11 +20,11 @@ import { maybeNotifyUpdate } from "./core/update"
 import { maybeNotifyWhatsNew } from "./core/changelog"
 import { LocalAccessHttpClient } from "./core/local-access"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
-import { debugEnabled } from "./lib/debug"
+import { debugEnabled } from "@maple/local-server/debug-log"
 import { makeHelpCapture, usageHint } from "./lib/help"
-import { archiveErrorMessage } from "./server/archives/errors"
-import { CHECKPOINT_REOPEN_PROBE_ENV, validateCheckpointDataDir } from "./server/checkpoints"
-import { MAPLE_VERSION } from "./version"
+import { archiveErrorMessage } from "@maple/local-server/archives/errors"
+import { CHECKPOINT_REOPEN_PROBE_ENV, validateCheckpointDataDir } from "@maple/local-server/checkpoints"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 
 // WarehouseExecutorFromMode needs Mode (which needs MapleConfig). provideMerge
 // keeps Mode + MapleConfig in the output context too, so the login/logout/whoami

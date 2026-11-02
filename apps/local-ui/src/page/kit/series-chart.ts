@@ -1,10 +1,10 @@
 import { type GapFill, pivotSeries, type SeriesPoint } from "../../lib/chart-series"
 import type { ChartWindow } from "../../lib/time"
 import { cn } from "@maple/ui/lib/utils"
-import * as AreaChart from "@maple/web/charts/area-chart"
-import type * as Chart from "@maple/web/charts/chart"
-import type { ThemeColors } from "@maple/web/charts/theme-colors"
-import { chartSkeleton } from "@maple/web/ui/chart-skeleton"
+import * as AreaChart from "@maple/views/charts/area-chart"
+import type * as Chart from "@maple/views/charts/chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The series chart: the pivot, gap handling and the

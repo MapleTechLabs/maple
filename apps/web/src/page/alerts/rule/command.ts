@@ -3,7 +3,7 @@ import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/do
 import { v2CheckToDocument } from "@maple/web-data/alerts/form-utils"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries, setRuleEnabled } from "../shared/commands"

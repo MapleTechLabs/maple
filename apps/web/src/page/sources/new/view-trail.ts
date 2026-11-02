@@ -1,12 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import type { FlowStage } from "../../integrations/flow"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { flowSpecOf, isReceiving } from "./update"
 import { integrationMeta } from "./view-picker"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The connect flow's progress: one line under the title. A finished step shows its answer, not its name.
 
@@ -72,7 +73,7 @@ const ITEM_CLASS = {
 const item = (h: H, entry: TrailItem): Html =>
 	h.li(
 		[
-			h.Class(cn("inline-flex items-center gap-1.5", ITEM_CLASS[entry.state])),
+			h.Class(cn(hstackClass({ gap: "1.5", inline: true }), ITEM_CLASS[entry.state])),
 			...(entry.state === "current" || entry.state === "blocked" ? [h.AriaCurrent("step")] : []),
 		],
 		[

@@ -1,7 +1,7 @@
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { LAB_STATES } from "./fixture"
 import { Message } from "./model"
 import { init, update } from "./update"

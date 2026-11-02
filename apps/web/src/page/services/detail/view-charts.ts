@@ -4,24 +4,25 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
-import { ChartSpec, type FixedMetricRow } from "../../../charts/chart-spec"
-import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
-import { latencySeries } from "../../../charts/fixed-metric-legend"
+import * as Chart from "@maple/views/charts/chart"
+import { chartSkeleton, type ChartSkeletonVariant } from "@maple/views/ui/chart-skeleton"
+import { ChartSpec, type FixedMetricRow } from "@maple/views/charts/chart-spec"
+import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
+import { latencySeries } from "@maple/views/charts/fixed-metric-legend"
 import {
 	fixedMetricModel,
 	LATENCY_SERIES,
 	throughputLegend,
 	throughputPlot,
-} from "../../../charts/fixed-metric-series"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
+} from "@maple/views/charts/fixed-metric-series"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { widgetShell } from "../../overview/view-widget"
 import { commitMarkers, markerLayout } from "./derive-markers"
-import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "../../../charts/linked-cursor"
+import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { markersOverlay } from "./view-markers"
 import { Message } from "./message"
 import type { DetailPoint, Model } from "./model"
+import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
 // `MetricsGrid` as the Overview tab feeds it (`SERVICE_CHARTS`, `syncId`, `overlay`, `yAxisWidth={72}`).
 
@@ -80,7 +81,7 @@ const CHARTS: ReadonlyArray<{
 	{
 		id: "error-rate",
 		kind: "ErrorRate",
-		title: "Error Rate",
+		title: "Error rate",
 		ariaLabel: "Error rate",
 		skeleton: "area",
 		gradientPrefix: "errorRate",
@@ -198,7 +199,7 @@ const chartBody = <M>(
 					chartId: chart.id,
 					ariaLabel: chart.ariaLabel,
 					spec: specOf(chart, rows, context),
-					className: "h-full w-full aspect-auto",
+					className: chartFrameClass("fill"),
 					overlay,
 					reportPlot: true,
 				},

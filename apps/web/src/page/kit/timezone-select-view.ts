@@ -2,9 +2,9 @@ import { cn } from "@maple/ui/lib/utils"
 import * as C from "@maple/ui/styles/ui/combobox"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Combobox from "../../ui/combobox"
-import { inputAttributes, listPopup } from "../../ui/combobox-view"
-import { icon } from "../../ui/icon"
+import * as Combobox from "@maple/views/ui/combobox"
+import { inputAttributes, listPopup } from "@maple/views/ui/combobox-view"
+import { icon } from "@maple/views/ui/icon"
 import { SYSTEM_VALUE } from "../../platform/time-zone"
 import { matchesZoneQuery, type ZoneRow } from "./timezone-zones"
 
@@ -51,7 +51,7 @@ export const zoneListView = Submodel.defineView<Combobox.Model, Combobox.Message
 		slot: "combobox",
 		items,
 		isPrefiltered: true,
-		emptyText: "No timezone matches that.",
+		emptyText: "No timezone matches that",
 		anchorSelector: `#${inputs.triggerId}`,
 		positionSelector: `#${inputs.anchorId}`,
 		className: "w-(--anchor-width)",

@@ -1,8 +1,8 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../../charts/chart"
-import { LoadFailure } from "../../../../data/load-failure"
-import * as Dialog from "../../../../ui/dialog"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { ApiBucket, EndpointDetail } from "../model-tabs"
 
 export const Step = Schema.Literals([1, -1])

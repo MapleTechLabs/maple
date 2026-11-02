@@ -1,9 +1,9 @@
 import { Message as HubMessage, RuleBucket } from "../../page/alerts/hub/message"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../charts/chart"
-import { ChartRuntime } from "../../charts/chart-runtime"
-import { ThemeColors } from "../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as AlertsHub from "../../page/alerts/hub/model"
 import * as Shell from "../../shell"
 

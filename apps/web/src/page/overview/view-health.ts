@@ -8,17 +8,17 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyOnFailure } from "../../data/enrichment"
-import type { LoadFailure } from "../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
-import { card } from "../../ui/card"
-import { badge } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import { listRow } from "../../ui/list-row"
-import { skeletonList } from "../../ui/skeleton"
-import { statusDot } from "../../ui/status-dot"
-import { serviceDot } from "../../ui/values"
+import { card } from "@maple/views/ui/card"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { listRow } from "@maple/views/ui/list-row"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { serviceDot } from "@maple/views/ui/values"
 import {
 	countByHealth,
 	type EnrichedService,
@@ -29,6 +29,7 @@ import {
 import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
+import { hstack } from "@maple/views/ui/stack"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -169,8 +170,7 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 }
 
 const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between")],
+	hstack(h, { justify: "between" },
 		[
 			h.div(
 				[],
@@ -332,8 +332,7 @@ const serviceRow = <M>(
 			listRow(h, {
 				href: serviceHref(slice, service),
 				leading: statusDot(h, { tone: HEALTH_TONE[health], size: "lg" }),
-				title: h.span(
-					[h.Class("flex min-w-0 items-center gap-2")],
+				title: hstack(h, { gap: "2", shrink: true, as: "span" },
 					[
 						serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
 						h.span(

@@ -1,17 +1,18 @@
 import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
+import { button, linkButton } from "@maple/views/ui/button"
+import { cardButton } from "@maple/views/ui/card-button"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { listSectionHeader, toolbarSearch } from "../kit/list-parts"
-import * as Menu from "../../../ui/menu"
-import * as MenuView from "../../../ui/menu-view"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton, skeletonSlowNote } from "../../../ui/skeleton"
+import * as Menu from "@maple/views/ui/menu"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton, skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { docsLink } from "../../kit/signal-empty-state"
 import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "../kit/summary"
@@ -23,6 +24,8 @@ import type { ListDashboard, Model, Scope } from "./model"
 import { isReadOnly, rowMenuIdOf } from "./update"
 import { deleteDialog } from "./view-dialogs"
 import { tagFilterView } from "./view-tag-filter"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `DashboardList`: the dashboards as rows.
 
@@ -121,7 +124,7 @@ const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, s
 			toolbarSearch(h, {
 				id: "dashboards-search",
 				draft: model.searchDraft,
-				placeholder: "Search dashboards",
+				placeholder: "Search dashboards…",
 				className: "w-full min-w-0 sm:w-70",
 				onInput: (value) => Message.ChangedSearchDraft({ value }),
 			}),
@@ -158,7 +161,7 @@ const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> 
 			{
 				_tag: "Item",
 				value: "delete",
-				label: "Delete…",
+				label: "Delete",
 				variant: "destructive",
 				isDisabled: isReadOnly,
 			},
@@ -170,35 +173,12 @@ const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> 
 /** `RowActionsMenu`: the kebab trigger; only the active row holds live menu state. */
 const rowMenu = (h: H, model: Model, dashboard: ListDashboard): Html => {
 	const menu = model.rowMenuId === dashboard.id ? model.rowMenu : Menu.init(rowMenuIdOf(dashboard.id))
-	return h.submodel({
+	return rowActionsMenu(h, {
 		slotId: `row-menu-${dashboard.id}`,
 		model: menu,
-		view: MenuView.view,
-		viewInputs: {
-			entries: rowMenuEntries(isReadOnly(model)),
-			align: "end",
-			className: rowActionsMenuContentStyles,
-			toView: ({ trigger, withTrigger }) =>
-				h.div(
-					[h.Class("contents")],
-					withTrigger(
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "icon-sm",
-								className: "text-muted-foreground",
-								attributes: [
-									h.AriaLabel(`More actions for ${displayName(dashboard.name)}`),
-									...trigger,
-									h.DataAttribute("slot", "row-actions-trigger"),
-								],
-							},
-							[icon(h, "DotsVerticalIcon", { className: rowActionsMenuIconStyles })],
-						),
-					),
-				),
-		},
+		entries: rowMenuEntries(isReadOnly(model)),
+		label: `More actions for ${displayName(dashboard.name)}`,
+		className: "text-muted-foreground",
 		toParentMessage: (message) => Message.GotRowMenuMessage({ rowId: dashboard.id, message }),
 	})
 }
@@ -260,7 +240,7 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 								[
 									h.Class(
 										cn(
-											"truncate text-sm font-medium",
+											typographyClass({ size: "sm", weight: "medium", truncate: true }),
 											dashboard.name.trim() !== ""
 												? "text-foreground"
 												: "text-muted-foreground",
@@ -302,15 +282,16 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 								[
 									h.Class(
 										cn(
-											"font-mono text-2xs",
+											typographyClass({ size: "2xs", mono: true }),
 											isEmpty ? "text-severity-warn" : "text-foreground",
 										),
 									),
 								],
 								[isEmpty ? "no widgets" : widgets],
 							),
-							h.span(
-								[h.Class("text-muted-foreground truncate font-mono text-3xs")],
+							typography(
+								h,
+								{ size: "3xs", tone: "muted", mono: true, truncate: true },
 								isEmpty ? [] : [dashboard.readsShort],
 							),
 						],
@@ -351,15 +332,14 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 
 /** `CreateRow`: pinned below the list so a filter can never make it read as a result. */
 const createRow = (h: H, isReadOnly: boolean): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedCreate()),
-			...(isReadOnly ? [h.Disabled(true)] : []),
-			h.Class(
-				"mt-4 flex w-full shrink-0 items-center gap-3 rounded-md border border-dashed border-input bg-card py-3 pr-4 pl-3 text-left hover:bg-surface-sunken active:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50",
-			),
-		],
+	cardButton(
+		h,
+		{
+			onClick: Message.ClickedCreate(),
+			isDisabled: isReadOnly,
+			className:
+				"mt-4 flex w-full shrink-0 items-center gap-3 border-dashed border-input py-3 pr-4 pl-3",
+		},
 		[
 			h.span(
 				[h.Class("flex size-5.5 shrink-0 items-center justify-center")],
@@ -368,11 +348,10 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 			h.span(
 				[h.Class("flex min-w-0 grow flex-wrap items-baseline gap-x-2.5 gap-y-0.5")],
 				[
-					h.span([h.Class("text-sm font-medium text-foreground")], ["New dashboard"]),
-					h.span(
-						[h.Class("text-muted-foreground text-2xs")],
-						["Start blank, or pick a template already wired to metrics you send."],
-					),
+					typography(h, { size: "sm", tone: "foreground", weight: "medium" }, ["New dashboard"]),
+					typography(h, { size: "2xs", tone: "muted" }, [
+						"Start blank, or pick a template already wired to metrics you send.",
+					]),
 				],
 			),
 			icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
@@ -391,27 +370,22 @@ const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
 					"Templates check what your services already send, so you can start from one that will render data immediately. Or build from an empty canvas.",
 				]),
 			]),
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-center gap-2")],
-				[
-					linkButton(
-						h,
-						{ size: "sm", href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })) },
-						["Browse templates"],
-					),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isDisabled: isReadOnly,
-							attributes: [h.OnClick(Message.ClickedCreate())],
-						},
-						["Create blank dashboard"],
-					),
-					docsLink(h, "dashboards"),
-				],
-			),
+			hstack(h, { gap: "2", justify: "center", wrap: true }, [
+				linkButton(h, { size: "sm", href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })) }, [
+					"Browse templates",
+				]),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isDisabled: isReadOnly,
+						attributes: [h.OnClick(Message.ClickedCreate())],
+					},
+					["Create blank dashboard"],
+				),
+				docsLink(h, "dashboards"),
+			]),
 		],
 		"py-16",
 	)
@@ -437,37 +411,34 @@ const nothingMatched = (h: H, model: Model): Html => {
 				]),
 			]),
 			emptyContent(h, [
-				h.div(
-					[h.Class("flex items-center gap-2")],
-					[
-						...(isSearching
-							? [
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											attributes: [h.OnClick(Message.ClickedClearSearch())],
-										},
-										["Clear search"],
-									),
-								]
-							: []),
-						...(tagsOf(model.search).length > 0
-							? [
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											attributes: [h.OnClick(Message.ClickedShowAllTags())],
-										},
-										["Show all"],
-									),
-								]
-							: []),
-					],
-				),
+				hstack(h, { gap: "2" }, [
+					...(isSearching
+						? [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedClearSearch())],
+									},
+									["Clear search"],
+								),
+							]
+						: []),
+					...(tagsOf(model.search).length > 0
+						? [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedShowAllTags())],
+									},
+									["Show all"],
+								),
+							]
+						: []),
+				]),
 			]),
 		],
 		"py-14",
@@ -552,7 +523,7 @@ export const listBody = (
 						h.div(
 							[h.Class("flex items-center gap-2 border-y border-border py-2 text-2xs")],
 							[
-								h.span([h.Class("font-mono text-foreground")], [String(sections.matched)]),
+								typography(h, { tone: "foreground", mono: true }, [String(sections.matched)]),
 								h.span(
 									[h.Class("text-muted-foreground")],
 									["of ", String(dashboards.length), " match name, description or tag"],

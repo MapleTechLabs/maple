@@ -10,11 +10,11 @@ import { Clock, Effect, Option, Schema, type Stream } from "effect"
 import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { button } from "../../ui/button"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import * as Combobox from "../../ui/combobox"
-import * as Popover from "../../ui/popover"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Popover from "@maple/views/ui/popover"
 import {
 	readEffectiveTimeZone,
 	readSelectedTimeZone,
@@ -24,10 +24,15 @@ import {
 import { PageOutMessage } from "../contract"
 import { zoneListView } from "./timezone-select-view"
 import { formatUtcOffset, readZoneRows, ZoneRow } from "./timezone-zones"
-import { isMounted } from "../../ui/overlay/transition"
+import { isMounted } from "@maple/views/ui/overlay/transition"
 import * as CustomRange from "./custom-range"
 import * as CustomRangeView from "./custom-range-view"
-import { presetLabel, timeRangeTriggerContent } from "./time-controls"
+import {
+	LONG_RANGE_PRESET_VALUES,
+	PRESET_VALUES,
+	presetLabel,
+	timeRangeTriggerContent,
+} from "./time-controls"
 
 // `TimeRangePicker`: the header
 // popover with the preset rail and quick select. Picking a range is an OutMessage; the page writes
@@ -286,8 +291,27 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 /** The list presets (`LONG_RANGE_PRESET_OPTIONS` for long-range pages, else `PRESET_OPTIONS`). */
-export const PRESET_VALUES = ["5m", "15m", "30m", "1h", "6h", "12h", "1d", "3d", "1w", "2w", "1mo"]
-export const LONG_RANGE_PRESET_VALUES = [...PRESET_VALUES, "3mo", "6mo", "12mo"]
+export { LONG_RANGE_PRESET_VALUES, PRESET_VALUES }
+
+/** The window a shorthand resolves to: minutes and hours roll, days and weeks count calendar days,
+ * months count calendar months (`resolveRelativeRange`). Null for "today" and non-shorthand. */
+const windowIdentity = (shorthand: string): string | null => {
+	const match = shorthand.trim().toLowerCase().match(/^(\d+)(mo|m|h|d|w)$/)
+	if (match === null) return null
+	const amount = Number.parseInt(match[1] ?? "0", 10)
+	const unit = match[2]
+	if (unit === "m" || unit === "h") return `rolling:${unit === "h" ? amount * 60 : amount}`
+	if (unit === "d" || unit === "w") return `days:${unit === "w" ? amount * 7 : amount}`
+	return `months:${amount}`
+}
+
+/** A preset row is active for its own value or one naming the same window ("7d" marks "1w"). */
+export const isActivePreset = (selected: string | undefined, value: string): boolean => {
+	if (selected === undefined) return false
+	if (selected === value) return true
+	const identity = windowIdentity(selected)
+	return identity !== null && identity === windowIdentity(value)
+}
 const LONG_LABELS = new Map([
 	["3mo", "Last 3 months"],
 	["6mo", "Last 6 months"],
@@ -322,7 +346,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 			h.div(
 				[h.Class("flex flex-col")],
 				inputs.presets.map((value) => {
-					const isActive = inputs.selectedPreset === value
+					const isActive = isActivePreset(inputs.selectedPreset, value)
 					return h.button(
 						[
 							h.Key(value),

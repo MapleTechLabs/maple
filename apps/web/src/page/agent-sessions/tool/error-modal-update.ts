@@ -4,7 +4,7 @@ import { Option, Schema } from "effect"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import type { Resources } from "../../../platform/resources"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { Selection } from "../tools-kit/reads"
 import {
 	CopyErrorArguments,

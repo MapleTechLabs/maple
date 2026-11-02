@@ -2,17 +2,18 @@ import type { CloudflareServiceUsage } from "@maple/domain/http"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../charts/chart"
-import * as Sparkline from "../../charts/sparkline"
+import { heading } from "@maple/views/ui/heading"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
 import { AppRoute, hrefOf } from "../../route"
-import { button } from "../../ui/button"
-import { emptyMessage } from "../../ui/empty"
-import { panel, panelHeader } from "../../ui/panel"
-import { searchInput } from "../../ui/search-input"
-import { statusDot } from "../../ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { searchInput } from "@maple/views/ui/search-input"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { countChipItem } from "./kit/count-chip"
-import * as ToggleGroup from "../../ui/toggle-group"
-import { truncatedText } from "../../ui/truncated-text"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead } from "../infra/kit/data-table"
 import { CLOUDFLARE_ACCENT } from "./catalog"
 import type { ZoneSortKey } from "./cloudflare"
@@ -29,6 +30,8 @@ import {
 } from "./cloudflare-derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
 // TODO(tooltip): the "Details" trigger renders; its popup with the raw error is the overlay port's.
@@ -103,7 +106,7 @@ const resourceRow = (
 				truncatedText(h, {
 					text: name,
 					className: cn(
-						"text-xs font-medium text-foreground",
+						typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
 						zoneLink && "group-hover:text-primary",
 					),
 				}),
@@ -214,7 +217,7 @@ export const zoneBoard = (
 		panelHeader(h, {
 			className: "gap-2 border-border-subtle pl-4 pr-2.5",
 			children: [
-				h.h3([h.Class("text-sm font-semibold")], ["Zones"]),
+				heading(h, { level: 3, variant: "section" }, ["Zones"]),
 				ToggleGroup.view(h, {
 					model: card.zoneFilter,
 					toParentMessage: (message) => Message.GotZoneFilterMessage({ message }),
@@ -273,8 +276,8 @@ export const zoneBoard = (
 				sorted.length === 0
 					? emptyMessage(h, { className: "px-3 py-10" }, [
 							query !== ""
-								? `No zones match "${card.zoneSearch.trim()}".`
-								: "No zones in this state.",
+								? `No zones match "${card.zoneSearch.trim()}"`
+								: "No zones in this state",
 						])
 					: h.div(
 							[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
@@ -310,7 +313,7 @@ export const workersCard = (
 	return panel(h, { className: "h-fit border-border-subtle lg:w-72 lg:shrink-0 xl:w-80" }, [
 		panelHeader(h, {
 			className: "border-border-subtle py-3",
-			children: [h.h3([h.Class("text-sm font-semibold")], ["Workers"])],
+			children: [heading(h, { level: 3, variant: "section" }, ["Workers"])],
 			action: h.a(
 				[
 					h.Href(hrefOf(AppRoute.ServiceMap({ search: {} }))),
@@ -349,15 +352,14 @@ export const workersCard = (
 									),
 								],
 								[
-									h.span(
-										[h.Class("flex min-w-0 items-center gap-2.5")],
+									hstack(h, { gap: "2.5", shrink: true, as: "span" },
 										[
 											statusDot(h, {
 												tone: service.totalRequests > 0 ? "ok" : "neutral",
 											}),
 											truncatedText(h, {
 												text: service.displayName,
-												className: "text-xs font-medium text-foreground",
+												className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
 											}),
 										],
 									),

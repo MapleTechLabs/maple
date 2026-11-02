@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { Command } from "foldkit"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import * as Keyed from "../../../data/keyed"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { sourcesListKey, sourcesUsageKey } from "../kit/data"

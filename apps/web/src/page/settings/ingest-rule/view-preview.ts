@@ -1,14 +1,14 @@
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
-import { alert, alertDescription } from "../../../ui/alert"
-import { badge } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { nativeOption, nativeSelect } from "../../../ui/native-select"
-import { panel, panelHeader } from "../../../ui/panel"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { draftProblems, specOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,6 +21,8 @@ import {
 	type ValueChange,
 } from "./preview"
 import type { H } from "./view-form"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The right column: the draft run over recent records, plus the callouts that apply.
 
@@ -69,35 +71,28 @@ const previewRow = (h: H, row: PreviewRow, index: number): Html =>
 	h.li(
 		[h.Key(String(index)), h.Class("flex flex-col gap-1.5 border-t px-4 py-2.5 first:border-t-0")],
 		[
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-2")],
-				[
-					badge(h, { variant: row._tag === "dropped" ? "warn" : "info", size: "sm" }, [
-						row._tag === "dropped" ? "Drop" : "Redact",
-					]),
-					h.span([h.Class("truncate text-xs")], [recordLabel(row)]),
-				],
-			),
+			hstack(h, { gap: "2", shrink: true }, [
+				badge(h, { variant: row._tag === "dropped" ? "warn" : "info", size: "sm" }, [
+					row._tag === "dropped" ? "Drop" : "Redact",
+				]),
+				typography(h, { size: "xs", truncate: true }, [recordLabel(row)]),
+			]),
 			...(row._tag === "redacted" ? row.changes.map((change) => changeLine(h, change)) : []),
 		],
 	)
 
 const headline = (h: H, result: ReturnType<typeof runPreview>, isDrop: boolean): Html =>
-	h.p(
-		[h.Class("text-sm font-medium")],
-		[
-			isDrop
-				? `Would drop ${result.dropped} of ${result.total} (${percent(result.dropped, result.total)})`
-				: `Would redact ${result.redacted} of ${result.total} (${percent(result.redacted, result.total)})`,
-		],
-	)
+	typography(h, { size: "sm", weight: "medium", as: "p" }, [
+		isDrop
+			? `Would drop ${result.dropped} of ${result.total} (${percent(result.dropped, result.total)})`
+			: `Would redact ${result.redacted} of ${result.total} (${percent(result.redacted, result.total)})`,
+	])
 
 const body = (h: H, model: Model): Html => {
 	if (!model.draft.signals.includes("logs") && !model.draft.signals.includes("traces"))
-		return h.p(
-			[h.Class("text-muted-foreground px-4 py-3 text-sm")],
-			["The preview covers logs and traces."],
-		)
+		return typography(h, { size: "sm", tone: "muted", as: "p", className: "px-4 py-3" }, [
+			"The preview covers logs and traces.",
+		])
 	return AsyncData.matchData(model.samples, {
 		onEmpty: () =>
 			h.div(
@@ -114,15 +109,13 @@ const body = (h: H, model: Model): Html => {
 		onData: (samples) => {
 			const records = recordsOf(samples)
 			if (records.length === 0)
-				return h.p(
-					[h.Class("text-muted-foreground px-4 py-3 text-sm")],
-					["No records in the last hour to preview."],
-				)
+				return typography(h, { size: "sm", tone: "muted", as: "p", className: "px-4 py-3" }, [
+					"No records in the last hour to preview.",
+				])
 			if (draftProblems(model.draft).filter((problem) => problem !== "give the rule a name").length > 0)
-				return h.p(
-					[h.Class("text-muted-foreground px-4 py-3 text-sm")],
-					["Fix the rule to see its effect."],
-				)
+				return typography(h, { size: "sm", tone: "muted", as: "p", className: "px-4 py-3" }, [
+					"Fix the rule to see its effect.",
+				])
 			const result = runPreview(specOf(model.draft), records)
 			const isHash = model.draft.actionType === "redact" && model.draft.method === "hash"
 			return h.div(
@@ -132,12 +125,9 @@ const body = (h: H, model: Model): Html => {
 						[h.Class("flex flex-col gap-1 px-4 py-3")],
 						[
 							headline(h, result, model.draft.actionType === "drop"),
-							h.p(
-								[h.Class("text-muted-foreground text-xs")],
-								[
-									`Most recent ${result.total} records, last hour.${isHash ? " Preview hash, differs from stored." : ""}`,
-								],
-							),
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								`Most recent ${result.total} records, last hour.${isHash ? " Preview hash, differs from stored." : ""}`,
+							]),
 						],
 					),
 					result.rows.length === 0
@@ -218,14 +208,11 @@ export const callouts = (h: H, model: Model): ReadonlyArray<Html> => [
 ]
 
 export const previewPanel = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			panel(h, { className: cn("overflow-hidden") }, [
-				panelHeader(h, { title: "Preview" }),
-				controls(h, model),
-				body(h, model),
-			]),
-			...callouts(h, model),
-		],
-	)
+	vstack(h, { gap: "3" }, [
+		panel(h, { className: cn("overflow-hidden") }, [
+			panelHeader(h, { title: "Preview" }),
+			controls(h, model),
+			body(h, model),
+		]),
+		...callouts(h, model),
+	])

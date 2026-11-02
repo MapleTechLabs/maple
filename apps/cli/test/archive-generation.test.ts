@@ -21,8 +21,11 @@ import {
 	generationRoot,
 	generationManifestPath,
 	shardsRoot,
-} from "../src/server/archives/paths"
-import { parseArchiveActivePointer, type ArchiveGenerationManifest } from "../src/server/archives/manifest"
+} from "@maple/local-server/archives/paths"
+import {
+	parseArchiveActivePointer,
+	type ArchiveGenerationManifest,
+} from "@maple/local-server/archives/manifest"
 import {
 	assertArchiveScratchFreeSpace,
 	assertNoArchiveShrink,
@@ -32,16 +35,16 @@ import {
 	reconcileArchiveGeneration,
 	selectActiveGeneration,
 	ttlDaysFromDefinition,
-} from "../src/server/archives/generation"
+} from "@maple/local-server/archives/generation"
 import {
 	advancePhase,
 	listActiveOperationIds,
 	operationDir,
 	writeInitialIntent,
 	type ArchiveOperationPhase,
-} from "../src/server/archives/journal"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/journal"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 import {
 	checkpointPinsRoot,
 	checkpointRoot,
@@ -50,10 +53,10 @@ import {
 	newCheckpointId,
 	withMaintenanceLock,
 	type CheckpointId,
-} from "../src/server/checkpoints"
-import { assertCatalogExact, rebuildCatalog } from "../src/server/archives/listing"
-import { RetiredDayAuthority } from "../src/server/archives/retention"
-import { ARCHIVE_SIGNALS } from "../src/server/archives/signals"
+} from "@maple/local-server/checkpoints"
+import { assertCatalogExact, rebuildCatalog } from "@maple/local-server/archives/listing"
+import { RetiredDayAuthority } from "@maple/local-server/archives/retention"
+import { ARCHIVE_SIGNALS } from "@maple/local-server/archives/signals"
 
 // Filesystem-level tests for generation promotion, supersession, and catalog
 // append. These exercise the durable state machine without a restored chDB; the

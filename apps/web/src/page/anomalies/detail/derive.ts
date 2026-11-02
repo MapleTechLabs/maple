@@ -4,7 +4,7 @@ import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
 import { SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Model } from "./model"
 
 const NOT_FOUND_TAG = "@maple/http/anomalies/AnomalyIncidentNotFoundError"

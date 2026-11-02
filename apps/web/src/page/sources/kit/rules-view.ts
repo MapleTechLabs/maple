@@ -1,14 +1,15 @@
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as Checkbox from "../../../ui/checkbox"
-import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
-import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import { button } from "@maple/views/ui/button"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
+import { label } from "@maple/views/ui/label"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import {
 	type AttributeDraft,
 	expiryChoicesOf,
@@ -21,6 +22,8 @@ import {
 	toggleModel,
 } from "./rules"
 import { MODE_LABELS, SIGNALS } from "./shared"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `RulesFields` and `AttributeRows`.
 
@@ -56,17 +59,16 @@ const signalCard = <P>(
 ): Html => {
 	const isChecked = config.model.signals.includes(signal.value)
 	const inputId = `${config.idPrefix}-signal-${signal.value}`
-	return h.label(
-		[
-			h.Key(signal.value),
-			h.Id(Checkbox.labelId(inputId)),
-			h.Class(
-				cn(
-					"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
-					isChecked ? "border-primary/60 bg-primary/[0.06]" : "hover:bg-surface-sunken active:bg-surface-sunken",
-				),
+	return label(
+		h,
+		{
+			// A card: the kit label's centring and medium weight stay off.
+			className: cn(
+				"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
+				isChecked ? "border-primary-a4 bg-primary-a1" : "hover:bg-surface-sunken active:bg-surface-sunken",
 			),
-		],
+			attributes: [h.Key(signal.value), h.Id(Checkbox.labelId(inputId))],
+		},
 		[
 			...Checkbox.view(h, {
 				model: { isChecked },
@@ -76,11 +78,10 @@ const signalCard = <P>(
 				inputId,
 				className: "mt-0.5",
 			}),
-			h.span(
-				[h.Class("flex flex-col gap-0.5")],
+			vstack(h, { gap: "0.5", as: "span" },
 				[
 					h.span([h.Class(cn("text-sm", !isChecked && "text-muted-foreground"))], [signal.label]),
-					h.span([h.Class("text-muted-foreground font-mono text-2xs")], [signal.hint]),
+					typography(h, { size: "2xs", tone: "muted", mono: true }, [signal.hint]),
 				],
 			),
 		],
@@ -130,7 +131,7 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 				h,
 				{
 					label: "Remove attribute",
-					className: "text-muted-foreground hover:text-foreground active:text-foreground shrink-0",
+					className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
 					attributes: [h.OnClick(toParentMessage(Message.ClickedRemoveAttribute({ rowId })))],
 				},
 				[icon(h, "XmarkIcon")],
@@ -143,12 +144,10 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => {
 	const { attributeProblem } = rulesOutcome(config.model)
 	const isDisabled = config.model.attributes.length >= MAX_ATTRIBUTES
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
+	return vstack(h, { gap: "2" },
 		[
 			...config.model.attributes.map((attribute) => attributeRow(h, config, attribute)),
-			h.div(
-				[h.Class("flex items-center gap-3")],
+			hstack(h, { gap: "3" },
 				[
 					button(
 						h,
@@ -167,8 +166,7 @@ const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html =
 					...(attributeProblem === null
 						? []
 						: [
-								h.span(
-									[h.Class("text-destructive text-xs"), h.Role("alert")],
+								typography(h, { size: "xs", tone: "destructive", attributes: [h.Role("alert")] },
 									[attributeProblem],
 								),
 							]),
@@ -210,7 +208,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 				inputGroup(h, { className: "w-44" }, [
 					inputGroupInput(h, {
 						id: rateIds.control,
-						controlClassName: "font-mono tabular-nums",
+						controlClassName: typographyClass({ mono: true, numeric: true }),
 						attributes: [
 							h.Attribute("inputmode", "numeric"),
 							h.Placeholder("No limit"),

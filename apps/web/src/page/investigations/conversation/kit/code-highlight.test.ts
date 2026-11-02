@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { beforeAll, describe, expect, it } from "vitest"
-import { awaitHighlighter } from "../../../../lib/highlight"
+import { awaitHighlighter } from "@maple/views/lib/highlight"
 import { highlight } from "./code-highlight"
 
 const slots = (language: string, code: string) =>

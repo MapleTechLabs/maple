@@ -4,16 +4,16 @@ import { worstStatus } from "@maple/domain/status-page"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../data/load-failure"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { button } from "../../../ui/button"
-import { confirmDialog } from "../../../ui/confirm-dialog"
-import { badge } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import type { MenuEntry } from "../../../ui/menu-view"
-import { rowActionsMenu } from "../../../ui/row-actions-menu"
-import { skeleton } from "../../../ui/skeleton"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
@@ -35,6 +35,8 @@ import { canvas } from "./view-canvas"
 import { jsonTab } from "./view-json"
 import { addressLine, liveView } from "./view-live"
 import { appearanceView, breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // `/status-pages/$pageId`: the header and tabs, then the page as the editor, its Appearance, its
 // Settings, its JSON, or the screen right after it went live.
@@ -51,13 +53,12 @@ const overallOf = (model: Model): StatusPageComponentStatus =>
 
 /** Where the page stands with visitors: live since when, a draft, or changes on their way. */
 const stateLine = (h: H, model: Model, page: V2StatusPage, timeZone: string): Html => {
-	const className = "text-xs text-muted-foreground"
+	const className = typographyClass({ size: "xs", tone: "muted" })
 	if (page.draft) return h.span([h.Class(className)], ["Draft. Nothing is public until you publish."])
 	if (page.last_publish_error !== null)
-		return h.span(
-			[h.Class("text-xs text-destructive")],
-			[`Last publish failed: ${page.last_publish_error}`],
-		)
+		return typography(h, { size: "xs", tone: "destructive" }, [
+			`Last publish failed: ${page.last_publish_error}`,
+		])
 	if (page.published_at === null) return h.span([h.Class(className)], ["Publishing within a minute"])
 	if (hasUnpublishedChanges(page)) return h.span([h.Class(className)], ["Changes go out within a minute"])
 	return h.span(
@@ -219,9 +220,7 @@ const body = (h: H, model: Model, page: V2StatusPage, timeZone: string): Html =>
 					[skeleton(h, "h-48 w-full"), skeleton(h, "h-[560px] w-full")],
 				)
 			const editor = canvas(h, model, page, { nowMs: model.nowMs ?? 0, timeZone })
-			return model.isAdmin && page.draft
-				? h.div([h.Class("flex flex-col gap-4")], [draftCallout(h), editor])
-				: editor
+			return model.isAdmin && page.draft ? vstack(h, { gap: "4" }, [draftCallout(h), editor]) : editor
 		}
 	}
 }

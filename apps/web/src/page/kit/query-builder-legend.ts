@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // `QueryBuilderLegend` (packages/ui/src/components/charts/_shared/query-builder-legend.tsx), bottom
-// layout, for hosts outside a chart. The chart's own copy lives in `charts/area-chart.ts`.
+// layout, for hosts outside a chart. The chart's own copy lives in `@maple/views/charts/area-chart.ts`.
 
 export type LegendSeries = Readonly<{ key: string; label: string; color: string }>
 

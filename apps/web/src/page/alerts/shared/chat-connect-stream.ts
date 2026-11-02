@@ -1,6 +1,6 @@
 import { ChatConnectorId } from "@maple/domain/primitives"
 import { Effect, Queue, Schema, Stream } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message, type Model } from "./chat-connect"
 

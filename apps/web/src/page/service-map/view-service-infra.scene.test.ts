@@ -4,7 +4,7 @@ import { expect as expectView, given, role, scene, text } from "foldkit/scene"
 import type { HtmlBuilder } from "foldkit/html"
 import { describe, test } from "vitest"
 import type { ServiceRuntime } from "../kit/service-runtimes"
-import { serviceMapNode } from "../../service-map/map/nodes"
+import { serviceMapNode } from "@maple/views/service-map/map/nodes"
 import type { Message } from "./message"
 import { infrastructureTab } from "./view-service-infra"
 

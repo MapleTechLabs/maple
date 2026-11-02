@@ -4,9 +4,12 @@ import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { investigationKindKey, type InvestigationKindKey } from "@maple/web-data/investigations/display"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon, type IconName } from "../../ui/icon"
+import { bareInput } from "@maple/views/ui/bare-input"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The investigation status badge and confidence meter.
 
@@ -14,7 +17,7 @@ type InvestigationStatus = V2Investigation["status"]
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
 export const STATUS = {
-	investigating: { label: "In progress", tone: "bg-primary-a2 text-primary" },
+	investigating: { label: "In progress", tone: TONE_SOFT.live },
 	diagnosed: { label: "Diagnosed", tone: TONE_SOFT.ok },
 	inconclusive: { label: "Inconclusive", tone: TONE_SOFT.warn },
 	resolved: { label: "Resolved", tone: TONE_SOFT.done },
@@ -90,13 +93,16 @@ export const confidenceMeter = <M>(
 ): Html => {
 	if (confidence === null)
 		return h.span(
-			[h.Class(cn("text-xs text-foreground-subtle", className)), h.Title("No diagnosis yet")],
+			[
+				h.Class(cn(typographyClass({ size: "xs", tone: "subtle" }), className)),
+				h.Title("No diagnosis yet"),
+			],
 			[EMPTY_VALUE],
 		)
 	const filled = FILLED[confidence]
 	return h.span(
 		[
-			h.Class(cn("inline-flex items-center gap-1.5", className)),
+			h.Class(cn(hstackClass({ gap: "1.5", inline: true }), className)),
 			h.Title(`Diagnosis confidence: ${confidence}`),
 		],
 		[
@@ -137,24 +143,24 @@ export const investigateBar = <M>(
 			h.Class(
 				cn(
 					"flex h-10 items-center gap-3 rounded-lg border bg-card px-3.5 transition-colors focus-within:border-ring",
-					options.isAccent === true ? "border-primary/60" : "border-input",
+					options.isAccent === true ? "border-primary-a4" : "border-input",
 				),
 			),
 			h.OnSubmit(options.onSubmit),
 		],
 		[
 			icon(h, "ChatBubbleSparkleIcon", { size: 14, className: "shrink-0 text-primary" }),
-			h.input([
-				h.Value(options.value),
-				h.OnInput(options.onInput),
-				h.Placeholder(
-					options.placeholder ?? "Ask Maple to investigate a service, a symptom or a question",
-				),
-				h.AriaLabel("What should Maple investigate?"),
-				h.Class(
-					"min-w-0 flex-1 bg-transparent font-prose text-sm text-foreground outline-none placeholder:text-muted-foreground",
-				),
-			]),
+			bareInput(h, {
+				className: "flex-1 font-prose text-sm text-foreground placeholder:text-muted-foreground",
+				attributes: [
+					h.Value(options.value),
+					h.OnInput(options.onInput),
+					h.Placeholder(
+						options.placeholder ?? "Ask Maple to investigate a service, a symptom or a question",
+					),
+					h.AriaLabel("What should Maple investigate?"),
+				],
+			}),
 			button(
 				h,
 				{

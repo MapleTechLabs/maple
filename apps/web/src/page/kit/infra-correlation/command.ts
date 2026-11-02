@@ -7,7 +7,7 @@ import {
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { SeriesData } from "../../infra/kit/series"
 import { Message } from "./model"

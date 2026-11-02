@@ -1,8 +1,8 @@
 import { click, Command, expect as expectView, given, Mount, role, scene, text, type as typeInto, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Animation from "@foldkit/ui/animation"
-import * as Combobox from "../../ui/combobox"
-import * as Popover from "../../ui/popover"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Popover from "@maple/views/ui/popover"
 import { init, Message, MountUtcOffset, PRESET_VALUES, ReadZoneRows, SelectTimeZone, update, view } from "./time-range-picker"
 import { matchesZoneQuery, zoneRows } from "./timezone-zones"
 

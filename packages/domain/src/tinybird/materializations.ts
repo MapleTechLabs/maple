@@ -7,11 +7,17 @@ import {
 	FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
+	JSON_LABEL_KEYS,
+	JSON_TYPE_KEY,
+	JSON_TYPE_VALUE_REDACTIONS,
 	JSON_VALUE_REDACTIONS,
+	INTERNAL_FRAME_PATTERN,
 	MAX_FINGERPRINT_FRAMES,
+	MAX_NORMALIZED_FRAMES,
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
 	NAMESPACED_TYPE_MAX_FRAMES,
+	PYTHON_FRAME_PATTERN,
 	SCHEMA_PATH_LINE_PATTERN,
 	SPAN_NAME_FRAME_PATTERN,
 } from "./fingerprint"
@@ -934,6 +940,9 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
  */
 export { errorEventsSelectSql as ERROR_EVENTS_MV_SQL }
 
+const jsonStringIsSet = (key: string) =>
+	`JSONType(_msgText, '${key}') = 'String' AND JSONExtractString(_msgText, '${key}') != ''`
+
 const errorEventsSelectSql = `
         WITH
           arrayFirstIndex(n -> n = 'exception', EventsName) AS _ei,
@@ -964,7 +973,11 @@ const errorEventsSelectSql = `
           arrayStringConcat(
             arraySort(
               arrayMap(
-                kv -> concat(kv.1, '=', ${chRedactChain("kv.2", JSON_VALUE_REDACTIONS)}),
+                kv -> concat(kv.1, '=', if(
+                  kv.1 = ${chPattern(JSON_TYPE_KEY)},
+                  ${chRedactChain("kv.2", JSON_TYPE_VALUE_REDACTIONS)},
+                  ${chRedactChain("kv.2", JSON_VALUE_REDACTIONS)}
+                )),
                 JSONExtractKeysAndValuesRaw(_msgText)
               )
             ),
@@ -1000,18 +1013,14 @@ const errorEventsSelectSql = `
           -- as is every redaction below. They used to be hand-copied here, which
           -- let the reference implementation the tests exercise drift away from
           -- the SQL that actually runs, silently.
-          arraySlice(
-            arrayFilter(
-              line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
-                AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
-                AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})
-                AND NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)}),
-              splitByChar('\\n', _exStack)
-            ),
-            -- A namespaced type plus its message names one failure: keep only the
-            -- throw site. With no message the frames are all that is left; keep 3.
-            1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
-          ) AS _rawFrames,
+          arrayFilter(
+            line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
+              AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
+              AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})
+              AND NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})
+              AND NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)}),
+            splitByChar('\\n', _exStack)
+          ) AS _frameLines,
           -- Redact every volatile token a frame line can carry: the URL origin
           -- (so preview hosts share one fingerprint), Vite's 8-char bundle
           -- content hash (so a deploy does not re-split every triaged browser and
@@ -1019,21 +1028,30 @@ const errorEventsSelectSql = `
           -- FRAME_REDACTIONS for the order and the reasoning.
           arrayMap(
             line -> ${chRedactChain("line", FRAME_REDACTIONS)},
-            _rawFrames
+            arraySlice(
+              -- Python prints the outermost frame first: read it from the raise site.
+              if(match(_frameLines[1], ${chPattern(PYTHON_FRAME_PATTERN)}), arrayReverse(_frameLines), _frameLines),
+              1, ${MAX_NORMALIZED_FRAMES}
+            )
+          ) AS _normFrames,
+          arraySlice(
+            -- A repeat (two anonymous closures in one bundle, or recursion) collapses
+            -- so it does not use up the frames the hash keeps.
+            arrayFilter((frame, i) -> i = 1 OR frame != _normFrames[i - 1], _normFrames, arrayEnumerate(_normFrames)),
+            -- A namespaced type plus its message names one failure: keep only the
+            -- throw site. With no message the frames are all that is left; keep 3.
+            1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
           ) AS _topFrames,
           if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
           arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
           -- Display-only, best-effort human label (decoupled from the fingerprint:
           -- many labels may map to one hash). The broad key list here is a DISPLAY
           -- heuristic only; the fingerprint above makes no key-name assumption.
+          -- Only string values: JSONExtractString renders a number or an object
+          -- as its JSON text, which titled \`{"error":{"code":5}}\` with the object.
           multiIf(
-            JSONExtractString(_msgText, 'title')   != '', JSONExtractString(_msgText, 'title'),
-            JSONExtractString(_msgText, 'message') != '', JSONExtractString(_msgText, 'message'),
-            JSONExtractString(_msgText, 'error')   != '', JSONExtractString(_msgText, 'error'),
-            JSONExtractString(_msgText, '_tag')    != '', JSONExtractString(_msgText, '_tag'),
-            JSONExtractString(_msgText, 'reason')  != '', JSONExtractString(_msgText, 'reason'),
-            JSONExtractString(_msgText, 'name')    != '', JSONExtractString(_msgText, 'name'),
-            JSONExtractString(_msgText, 'type')    != '', extract(JSONExtractString(_msgText, 'type'), '([^/]+)$'),
+            ${JSON_LABEL_KEYS.map((key) => `${jsonStringIsSet(key)}, JSONExtractString(_msgText, '${key}'),`).join("\n            ")}
+            ${jsonStringIsSet("type")}, extract(JSONExtractString(_msgText, 'type'), '([^/]+)$'),
             'JSON error'
           ) AS _jsonLabel,
           multiIf(
@@ -1045,11 +1063,13 @@ const errorEventsSelectSql = `
                 'Schema parse error'
               ),
             _isJsonObj OR position(_msgText, '[') = 1, _jsonLabel,
-            left(_msgText, multiIf(
-              position(_msgText, ': ')  > 3, toInt64(position(_msgText, ': '))  - 1,
-              position(_msgText, ' (')  > 3, toInt64(position(_msgText, ' (')) - 1,
-              position(_msgText, '\\n') > 3, toInt64(position(_msgText, '\\n')) - 1,
-              least(toInt64(length(_msgText)), 150)
+            -- UTF8 variants throughout: a byte cut split a character and
+            -- left U+FFFD at the end of a non-ASCII title.
+            leftUTF8(_msgText, multiIf(
+              positionUTF8(_msgText, ': ')  > 3, toInt64(positionUTF8(_msgText, ': '))  - 1,
+              positionUTF8(_msgText, ' (')  > 3, toInt64(positionUTF8(_msgText, ' (')) - 1,
+              positionUTF8(_msgText, '\\n') > 3, toInt64(positionUTF8(_msgText, '\\n')) - 1,
+              150
             ))
           ) AS _statusLabel,
           if(_exType != '', _exType, _statusLabel) AS _errorLabel,
@@ -1101,6 +1121,10 @@ export const errorEventsMv = defineMaterializedView("error_events_mv", {
 	description:
 		"Materializes per-occurrence error events from traces. Unwraps the first OTel exception event (falling back to exception.* / error.* span attributes) and computes a cityHash64 FingerprintHash for issue grouping.",
 	datasource: errorEvents,
+	// A fingerprint change must never replay `traces` into this 90-day target: that
+	// drops the 60 days `traces` no longer holds and re-keys every stored occurrence.
+	// `alter` swaps the view query in place; stored rows keep their hashes.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "error_events_mv_node",
@@ -1121,6 +1145,8 @@ export const errorEventsByTimeMv = defineMaterializedView("error_events_by_time_
 	description:
 		"Time-ordered copy of error_events_mv's projection, written to error_events_by_time (sorted by OrgId, Timestamp, FingerprintHash) for recent-window error scans.",
 	datasource: errorEventsByTime,
+	// Same as error_events_mv: a rebuild would drop history and re-key stored rows.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "error_events_by_time_mv_node",

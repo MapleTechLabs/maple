@@ -1,20 +1,22 @@
 import { REPLAY_BLOCK_CLASS } from "../../../../components/common/replay-privacy"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { confirmDialog } from "../../../../ui/confirm-dialog"
-import * as CopyButton from "../../../../ui/copy-button"
-import { copyableField } from "../../../../ui/copyable-field"
-import * as DialogView from "../../../../ui/dialog-view"
-import { badge } from "../../../../ui/display"
-import { icon } from "../../../../ui/icon"
-import * as OtpField from "../../../../ui/otp-field"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
 import { codeField } from "../code-field"
 import type { AccountUser } from "../user"
 import { type EnrollStep, Message, type Model } from "./model"
 import { qrCode } from "./qr-code"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -36,25 +38,21 @@ const authenticatorSection = (h: H, model: Model, user: AccountUser): Html =>
 		},
 		[
 			user.totpEnabled
-				? h.div(
-						[h.Class("flex items-center justify-between gap-4")],
-						[
-							h.p(
-								[h.Class("text-xs text-muted-foreground")],
-								["Your authenticator app is registered for this account."],
-							),
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									isDisabled: model.isBusy,
-									attributes: [h.OnClick(Message.ClickedRemove())],
-								},
-								["Remove"],
-							),
-						],
-					)
+				? hstack(h, { gap: "4", justify: "between" }, [
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Your authenticator app is registered for this account.",
+						]),
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: model.isBusy,
+								attributes: [h.OnClick(Message.ClickedRemove())],
+							},
+							["Remove"],
+						),
+					])
 				: button(
 						h,
 						{
@@ -249,7 +247,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			title: "Remove two-factor authentication?",
 			description:
 				"Your account will be protected by your password alone, and your backup codes stop working.",
-			confirmLabel: "Remove",
+			confirmLabel: "Remove two-factor",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),

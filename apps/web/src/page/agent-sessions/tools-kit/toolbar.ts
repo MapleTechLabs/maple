@@ -1,10 +1,13 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Select from "../../../ui/select"
-import * as SelectView from "../../../ui/select-view"
-import { searchInput } from "../../../ui/search-input"
-import { switchControl } from "../../../ui/switch"
+import { label } from "@maple/views/ui/label"
+import * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
+import { searchInput } from "@maple/views/ui/search-input"
+import { switchControl } from "@maple/views/ui/switch"
+import { listToolbar } from "../../kit/list-toolbar"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The tool filter toolbar and its facet selects.
 
@@ -67,64 +70,65 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 }
 
 export type ToolbarConfig<M> = Readonly<{
-	/** The tool-name search (overview only): what is typed, and its Messages. */
-	nameSearch?: Readonly<{ value: string; inputId: string; onInput: (value: string) => M; onClear: M }>
+	/** The name search (overview only): what is typed, and its Messages. Searches tools unless `placeholder` says. */
+	nameSearch?: Readonly<{
+		value: string
+		inputId: string
+		placeholder?: string
+		onInput: (value: string) => M
+		onClear: M
+	}>
 	selects: ReadonlyArray<Html>
 	isFailingOnly: boolean
 	onToggleFailingOnly: M
 	isWaiting: boolean
-	actions?: Html
 }>
 
 const nameSearchInput = <M>(h: HtmlBuilder<M>, search: NonNullable<ToolbarConfig<M>["nameSearch"]>): Html =>
 	searchInput(h, {
 		id: search.inputId,
 		size: "sm",
-		className: cn("max-w-sm", "w-full font-mono sm:w-64"),
-		placeholder: "Tool name…",
+		className: "w-full max-w-sm font-mono",
+		placeholder: search.placeholder ?? "Tool name…",
 		value: search.value,
 		onInput: search.onInput,
 		onClear: search.onClear,
 	})
 
-/** `ToolFilterToolbar` inside the shared `Toolbar` shell. */
-export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>): Html =>
-	h.div(
+/**
+ * `ToolFilterToolbar` on the kit's `listToolbar`, edge to edge above the page's flush body:
+ * the search pinned left and the filters right, or the filters alone on the left.
+ */
+export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>): Html => {
+	const filters = h.div(
 		[
-			h.Class(
-				cn(
-					"flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3",
-					"justify-start gap-2 border-border px-6",
-				),
-			),
+			...(config.isWaiting ? [h.AriaBusy(true)] : []),
+			h.Class(cn(hstackClass({ gap: "2", wrap: true }), refreshingClass(config.isWaiting))),
 		],
 		[
-			...(config.nameSearch === undefined ? [] : [nameSearchInput(h, config.nameSearch)]),
-			h.div(
+			...config.selects,
+			// The same switch as "With errors" on the sessions list, so it reads as a filter.
+			label(
+				h,
+				{ className: "cursor-pointer text-xs sm:text-xs" },
 				[
-					...(config.isWaiting ? [h.AriaBusy(true)] : []),
-					h.Class(cn("flex flex-wrap items-center gap-2", refreshingClass(config.isWaiting))),
-				],
-				[
-					...config.selects,
-					// The same switch as "With errors" on the sessions list, so it reads as a filter.
-					h.label(
-						[h.Class("inline-flex cursor-pointer items-center gap-2 text-xs font-medium")],
-						[
-							...switchControl(h, {
-								id: "agent-tools-failing-switch",
-								inputId: "agent-tools-failing-input",
-								isChecked: config.isFailingOnly,
-								ariaLabel: "Failing only",
-								className:
-									"[--thumb-size:--spacing(3.5)] data-checked:bg-severity-error sm:[--thumb-size:--spacing(3.5)]",
-								onToggle: config.onToggleFailingOnly,
-							}),
-							"Failing only",
-						],
-					),
+					...switchControl(h, {
+						id: "agent-tools-failing-switch",
+						inputId: "agent-tools-failing-input",
+						isChecked: config.isFailingOnly,
+						ariaLabel: "Failing only",
+						className:
+							"[--thumb-size:--spacing(3.5)] data-checked:bg-severity-error sm:[--thumb-size:--spacing(3.5)]",
+						onToggle: config.onToggleFailingOnly,
+					}),
+					"Failing only",
 				],
 			),
-			...(config.actions === undefined ? [] : [h.div([h.Class("ml-auto")], [config.actions])]),
 		],
 	)
+	return listToolbar(h, {
+		className: "border-b border-border px-6 py-3",
+		leading: config.nameSearch === undefined ? filters : nameSearchInput(h, config.nameSearch),
+		trailing: config.nameSearch === undefined ? [] : [filters],
+	})
+}

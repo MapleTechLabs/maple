@@ -1,14 +1,17 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import * as Field from "../../../ui/field"
-import { formDialog } from "../../../ui/form-dialog"
-import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
-import { meter } from "../../../ui/meter"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import * as Field from "@maple/views/ui/field"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import { inputGroup, inputGroupAddon, inputGroupInput } from "@maple/views/ui/input-group"
+import { meter } from "@maple/views/ui/meter"
 import { formatUsd } from "./format"
 import { modelPicker } from "./model-picker"
 import { DIALOG_ID, draftLimitOf, errorsOf, Message, type Model, NO_ERRORS } from "./spend-settings"
+import { typography } from "@maple/views/ui/typography"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // The Spend & models form inside the shared FormDialog.
 
@@ -90,38 +93,35 @@ const modelsField = (h: H, model: Model, error?: string): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-3 border-t pt-5")],
 		[
-			h.div(
-				[h.Class("flex flex-col gap-1")],
-				[
-					h.span([h.Class("text-sm font-medium")], ["Default models"]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground")],
-						[
-							"Verification runs on a different model than hunting, so it does not share the hunter's blind spots. A target can override both.",
-						],
-					),
-				],
-			),
-			h.div(
-				[h.Class("grid grid-cols-2 gap-2")],
-				[
-					modelPicker(h, {
-						stage: "discovery",
-						model: model.discovery,
-						idPrefix: DIALOG_ID,
-						wrap: (message) => Message.GotDiscoveryMessage({ message }),
-					}),
-					modelPicker(h, {
-						stage: "validation",
-						model: model.validation,
-						idPrefix: DIALOG_ID,
-						wrap: (message) => Message.GotValidationMessage({ message }),
-					}),
-				],
-			),
+			vstack(h, { gap: "1" }, [
+				typography(h, { size: "sm", weight: "medium" }, ["Default models"]),
+				typography(h, { size: "xs", tone: "muted" }, [
+					"Verification runs on a different model than hunting, so it does not share the hunter's blind spots. A target can override both.",
+				]),
+			]),
+			grid(h, { cols: 2, gap: "2" }, [
+				modelPicker(h, {
+					stage: "discovery",
+					model: model.discovery,
+					idPrefix: DIALOG_ID,
+					wrap: (message) => Message.GotDiscoveryMessage({ message }),
+				}),
+				modelPicker(h, {
+					stage: "validation",
+					model: model.validation,
+					idPrefix: DIALOG_ID,
+					wrap: (message) => Message.GotValidationMessage({ message }),
+				}),
+			]),
 			...(error === undefined
 				? []
-				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive")], [error])]),
+				: [
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+							[error],
+						),
+					]),
 		],
 	)
 
@@ -147,7 +147,7 @@ const spendSettingsDialog = (h: H, model: Model): Html => {
 		onSubmit: Message.Submitted(),
 		submitLabel: "Save changes",
 		isPending: model.isPending,
-		panelClassName: "flex flex-col gap-5",
+		panelClassName: vstackClass({ gap: "5" }),
 		fields: [
 			...failureAlert(h, model),
 			limitField(h, model, errors.limit),

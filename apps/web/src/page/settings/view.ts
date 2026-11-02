@@ -1,8 +1,8 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { alert, alertDescription } from "../../ui/alert"
-import { linkButton } from "../../ui/button"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { linkButton } from "@maple/views/ui/button"
 import {
 	empty as emptyBlock,
 	emptyContent,
@@ -11,9 +11,9 @@ import {
 	emptyMedia,
 	emptyMessage,
 	emptyTitle,
-} from "../../ui/empty"
-import { icon } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
+} from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import type { BreadcrumbEntry } from "../../shell"
@@ -349,7 +349,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		isLoading
 			? [loadingSkeleton(h)]
 			: empty
-				? [emptyMessage(h, {}, ["No settings are available for the current account."])]
+				? [emptyMessage(h, {}, ["No settings are available for the current account"])]
 				: activeTabOf(model) === "data-platform" && visibilityOf(model).isDataPlatformLocked === true
 					? [lockedDataPlatform(h)]
 					: [...pageNote(h, model), ...tabContent(h, model, inputs)],

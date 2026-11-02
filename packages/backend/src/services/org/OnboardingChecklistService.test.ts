@@ -166,6 +166,7 @@ const stubs = (world: World) =>
 							),
 				),
 			listOrganizationsOf: die,
+			listMemberActivity: die,
 			resolveMembers: die,
 		}),
 		Layer.succeed(AutumnClient, {

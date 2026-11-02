@@ -169,6 +169,13 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `list_infra`    | read   | Hosts, Kubernetes, Docker containers and integration resources, closest to a limit first |
 | `inspect_infra` | read   | One host, pod, node, workload, container or integration resource in depth                |
 
+### Security
+
+| Tool                       | Access | What it does                                                                                                                        |
+| -------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `list_security_findings`   | read   | Code audit findings, vulnerable dependencies, scanner probes that got a 2xx and outdated runtimes, worst first, or one area in full |
+| `inspect_security_finding` | read   | One finding in full, or whether an advisory (CVE, GHSA) affects any repository or service                                           |
+
 ### Integrations
 
 | Tool                   | Access | What it does                                                                     |

@@ -10,7 +10,7 @@ import { Result, Schema } from "effect"
 import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { SourceId } from "@maple/domain/primitives"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { orderSources } from "../kit/shared"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
@@ -269,7 +269,7 @@ describe("integrations on the sources list", () => {
 			{ update: pageUpdate, view },
 			given(loaded([defaultSource, source(2, { name: "Checkout" })])),
 			click(role("button", { name: /^Integrations/ })),
-			expectView(text("No sources match these filters.")).toExist(),
+			expectView(text("No sources match these filters")).toExist(),
 		)
 	})
 })

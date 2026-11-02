@@ -3,11 +3,11 @@ import { maximumInvoiceCents, uncappedFeatures } from "../../../lib/billing/cont
 import { getLegacyPlanInfo, getTrialStatus } from "../../../lib/billing/plan-gating"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../data/load-failure"
-import { button } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import { panel } from "../../../ui/panel"
-import { spinner } from "../../../ui/spinner"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { panel } from "@maple/views/ui/panel"
+import { spinner } from "@maple/views/ui/spinner"
 import { adminOnlyNotice } from "../kit/members"
 import { settingsSection, settingsSections } from "../kit/section"
 import { Message, type Model } from "./model"
@@ -17,6 +17,7 @@ import { cyclePanel, cyclePanelSkeleton } from "./view-cycle"
 import { planSection } from "./view-plan"
 import { detailsSection, invoicesSection, unpaidInvoicesNotice } from "./view-records"
 import { usageTable, usageTableSkeleton } from "./view-usage"
+import { typographyClass } from "@maple/views/ui/typography"
 
 export type ViewInputs = Readonly<{
 	/** The settings page's `billingCustomerAtom`. */
@@ -194,7 +195,7 @@ const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 					h,
 					{
 						tone: "muted",
-						className: "px-4 py-3 text-sm text-muted-foreground",
+						className: typographyClass({ size: "sm", tone: "muted", className: "px-4 py-3" }),
 						attributes: [h.Role("status")],
 					},
 					[

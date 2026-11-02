@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../ui/empty"
-import { icon } from "../../ui/icon"
+import { linkButton } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
 
 export const resourceNotFound = <M>(
 	h: HtmlBuilder<M>,
@@ -25,7 +25,7 @@ export const resourceNotFound = <M>(
 					[
 						h.AriaHidden(true),
 						h.Class(
-							"mb-4 flex size-9 items-center justify-center rounded-md border bg-card/50 text-muted-foreground",
+							"mb-4 flex size-9 items-center justify-center rounded-md border bg-surface-faint text-muted-foreground",
 						),
 					],
 					[options.icon ?? icon(h, "CircleWarningIcon", { size: 18 })],

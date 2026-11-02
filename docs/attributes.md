@@ -206,6 +206,12 @@ Promotes user and customer context into the log chips so it's visible at a glanc
 
 Source: [log-attributes.ts](../packages/ui/src/lib/log-attributes.ts).
 
+On MCP server spans (`mcp.method.name` set), `user.id` (else `enduser.id`) is the session's user on
+`/mcp-servers/:service/sessions`: a column, a search, user counts, and, on a stateless server with no
+`mcp.session.id`, the key its sessions are built from (one user and client, split after 30 idle
+minutes). `user.name`, else `user.email`, is how the user is shown. Source:
+[mcp.ts](../packages/query-engine/src/ch/queries/mcp.ts).
+
 ## Log severity
 
 For log records (not spans). Drives the per-row color in the log list and the trace detail timeline.

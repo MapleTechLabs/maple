@@ -1,10 +1,10 @@
 import { V2AnomalyIncident } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { AnomaliesSearch } from "../../../route/search"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as Tabs from "../../../ui/tabs"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresenceData } from "../../kit/signal-presence"
 
 // `/anomalies`.

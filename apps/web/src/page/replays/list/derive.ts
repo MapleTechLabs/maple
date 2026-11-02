@@ -2,7 +2,7 @@ import type { SessionTag } from "@maple/domain/query-engine"
 import { isQualityTier, sessionTagsFromSearch } from "../../../components/replays/session-tags"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { formatCompact } from "../../../ui/filters/range-format"
+import { formatCompact } from "@maple/views/ui/filters/range-format"
 import type { SessionRow } from "../kit/session-row"
 import type { Model, ReplaysFacets, Search } from "./model"
 
@@ -47,6 +47,7 @@ export const hasActiveFilters = (search: Search): boolean =>
 		search.userId,
 		search.user,
 		search.group,
+		search.groupId,
 		search.visitorId,
 		search.hasErrors,
 		search.q,

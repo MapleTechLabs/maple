@@ -2,16 +2,16 @@ import { gcpMatchStatements } from "../../components/infra/gcp/cloud-sql-signals
 import { labStatementSpans, type LabWorkload, PAGES, RANGE, WORKLOADS } from "../gcp-workload-fixture"
 import { Effect } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import * as Chart from "../../charts/chart"
-import { LoadChartRuntime } from "../../charts/chart-runtime"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { stepTimePicker } from "../../page/infra-integrations/kit/page-time"
 import { CompleteReloadSpin } from "../../page/infra-integrations/gcp/workload/command"
 import * as Workload from "../../page/infra-integrations/gcp/workload/model"
 import { initialModel } from "../../page/infra-integrations/gcp/workload/update"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../platform/resources"
-import * as CopyButton from "../../ui/copy-button"
-import * as Dialog from "../../ui/dialog"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
 import {
 	type GcpWorkloadLabFlags,
 	type LabPage,

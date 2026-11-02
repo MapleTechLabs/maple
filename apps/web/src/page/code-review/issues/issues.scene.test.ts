@@ -2,7 +2,7 @@ import { CodeReviewFindingsResponse, PrReviewId } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { FrameMessage } from "../kit/frame"
 import { context, names, NOW, window } from "../kit/test-fixtures"
 import { Message, type Model } from "./model"
@@ -63,7 +63,7 @@ describe("code review issues", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(answered),
-			expectView(text("No issues in this window")).toExist(),
+			expectView(text("No issues match these filters")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toExist(),
 		)
 	})

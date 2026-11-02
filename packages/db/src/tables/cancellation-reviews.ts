@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { CancellationReason, CancellationSnapshot } from "@maple/domain/http"
+import { CancellationModelRead, CancellationReason, CancellationSnapshot } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/primitives"
 
 /**
@@ -22,6 +22,8 @@ export const CancellationReviews = PG.table("cancellation_reviews", {
 		canceledAt: PG.column(PG.nullable(PG.int8), { name: "canceled_at" }),
 		snapshotJson: PG.column(PG.nullable(PG.jsonb(CancellationSnapshot)), { name: "snapshot_json" }),
 		ruleReason: PG.column(PG.nullable(PG.brand(PG.text, CancellationReason)), { name: "rule_reason" }),
+		/** The model's second read, null when it did not answer. Kept to check it against known reasons. */
+		modelRead: PG.column(PG.nullable(PG.jsonb(CancellationModelRead)), { name: "model_read" }),
 		/** Null until the report reached Slack; a retry picks an unposted row back up. */
 		postedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "posted_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),

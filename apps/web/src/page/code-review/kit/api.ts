@@ -9,7 +9,7 @@ import type {
 } from "@maple/domain/http"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Effect } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 

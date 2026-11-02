@@ -3,9 +3,9 @@ import { type BoxDatum, boxY, type ChartPoint, type ChartValue, defineChart } fr
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { scaleLog } from "d3-scale"
 import { Option } from "effect"
-import { ChartTooltip } from "../../charts/chart-spec"
-import type { BuiltChart } from "../../charts/definitions/built-chart"
-import { cursorTooltip } from "../../charts/definitions/plot-constants"
+import { ChartTooltip } from "@maple/views/charts/chart-spec"
+import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
+import { cursorTooltip } from "@maple/views/charts/definitions/plot-constants"
 import type { SpikeSpec } from "./spike-spec"
 
 // `BoxPlotSpike`, definition half: Tukey boxes over a

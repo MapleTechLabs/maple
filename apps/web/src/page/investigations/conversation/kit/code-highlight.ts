@@ -1,6 +1,6 @@
 import type * as Markdown from "@foldkit/markdown"
 import { Option, Schema } from "effect"
-import { highlightTokens } from "../../../../lib/highlight"
+import { highlightTokens } from "@maple/views/lib/highlight"
 
 // A fenced block's tokens. Each token is coloured by its `--sh-<slot>` theme variable (`theme.css`);
 // a language the highlighter does not know is plain text.

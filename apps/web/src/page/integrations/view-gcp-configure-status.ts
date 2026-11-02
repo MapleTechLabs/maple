@@ -8,14 +8,17 @@ import {
 	gcpSetupRunning,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../ui/icon"
-import { spinner } from "../../ui/spinner"
-import { statusDot } from "../../ui/status-dot"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { spinner } from "@maple/views/ui/spinner"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { CAPABILITIES, CAPABILITY_IDS, DOCS } from "./gcp-configure-copy"
 import type { ApplyOpened, SetupMethod } from "./gcp-configure-schema"
 import type { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { SMALL } from "./view-gcp-parts"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `RunStatus` (what Maple has heard from the script) and `Applied` (the confirmed run).
 
@@ -42,14 +45,16 @@ const overdueHelp = (h: H): Html =>
 					h.li(
 						[],
 						[
-							h.span([h.Class("font-medium text-foreground")], ["Stopped with an error?"]),
+							typography(h, { tone: "foreground", weight: "medium" }, [
+								"Stopped with an error?",
+							]),
 							" Fix what it names and paste it again. It continues where it stopped.",
 						],
 					),
 					h.li(
 						[],
 						[
-							h.span([h.Class("font-medium text-foreground")], ["Wrong ID?"]),
+							typography(h, { tone: "foreground", weight: "medium" }, ["Wrong ID?"]),
 							" Disconnect this connection and connect the right one. An ID can't be changed.",
 						],
 					),
@@ -117,41 +122,45 @@ export const runStatus = (
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
-				[
-					overdue
-						? icon(h, "AlertWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" })
-						: done === rows.length
-							? icon(h, "CircleCheckIcon", {
-									size: 14,
-									className: "shrink-0 text-severity-info",
-								})
-							: spinner(h, "size-3.5 shrink-0 text-severity-debug"),
-					h.p(
-						[h.Class(cn("text-sm font-medium", overdue && "text-severity-warn"))],
-						[
-							!byScript
-								? done === rows.length
-									? "Confirmed by the first data"
-									: "Waiting for Google Cloud"
-								: overdue
-									? "No report from the script yet"
-									: reporting
-										? "The script is reporting back"
-										: "Waiting for the script to report back",
-						],
-					),
-					h.span(
-						[h.Class("ml-auto shrink-0 font-mono text-xs text-muted-foreground")],
-						[
-							reporting
-								? `${done} of ${rows.length} ${byScript ? "done" : "confirmed"}`
-								: "updates on its own",
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "2.5" }, [
+				overdue
+					? icon(h, "AlertWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" })
+					: done === rows.length
+						? icon(h, "CircleCheckIcon", {
+								size: 14,
+								className: "shrink-0 text-severity-info",
+							})
+						: spinner(h, "size-3.5 shrink-0 text-severity-debug"),
+				h.p(
+					[
+						h.Class(
+							cn(
+								typographyClass({ size: "sm", weight: "medium" }),
+								overdue && "text-severity-warn",
+							),
+						),
+					],
+					[
+						!byScript
+							? done === rows.length
+								? "Confirmed by the first data"
+								: "Waiting for Google Cloud"
+							: overdue
+								? "No report from the script yet"
+								: reporting
+									? "The script is reporting back"
+									: "Waiting for the script to report back",
+					],
+				),
+				h.span(
+					[h.Class("ml-auto shrink-0 font-mono text-xs text-muted-foreground")],
+					[
+						reporting
+							? `${done} of ${rows.length} ${byScript ? "done" : "confirmed"}`
+							: "updates on its own",
+					],
+				),
+			]),
 			overdue
 				? overdueHelp(h)
 				: h.ul(
@@ -222,18 +231,16 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 				],
 				[icon(h, "CheckIcon", { size: 20 })],
 			),
-			h.div(
-				[h.Class("flex flex-col gap-1")],
-				[
-					h.h3(
-						[h.Class("text-base font-medium")],
-						created
-							? [h.span([h.Class("font-mono")], [connector.scope_id]), " is connected"]
-							: ["Google Cloud matches this configuration"],
-					),
-					h.p([h.Class(SMALL)], ["The script finished. Data shows up in Maple on its own."]),
-				],
-			),
+			vstack(h, { gap: "1" }, [
+				heading(
+					h,
+					{ level: 3, variant: "subsection" },
+					created
+						? [h.span([h.Class("font-mono")], [connector.scope_id]), " is connected"]
+						: ["Google Cloud matches this configuration"],
+				),
+				h.p([h.Class(SMALL)], ["The script finished. Data shows up in Maple on its own."]),
+			]),
 			h.ul(
 				[h.Class("w-full divide-y divide-border-subtle rounded-md border text-left")],
 				rows.map((row) =>

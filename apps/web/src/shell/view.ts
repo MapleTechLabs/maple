@@ -1,19 +1,13 @@
-import { pageLayoutStyles } from "@maple/ui/styles/ui/page-layout"
-import {
-	sidebarMobileHeaderStyles,
-	sidebarMobileInnerStyles,
-	sidebarMobileStyles,
-} from "@maple/ui/styles/ui/sidebar"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Submodel } from "foldkit"
-import { alert, alertAction, alertDescription, alertTitle } from "../ui/alert"
-import { button } from "../ui/button"
-import { menuPopup } from "../ui/dropdown-menu"
-import { icon } from "../ui/icon"
-import { leftSheet } from "../ui/sheet"
-import { sidebarContent, sidebarDesktop, sidebarInset, sidebarWrapper } from "../ui/sidebar"
-import * as Tooltip from "../ui/tooltip"
+import { button } from "@maple/views/ui/button"
+import { menuPopup } from "@maple/views/ui/dropdown-menu"
+import { pageLayoutRoot } from "@maple/views/ui/page-layout"
+import { hstack } from "@maple/views/ui/stack"
+import { sidebarContent, sidebarDesktop, sidebarInset, sidebarMobile, sidebarWrapper } from "@maple/views/ui/sidebar"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import { typography } from "@maple/views/ui/typography"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { billingBanners } from "./billing-banners"
 import * as SupportChannelView from "./support-channel-view"
@@ -125,19 +119,29 @@ const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: Shel
 		toParentMessage: (message) => Message.GotSupportChannelMessage({ message }),
 	})
 
-/** `AppUpdateBanner`: not dismissible, a stale bundle may not read what the new build writes. */
-const appUpdateBanner = (h: HtmlBuilder<Message>): Html =>
-	h.div(
-		[h.Class("px-4 pt-3")],
+/** `AppUpdatePill`: not dismissible, a stale bundle may not read what the new build writes. */
+const appUpdatePill = (h: HtmlBuilder<Message>): Html =>
+	hstack(
+		h,
+		{
+			gap: "3",
+			attributes: [h.Role("status")],
+			// Dark popover barely clears the page, so it lifts a step and takes the control highlight.
+			// z-1: page action bars carry a z-index (save bars and footers z-10+, bulk bar z-40), so they cover it.
+			className:
+				"fixed right-4 bottom-4 z-1 rounded-full border border-input bg-popover py-1 pr-1 pl-3.5 shadow-popup before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:shadow-control dark:bg-secondary sm:right-8 sm:bottom-8",
+		},
 		[
-			alert(h, {}, [
-				icon(h, "ArrowRotateClockwiseIcon", { size: 16 }),
-				alertTitle(h, ["Maple was updated"]),
-				alertDescription(h, ["Reload to use the latest version."]),
-				alertAction(h, [
-					button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedReload())] }, ["Reload"]),
-				]),
-			]),
+			typography(h, { size: "sm", tone: "soft" }, ["Maple was updated"]),
+			button(
+				h,
+				{
+					size: "xs",
+					className: "rounded-full before:rounded-full",
+					attributes: [h.OnClick(Message.ClickedReload())],
+				},
+				["Reload"],
+			),
 		],
 	)
 
@@ -168,29 +172,26 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 					],
 					["Skip to main content"],
 				),
-				h.div(
-					[h.Class(pageLayoutStyles), h.DataAttribute("slot", "page-layout")],
-					[
-						topbar(
-							h,
-							model,
-							inputs.breadcrumbs,
-							inputs.topbarActions(),
-							railTriggers,
-							!hidesTopbarConnect(inputs.currentPath),
-							inputs.sourceLink ?? null,
-						),
-						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
-						...(inputs.clerk === undefined || inputs.clerk === null
-							? []
-							: billingBanners(
-									h,
-									Option.fromNullishOr(inputs.clerk.customer),
-									model.isQuotaApproachingDismissed,
-								)),
-						page.body,
-					],
-				),
+				pageLayoutRoot(h, [
+					topbar(
+						h,
+						model,
+						inputs.breadcrumbs,
+						inputs.topbarActions(),
+						railTriggers,
+						!hidesTopbarConnect(inputs.currentPath),
+						inputs.sourceLink ?? null,
+					),
+					...(inputs.clerk === undefined || inputs.clerk === null
+						? []
+						: billingBanners(
+								h,
+								Option.fromNullishOr(inputs.clerk.customer),
+								model.isQuotaApproachingDismissed,
+							)),
+					page.body,
+				]),
+				...(model.isAppOutdated ? [appUpdatePill(h)] : []),
 				// The rails' sheets below `lg` (each portal moves itself to <body> while open).
 				...railSheets,
 				// Clerk: the Support menu's shared Slack channel dialog (its portal moves to <body>).
@@ -210,23 +211,10 @@ const mobileNav = (
 	currentPath: string,
 	clerk: ShellClerk | null,
 ): Html =>
-	leftSheet(
+	sidebarMobile(
 		h,
-		{
-			id: "shell-mobile-sidebar",
-			className: sidebarMobileStyles,
-			title: "Sidebar",
-			description: "Displays the mobile sidebar.",
-			headerClassName: sidebarMobileHeaderStyles,
-			slot: "sidebar",
-			popupAttributes: [
-				h.DataAttribute("mobile", "true"),
-				h.DataAttribute("sidebar", "sidebar"),
-				h.Style({ "--nested-dialogs": "0", "--sidebar-width": "18rem" }),
-			],
-			onDismiss: Message.DismissedMobileNav(),
-		},
-		[h.div([h.Class(sidebarMobileInnerStyles)], sidebarRegions(h, model, currentPath, clerk))],
+		{ id: "shell-mobile-sidebar", onDismiss: Message.DismissedMobileNav() },
+		sidebarRegions(h, model, currentPath, clerk),
 	)
 // OVERLAYS
 

@@ -1,8 +1,10 @@
 import { pluralize } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { card, cardPanel } from "../../ui/card"
-import { eyebrow } from "../../ui/eyebrow"
-import { statusDot } from "../../ui/status-dot"
+import { card, cardPanel } from "@maple/views/ui/card"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The firing-alerts hero, without the last-evaluated hint.
 
@@ -21,30 +23,23 @@ const allClear = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 		cardPanel(
 			h,
 			[
-				h.div(
-					[h.Class("flex min-w-0 items-center gap-3")],
-					[
-						statusDot(h, { tone: "ok", size: "lg" }),
-						h.div(
-							[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-0.5")],
-							[
-								h.span([h.Class("text-base font-semibold tracking-tight")], ["All clear"]),
-								h.span(
-									[h.Class("text-muted-foreground text-sm")],
-									[
-										h.span(
-											[h.Class("text-foreground font-medium tabular-nums")],
-											[String(counts.rulesEnabled)],
-										),
-										h.span([h.Class("text-foreground-subtle")], [" / "]),
-										h.span([h.Class("tabular-nums")], [String(counts.rulesTotal)]),
-										h.span([h.Class("ml-1")], ["rules watching"]),
-									],
-								),
-							],
-						),
-					],
-				),
+				hstack(h, { gap: "3", shrink: true }, [
+					statusDot(h, { tone: "ok", size: "lg" }),
+					h.div(
+						[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-0.5")],
+						[
+							h.span([h.Class("text-base font-semibold tracking-tight")], ["All clear"]),
+							typography(h, { size: "sm", tone: "muted" }, [
+								typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+									String(counts.rulesEnabled),
+								]),
+								h.span([h.Class("text-foreground-subtle")], [" / "]),
+								h.span([h.Class("tabular-nums")], [String(counts.rulesTotal)]),
+								h.span([h.Class("ml-1")], ["rules watching"]),
+							]),
+						],
+					),
+				]),
 			],
 			PANEL,
 		),
@@ -54,7 +49,7 @@ const rulesSummary = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 	h.span(
 		[h.Class("tabular-nums")],
 		[
-			h.span([h.Class("text-foreground font-medium")], [String(counts.rulesEnabled)]),
+			typography(h, { tone: "foreground", weight: "medium" }, [String(counts.rulesEnabled)]),
 			h.span([h.Class("text-foreground-subtle")], ["/"]),
 			h.span([], [String(counts.rulesTotal)]),
 			h.span([h.Class("ml-1")], ["rules"]),
@@ -75,39 +70,32 @@ const firing = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html => {
 			cardPanel(
 				h,
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-3")],
-						[
-							statusDot(h, { tone: "crit", size: "lg" }),
-							h.div(
-								[h.Class("flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5")],
-								[
-									eyebrow(h, { variant: "label", className: "text-severity-error" }, [
-										"Firing now",
-									]),
+					hstack(h, { gap: "3", shrink: true }, [
+						statusDot(h, { tone: "crit", size: "lg" }),
+						h.div(
+							[h.Class("flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5")],
+							[
+								eyebrow(h, { variant: "label", className: "text-severity-error" }, [
+									"Firing now",
+								]),
+								hstack(h, { gap: "1.5", align: "baseline", as: "span" }, [
 									h.span(
-										[h.Class("flex items-baseline gap-1.5")],
 										[
-											h.span(
-												[
-													h.Class(
-														"text-severity-error text-2xl font-semibold tabular-nums leading-none",
-													),
-												],
-												[String(counts.openCount)],
-											),
-											h.span(
-												[h.Class("text-muted-foreground text-sm")],
-												[pluralize(counts.openCount, "incident")],
+											h.Class(
+												"text-severity-error text-2xl font-semibold tabular-nums leading-none",
 											),
 										],
+										[String(counts.openCount)],
 									),
-									h.span([h.Class("text-foreground-faint")], ["·"]),
-									h.span([h.Class("text-muted-foreground text-sm")], [label]),
-								],
-							),
-						],
-					),
+									typography(h, { size: "sm", tone: "muted" }, [
+										pluralize(counts.openCount, "incident"),
+									]),
+								]),
+								h.span([h.Class("text-foreground-faint")], ["·"]),
+								typography(h, { size: "sm", tone: "muted" }, [label]),
+							],
+						),
+					]),
 					h.div(
 						[h.Class("text-muted-foreground flex shrink-0 items-center gap-2 text-xs")],
 						[rulesSummary(h, counts)],

@@ -13,7 +13,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import * as Frame from "../kit/frame"
 import { Message } from "./message"

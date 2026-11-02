@@ -3,7 +3,8 @@ import { BAR_FILL, BAR_VALUE_TONE } from "../../../components/infra/severity-tok
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { meter } from "../../../ui/meter"
+import { meter } from "@maple/views/ui/meter"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // `MeterRows`.
 
@@ -58,6 +59,6 @@ export const meterRows = <M>(
 	options: Readonly<{ hideLabels?: boolean; className?: string }> = {},
 ): Html =>
 	h.div(
-		[h.Class(cn("flex flex-col gap-1", options.className))],
+		[h.Class(cn(vstackClass({ gap: "1" }), options.className))],
 		meters.map((row) => meterRow(h, row, options.hideLabels === true)),
 	)

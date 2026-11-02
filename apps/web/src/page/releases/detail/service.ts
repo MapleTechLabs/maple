@@ -2,7 +2,7 @@ import type { ReleaseServiceImpact } from "../../../components/releases/release-
 import { deriveReleaseImpacts } from "../../../components/releases/release-model"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { ChartRuntime, LoadChartRuntime } from "../../../charts/chart-runtime"
+import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { commitDetailKey } from "../../kit/commit-card"

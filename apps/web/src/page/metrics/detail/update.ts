@@ -11,20 +11,21 @@ import {
 	pressedTab,
 } from "./update-where"
 import { initWhereEditor } from "./where-editor"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { MetricSearch } from "../../../route/search"
-import * as Combobox from "../../../ui/combobox"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Select from "../../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { PresetValue } from "../../kit/time-controls"
 import {
 	BuildAlertLink,
 	CompleteReloadSpin,
@@ -56,7 +57,7 @@ type Route = { readonly metricName: string; readonly search: Search }
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 /** `DashboardPage`'s `defaultPreset` for a metric. */
-export const DEFAULT_PRESET = "24h"
+export const DEFAULT_PRESET: PresetValue = "24h"
 /** `MetricQueryControls`' "no breakdown" item, shown as its label (`itemToStringLabel`). */
 export const GROUP_BY_NONE_LABEL = "Everything (no breakdown)"
 
@@ -505,6 +506,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		ClickedRetryChart: () => requestContent(model, context, "Load"),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

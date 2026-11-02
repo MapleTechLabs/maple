@@ -2,7 +2,7 @@ import * as Markdown from "@foldkit/markdown"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { iconButton } from "../../ui/icon-button"
+import { iconButton } from "@maple/views/ui/icon-button"
 
 // Lightweight markdown over Streamdown:
 // laid out with Streamdown's element classes. The parser loads on first use, never at startup.

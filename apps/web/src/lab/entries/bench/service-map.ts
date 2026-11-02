@@ -5,7 +5,7 @@ import {
 	DURATION_SECONDS,
 	generateBenchGraph,
 	refreshBenchMetrics,
-} from "../../bench/service-map-bench-fixture"
+} from "@maple/views/fixtures/service-map-bench-fixture"
 import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
 import { cn } from "@maple/ui/lib/utils"
 import { Effect, Option, Schema, Stream } from "effect"
@@ -13,15 +13,15 @@ import { Command, Mount, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { pushUrl } from "foldkit/navigation"
-import { AttachBenchHarness, HarnessMessage } from "../../../service-map/map/bench-harness"
-import { buildSourceGraph } from "../../../service-map/map/graph"
-import * as ServiceMap from "../../../service-map/map/service-map"
-import { view as serviceMapView } from "../../../service-map/map/view"
-import * as Canvas from "../../../service-map/xyflow/canvas"
-import { eyebrow } from "../../../ui/eyebrow"
+import { AttachBenchHarness, HarnessMessage } from "@maple/views/service-map/map/bench-harness"
+import { buildSourceGraph } from "@maple/views/service-map/map/graph"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
+import { view as serviceMapView } from "@maple/views/service-map/map/view"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { defineLabWithFlags } from "../../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../../toasts"
-import * as Toast from "../../../ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 
 // `/lab/bench/service-map`:
 // the synthetic topology at `?services=&edges=&rps=&seed=&groups=&minTraffic=&focus=`, with the

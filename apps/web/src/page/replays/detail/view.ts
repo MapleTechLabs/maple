@@ -7,13 +7,14 @@ import { Struct } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
-import { badge } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { inlineCode, inlineCodeClassName } from "../../../ui/inline-code"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode, inlineCodeClassName } from "@maple/views/ui/inline-code"
+import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
@@ -28,7 +29,9 @@ import { replaySurface, replayTransport } from "./view-player"
 import { sessionRail } from "./view-rail"
 import { copy } from "./view-session"
 import { replayTimeline } from "./view-timeline"
-import { warmAvatarTone } from "../../../ui/avatar-tone"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The replay detail page on `ResultPage`, with the replay studio.
 
@@ -70,8 +73,7 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 	const label = labelOf(session)
 	const startedEpoch = parseChTimestampMs(session.startTime)
 	const sessionActive = isActive(model, session)
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-2")],
+	return hstack(h, { wrap: true, className: "gap-x-4 gap-y-2" },
 		[
 			h.div(
 				[h.Class("flex min-w-0 flex-1 items-center gap-2.5")],
@@ -84,8 +86,14 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 						],
 						[initialsFrom(label)],
 					),
-					h.h2(
-						[h.Class("min-w-0 truncate text-sm font-medium leading-tight"), h.Title(label)],
+					heading(
+						h,
+						{
+							level: 2,
+							variant: "subsection",
+							className: "min-w-0 truncate leading-tight",
+							attributes: [h.Title(label)],
+						},
 						[label],
 					),
 					sessionActive
@@ -149,11 +157,9 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 			h.div(
 				[h.Class("flex shrink-0 items-center gap-3")],
 				[
-					h.span(
-						[h.Class("flex items-baseline gap-1.5")],
+					hstack(h, { gap: "1.5", align: "baseline", as: "span" },
 						[
-							h.span(
-								[h.Class("font-mono text-sm font-semibold tabular-nums")],
+							typography(h, { size: "sm", weight: "semibold", mono: true, numeric: true },
 								[formatSessionDuration(durationOf(session))],
 							),
 							eyebrow(h, {}, ["duration"]),
@@ -204,8 +210,7 @@ const detailSkeleton = (h: H): Html =>
 			h.div(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-3.5")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-3")],
+					hstack(h, { gap: "3" },
 						[
 							skeleton(h, "size-8 shrink-0 rounded-full"),
 							skeleton(h, "h-4 w-44"),
@@ -215,7 +220,7 @@ const detailSkeleton = (h: H): Html =>
 					),
 					skeleton(h, "aspect-video w-full rounded-t-md"),
 					skeleton(h, "-mt-3.5 h-14 w-full rounded-b-md"),
-					skeleton(h, "h-48 w-full rounded-md"),
+					skeletonBlock(h, { height: "48" }),
 				],
 			),
 			skeleton(h, "h-72 w-full rounded-md lg:h-auto lg:w-84 lg:shrink-0"),
@@ -239,7 +244,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(h, { fill: isLoaded }, [
 		AsyncData.matchData(model.detail.data, {
 			onEmpty: () => detailSkeleton(h),
-			onFailure: (failure) => errorState(h, { failure, title: "Couldn't load session replay" }),
+			onFailure: (failure) => errorState(h, {
+					failure,
+					title: "Couldn't load session replay",
+					onRetry: Message.ClickedRetryDetail(),
+				}),
 			onData: (row) =>
 				row === null ? notFound(h, model.sessionId) : studio(h, model, row, inputs.context.timeZone),
 		}),

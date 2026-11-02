@@ -1,6 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { PIXEL_GLYPHS } from "../../ui/icons.generated"
+import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
+import { PIXEL_GLYPHS } from "@maple/views/ui/icons.generated"
+import { typography } from "@maple/views/ui/typography"
 
 // `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
 // its end state.
@@ -38,15 +40,7 @@ const drawnCheck = <M>(h: HtmlBuilder<M>, isChecked: boolean, className: string 
 	h.span(
 		[
 			h.AriaHidden(true),
-			h.Class(
-				cn(
-					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
-					isChecked
-						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-border-strong",
-					className,
-				),
-			),
+			h.Class(choiceCheckClass(isChecked, true, className)),
 		],
 		[
 			h.svg(
@@ -99,7 +93,9 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("min-w-0 flex-1 pt-px")],
 						[
-							h.span([h.Class("block text-sm font-semibold")], [options.title]),
+							typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+								options.title,
+							]),
 							h.span(
 								[h.Class("mt-1 block text-xs leading-relaxed text-muted-foreground")],
 								[options.description],
@@ -125,33 +121,18 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 						: [h.div([h.Class("mt-auto flex")], [options.footer])]),
 				]
 
-	return h.label(
-		[h.Class("group relative cursor-pointer")],
-		[
-			h.input([
-				h.Type(options.type),
-				...(options.name === undefined ? [] : [h.Name(options.name)]),
-				h.Class("peer sr-only"),
-				h.Checked(options.isChecked),
-				...(options.isDisabled === true ? [h.Disabled(true)] : []),
-				h.AriaLabel(options.label),
-				h.OnChange(() => options.onChange),
-			]),
-			h.div(
-				[
-					h.Class(
-						cn(
-							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-							layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
-							!options.isChecked
-								? "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
-								: "border-primary bg-primary-a1",
-						),
-					),
-				],
-				body,
-			),
-		],
+	return choiceCard(
+		h,
+		{
+			type: options.type,
+			name: options.name,
+			isChecked: options.isChecked,
+			isDisabled: options.isDisabled,
+			label: options.label,
+			onChange: options.onChange,
+			className: layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
+		},
+		body,
 	)
 }
 

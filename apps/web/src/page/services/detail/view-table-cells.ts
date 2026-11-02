@@ -1,12 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { eyebrowVariants } from "../../../ui/eyebrow"
-import { backdropBar } from "../../../ui/meter"
-import { panelHeader } from "../../../ui/panel"
-import { ariaSort, sortButton, tableCell, tableHead } from "../../../ui/table"
+import { eyebrowVariants } from "@maple/views/ui/eyebrow"
+import { backdropBar } from "@maple/views/ui/meter"
+import { panelHeader } from "@maple/views/ui/panel"
+import { ariaSort, sortButton, tableCell, tableHead } from "@maple/views/ui/table"
 import { Message } from "./message"
 import type { SortState } from "../../kit/table-sort"
 import type { SortTable } from "./model-tabs"
+import { typography } from "@maple/views/ui/typography"
 
 // The shared cells of the tab tables.
 
@@ -105,10 +106,9 @@ export const tableTitle = (h: H, options: Readonly<{ title: string; count?: numb
 
 /** Past 30 days a tab's summaries outlive the raw spans its drill-downs read. */
 export const rangeNote = (h: H, subject: string): Html =>
-	h.p(
-		[h.Class("text-xs text-muted-foreground")],
-		[`${subject} summaries cover the selected range; trace drill-downs show the latest 30 days.`],
-	)
+	typography(h, { size: "xs", tone: "muted", as: "p" }, [
+		`${subject} summaries cover the selected range; trace drill-downs show the latest 30 days.`,
+	])
 
 /** A loading table's title and column-header rows, sized like the loaded ones. */
 export const tableSkeletonHead = (h: H, title: string): ReadonlyArray<Html> => [

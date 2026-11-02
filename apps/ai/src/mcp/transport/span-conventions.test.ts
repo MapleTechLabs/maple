@@ -5,7 +5,7 @@ import { mcpServerSpan, withMetaTraceContext } from "./span-conventions"
 const request = (tag: string, payload: unknown) =>
 	({ _tag: "Request", id: "7", tag, payload, headers: [] }) as const
 
-const caller = { userAgent: undefined, clientAddress: undefined }
+const caller = { userAgent: undefined, clientAddress: undefined, userId: undefined }
 
 describe("mcpServerSpan", () => {
 	it("names a prompt span after the prompt", () => {
@@ -23,6 +23,83 @@ describe("mcpServerSpan", () => {
 		)
 		expect(span.name).toBe("resources/read")
 		expect(span.attributes.get("mcp.resource.uri")).toBe("maple://instructions")
+	})
+
+	it("names the signed-in user, so a stateless server's calls still group into sessions", () => {
+		const span = mcpServerSpan(request("tools/call", { name: "run_sql" }), "2025-06-18", {
+			...caller,
+			userId: "user_2abc",
+		})
+		expect(span.attributes.get("user.id")).toBe("user_2abc")
+		expect(
+			mcpServerSpan(request("tools/call", { name: "run_sql" }), "2025-06-18", caller).attributes.has(
+				"user.id",
+			),
+		).toBe(false)
+	})
+
+	it("names the client from initialize, or from each request's _meta on a stateless server", () => {
+		const handshake = mcpServerSpan(
+			request("initialize", { clientInfo: { name: "claude-code", version: "2.1.0" } }),
+			"2025-06-18",
+			caller,
+		)
+		expect(handshake.attributes.get("maple.mcp.client.name")).toBe("claude-code")
+		expect(handshake.attributes.get("maple.mcp.client.version")).toBe("2.1.0")
+
+		const call = mcpServerSpan(
+			request("tools/call", {
+				name: "run_sql",
+				_meta: {
+					"io.modelcontextprotocol/clientInfo": { name: "cursor", version: "1.4" },
+					"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+				},
+			}),
+			"2025-06-18",
+			caller,
+		)
+		expect(call.attributes.get("maple.mcp.client.name")).toBe("cursor")
+		expect(call.attributes.get("maple.mcp.client.version")).toBe("1.4")
+		expect(call.attributes.get("mcp.protocol.version")).toBe("2026-07-28")
+		expect(
+			mcpServerSpan(request("tools/call", { name: "run_sql" }), "2025-06-18", caller).attributes.has(
+				"maple.mcp.client.name",
+			),
+		).toBe(false)
+	})
+
+	it("keeps the negotiated version unless _meta sends a spec version", () => {
+		const version = (payload: Record<string, unknown>) =>
+			mcpServerSpan(
+				request("tools/call", { name: "run_sql", ...payload }),
+				"2025-06-18",
+				caller,
+			).attributes.get("mcp.protocol.version")
+		expect(version({})).toBe("2025-06-18")
+		expect(version({ _meta: { "io.modelcontextprotocol/protocolVersion": "latest; drop table" } })).toBe(
+			"2025-06-18",
+		)
+	})
+
+	it("prefers initialize's clientInfo and bounds what a caller sends", () => {
+		const span = mcpServerSpan(
+			request("initialize", {
+				clientInfo: { name: "claude-code" },
+				_meta: { "io.modelcontextprotocol/clientInfo": { name: "cursor" } },
+			}),
+			"2025-06-18",
+			caller,
+		)
+		expect(span.attributes.get("maple.mcp.client.name")).toBe("claude-code")
+		const long = mcpServerSpan(
+			request("tools/call", {
+				name: "run_sql",
+				_meta: { "io.modelcontextprotocol/clientInfo": { name: "x".repeat(5_000) } },
+			}),
+			"2025-06-18",
+			caller,
+		)
+		expect(long.attributes.get("maple.mcp.client.name")).toHaveLength(128)
 	})
 
 	it("falls back to the method when a tool call has no name", () => {

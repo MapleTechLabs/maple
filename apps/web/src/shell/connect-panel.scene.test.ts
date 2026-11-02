@@ -4,7 +4,7 @@ import { mcpUrl } from "../lib/services/common/mcp-url"
 import { cursorInstallUrl, vscodeInstallUrl } from "../components/settings/mcp-client-config"
 import { click, Command, expect, given, Mount, role, scene, selector, text } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
-import * as Popover from "../ui/popover"
+import * as Popover from "@maple/views/ui/popover"
 import {
 	close,
 	FetchKeys,

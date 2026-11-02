@@ -8,7 +8,7 @@ import { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	DEEP_RUN_IDS,
 	eventsOf,
@@ -101,8 +101,8 @@ describe("security run", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(RUN_IDS.billing)),
-			expectView(role("tablist", { name: "Severity" })).toExist(),
-			expectView(role("tab", { name: /^Critical/ })).toHaveAttr("aria-selected", "false"),
+			expectView(role("group", { name: "Severity" })).toExist(),
+			expectView(role("button", { name: /^Critical/ })).toHaveAttr("aria-pressed", "false"),
 			expectView(text("Refund endpoint skips the invoice ownership check")).toExist(),
 			expectView(role("button", { name: /^How the run ran/ })).toHaveAttr("aria-expanded", "false"),
 			expectView(text("Gaps")).not.toExist(),

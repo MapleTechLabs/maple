@@ -8,7 +8,7 @@ import { trackProduct } from "../data/analytics"
 import { SessionTenant } from "../data/session-tenant"
 import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
-import * as Popover from "../ui/popover"
+import * as Popover from "@maple/views/ui/popover"
 
 // The onboarding checklist button:
 // the Clerk top bar's reward pill, its one-time pointer and the checklist popover with the claim.

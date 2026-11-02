@@ -2,7 +2,7 @@ import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import { loadFleet, loadResources, loadSparks, loadStatus, ResourcesQuery, SparksInput } from "../data"
-import { readLocale } from "../../../kit/locale"
+import { readLocale } from "@maple/views/lib/locale"
 import { Message, RequestMode } from "./model"
 
 export const ResolveWindow = Command.define("ResolveGcpWindow", {

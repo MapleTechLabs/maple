@@ -4,14 +4,14 @@ import { cn } from "@maple/ui/lib/utils"
 import { FUNNEL_SESSION_DIMENSIONS } from "../../../components/funnels/definition"
 import { parseFunnelStepFilter } from "../../../lib/query-builder/funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as Combobox from "../../../ui/combobox"
-import * as ComboboxView from "../../../ui/combobox-view"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
-import { panel } from "../../../ui/panel"
+import { button } from "@maple/views/ui/button"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as ComboboxView from "@maple/views/ui/combobox-view"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import { panel } from "@maple/views/ui/panel"
 import { whereEditor } from "../../kit/query-builder/where-editor"
 import { autocompleteFor, stepField } from "./where-fields"
 import type { StepDraft } from "./editor-state"
@@ -22,6 +22,8 @@ import { stepDimensionSelectId, stepKindSelectId } from "./product-selects"
 import { stepComboId } from "./product-step"
 import type { Suggestion } from "./suggestions"
 import { pageSelect } from "./view-select"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The funnel step builder, compact: an ordered list of
 // steps, each an event name, a page path or (first step only) a session dimension.
@@ -65,35 +67,38 @@ const suggestingInput = (
 			emptyText: inputs.empty,
 			size: "sm",
 			showTrigger: names.length > 0,
-			className: cn("min-w-0 flex-1", inputs.isMono && "font-mono text-xs"),
+			className: cn("min-w-0 flex-1", inputs.isMono && typographyClass({ size: "xs", mono: true })),
 			renderItem: (name) => {
 				const count = counts.get(name)
 				return [
-					h.span(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							h.span(
-								[
-									h.Class(
-										cn("min-w-0 flex-1 truncate", inputs.isMono && "font-mono text-xs"),
+					hstack(h, { gap: "2", shrink: true, as: "span" }, [
+						h.span(
+							[
+								h.Class(
+									cn(
+										typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
+										inputs.isMono && typographyClass({ size: "xs", mono: true }),
 									),
-								],
-								[name],
-							),
-							...(count === null || count === undefined
-								? []
-								: [
-										h.span(
-											[
-												h.Class(
-													"shrink-0 font-mono text-3xs tabular-nums text-muted-foreground",
-												),
-											],
-											[formatNumber(count)],
-										),
-									]),
-						],
-					),
+								),
+							],
+							[name],
+						),
+						...(count === null || count === undefined
+							? []
+							: [
+									typography(
+										h,
+										{
+											size: "3xs",
+											tone: "muted",
+											mono: true,
+											numeric: true,
+											className: "shrink-0",
+										},
+										[formatNumber(count)],
+									),
+								]),
+					]),
 				]
 			},
 			toView: ({ field, rest }) => h.div([h.Class("contents")], [field, ...rest]),
@@ -220,40 +225,37 @@ const valueInputs = (
 }
 
 const rowActions = (h: H, index: number, total: number): Html =>
-	h.div(
-		[h.Class("flex shrink-0 items-center")],
-		[
-			iconButton(
-				h,
-				{
-					label: "Move step up",
-					size: "icon-xs",
-					isDisabled: index === 0,
-					attributes: [h.OnClick(product(ProductEdit.MovedStep({ index, delta: -1 })))],
-				},
-				[icon(h, "ArrowUpIcon")],
-			),
-			iconButton(
-				h,
-				{
-					label: "Move step down",
-					size: "icon-xs",
-					isDisabled: index === total - 1,
-					attributes: [h.OnClick(product(ProductEdit.MovedStep({ index, delta: 1 })))],
-				},
-				[icon(h, "ArrowDownIcon")],
-			),
-			iconButton(
-				h,
-				{
-					label: "Remove step",
-					size: "icon-xs",
-					attributes: [h.OnClick(product(ProductEdit.RemovedStep({ index })))],
-				},
-				[icon(h, "XmarkIcon")],
-			),
-		],
-	)
+	hstack(h, { className: "shrink-0" }, [
+		iconButton(
+			h,
+			{
+				label: "Move step up",
+				size: "icon-xs",
+				isDisabled: index === 0,
+				attributes: [h.OnClick(product(ProductEdit.MovedStep({ index, delta: -1 })))],
+			},
+			[icon(h, "ArrowUpIcon")],
+		),
+		iconButton(
+			h,
+			{
+				label: "Move step down",
+				size: "icon-xs",
+				isDisabled: index === total - 1,
+				attributes: [h.OnClick(product(ProductEdit.MovedStep({ index, delta: 1 })))],
+			},
+			[icon(h, "ArrowDownIcon")],
+		),
+		iconButton(
+			h,
+			{
+				label: "Remove step",
+				size: "icon-xs",
+				attributes: [h.OnClick(product(ProductEdit.RemovedStep({ index })))],
+			},
+			[icon(h, "XmarkIcon")],
+		),
+	])
 
 /** The event step's attribute filter line, its parse error under it. */
 const filterLine = (
@@ -268,23 +270,20 @@ const filterLine = (
 	return h.div(
 		[h.Class("flex flex-col gap-0.5 pl-6")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					eyebrow(h, { className: "shrink-0" }, ["where"]),
-					whereEditor(h, {
-						id: `widget-step-${scope}-${index}-filter`,
-						value: filterClause,
-						ariaLabel: `Step ${index + 1} attribute filter`,
-						placeholder: 'plan = "pro" AND source = "cli"',
-						rows: 1,
-						className: "min-w-0 flex-1",
-						textareaClassName: "min-h-[28px] resize-none text-xs",
-						onInput: text(scope, index, "filterClause"),
-						autocomplete: autocompleteFor(model, stepField(scope, index, filterClause)),
-					}),
-				],
-			),
+			hstack(h, { gap: "1.5" }, [
+				eyebrow(h, { className: "shrink-0" }, ["where"]),
+				whereEditor(h, {
+					id: `widget-step-${scope}-${index}-filter`,
+					value: filterClause,
+					ariaLabel: `Step ${index + 1} attribute filter`,
+					placeholder: 'plan = "pro" AND source = "cli"',
+					rows: 1,
+					className: "min-w-0 flex-1",
+					textareaClassName: "min-h-[28px] resize-none text-xs",
+					onInput: text(scope, index, "filterClause"),
+					autocomplete: autocompleteFor(model, stepField(scope, index, filterClause)),
+				}),
+			]),
 			...(parsed.ok ? [] : [h.p([h.Class("text-2xs text-severity-error")], [parsed.error])]),
 		],
 	)
@@ -296,42 +295,39 @@ const stepRow = (h: H, model: Model, options: StepBuilderOptions, step: StepDraf
 	const kinds =
 		index === 0 && !isSingle ? (["event", "page", "session"] as const) : (["event", "page"] as const)
 	return panel(h, { className: "gap-1 overflow-visible px-1.5 py-1" }, [
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
-			[
-				...(isSingle
-					? []
-					: [
-							h.span(
-								[
-									h.Class(
-										"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-3xs tabular-nums text-muted-foreground size-5",
-									),
-									h.AriaLabel(`Step ${index + 1}`),
-								],
-								[String(index + 1)],
-							),
-						]),
-				pageSelect(
-					h,
-					model,
-					stepKindSelectId(options.scope, index),
-					step.kind,
-					kinds.map((kind) => ({ value: kind, label: KIND_LABEL[kind] })),
-					{
-						size: "sm",
-						className: "w-24 min-w-0 shrink-0",
-						ariaLabel: "Step type",
-						toView: (parts) => h.div([h.Class("contents")], parts),
-					},
-				),
-				h.div(
-					[h.Class("flex min-w-0 flex-1 items-center gap-1.5")],
-					valueInputs(h, model, options, step, index),
-				),
-				...(isSingle ? [] : [rowActions(h, index, total)]),
-			],
-		),
+		hstack(h, { gap: "1.5" }, [
+			...(isSingle
+				? []
+				: [
+						h.span(
+							[
+								h.Class(
+									"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-3xs tabular-nums text-muted-foreground size-5",
+								),
+								h.AriaLabel(`Step ${index + 1}`),
+							],
+							[String(index + 1)],
+						),
+					]),
+			pageSelect(
+				h,
+				model,
+				stepKindSelectId(options.scope, index),
+				step.kind,
+				kinds.map((kind) => ({ value: kind, label: KIND_LABEL[kind] })),
+				{
+					size: "sm",
+					className: "w-24 min-w-0 shrink-0",
+					ariaLabel: "Step type",
+					toView: (parts) => h.div([h.Class("contents")], parts),
+				},
+			),
+			h.div(
+				[h.Class("flex min-w-0 flex-1 items-center gap-1.5")],
+				valueInputs(h, model, options, step, index),
+			),
+			...(isSingle ? [] : [rowActions(h, index, total)]),
+		]),
 		...(options.eventStepFilter && step.kind === "event"
 			? [filterLine(h, model, options.scope, step, index)]
 			: []),
@@ -342,38 +338,30 @@ const stepRow = (h: H, model: Model, options: StepBuilderOptions, step: StepDraf
 export const stepBuilder = (h: H, model: Model, options: StepBuilderOptions): Html => {
 	const isSingle = options.maxSteps <= 1
 	const isFull = options.steps.length >= options.maxSteps
-	return h.div(
-		[h.Class("flex flex-col gap-1.5")],
-		[
-			...options.steps.map((step, index) => stepRow(h, model, options, step, index)),
-			...(isSingle
-				? []
-				: [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								isDisabled: isFull,
-								className: "w-fit",
-								attributes: [h.OnClick(product(ProductEdit.AddedStep()))],
-							},
-							[
-								icon(h, "PlusIcon"),
-								"Add step",
-								...(isFull
-									? [
-											h.span(
-												[h.Class("text-muted-foreground")],
-												[`(max ${options.maxSteps})`],
-											),
-										]
-									: []),
-							],
-						),
-					]),
-		],
-	)
+	return vstack(h, { gap: "1.5" }, [
+		...options.steps.map((step, index) => stepRow(h, model, options, step, index)),
+		...(isSingle
+			? []
+			: [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							isDisabled: isFull,
+							className: "w-fit",
+							attributes: [h.OnClick(product(ProductEdit.AddedStep()))],
+						},
+						[
+							icon(h, "PlusIcon"),
+							"Add step",
+							...(isFull
+								? [h.span([h.Class("text-muted-foreground")], [`(max ${options.maxSteps})`])]
+								: []),
+						],
+					),
+				]),
+	])
 }
 
 export { FUNNEL_MAX_STEPS }

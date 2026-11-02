@@ -1,4 +1,4 @@
-import * as CopyButton from "../../ui/copy-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { PageOutMessage } from "../contract"
 
 /** `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed. */

@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { prettyJson } from "../../../lib/display-text"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import { prettyJson } from "@maple/views/lib/display-text"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { Message } from "./message"
 
 // Payload views: JSON payloads, message bodies, the view switch and disclosure.

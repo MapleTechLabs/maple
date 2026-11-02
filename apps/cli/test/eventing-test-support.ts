@@ -5,12 +5,12 @@ import {
 	openControlStore,
 	type LocalEventingControlLimits,
 	type LocalEventingControlStoreApi,
-} from "../src/server/eventing/control-store"
+} from "@maple/local-server/eventing/control-store"
 import {
 	LocalEventingProjectors,
 	LocalEventingRuntime,
 	type LocalEventingRuntimeApi,
-} from "../src/server/eventing/runtime"
+} from "@maple/local-server/eventing/runtime"
 
 /** Runs a synchronous store or runtime step, throwing its typed failure like the old API did. */
 export const run = <A, E>(effect: Effect.Effect<A, E>): A => Effect.runSync(effect)

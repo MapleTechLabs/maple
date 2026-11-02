@@ -5,7 +5,7 @@
 import { Effect, Option } from "effect"
 import changelogMarkdown from "../../CHANGELOG.md" with { type: "text" }
 import { bold, dim, green } from "../lib/style"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 import { MapleConfig } from "./config"
 import { isNewer, shouldRunNotify, stripV } from "./update"
 

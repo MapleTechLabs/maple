@@ -3,25 +3,25 @@ import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import * as Checkbox from "../../../ui/checkbox"
-import * as Combobox from "../../../ui/combobox"
-import * as Field from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { input } from "../../../ui/input"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Field from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
 import {
 	inputGroup,
 	inputGroupAddon,
 	inputGroupButton,
 	inputGroupInput,
 	inputGroupText,
-} from "../../../ui/input-group"
-import { label } from "../../../ui/label"
-import { nativeOptGroup, nativeOption, nativeSelect } from "../../../ui/native-select"
-import * as OtpField from "../../../ui/otp-field"
-import * as RadioGroup from "../../../ui/radio-group"
-import * as Select from "../../../ui/select"
-import * as Switch from "../../../ui/switch"
-import { textarea } from "../../../ui/textarea"
+} from "@maple/views/ui/input-group"
+import { label } from "@maple/views/ui/label"
+import { nativeOptGroup, nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import * as OtpField from "@maple/views/ui/otp-field"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as Select from "@maple/views/ui/select"
+import * as Switch from "@maple/views/ui/switch"
+import { textarea } from "@maple/views/ui/textarea"
 import { defineLab } from "../../define"
 import { kitPage, kitRow, kitSection } from "../../kit/kit-layout"
 import {

@@ -4,13 +4,17 @@ import { cn } from "@maple/ui/lib/utils"
 import { DateTime, Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../ui/button"
-import { badge } from "../ui/display"
-import { icon } from "../ui/icon"
-import { iconButton } from "../ui/icon-button"
-import { meter } from "../ui/meter"
-import * as PopoverView from "../ui/popover"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { meter } from "@maple/views/ui/meter"
+import * as PopoverView from "@maple/views/ui/popover"
+import { pressable } from "@maple/views/ui/pressable"
 import { Message, type Model } from "./onboarding-checklist"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -60,14 +64,13 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 			h.div(
 				[h.Class("flex items-start gap-2 p-3 pr-2")],
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(Message.ClickedPointer()),
-							h.Class(
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedPointer(),
+							className:
 								"min-w-0 flex-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-							),
-						],
+						},
 						[
 							h.span(
 								[h.Class("block whitespace-nowrap text-sm font-semibold")],
@@ -157,40 +160,33 @@ export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingCheckl
 				h.div(
 					[h.Class("relative space-y-3 border-b px-4 pt-4 pb-3")],
 					[
-						h.div(
-							[h.Class("flex items-start gap-3")],
-							[
-								h.span(
-									[
-										h.Class(
-											"flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
-										),
-									],
-									[icon(h, isClaimed ? "CircleCheckIcon" : "StarIcon", { size: 18 })],
-								),
-								h.div(
-									[h.Class("min-w-0 space-y-1")],
-									[
-										h.h3(
-											[h.Class("text-base font-semibold leading-tight")],
-											[
-												isClaimed
-													? `${amount} in credits added`
-													: `Get ${amount} in credits`,
-											],
-										),
-										h.p(
-											[h.Class("text-xs leading-relaxed text-muted-foreground")],
-											[
-												isClaimed
-													? `${amount} in credits applied. It comes off your next invoice.`
-													: "Finish these within 24 hours of creating your org, then claim the credits.",
-											],
-										),
-									],
-								),
-							],
-						),
+						hstack(h, { gap: "3", align: "start" }, [
+							h.span(
+								[
+									h.Class(
+										"flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
+									),
+								],
+								[icon(h, isClaimed ? "CircleCheckIcon" : "StarIcon", { size: 18 })],
+							),
+							h.div(
+								[h.Class("min-w-0 space-y-1")],
+								[
+									heading(h, { level: 3, variant: "section" }, [
+										isClaimed ? `${amount} in credits added` : `Get ${amount} in credits`,
+									]),
+									typography(
+										h,
+										{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
+										[
+											isClaimed
+												? `${amount} in credits applied. It comes off your next invoice.`
+												: "Finish these within 24 hours of creating your org, then claim the credits.",
+										],
+									),
+								],
+							),
+						]),
 						meter(h, {
 							value: progress,
 							minVisible: 0,
@@ -247,14 +243,11 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 									icon(h, "StarIcon", { className: "text-primary" }),
 									isClaimable || deadlineMs === null
 										? h.span([], ["Claim ", credits(checklist), " credits"])
-										: h.span(
-												[h.Class("font-mono tabular-nums")],
-												[
-													formatCountdown(deadlineMs - model.nowMs, {
-														fixedHours: true,
-													}),
-												],
-											),
+										: typography(h, { mono: true, numeric: true }, [
+												formatCountdown(deadlineMs - model.nowMs, {
+													fixedHours: true,
+												}),
+											]),
 									progressChip(h, checklist.completed_count, checklist.total_count),
 								],
 							),
@@ -310,10 +303,12 @@ const panelFooter = (
 					),
 				]
 	return [
-		h.span(
-			[h.Class("font-mono tabular-nums text-muted-foreground")],
-			[String(checklist.completed_count), " of ", String(checklist.total_count), " done"],
-		),
+		typography(h, { tone: "muted", mono: true, numeric: true }, [
+			String(checklist.completed_count),
+			" of ",
+			String(checklist.total_count),
+			" done",
+		]),
 		...(timeLeft === null
 			? []
 			: [

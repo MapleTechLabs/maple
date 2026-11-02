@@ -17,21 +17,22 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { linkButton } from "../../../../ui/button"
-import { chartLoading } from "../../../../ui/chart-state"
-import { emptyMessage } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { statusDot } from "../../../../ui/status-dot"
+import { linkButton } from "@maple/views/ui/button"
+import { chartLoading } from "@maple/views/ui/chart-state"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { CHART_HEIGHT } from "../../kit/chart-card"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
+import type { PresetValue } from "../../../kit/time-controls"
 import { sectionHeading } from "../../../kit/section-heading"
 import { gcpServiceIcon } from "../service-icon"
 import { type PageData, pageOf } from "./derive"
@@ -42,6 +43,8 @@ import { resolveQueryPeek } from "./peek"
 import { workloadRail } from "./view-rail"
 import { appWaitCallout, figure, topQueries } from "./view-sql"
 import { queryPeekSheet } from "./view-sql-peek"
+import { hstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // `GcpWorkloadPage`.
 
@@ -100,27 +103,24 @@ const header = (h: H, model: Model, data: PageData) => {
 				}),
 			]
 	return pageHeroParts(h, {
-		title: h.span(
-			[h.Class("flex items-center gap-3")],
-			[
-				h.span(
-					[h.Class("relative")],
-					[
-						gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
-						...(data.health === null
-							? []
-							: [
-									statusDot(h, {
-										tone: HEALTH_TONE[data.health],
-										className:
-											"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
-									}),
-								]),
-					],
-				),
-				h.span([], [gcpWorkloadName(service, keys)]),
-			],
-		),
+		title: hstack(h, { gap: "3", as: "span" }, [
+			h.span(
+				[h.Class("relative")],
+				[
+					gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
+					...(data.health === null
+						? []
+						: [
+								statusDot(h, {
+									tone: HEALTH_TONE[data.health],
+									className:
+										"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
+								}),
+							]),
+				],
+			),
+			h.span([], [gcpWorkloadName(service, keys)]),
+		]),
 		meta,
 	})
 }
@@ -234,8 +234,9 @@ const traceGapCallout = (
 }
 
 const loadingGrid = (h: H, service: GcpInfraServiceId): Html =>
-	h.div(
-		[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
+	grid(
+		h,
+		{ cols: 1, lg: 2, gap: "4" },
 		GCP_INFRA_CHARTS[service].map(() => chartLoading(h, { variant: "line", height: CHART_HEIGHT })),
 	)
 
@@ -258,7 +259,7 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 	}
 	if (data.points.length === 0) {
 		return emptyMessage(h, { dashed: true, className: "py-12" }, [
-			`No metrics arrived for this ${gcpWorkloadNoun(model.service)} in the selected window.`,
+			`No metrics arrived for this ${gcpWorkloadNoun(model.service)} in this window`,
 		])
 	}
 	const isWaiting = AsyncData.isRefreshing(slot)
@@ -388,7 +389,7 @@ export const workloadPageView = (
 	h: H,
 	model: Model,
 	data: PageData,
-	options: Readonly<{ timeZone: string; defaultPreset: string }>,
+	options: Readonly<{ timeZone: string; defaultPreset: PresetValue }>,
 ): Html => {
 	const timeSearch = {
 		startTime: model.search.startTime,

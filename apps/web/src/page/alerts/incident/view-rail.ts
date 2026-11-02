@@ -7,10 +7,12 @@ import { conditionPhrase, incidentGroup, signalTitle } from "@maple/web-data/ale
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { eyebrow } from "../../../ui/eyebrow"
-import { statusDot } from "../../../ui/status-dot"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { createHref, incidentHref, ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `IncidentRail`: the incident detail's side rail.
 
@@ -26,8 +28,7 @@ const railSection = <M>(
 	h.section(
 		[h.Class("space-y-3 border-b pb-5 last:border-b-0")],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-2")],
+			hstack(h, { gap: "2", justify: "between" },
 				[eyebrow(h, { as: "h2" }, title), ...(action === null ? [] : [action])],
 			),
 			...children,
@@ -69,14 +70,14 @@ const groupsSection = <M>(
 									[row.group_key],
 								)
 							: h.span(
-									[h.Class(cn("min-w-0 flex-1 truncate", current && "font-medium"))],
+									[h.Class(cn(typographyClass({ truncate: true, className: "min-w-0 flex-1" }), current && "font-medium"))],
 									[row.group_key],
 								),
 						h.span(
 							[
 								h.Class(
 									cn(
-										"font-mono text-xs tabular-nums",
+										typographyClass({ size: "xs", mono: true, numeric: true }),
 										breached ? "text-severity-error" : "text-muted-foreground",
 									),
 								),
@@ -89,8 +90,7 @@ const groupsSection = <M>(
 		),
 		...(rows.length > GROUP_ROW_LIMIT
 			? [
-					h.p(
-						[h.Class("text-muted-foreground text-xs")],
+					typography(h, { size: "xs", tone: "muted", as: "p" },
 						[String(rows.length - GROUP_ROW_LIMIT), " more groups"],
 					),
 				]
@@ -99,7 +99,7 @@ const groupsSection = <M>(
 }
 
 const evidenceLink = <M>(h: HtmlBuilder<M>, detail: string, link: Html): Html =>
-	h.li([h.Class("space-y-0.5")], [link, h.p([h.Class("text-muted-foreground text-xs")], [detail])])
+	h.li([h.Class("space-y-0.5")], [link, typography(h, { size: "xs", tone: "muted", as: "p" }, [detail])])
 
 const incidentServices = (
 	rule: AlertRuleDocument | null,
@@ -207,7 +207,7 @@ const ruleSection = <M>(
 		h,
 		["Rule"],
 		h.a(
-			[h.Href(createHref({ ruleId: rule.id })), h.Class("text-primary text-xs hover:underline active:underline")],
+			[h.Href(createHref({ ruleId: rule.id })), h.Class(typographyClass({ size: "xs", tone: "primary", className: "hover:underline active:underline" }))],
 			["Edit rule"],
 		),
 		[
@@ -215,9 +215,8 @@ const ruleSection = <M>(
 				[h.Class("space-y-2")],
 				[
 					h.a([h.Href(ruleHref(rule.id)), h.Class("block text-sm hover:underline active:underline")], [rule.name]),
-					h.p([h.Class("text-muted-foreground text-xs leading-relaxed")], [summary]),
-					h.p(
-						[h.Class("text-muted-foreground text-xs")],
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [summary]),
+					typography(h, { size: "xs", tone: "muted", as: "p" },
 						[
 							"Fired ",
 							String(recent.length),

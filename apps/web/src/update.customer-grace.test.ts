@@ -16,7 +16,7 @@ import * as SignIn from "./page/sign-in"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 import { planGateOf, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")

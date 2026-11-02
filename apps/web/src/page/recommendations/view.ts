@@ -6,21 +6,23 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import type { BreadcrumbEntry } from "../../shell"
-import { button, linkButton } from "../../ui/button"
-import { detailRailGroup, detailRailRow } from "../../ui/detail-rail"
-import { badge } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
-import { detailTitle } from "../kit/detail-header"
+import { detailTitle, detailTitleSkeleton } from "../kit/detail-header"
 import { relativeTime } from "../kit/relative-time"
 import { resourceNotFound } from "../kit/resource-not-found"
 import { selectedOf } from "./update"
 import { body, code, isApplyable, isLive } from "./view-body"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -58,7 +60,7 @@ const MODE = {
 const recSentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string> =>
 	issue.kind === "double-emission"
 		? [
-				h.span([h.Class("text-foreground font-medium")], ["Standardize on"]),
+				typography(h, { tone: "foreground", weight: "medium" }, ["Standardize on"]),
 				" ",
 				code(h, issue.canonical_key),
 				h.span([h.Class("text-muted-foreground")], [". Spans also emit "]),
@@ -66,12 +68,12 @@ const recSentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string
 			]
 		: issue.kind === "naming"
 			? [
-					h.span([h.Class("text-foreground font-medium")], ["Rename non-conforming key"]),
+					typography(h, { tone: "foreground", weight: "medium" }, ["Rename non-conforming key"]),
 					" ",
 					code(h, issue.source_key),
 				]
 			: [
-					h.span([h.Class("text-foreground font-medium")], ["Rename"]),
+					typography(h, { tone: "foreground", weight: "medium" }, ["Rename"]),
 					" ",
 					code(h, issue.source_key),
 					" ",
@@ -98,8 +100,7 @@ const RESOLVES = [
 
 const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 	if (isLive(issue))
-		return h.div(
-			[h.Class("flex flex-col gap-3")],
+		return vstack(h, { gap: "3" },
 			[
 				h.p(
 					[h.Class("flex items-center gap-2 text-sm text-severity-info")],
@@ -114,8 +115,7 @@ const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 			],
 		)
 	if (issue.status === "dismissed")
-		return h.div(
-			[h.Class("flex flex-col gap-2")],
+		return vstack(h, { gap: "2" },
 			[
 				button(
 					h,
@@ -128,14 +128,12 @@ const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 					},
 					[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen recommendation"],
 				),
-				h.p(
-					[h.Class("text-xs leading-relaxed text-muted-foreground")],
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
 					["Dismissed recommendations come back if the key is still emitted."],
 				),
 			],
 		)
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
+	return vstack(h, { gap: "2" },
 		[
 			isApplyable(issue)
 				? button(
@@ -147,8 +145,7 @@ const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 						},
 						[icon(h, "BoltIcon"), "Apply mapping"],
 					)
-				: h.p(
-						[h.Class("text-xs leading-relaxed text-muted-foreground")],
+				: typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
 						[
 							"This one is a manual fix: rename the attribute at your SDK. Maple can't apply it for you.",
 						],
@@ -188,7 +185,7 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 					),
 				]),
 				row(h, "Spans", [
-					h.span([h.Class("tabular-nums text-foreground")], [formatNumber(issue.usage_count)]),
+					typography(h, { tone: "foreground", numeric: true }, [formatNumber(issue.usage_count)]),
 				]),
 				row(h, "Opened", [
 					relativeTime(h, {
@@ -196,7 +193,7 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 						nowMs: model.nowMs ?? 0,
 						timeZone,
 						tooltip: "title",
-						className: "tabular-nums text-muted-foreground",
+						className: typographyClass({ tone: "muted", numeric: true }),
 					}),
 				]),
 				row(
@@ -204,7 +201,7 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 					"Key",
 					[
 						h.code(
-							[h.Class("truncate font-mono text-xs text-muted-foreground")],
+							[h.Class(typographyClass({ size: "xs", tone: "muted", mono: true, truncate: true }))],
 							[issue.source_key],
 						),
 					],
@@ -237,8 +234,8 @@ const column = { width: "narrow", gap: "lg" } as const
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	AsyncData.match(model.list.data, {
-		onIdle: () => dashboardPage(h, column, loadingBody(h)),
-		onLoading: () => dashboardPage(h, column, loadingBody(h)),
+		onIdle: () => dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
+		onLoading: () => dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
 		onFailure: (failure) =>
 			dashboardPage(h, column, [
 				errorState(h, {

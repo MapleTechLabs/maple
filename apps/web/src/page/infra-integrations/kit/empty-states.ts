@@ -1,8 +1,8 @@
 import type { DocsPage } from "../../../lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { button, linkButton } from "@maple/views/ui/button"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 
 // `IntegrationNotConnected`.

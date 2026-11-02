@@ -27,9 +27,9 @@ import {
 	readActiveOperation,
 	writeInitialIntent,
 	type ArchiveOperationIntent,
-} from "../src/server/archives/journal"
-import { reconcileArchiveGeneration } from "../src/server/archives/generation"
-import { checkpointPinsRoot } from "../src/server/checkpoints"
+} from "@maple/local-server/archives/journal"
+import { reconcileArchiveGeneration } from "@maple/local-server/archives/generation"
+import { checkpointPinsRoot } from "@maple/local-server/checkpoints"
 
 // Filesystem-level tests for the archive operation journal (Gate 3). These are
 // the fast in-process checks of the journal's fail-closed parsing, phase

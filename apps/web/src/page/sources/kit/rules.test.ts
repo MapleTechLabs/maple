@@ -1,7 +1,7 @@
 import { encodePublicId, PublicIdPrefixes, V2Source } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { expiresAtOf, expiryChoicesOf, init, Message, rulesOutcome, update } from "./rules"
 import { SIGNALS } from "./shared"
 

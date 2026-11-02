@@ -13,8 +13,8 @@
 import { mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { ArchiveProbe } from "../archive-probe-helpers"
-import { archiveSignal } from "../../src/server/archives/signals"
-import { exportSignalShards } from "../../src/server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { exportSignalShards } from "@maple/local-server/archives/export"
 
 // metrics_histogram carries Nullable(Float64) Min/Max, NULL when unset — the
 // exact production shape that defeated the round-5 digest.

@@ -188,19 +188,6 @@ export function metricValue(measures: ToolMeasures, metric: ToolMetric, percenti
 }
 
 /**
- * A count, grouped rather than compacted.
- *
- * `formatNumber` renders 12,480 as "12.5K", which is right for a headline and
- * wrong for a table of call counts that are read against each other — 12.5K and
- * 12.4K are the same number to a reader. Compaction starts at a million, where
- * the exact digits stop being something anyone holds in their head and the
- * lane starts to matter.
- */
-export function formatToolCount(value: number): string {
-	return Math.abs(value) >= 1_000_000 ? formatNumber(value) : Math.round(value).toLocaleString()
-}
-
-/**
  * A merged (`split: "none"`) series with every bucket of the window present,
  * the ones the warehouse skipped as zeros.
  *
@@ -240,12 +227,12 @@ export function formatDurationNs(ns: number): string {
 	return formatLatency(ns / 1_000_000)
 }
 
-/** The metric's value as the tiles, axis and columns print it. */
+/** The metric's value as the tiles, axis and columns print it; chart tooltips keep counts exact. */
 export function formatToolMetric(value: number, metric: ToolMetric): string {
 	switch (metric) {
 		case "calls":
 		case "sessions":
-			return formatToolCount(value)
+			return formatNumber(value)
 		case "error_rate":
 			return formatErrorRate(value)
 		case "duration":
@@ -379,15 +366,15 @@ export function toolChartTitle({
  * accounts for, and across how many sessions.
  */
 export function scopeSummary(totals: ToolTotals, matchedOfCalls: number, subject?: string): string {
-	const sessions = `${formatToolCount(totals.sessions)} ${pluralize(totals.sessions, "session")}`
+	const sessions = `${formatNumber(totals.sessions)} ${pluralize(totals.sessions, "session")}`
 	// The tool detail page names the tool in its denominator ("of 3,908
 	// run_tests calls"), because there the whole page is one tool's and an
 	// unqualified "calls" would read as the org's.
 	const noun = subject === undefined ? "calls" : `${subject} calls`
 	if (matchedOfCalls <= 0 || matchedOfCalls === totals.calls) {
-		return `${formatToolCount(totals.calls)} ${noun} · ${sessions}`
+		return `${formatNumber(totals.calls)} ${noun} · ${sessions}`
 	}
-	return `${formatToolCount(totals.calls)} of ${formatToolCount(matchedOfCalls)} ${noun} match · ${sessions}`
+	return `${formatNumber(totals.calls)} of ${formatNumber(matchedOfCalls)} ${noun} match · ${sessions}`
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -493,8 +480,8 @@ export function toolsTableFooter(
 	return {
 		subject:
 			rows.length >= limit
-				? `Showing the ${formatToolCount(limit)} busiest tools`
-				: `Showing all ${formatToolCount(rows.length)} ${pluralize(rows.length, "tool")}`,
-		detail: `· ${formatToolCount(calls)} calls · ${formatErrorRate(calls > 0 ? errors / calls : 0)} errors`,
+				? `Showing the ${formatNumber(limit)} busiest tools`
+				: `Showing all ${formatNumber(rows.length)} ${pluralize(rows.length, "tool")}`,
+		detail: `· ${formatNumber(calls)} calls · ${formatErrorRate(calls > 0 ? errors / calls : 0)} errors`,
 	}
 }
