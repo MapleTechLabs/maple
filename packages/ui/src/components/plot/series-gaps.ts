@@ -7,12 +7,10 @@
  * level; the only way to bridge a hole is to remove it from the data before the
  * mark sees it.
  *
- * Which behaviour is right is a PRODUCT question, not an implementation detail,
- * and it differs per chart: for a query-builder series a missing bucket is
- * usually a zero reading and bridging is fine, while for a service health chart
- * a gap means "we had no data" and drawing through it invents a measurement.
- * Call this only where the first reading is the intended one, and say so at the
- * call site.
+ * Time-series lines bridge missing buckets: a series that only reported some
+ * buckets reads as one line through its readings, not as scattered fragments.
+ * A chart that must show silence as a gap (a workload that stopped reporting)
+ * opts in with explicit null rows and skips this.
  */
 /** What a series accessor can yield — a reading, or the absence of one. */
 export type SeriesValue = number | null | undefined
@@ -34,4 +32,13 @@ export function dropNullPoints<T>(rows: readonly T[], value: (row: T) => SeriesV
 		const candidate = value(row)
 		return typeof candidate === "number" && Number.isFinite(candidate)
 	})
+}
+
+/**
+ * The reading of a series that has exactly one. A bridged line needs two
+ * readings to draw a segment, so a lone one gets a dot instead.
+ */
+export function loneReading<T>(rows: readonly T[], value: (row: T) => SeriesValue): readonly T[] {
+	const readings = dropNullPoints(rows, value)
+	return readings.length === 1 ? readings : []
 }

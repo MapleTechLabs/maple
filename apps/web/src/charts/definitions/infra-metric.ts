@@ -22,6 +22,7 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { dropNullPoints } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { axisTickFormatter, axisTickValues, formatBytes } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
@@ -171,7 +172,8 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 				}),
 			]
 		: series.map((name) =>
-				lineY(data, {
+				// A gaps chart keeps its silent buckets as breaks; every other line bridges them.
+				lineY(spec.gaps ? data : dropNullPoints(data, valueOf(name)), {
 					id: name,
 					x: at,
 					y: valueOf(name),

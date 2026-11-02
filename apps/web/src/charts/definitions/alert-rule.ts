@@ -1,5 +1,6 @@
 import { focusCrosshair } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { dropNullPoints } from "@maple/ui/components/plot/series-gaps"
 import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
 import { formatBucketLabel } from "@maple/ui/lib/format"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
@@ -142,7 +143,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 				: []),
 			...(spec.hasGhost
 				? [
-						lineY(points, {
+						lineY(dropNullPoints(points, valueOf(GHOST_KEY)), {
 							id: GHOST_KEY,
 							x: at,
 							y: valueOf(GHOST_KEY),
@@ -155,7 +156,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 				: []),
 			...(spec.isMultiSeries
 				? spec.seriesKeys.map((key) =>
-						lineY(points, {
+						lineY(dropNullPoints(points, valueOf(key)), {
 							id: key,
 							x: at,
 							y: valueOf(key),
@@ -165,7 +166,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 						}),
 					)
 				: [
-						areaY(points, {
+						areaY(dropNullPoints(points, valueOf(SINGLE_KEY)), {
 							id: `${SINGLE_KEY}-band`,
 							x: at,
 							y: valueOf(SINGLE_KEY),
@@ -174,7 +175,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 							stroke: "none",
 							curve,
 						}),
-						lineY(points, {
+						lineY(dropNullPoints(points, valueOf(SINGLE_KEY)), {
 							id: SINGLE_KEY,
 							x: at,
 							y: valueOf(SINGLE_KEY),

@@ -3,6 +3,7 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { dropNullPoints } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
@@ -48,7 +49,13 @@ export const buildPlanetScaleMetric = (
 	const definition = defineChart({
 		marks: [
 			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
-			lineY(data, { x: at, y: value, stroke: color, strokeWidth: 1.5, curve: d3Curve(curveMonotoneX) }),
+			lineY(dropNullPoints(data, value), {
+				x: at,
+				y: value,
+				stroke: color,
+				strokeWidth: 1.5,
+				curve: d3Curve(curveMonotoneX),
+			}),
 			focusDot(data, at, value, color, chrome),
 			focusCrosshair(chrome),
 		],

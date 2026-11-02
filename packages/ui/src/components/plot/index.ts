@@ -176,7 +176,7 @@ export {
 	type PartialCandidateRow,
 	type PartialSplit,
 } from "./partial-buckets"
-export { dropNullPoints, type SeriesValue } from "./series-gaps"
+export { dropNullPoints, loneReading, type SeriesValue } from "./series-gaps"
 export {
 	computeSeriesStats,
 	isAllZeroStats,

@@ -1,6 +1,7 @@
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { dropNullPoints } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { formatDurationNs, formatToolMetric } from "@maple/web-data/lib/tool-analytics"
@@ -77,7 +78,7 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 	const marks = spec.series.flatMap((entry) => {
 		const cells = spec.rows.map((row) => ({ row, key: entry.key }))
 		return [
-			lineY(cells, {
+			lineY(dropNullPoints(cells, valueOf), {
 				id: entry.key,
 				x: at,
 				y: valueOf,
