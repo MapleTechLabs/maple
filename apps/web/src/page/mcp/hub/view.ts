@@ -155,7 +155,8 @@ const toolbar = (
 			count: clients
 				.filter((client) => client.kind === kind)
 				.reduce((sum, client) => sum + client.calls, 0),
-		})).filter((option) => option.count > 0),
+			// A kind whose clients only connected or listed tools still filters its requests.
+		})).filter((option) => clients.some((client) => client.kind === option.name)),
 		model: model.kindSelect,
 		toMessage: (message) => Message.GotSelectMessage({ facet: "kind", message }),
 	})
@@ -387,14 +388,15 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 			}),
 		onData: (response) => {
 			if (window === undefined) return sessionsLoading(h)
-			if (response.toolCalls === 0)
+			// Sessions of only protocol requests (`initialize`, `tools/list`) still list.
+			if (response.totals.sessions === 0 && response.toolCalls === 0)
 				return quietWindow(h, {
 					service,
 					window: windowWords(window),
 					hasOtherSpans: response.otherRequests > 0,
 					widen: widenOf(model),
 				})
-			if (response.withSession === 0)
+			if (response.totals.sessions === 0 && response.withSession === 0)
 				return noSessionsState(h, { service, onInstrument: openInstrumentDocs })
 			return sessionsBody(h, response, {
 				toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(sessions), {

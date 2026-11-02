@@ -111,6 +111,7 @@ type ClientReach = Readonly<{
 	client: string
 	kind: string
 	calls: number
+	errors: number
 	connects: number
 	sources: number
 	lastSeen: DateTime.Utc
@@ -608,10 +609,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 			firstSeenMs: toMs(row.firstSeen),
 			lastSeenMs: toMs(row.lastSeen),
 		})),
-		allClients: clientItems(
-			allClients.map((row) => ({ client: row.client, kind: row.kind, calls: row.calls, errors: 0 })),
-			allClients,
-		),
+		allClients: clientItems(allClients, allClients),
 	})
 })
 
