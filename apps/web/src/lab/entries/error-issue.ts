@@ -10,6 +10,7 @@ import { encodePublicId, V2ErrorIssueDetail } from "@maple/domain/http/v2"
 import { Effect, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { toLoadFailure } from "../../data/load-failure"
 import type { PageContext } from "../../page/contract"
 import type { Resources } from "../../platform/resources"
 import { Message } from "../../page/errors/issue/message"
@@ -148,9 +149,21 @@ const init = () => {
 	].reduce(send, windowed)
 }
 
+/** The lab has no API, so a started investigation is answered at once with the failure the page shows. */
+const NO_API = Message.CompletedCreateInvestigation({
+	result: Result.fail(toLoadFailure("The lab has no API to start an investigation.")),
+})
+
 const update = (model: Model, message: Message) => {
 	const next = pageUpdate(model, message, context)
-	return { model: next.model, commands: (next.commands ?? []).filter(isLocalCommand) }
+	const commands = next.commands ?? []
+	if (!commands.some((command) => command.name === "CreateErrorIssueInvestigation"))
+		return { model: next.model, commands: commands.filter(isLocalCommand) }
+	const settled = pageUpdate(next.model, NO_API, context)
+	return {
+		model: settled.model,
+		commands: [...commands, ...(settled.commands ?? [])].filter(isLocalCommand),
+	}
 }
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>

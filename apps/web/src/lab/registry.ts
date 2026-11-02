@@ -310,7 +310,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/error-issue",
 		title: "Error issue",
 		description:
-			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the agent handoff, the fact strip and the rail.",
+			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail.",
 		kind: "lab",
 		session: "none",
 	},
@@ -333,7 +333,8 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	{
 		path: "/lab/status-pages",
 		title: "Status pages",
-		description: "The status pages list, the look picker and the form fields (hint and error) over fixture pages.",
+		description:
+			"The status pages list, the look picker and the form fields (hint and error) over fixture pages.",
 		kind: "lab",
 		session: "none",
 	},
