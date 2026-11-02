@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest"
 import { foldObservation, type HysteresisConfig, type HysteresisRow } from "./incident-hysteresis"
 
 /**
- * Parity harness. The machine replaces two hand-rolled implementations, so the
- * bar is not "the machine looks right" — it is "the machine decides exactly
- * what both predecessors decided", over sequences neither suite covers.
+ * Parity harness. The fold replaces two hand-rolled implementations, so the
+ * bar is not "the fold looks right" but "the fold decides exactly what both
+ * predecessors decided", over sequences neither suite covers.
  */
 
 type Status = "breached" | "healthy" | "skipped"
