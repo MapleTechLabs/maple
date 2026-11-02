@@ -8,7 +8,7 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as SpanPanel from "@maple/views/traces/span-panel"
-import * as LogSheet from "../kit/log-sheet/model"
+import * as LogSheet from "@maple/views/logs/log-sheet"
 
 // The trace detail page.
 

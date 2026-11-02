@@ -19,7 +19,11 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { listFooterText } from "@maple/views/ui/logs/viewer"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
+import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
+import { getActiveInfraCorrelations } from "../../../components/infra/infra-correlations"
+import * as InfraCorrelation from "../../kit/infra-correlation"
+import { LOG_PAGE_PATH, logPageHref } from "../log-links"
 import { copyToast } from "../../kit/clipboard"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
@@ -108,7 +112,7 @@ export const footerText = (model: Model): string =>
 /** The trace page and the standalone `/logs/$logId` page. */
 const LOG_LINKS: LogRowLinks = {
 	trace: (traceId) => `/traces/${traceId}`,
-	log: Option.some((logKey: string) => `/logs/${logKey}`),
+	log: Option.some(logPageHref),
 }
 
 const rowsOf = (model: Model, context: PageContext) => {
@@ -356,7 +360,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		toolbarTooltip: Tooltip.init("logs-toolbar-tooltip"),
 		columnsPopover: Popover.init("logs-columns-popover", { align: "end" }),
 		searchHelp: initSearchHelp(),
-		detail: LogDetail.init("logs-detail"),
+		detail: LogDetail.init("logs-detail", { logPagePath: LOG_PAGE_PATH }),
+		detailInfra: InfraCorrelation.init("logs-detail-infra", ""),
 		selectedIndex: null,
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -409,9 +414,12 @@ const foldStreamOut = (model: Model, out: LogsStream.OutMessage, context: PageCo
 		OpenedLog: ({ index }) => {
 			const row = model.stream.rows[index]
 			if (row === undefined) return { model }
-			const opened = LogDetail.open(model.detail, row.log, context)
-			return liftChild({ ...model, detail: opened.model, selectedIndex: index }, opened.commands, (m) =>
-				Message.GotDetailMessage({ message: m }),
+			const hasInfra = hasInfraCorrelations(row.log)
+			const opened = LogDetail.open(model.detail, row.log, context, hasInfra)
+			return liftChild(
+				{ ...model, detail: opened.model, detailInfra: detailInfraFor(context), selectedIndex: index },
+				opened.commands,
+				(m) => Message.GotDetailMessage({ message: m }),
 			)
 		},
 		ChangedInspecting: ({ isInspecting, isScrolledAway }) => ({
@@ -482,6 +490,12 @@ const acceptNextPage = (
 		: { ...model.pagination, isFetching: false, isStopped: true }
 	return fetchIfNearEnd(context)({ model: setStreamRows({ ...model, pagination }, context) })
 }
+
+const hasInfraCorrelations = (log: LogRecord): boolean =>
+	getActiveInfraCorrelations({ ...log.resourceAttributes }).length > 0
+
+/** The sheet's Infrastructure tab, fresh for each log it shows. */
+const detailInfraFor = (context: PageContext) => InfraCorrelation.init("logs-detail-infra", context.orgId)
 
 const liftChild = <ChildMessage>(
 	model: Model,
@@ -636,20 +650,33 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 			const out = next.outMessage
 			if (out === undefined) return lifted
-			if (out._tag === "Closed") return { ...lifted, model: { ...lifted.model, selectedIndex: null } }
-			if (out._tag === "Copied") return { ...lifted, outMessage: copyToast(out.label, out.isOk) }
-			return {
-				...navigate(lifted.model, {
-					...model.search,
-					attrs: addLogAttributeFilter(model.search.attrs, {
-						source: out.source,
-						key: out.key,
-						value: out.value,
-						negated: out.negated,
+			return LogDetail.OutMessage.match<Return>(out, {
+				Closed: () => ({ ...lifted, model: { ...lifted.model, selectedIndex: null } }),
+				Copied: ({ label, isOk }) => ({ ...lifted, outMessage: copyToast(label, isOk) }),
+				ChoseAttributeFilter: ({ source, key, value, negated }) => ({
+					...navigate(lifted.model, {
+						...model.search,
+						attrs: addLogAttributeFilter(model.search.attrs, { source, key, value, negated }),
 					}),
+					commands: lifted.commands,
 				}),
-				commands: lifted.commands,
-			}
+				SelectedLog: ({ log }) => {
+					const shown = LogDetail.viewLog(lifted.model.detail, log, hasInfraCorrelations(log))
+					return {
+						model: { ...lifted.model, detail: shown.model, detailInfra: detailInfraFor(context) },
+						commands: [
+							...(lifted.commands ?? []),
+							...Command.mapMessages(shown.commands ?? [], (m) => Message.GotDetailMessage({ message: m })),
+						],
+					}
+				},
+			})
+		},
+		GotDetailInfraMessage: ({ message: inner }) => {
+			const next = InfraCorrelation.update(model.detailInfra, inner)
+			return liftChild({ ...model, detailInfra: next.model }, next.commands, (m) =>
+				Message.GotDetailInfraMessage({ message: m }),
+			)
 		},
 		GotSearchHelpMessage: ({ message: inner }) => {
 			const next = Popover.update(model.searchHelp, inner)

@@ -8,20 +8,14 @@ import * as Tabs from "@maple/views/ui/tabs"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import * as InfraCorrelation from "../../kit/infra-correlation"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import { TraceSpans } from "../log-source"
 
 // The drawer for one log.
 
 export const DetailCopy = Schema.Struct({ id: Schema.String, status: CopyStatus, generation: Schema.Number })
 
 const LogRows = KeyedSchema(Schema.Array(LogRecord), LoadFailure)
-
-/** The trace's span names by id and its start, for the timeline's dividers and offsets. */
-export const TraceSpans = Schema.Struct({
-	traceStartTime: Schema.NullOr(Schema.String),
-	spanNames: Schema.Array(Schema.Struct({ spanId: Schema.String, spanName: Schema.String })),
-})
-export type TraceSpans = typeof TraceSpans.Type
 
 export const Model = Schema.Struct({
 	id: Schema.String,
@@ -31,6 +25,8 @@ export const Model = Schema.Struct({
 	pinnedNamespace: Schema.NullOr(Schema.String),
 	/** `/logs/$logId`: every panel shows at once, so the trace and context read without a tab. */
 	isPage: Schema.Boolean,
+	/** The app's path for one log's page, before its key; null: no page (no full-page link or permalink). */
+	logPagePath: Schema.NullOr(Schema.String),
 	/** `ErrorSection`'s Show more. */
 	isErrorExpanded: Schema.Boolean,
 	/** `LogContextPanel`'s scope toggle (instance first when the log names one). */
@@ -46,12 +42,12 @@ export const Model = Schema.Struct({
 	tabs: Tabs.Model,
 	/** Rebuilt per log, which resets the attribute search. */
 	attributes: AttributesPanel.Model,
-	/** The Infrastructure tab, rebuilt per log. */
-	infra: InfraCorrelation.Model,
 	/** `LogHeroHeader`'s "Show full message". */
 	isHeroExpanded: Schema.Boolean,
 	/** The last copy from the hero or the meta strip, and its status. */
 	copy: DetailCopy,
+	/** The meta strip's and the error prompt's one Tooltip. */
+	tooltip: Tooltip.Model,
 })
 export type Model = typeof Model.Type
 
@@ -59,10 +55,10 @@ export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	GotTabsMessage: { message: Tabs.Message },
 	GotAttributesMessage: { message: AttributesPanel.Message },
-	GotInfraMessage: { message: InfraCorrelation.Message },
+	GotTooltipMessage: { message: Tooltip.Message },
 	ClickedShowFullMessage: {},
 	ClickedCopy: { copyId: Schema.String, text: Schema.String },
-	ClickedCopyPermalink: { copyId: Schema.String, logKey: Schema.String },
+	ClickedCopyPermalink: { copyId: Schema.String, path: Schema.String },
 	SucceededCopy: { generation: Schema.Number, copyId: Schema.String },
 	FailedCopy: { generation: Schema.Number, copyId: Schema.String },
 	ElapsedCopyStatus: { generation: Schema.Number },
@@ -94,5 +90,7 @@ export const OutMessage = defineMessageUnion({
 	Copied: { label: Schema.UndefinedOr(Schema.String), isOk: Schema.Boolean },
 	/** The sheet closed (Close, Escape, a press outside): the stream stops holding its tail. */
 	Closed: {},
+	/** A log picked from the context or the trace timeline: the sheet shows it (`viewLog`) or the page opens it. */
+	SelectedLog: { log: LogRecord },
 })
 export type OutMessage = typeof OutMessage.Type

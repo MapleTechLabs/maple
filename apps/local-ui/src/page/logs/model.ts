@@ -8,7 +8,7 @@ import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
-import * as LogSheet from "../kit/log-sheet/model"
+import * as LogSheet from "@maple/views/logs/log-sheet"
 import { LocalLog } from "../../lib/log-shape"
 
 // apps/local-ui/src/lib/log-shape.ts and the logs hooks, as Schemas.

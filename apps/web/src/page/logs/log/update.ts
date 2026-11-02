@@ -6,9 +6,10 @@ import * as Keyed from "@maple/views/data/keyed"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
+import { LOG_PAGE_PATH, logPageHref } from "../log-links"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { copyToast } from "../../kit/clipboard"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
 import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -57,19 +58,30 @@ export const init = (route: LogRoute, context: PageContext): Return =>
 			logId: route.logId,
 			key: decodeLogKey(route.logId),
 			log: Keyed.idle(),
-			detail: LogDetail.init("log-page", true),
+			detail: LogDetail.init("log-page", { isPage: true, logPagePath: LOG_PAGE_PATH }),
 		},
 		context,
 		"Load",
 	)
 
-const liftDetail = (model: Model, result: ReturnType<typeof LogDetail.update>): Return => ({
+const navigateTo = (url: string) => PageOutMessage.RequestedNavigation({ url, isReplace: false })
+
+/** The panels' asks: a copy toasts, a picked log opens its own page. */
+const pageOutMessage = (out: LogDetail.OutMessage | undefined) =>
+	out === undefined
+		? undefined
+		: LogDetail.OutMessage.match(out, {
+				Copied: ({ label, isOk }) => copyToast(label, isOk),
+				SelectedLog: ({ log }) => navigateTo(logPageHref(encodeLogKey(log))),
+				// The page's attributes have no Filter action, and there is no sheet to close.
+				ChoseAttributeFilter: () => undefined,
+				Closed: () => undefined,
+			})
+
+const liftDetail = (model: Model, result: LogDetail.Return): Return => ({
 	model: { ...model, detail: result.model },
 	commands: Command.mapMessages(result.commands ?? [], (message) => Message.GotDetailMessage({ message })),
-	outMessage:
-		result.outMessage?._tag === "Copied"
-			? copyToast(result.outMessage.label, result.outMessage.isOk)
-			: undefined,
+	outMessage: pageOutMessage(result.outMessage),
 })
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -89,14 +101,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedRetry: () => requestLog(model, context, "Refresh"),
 		// `openLog`: a log picked from the trace or the context opens its own page.
-		GotDetailMessage: ({ message: inner }) =>
-			inner._tag === "ClickedLog"
-				? {
-						model,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: `/logs/${encodeLogKey(inner.log)}`,
-							isReplace: false,
-						}),
-					}
-				: liftDetail(model, LogDetail.update(model.detail, inner)),
+		GotDetailMessage: ({ message: inner }) => liftDetail(model, LogDetail.update(model.detail, inner)),
 	})

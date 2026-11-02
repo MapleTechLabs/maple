@@ -10,7 +10,8 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
+import { logTraceHref } from "../log-links"
 import { Message, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
@@ -91,7 +92,7 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 							slotId: "log-page-panels",
 							model: model.detail,
 							view: LogDetail.pageView,
-							viewInputs: { timeZone },
+							viewInputs: { timeZone, traceHref: logTraceHref },
 							toParentMessage: (message) => Message.GotDetailMessage({ message }),
 						}),
 					],

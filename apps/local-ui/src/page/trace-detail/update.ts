@@ -18,7 +18,8 @@ import { FetchTrace, ReadSpanLog } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { enterTab, selectedSpanOf, selectInTab, TAB_VALUES, viewOf } from "./tabs"
-import * as LogSheet from "../kit/log-sheet/update"
+import * as LogSheet from "@maple/views/logs/log-sheet"
+import { openLocalLog } from "../kit/log-sheet"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -101,7 +102,26 @@ export const init = (
 }
 
 /** The hash changed: a new `view` swaps the tab, a new `spanId` the selection and the panel. */
+/** The hash moved on (the sheet's trace link selects the log's span): an open log sheet closes. */
+const closeLogSheet = (model: Model): UpdateReturn =>
+	Option.match(
+		Option.filter(model.maybeLogSheet, (sheet) => sheet.dialog.isOpen),
+		{
+			onNone: () => ({ model }),
+			onSome: (sheet) => {
+				const closed = LogSheet.close(sheet)
+				return {
+					model: { ...model, maybeLogSheet: Option.some(closed.model) },
+					commands: Command.mapMessages(closed.commands ?? [], toSheet),
+				}
+			},
+		},
+	)
+
 export const locationChanged = (model: Model, context: PageContext): UpdateReturn =>
+	chain(closeLogSheet(model), (closed) => followLocation(closed, context))
+
+const followLocation = (model: Model, context: PageContext): UpdateReturn =>
 	Option.match(loadedTrace(model), {
 		onNone: () => ({ model: { ...model, tabs: { ...model.tabs, selected: viewOf(context) } } }),
 		onSome: (trace) => {
@@ -184,10 +204,22 @@ const settleTrace = (model: Model, context: PageContext, key: string, result: Re
 const liftPanel = (commands: SpanPanel.Return["commands"]): Commands =>
 	Command.mapMessages(commands ?? [], (message) => Message.GotSpanPanelMessage({ message }))
 
-const liftSheet = (model: Model, step: LogSheet.UpdateReturn): UpdateReturn => ({
-	model: { ...model, maybeLogSheet: Option.some(step.model) },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotLogSheetMessage({ message })),
-})
+const toSheet = (message: LogSheet.Message) => Message.GotLogSheetMessage({ message })
+
+/** Folds a sheet step in: a picked log shows in it. */
+const liftSheet = (model: Model, step: LogSheet.Return): UpdateReturn => {
+	const next: UpdateReturn = {
+		model: { ...model, maybeLogSheet: Option.some(step.model) },
+		commands: Command.mapMessages(step.commands ?? [], toSheet),
+	}
+	const out = step.outMessage
+	if (out?._tag !== "SelectedLog") return next
+	const shown = LogSheet.viewLog(step.model, out.log)
+	return {
+		model: { ...model, maybeLogSheet: Option.some(shown.model) },
+		commands: [...(next.commands ?? []), ...Command.mapMessages(shown.commands ?? [], toSheet)],
+	}
+}
 
 /** The panel's step; close, a parent span or a log row are the page's to act on. */
 const panelStep = (model: Model, context: PageContext, message: SpanPanel.Message): UpdateReturn => {
@@ -281,7 +313,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			return child._tag === "ClickedSpanNode" && picked !== undefined ? selectSpan(next, context, picked) : { model: next }
 		},
 		GotSpanPanelMessage: ({ message: child }) => panelStep(model, context, child),
-		FoundSpanLog: ({ log }) => liftSheet(model, LogSheet.openLog(model.maybeLogSheet, log)),
+		FoundSpanLog: ({ log }) => liftSheet(model, openLocalLog(model.maybeLogSheet, "span-log-sheet", log)),
 		FailedReadSpanLog: () => {
 			if (model.panel === null) return { model }
 			const next = SpanPanel.refresh(model.panel)

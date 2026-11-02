@@ -1,3 +1,4 @@
+import { SpanId, TraceId } from "@maple/domain"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { click, expect as expectView, expectOutMessage, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -6,7 +7,9 @@ import type { PageContext } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { FetchLogs, FetchServices, FetchSeverities, FetchNextPage } from "./command"
 import { PAGE_SIZE } from "./fetch"
-import { Message as LogSheetMessage } from "../kit/log-sheet/message"
+import * as LogSheet from "@maple/views/logs/log-sheet"
+import * as Dialog from "@maple/views/ui/dialog"
+import { traceHash } from "../kit/log-sheet"
 import { Message } from "./message"
 import type { LocalLog, Model } from "./model"
 import { init, locationChanged } from "./update"
@@ -134,11 +137,24 @@ describe("local logs", () => {
 			expectView(text("1 log")).toExist(),
 		)
 		const opened = pageUpdate(loaded([log(1, "pool exhausted")]), Message.GotStreamMessage({ message: LogsStream.Message.ClickedRow({ index: 0 }) }))
-		expect(Option.map(opened.model.maybeDetail, (sheet) => [sheet.dialog.isOpen, sheet.log.body])).toEqual(
+		expect(Option.map(opened.model.maybeDetail, (sheet) => [sheet.dialog.isOpen, sheet.log?.body])).toEqual(
 			Option.some([true, "pool exhausted"]),
 		)
-		const closed = pageUpdate(opened.model, Message.GotLogSheetMessage({ message: LogSheetMessage.ClosedSheet() }))
+		const closed = pageUpdate(opened.model, Message.GotLogSheetMessage({ message: LogSheet.Message.GotDialogMessage({ message: Dialog.Message.ClickedClose() }) }))
 		expect(Option.map(closed.model.maybeDetail, (sheet) => sheet.dialog.isOpen)).toEqual(Option.some(false))
+	})
+
+	test("the sheet's trace link goes to the log's span, and its Filter action filters the list", () => {
+		const traced = { ...log(1), traceId: "4bf92f3577b34da6a3ce929d0e0e4736", spanId: "00f067aa0ba902b7", logAttributes: { "http.route": "/pay" } }
+		const opened = pageUpdate(loaded([traced]), Message.GotStreamMessage({ message: LogsStream.Message.ClickedRow({ index: 0 }) })).model
+		const sheet = (message: LogSheet.Message) => pageUpdate(opened, Message.GotLogSheetMessage({ message }))
+		expect(Option.getOrNull(opened.maybeDetail)?.log?.spanId).toBe("00f067aa0ba902b7")
+		expect(traceHash(TraceId.make(traced.traceId), SpanId.make(traced.spanId))).toBe(
+			"#/traces/4bf92f3577b34da6a3ce929d0e0e4736?spanId=00f067aa0ba902b7",
+		)
+		const filter = AttributesPanel.Message.ClickedFilter({ source: "log", key: "http.route", value: "/pay", negated: false })
+		const chosen = sheet(LogSheet.Message.GotAttributesMessage({ message: filter }))
+		expect(chosen.outMessage).toEqual(PageOutMessage.RequestedNavigation({ hash: "#/logs?attrs=log%3Ahttp.route%3D%2Fpay", isReplace: true }))
 	})
 
 	test("switching to patterns drops the list's sheet and requests the clusters", () => {

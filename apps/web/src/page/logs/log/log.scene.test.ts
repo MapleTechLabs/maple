@@ -4,7 +4,7 @@ import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import type { PageContext } from "../../contract"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 

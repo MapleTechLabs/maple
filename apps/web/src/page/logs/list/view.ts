@@ -16,7 +16,9 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { searchPreset, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
+import * as InfraCorrelation from "../../kit/infra-correlation"
+import { logTraceHref } from "../log-links"
 import { liveControls } from "../live-controls"
 import { chipId, isInspectingOf, logFilterChips } from "./derive"
 import { Message } from "./message"
@@ -27,6 +29,21 @@ import { emptyState, isNeverReceived } from "./view-empty"
 import { toolbar } from "./view-toolbar"
 import { VOLUME_THEME_TOKENS, volumeChart } from "./view-volume"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
+
+/** The sheet's Infrastructure tab: the hosts and pods its log's resource names. */
+const detailInfraTab = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
+	h.submodel({
+		slotId: "logs-detail-infra-panel",
+		model: model.detailInfra,
+		view: InfraCorrelation.view,
+		viewInputs: {
+			resourceAttributes: model.detail.log?.resourceAttributes ?? {},
+			anchor: model.detail.log?.timestamp ?? "",
+			spanDurationMs: 0,
+			timeZone,
+		},
+		toParentMessage: (message) => Message.GotDetailInfraMessage({ message }),
+	})
 
 /** `LoadingState`: forty compact placeholder rows (a shorter row makes the list jump on load). */
 const loadingState = (h: HtmlBuilder<Message>): Html =>
@@ -193,7 +210,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				slotId: "logs-detail",
 				model: model.detail,
 				view: LogDetail.view,
-				viewInputs: { timeZone: inputs.context.timeZone },
+				viewInputs: {
+					timeZone: inputs.context.timeZone,
+					canFilter: true,
+					traceHref: logTraceHref,
+					infraTab: () => detailInfraTab(h, model, inputs.context.timeZone),
+				},
 				toParentMessage: (message) => Message.GotDetailMessage({ message }),
 			}),
 		],

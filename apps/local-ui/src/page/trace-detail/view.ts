@@ -19,7 +19,8 @@ import type { Model } from "./model"
 import { loadedTrace } from "./update"
 import { anatomyStrip, httpInfoOf, rootSpanOf } from "./view-anatomy"
 import * as SpanPanel from "@maple/views/traces/span-panel"
-import * as LogSheetView from "../kit/log-sheet/view"
+import * as LogSheet from "@maple/views/logs/log-sheet"
+import { sheetClock, traceHash } from "../kit/log-sheet"
 import { spanTooltip } from "./view-span-tooltip"
 import { FocusSpanPanel, TrackPointer } from "./command"
 import { findSpan } from "@maple/web/page/traces/detail/select"
@@ -110,8 +111,8 @@ const loadedBody = (h: H, model: Model, trace: TraceData, timeFormat: TimeFormat
 					h.submodel({
 						slotId: "span-log-sheet",
 						model: sheet,
-						view: LogSheetView.view,
-						viewInputs: { timeFormat },
+						view: LogSheet.view,
+						viewInputs: { ...sheetClock(timeFormat), canFilter: false, traceHref: traceHash },
 						toParentMessage: (message) => Message.GotLogSheetMessage({ message }),
 					}),
 				],

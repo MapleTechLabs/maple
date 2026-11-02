@@ -6,7 +6,8 @@ import { AsyncData, Command } from "foldkit"
 import { canExtend } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { type PageContext, replaceParams } from "../contract"
-import * as LogSheet from "../kit/log-sheet/update"
+import * as LogSheet from "@maple/views/logs/log-sheet"
+import { openLocalLog } from "../kit/log-sheet"
 import { FetchNextPage } from "./command"
 import { nextCursor } from "./fetch"
 import { columnsOf, filtersOf } from "./filters"
@@ -116,27 +117,46 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<LocalL
 	})
 }
 
-/** Folds a sheet step into the page. */
-export const liftSheet = (model: Model, step: LogSheet.UpdateReturn): UpdateReturn => ({
-	model: { ...model, maybeDetail: Option.some(step.model) },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotLogSheetMessage({ message })),
-})
+export const SHEET_ID = "log-detail-sheet"
+
+const toSheet = (message: LogSheet.Message) => Message.GotLogSheetMessage({ message })
+
+const filterBy = (context: PageContext, filter: Parameters<typeof addLogAttributeFilter>[1]) =>
+	replaceParams(context.location, { attrs: addLogAttributeFilter([...filtersOf(queryOf(context.location)).attrs], filter) })
+
+/** Folds a sheet step into the page: its attribute filters and picked logs are the page's. */
+export const liftSheet = (model: Model, step: LogSheet.Return, context: PageContext): UpdateReturn => {
+	const next: UpdateReturn = {
+		model: { ...model, maybeDetail: Option.some(step.model) },
+		commands: Command.mapMessages(step.commands ?? [], toSheet),
+	}
+	const out = step.outMessage
+	if (out === undefined) return next
+	return LogSheet.OutMessage.match<UpdateReturn>(out, {
+		ChoseAttributeFilter: (filter) => ({ ...next, outMessage: filterBy(context, filter) }),
+		SelectedLog: ({ log }) => {
+			const shown = LogSheet.viewLog(step.model, log)
+			return {
+				model: { ...model, maybeDetail: Option.some(shown.model) },
+				commands: [...(next.commands ?? []), ...Command.mapMessages(shown.commands ?? [], toSheet)],
+			}
+		},
+		// Local has no toasts; the copy button shows the outcome.
+		Copied: () => next,
+		Closed: () => next,
+	})
+}
 
 const foldStreamOut = (model: Model, out: LogsStream.OutMessage, context: PageContext): UpdateReturn =>
 	LogsStream.OutMessage.match<UpdateReturn>(out, {
 		OpenedLog: ({ index }) =>
 			Option.match(Option.fromNullishOr(rowsOf(model)[index]), {
 				onNone: () => ({ model }),
-				onSome: (log) => liftSheet(model, LogSheet.openLog(model.maybeDetail, log)),
+				onSome: (log) => liftSheet(model, openLocalLog(model.maybeDetail, SHEET_ID, log), context),
 			}),
 		// Local has no auto-refresh to hold while the reader inspects.
 		ChangedInspecting: () => ({ model }),
-		ChoseAttributeFilter: (filter) => ({
-			model,
-			outMessage: replaceParams(context.location, {
-				attrs: addLogAttributeFilter([...filtersOf(queryOf(context.location)).attrs], filter),
-			}),
-		}),
+		ChoseAttributeFilter: (filter) => ({ model, outMessage: filterBy(context, filter) }),
 	})
 
 export const foldStream = (model: Model, message: LogsStream.Message, context: PageContext): UpdateReturn => {

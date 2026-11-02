@@ -4,9 +4,10 @@ import { LOCAL_ORG_ID } from "@maple/query-engine/local"
 import type { TraceData } from "@maple/views/traces/trace-data"
 import { buildTraceDetail } from "@maple/ui/lib/span-tree"
 import { DateTime, Effect, Option, Schema } from "effect"
-import { queryRows } from "../../data/local-query"
+import { queryRows } from "./local-query"
 
-// The query of `useLocalTraceDetail` (the span panel reads through `TraceSource`).
+// The query of `useLocalTraceDetail` (the span panel reads through `TraceSource`), and the log
+// sheet's trace timeline (`LogSource.traceSpans`).
 
 const decodeTraceId = Schema.decodeUnknownOption(TraceId)
 

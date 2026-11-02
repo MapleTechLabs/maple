@@ -14,7 +14,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { rowsOf } from "./update-stream"
 import { patternsList } from "./view-patterns"
-import * as LogSheetView from "../kit/log-sheet/view"
+import * as LogSheet from "@maple/views/logs/log-sheet"
+import { sheetClock, traceHash } from "../kit/log-sheet"
 import { logsToolbar } from "./view-toolbar"
 import { sidebar } from "./view-sidebar"
 import { attributeFilterChips, logStream } from "./view-stream"
@@ -43,8 +44,8 @@ const listContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInpu
 			h.submodel({
 				slotId: "log-detail-sheet",
 				model: sheet,
-				view: LogSheetView.view,
-				viewInputs: { timeFormat: inputs.context.timeFormat },
+				view: LogSheet.view,
+				viewInputs: { ...sheetClock(inputs.context.timeFormat), canFilter: true, traceHref: traceHash },
 				toParentMessage: (message) => Message.GotLogSheetMessage({ message }),
 			}),
 		],

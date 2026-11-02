@@ -30,14 +30,21 @@ const compactTimeFormatters = new Map<string, Intl.DateTimeFormat>()
 
 export function formatTimestampInTimezone(
 	input: TimezoneFormatInput,
-	options: { timeZone: string; withMilliseconds?: boolean; withYear?: boolean; style?: "full" | "range" },
+	options: {
+		timeZone: string
+		withMilliseconds?: boolean
+		withYear?: boolean
+		style?: "full" | "range"
+		/** `full` only: a 24h clock (`h23`) where the reader's other times use one. */
+		hourCycle?: "h12" | "h23"
+	},
 ): string {
 	const date = toValidDate(input)
 	if (!date) return EMPTY_VALUE
 
 	const tz = resolveTimeZone(options.timeZone)
 	const style = options.style ?? "full"
-	const key = `${tz}|${style}|${options.withMilliseconds ? "ms" : ""}|${options.withYear ? "y" : ""}`
+	const key = `${tz}|${style}|${options.withMilliseconds ? "ms" : ""}|${options.withYear ? "y" : ""}|${options.hourCycle ?? ""}`
 	let formatter = timestampFormatters.get(key)
 	if (!formatter) {
 		formatter =
@@ -63,6 +70,7 @@ export function formatTimestampInTimezone(
 						minute: "2-digit",
 						second: "2-digit",
 						fractionalSecondDigits: options.withMilliseconds ? 3 : undefined,
+						hourCycle: options.hourCycle,
 					})
 		timestampFormatters.set(key, formatter)
 	}

@@ -14,12 +14,11 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { errorSectionView } from "@maple/views/ui/error-section"
 import { errorState } from "@maple/views/ui/error-state"
 import { heading } from "@maple/views/ui/heading"
-import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
+import { type LogRecord, severityLabel } from "@maple/views/ui/logs/log-row-view"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { serviceDot } from "@maple/views/ui/values"
-import { severityLabel } from "./derive"
 import { Message, type Model } from "./model"
 import {
 	contextKey,
@@ -30,6 +29,7 @@ import {
 	TRACE_LOG_LIMIT,
 } from "./panels"
 import { copyStatusOf } from "./update"
+import { type TooltipParts, triggerIdOf } from "./view-meta"
 import { hstack } from "@maple/views/ui/stack"
 import { typographyClass } from "@maple/views/ui/typography"
 import { borderedBox } from "@maple/views/ui/bordered-box"
@@ -65,14 +65,15 @@ const RevealTimelineRow = Mount.define("RevealLogTimelineRow", {
 
 export const showsErrorBanner = (log: LogRecord): boolean => {
 	const severity = severityLabel(log.severityText, log.severityNumber).toUpperCase()
-	return severity === "ERROR" || severity === "FATAL"
+	return severity === "ERROR" || severity === "FATAL" || severity === "CRITICAL"
 }
 
 /** `LogErrorBanner`: the exception message (else the body), its type and a prompt to copy. */
-export const errorBanner = (h: H, model: Model, log: LogRecord): Html | null => {
+export const errorBanner = (h: H, model: Model, log: LogRecord, { trigger, portalFor }: TooltipParts): Html | null => {
 	const message = log.logAttributes["exception.message"] ?? log.logAttributes["error.message"] ?? log.body
 	if (message === "") return null
-	return errorSectionView(h, {
+	const promptTrigger = triggerIdOf(model, "prompt")
+	const section = errorSectionView(h, {
 		message,
 		title: log.severityText.toUpperCase() === "FATAL" ? "Fatal" : "Error",
 		badge: log.logAttributes["exception.type"] ?? log.logAttributes["error.type"],
@@ -90,8 +91,10 @@ export const errorBanner = (h: H, model: Model, log: LogRecord): Html | null => 
 					attributes: { ...log.logAttributes },
 				}),
 			}),
+			trigger: trigger(promptTrigger),
 		},
 	})
+	return h.div([h.Class("contents")], [section, ...portalFor(promptTrigger)])
 }
 
 const rowSkeleton = (h: H, rows: number, widths: readonly [string, string]) =>
