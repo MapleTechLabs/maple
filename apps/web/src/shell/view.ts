@@ -127,9 +127,9 @@ const appUpdatePill = (h: HtmlBuilder<Message>): Html =>
 			gap: "3",
 			attributes: [h.Role("status")],
 			// Dark popover barely clears the page, so it lifts a step and takes the control highlight.
-			// z-30 keeps page action bars (errors bulk bar, z-40) clickable above it.
+			// z-1: every page action bar (save bars z-10, bulk bar z-40) covers it, so it never eats a click.
 			className:
-				"fixed right-4 bottom-4 z-30 rounded-full border border-input bg-popover py-1 pr-1 pl-3.5 shadow-popup before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:shadow-control dark:bg-secondary sm:right-8 sm:bottom-8",
+				"fixed right-4 bottom-4 z-1 rounded-full border border-input bg-popover py-1 pr-1 pl-3.5 shadow-popup before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:shadow-control dark:bg-secondary sm:right-8 sm:bottom-8",
 		},
 		[
 			typography(h, { size: "sm", tone: "soft" }, ["Maple was updated"]),
