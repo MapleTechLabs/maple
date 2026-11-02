@@ -126,7 +126,7 @@ describe("ResultReporter", () => {
 				assert.lengthOf(spans, 2)
 				assert.isTrue(Exit.isSuccess(spans[0]!.exit))
 				assert.isTrue(Exit.isFailure(spans[1]!.exit))
-			}).pipe(Effect.provide(reporterLayer(harness)), Effect.provide(tracer.layer))
+			}).pipe(Effect.provide(Layer.merge(reporterLayer(harness), tracer.layer)))
 		}),
 	)
 

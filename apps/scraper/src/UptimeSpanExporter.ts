@@ -1,4 +1,4 @@
-import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Schema } from "effect"
+import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Result, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ScraperEnv } from "./Env"
 import { bufferedUptimeSpans } from "./Metrics"
@@ -87,10 +87,17 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 						schedule: TRANSIENT_RETRY,
 						while: (error) => isTransientStatus(error.status),
 					}),
-					// Around the retry, so only a dropped batch errors it.
+					// Around the retry, so only a dropped batch errors it. A 402 (org over its limit) is
+					// expected: it leaves the span as a value and is re-raised outside, so the span stays Ok.
+					Effect.map((): Result.Result<void, UptimeSpanExportError> => Result.succeed(undefined)),
+					Effect.catchIf(
+						(error) => error.status === 402,
+						(error) => Effect.succeed(Result.fail(error)),
+					),
 					Effect.withSpan("UptimeSpanExporter.post", {
 						attributes: { "peer.service": "ingest", "maple.uptime.span_count": checks.length },
 					}),
+					Effect.flatMap(Effect.fromResult),
 					// Spans are best effort: a 402 (org over its limit) or an outage drops them, logged.
 					Effect.catch((error) =>
 						Effect.logWarning("Dropped uptime check spans").pipe(

@@ -56,6 +56,8 @@ export const makeBatchReporter = <A>(options: {
 				yield* Effect.forEach(Arr.chunksOf(all, REPORT_BATCH_SIZE), deliver, { discard: true })
 			}).pipe(
 				Effect.timeout(FINAL_FLUSH_TIMEOUT),
+				// Anything this fails to deliver is dropped, so the span errors.
+				Effect.withSpan(`${spanName}.shutdown_flush`),
 				Effect.catch((error) =>
 					Effect.logWarning(`Dropped unreported ${noun} on shutdown`).pipe(
 						Effect.annotateLogs({ error: error.message }),
