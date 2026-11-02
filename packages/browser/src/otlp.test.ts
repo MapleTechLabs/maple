@@ -2,11 +2,11 @@
 import { OTLP_UNLOAD_TAIL_BYTES, postToIngest } from "@maple/browser-session"
 import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
 import {
-	BasicTracerProvider,
+	TracerProvider,
 	InMemorySpanExporter,
 	type ReadableSpan,
 	SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base"
+} from "@opentelemetry/sdk-trace"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { resetKeepaliveBudgetForTests } from "../../browser-session/src/platform/transport"
 import { attachSpanStash, OfflineSpanExporter, resetOfflineForTests } from "./offline"
@@ -18,9 +18,9 @@ const KIB = 1024
 /** `count` finished spans named `s0`, `s1`, ... of roughly `padBytes` each. */
 const spans = (count: number, padBytes = 0): ReadableSpan[] => {
 	const memory = new InMemorySpanExporter()
-	const tracer = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(memory)] }).getTracer(
-		"t",
-	)
+	const tracer = new TracerProvider({
+		spanProcessors: [new SimpleSpanProcessor({ exporter: memory })],
+	}).getTracer("t")
 	for (let i = 0; i < count; i++) {
 		tracer.startSpan(`s${i}`, { attributes: { pad: "x".repeat(padBytes) } }).end()
 	}
