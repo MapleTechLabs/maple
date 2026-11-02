@@ -21,8 +21,9 @@ const DIRECT = new Map([
 
 /**
  * The chart formatter's unit for an OTel unit, or `undefined` for a plain number.
- * Scaled byte units (`KiBy`, `MiBy`) and `By/s` stay plain: the formatter has no unit that
- * reads their values right. A dimensionless count per second (`1/s`, `{request}/s`) is a rate.
+ * Scaled byte units (`KiBy`, `MiBy`) and per-second units (`By/s`, `1/s`, `{request}/s`) stay
+ * plain: the formatter has no unit that reads them right (`requests_per_sec` divides counts per
+ * bucket by the bucket width, which would shrink a value already per second).
  */
 export const chartUnitFromOtel = (unit: string, metricName = ""): string | undefined => {
 	const trimmed = unit.trim()
@@ -32,6 +33,5 @@ export const chartUnitFromOtel = (unit: string, metricName = ""): string | undef
 			: isRatioMetricName(metricName)
 				? "percent"
 				: undefined
-	if (/^(1|\{[^}]+\})\/s$/.test(trimmed)) return "requests_per_sec"
 	return DIRECT.get(trimmed)
 }
