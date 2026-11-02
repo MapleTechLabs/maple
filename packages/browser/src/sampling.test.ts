@@ -1,6 +1,6 @@
 import { clearSessionSink, publishSessionSink } from "@maple/browser-session"
 import { ROOT_CONTEXT, trace, TraceFlags } from "@opentelemetry/api"
-import { SamplingDecision } from "@opentelemetry/sdk-trace-base"
+import { SamplingDecision } from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it } from "vitest"
 import { sessionRoll } from "@maple/sdk-core"
 import { keepContext, SessionSampler } from "./sampling"

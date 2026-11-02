@@ -1,15 +1,15 @@
 import { assert, beforeEach, describe, it } from "vitest"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
-import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
+import { TracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace"
+import type { ReadableSpan } from "@opentelemetry/sdk-trace"
 import { configureErrorFilters } from "./error-filters"
 import { captureException, resetReportedErrorsForTests, setupErrorCapture } from "./errors"
 import { setMapleProviderForTests } from "./tracing"
 
 const exporter = new InMemorySpanExporter()
 
-const provider = new BasicTracerProvider({
-	spanProcessors: [new SimpleSpanProcessor(exporter)],
+const provider = new TracerProvider({
+	spanProcessors: [new SimpleSpanProcessor({ exporter })],
 })
 setMapleProviderForTests(provider)
 
@@ -70,7 +70,7 @@ describe("captureException", () => {
 	it("never records into a host app's global provider before init", () => {
 		const hostExporter = new InMemorySpanExporter()
 		trace.setGlobalTracerProvider(
-			new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(hostExporter)] }),
+			new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter: hostExporter })] }),
 		)
 		setMapleProviderForTests(undefined)
 		captureException(new Error("before init"))

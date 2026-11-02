@@ -8,7 +8,7 @@ import {
 	type Tracer,
 	type TracerProvider,
 } from "@opentelemetry/api"
-import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 // Capture what the batch processor actually hands to the exporter, so the

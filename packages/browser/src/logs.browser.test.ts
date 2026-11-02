@@ -2,7 +2,7 @@
 import { resetConsentForTests, setConsent } from "@maple/browser-session"
 import { context, trace } from "@opentelemetry/api"
 import type { ReadableLogRecord } from "@opentelemetry/sdk-logs"
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan } from "@opentelemetry/sdk-trace"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const exportedSpans: ReadableSpan[] = []
