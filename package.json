@@ -54,6 +54,8 @@
 		"check:tokens": "bun run ./scripts/check-token-drift.ts",
 		"lint:ui-baseline": "bun run ./scripts/ui-kit-baseline.ts",
 		"ui:index": "bun run ./scripts/gen-ui-kit-index.ts",
+		"ui:patterns": "bun run ./scripts/ui-class-patterns.ts",
+		"ui:patterns:check": "bun run ./scripts/ui-class-patterns.ts --check",
 		"ui:index:check": "bun run ./scripts/gen-ui-kit-index.ts --check",
 		"ios:openapi": "bun run ./scripts/generate-ios-openapi.ts",
 		"ios:openapi:check": "bun run ./scripts/generate-ios-openapi.ts --check",
