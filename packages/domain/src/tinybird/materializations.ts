@@ -8,6 +8,8 @@ import {
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	JSON_LABEL_KEYS,
+	JSON_TYPE_KEY,
+	JSON_TYPE_VALUE_REDACTIONS,
 	JSON_VALUE_REDACTIONS,
 	INTERNAL_FRAME_PATTERN,
 	MAX_FINGERPRINT_FRAMES,
@@ -971,7 +973,11 @@ const errorEventsSelectSql = `
           arrayStringConcat(
             arraySort(
               arrayMap(
-                kv -> concat(kv.1, '=', ${chRedactChain("kv.2", JSON_VALUE_REDACTIONS)}),
+                kv -> concat(kv.1, '=', if(
+                  kv.1 = ${chPattern(JSON_TYPE_KEY)},
+                  ${chRedactChain("kv.2", JSON_TYPE_VALUE_REDACTIONS)},
+                  ${chRedactChain("kv.2", JSON_VALUE_REDACTIONS)}
+                )),
                 JSONExtractKeysAndValuesRaw(_msgText)
               )
             ),

@@ -226,6 +226,16 @@ export const JSON_VALUE_REDACTIONS: Redactions = [
 	["[0-9a-fA-F-]{6,}|[0-9]+", "#"],
 ]
 
+/**
+ * A problem document's `type` URI names the failure (RFC 9457), and its `title` may be
+ * generic, so the path in it stays: only the origin, emails and numbers go.
+ */
+export const JSON_TYPE_KEY = "type"
+export const JSON_TYPE_VALUE_REDACTIONS: Redactions = [
+	...MSG_TEXT_REDACTIONS.slice(0, 2),
+	["[0-9a-fA-F-]{6,}|[0-9]+", "#"],
+]
+
 /** A path segment, for the passes that read one: everything up to the next separator. */
 const PATH_SEGMENT = `[^/? \\t\\r\\n'"\`:,)]`
 /**
@@ -518,7 +528,10 @@ function jsonObjectEntries(s: string): ReadonlyArray<JsonEntry> | undefined {
  */
 function jsonSignature(entries: ReadonlyArray<JsonEntry>): string {
 	return entries
-		.map(({ key, raw }) => `${key}=${applyRedactions(raw, JSON_VALUE_REDACTIONS)}`)
+		.map(
+			({ key, raw }) =>
+				`${key}=${applyRedactions(raw, key === JSON_TYPE_KEY ? JSON_TYPE_VALUE_REDACTIONS : JSON_VALUE_REDACTIONS)}`,
+		)
 		.sort(compareCodePoints)
 		.join("|")
 }

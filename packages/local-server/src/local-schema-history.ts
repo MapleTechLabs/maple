@@ -562,9 +562,9 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 44,
-		fingerprint: "e975a36797936eda",
-		digest: "e975a36797936eda99f00196901542e129d60397d74d4f7d640fa08b21a6dad7",
-		manifestDigest: "871411774a57c4ce8d3085dfab31117cf2f1134ee477573ec98c9d880c9fc1ea",
+		fingerprint: "862939a5e82bdf10",
+		digest: "862939a5e82bdf109e2bff7c6f82a1b5f4d1cc60a4760c305ad53a9b6cdb8b62",
+		manifestDigest: "847feee7453500401e3f4c2e1ebbdbaa53f1be04a2f4380a248b63c96ad277ad",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

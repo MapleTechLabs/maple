@@ -8,6 +8,7 @@ import {
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	INTERNAL_FRAME_PATTERN,
+	JSON_TYPE_VALUE_REDACTIONS,
 	JSON_VALUE_REDACTIONS,
 	MAX_FINGERPRINT_FRAMES,
 	MAX_NORMALIZED_FRAMES,
@@ -547,14 +548,17 @@ describe("error fingerprint normalization", () => {
 				sig(
 					'{"type":"https://e/rate-limit","title":"Rate limited","detail":"retry in 5s","status":429}',
 				),
-			).toBe('detail="retry in #s"|status=#|title="Rate limited"|type="#"')
+			).toBe('detail="retry in #s"|status=#|title="Rate limited"|type="/rate-limit"')
 		})
 
-		it("separates problem types by title once their type URI folds as a path", () => {
-			const problem = (type: string, title: string) => sig(JSON.stringify({ type, title }))
+		it("keeps a problem type's path, which names the failure when the title is generic", () => {
+			const problem = (type: string) => sig(JSON.stringify({ type, title: "Request failed" }))
 
-			expect(problem("https://e/rate-limit", "Rate limited")).not.toBe(
-				problem("https://e/forbidden", "Forbidden"),
+			expect(problem("https://errors.example/problems/card-declined")).not.toBe(
+				problem("https://errors.example/problems/limit-exceeded"),
+			)
+			expect(problem("https://a.example/problems/card-declined")).toBe(
+				problem("https://b.example/problems/card-declined"),
 			)
 		})
 
@@ -639,6 +643,7 @@ describe("SQL parity", () => {
 		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _topFrames"))
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
+			...JSON_TYPE_VALUE_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
 			...ERROR_MSG_REDACTIONS,
 		]) {
@@ -682,6 +687,7 @@ describe("SQL parity", () => {
 		// `$<name>` or a literal backslash would mean different things on each side.
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
+			...JSON_TYPE_VALUE_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
 			...ERROR_MSG_REDACTIONS,
 		]) {
