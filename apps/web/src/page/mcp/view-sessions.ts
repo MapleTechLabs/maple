@@ -70,7 +70,7 @@ const userCell = <M>(h: HtmlBuilder<M>, user: string | null, userName: string | 
 		[
 			h.Class(
 				cn(
-					"hidden w-36 shrink-0 truncate font-mono text-xs @min-[640px]/panel:block",
+					"hidden w-36 shrink-0 truncate font-mono text-xs @min-[800px]/panel:block",
 					user === null ? "text-foreground-subtle" : "text-foreground",
 				),
 			),
@@ -244,7 +244,7 @@ export const sessionsBody = <M>(
 							th(h, {
 								label: "User",
 								width: "w-36 shrink-0",
-								hidden: "hidden @min-[640px]/panel:flex",
+								hidden: "hidden @min-[800px]/panel:flex",
 							}),
 							th(h, { label: "Client", width: "w-44 shrink-0" }),
 							th(h, { label: "Calls", width: "w-14 shrink-0", align: "right" }),
