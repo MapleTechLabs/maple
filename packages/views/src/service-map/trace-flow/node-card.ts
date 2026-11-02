@@ -6,7 +6,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../ui/icon"
+import { flowIcon } from "./flow-icon"
 import { flowHandle } from "../xyflow/view"
 import { pickAttr } from "./cloud-platforms"
 import type { AggregatedDuration, FlowNodeData } from "./flow-graph"
@@ -73,7 +73,7 @@ const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size
 					]),
 				),
 			)
-		: icon(h, "DatabaseIcon", { size, className: "shrink-0 text-current" })
+		: flowIcon(h, "DatabaseIcon", { size, className: "shrink-0 text-current" })
 
 const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string => {
 	const { httpInfo, cacheInfo, category } = desc
@@ -251,7 +251,7 @@ export const flowSpanNode = <M>(
 							[
 								category.id === "cache" && cacheInfo?.system
 									? cacheSystemIcon(h, cacheInfo.system, 14)
-									: icon(h, category.icon, { size: 14 }),
+									: flowIcon(h, category.icon, { size: 14 }),
 							],
 						),
 						vstack(h, { gap: "0.5", shrink: true, grow: true }, [

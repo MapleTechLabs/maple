@@ -21,7 +21,8 @@ import {
 	subItemId,
 	subPopupId,
 } from "./context-menu"
-import { icon } from "./icon"
+import { ChevronRightIcon } from "./control-icons"
+import { iconNode } from "./icon"
 import { popupId, portalId } from "./overlay/popup-state"
 import { focusGuard, isMounted, stateAttributes } from "./overlay/transition"
 
@@ -128,7 +129,7 @@ const subTrigger = (h: H, model: Model, entry: SubmenuEntry, index: number): Htm
 		],
 		[
 			...entry.content,
-			icon(h, "ChevronRightIcon", {
+			iconNode(h, ChevronRightIcon, "ChevronRightIcon", {
 				className: contextMenuSubTriggerIconStyles,
 				attributes: [h.Attribute("stroke-width", "2")],
 			}),

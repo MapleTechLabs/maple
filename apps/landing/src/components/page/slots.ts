@@ -1,7 +1,7 @@
 /**
  * Slug → component maps.
  *
- * These live outside `lib/features.ts` on purpose: `NavBar.tsx` is a
+ * These live outside `lib/features.ts` on purpose: `NavBar.ts` is a
  * `client:load` island that reads the registry, so anything the registry
  * imports ships to the browser. The registry stores string ids; this module —
  * imported only by the two Astro templates — resolves them to components.

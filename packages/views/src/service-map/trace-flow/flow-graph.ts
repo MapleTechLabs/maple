@@ -332,7 +332,7 @@ export function getLayoutedElements(
 }
 
 /** Finds a span by regular or combined flow-node ID. */
-export function findSpanById(rootSpans: SpanNode[], spanId: string): SpanNode | undefined {
+export function findSpanById(rootSpans: ReadonlyArray<SpanNode>, spanId: string): SpanNode | undefined {
 	let searchId = spanId
 	if (spanId.startsWith("combined-")) {
 		const parts = spanId.slice("combined-".length).split("-")

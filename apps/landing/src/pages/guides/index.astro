@@ -7,7 +7,7 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import type { BlogPost } from "../../lib/blog";
-import { FileIcon } from "@maple/ui/components/icons/file";
+import Icon from "../../components/Icon.astro";
 import { allGuides, guideCategories } from "../../lib/guides";
 
 const pageTitle = "Guides to APM, Observability & OpenTelemetry | Maple";
@@ -54,7 +54,7 @@ const itemListJsonLd = {
             class="group mt-8 flex items-center gap-4 rounded-xl border border-border p-4 transition-colors hover:border-primary/40 hover:bg-bg-elevated md:p-5"
         >
             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary" aria-hidden="true">
-                <FileIcon className="h-4 w-4" />
+                <Icon name="FileIcon" class="h-4 w-4" />
             </span>
             <span class="min-w-0 flex-1">
                 <span class="block text-[14px] font-medium text-fg">Looking for Maple's documentation?</span>
@@ -66,11 +66,11 @@ const itemListJsonLd = {
         <section class="mt-10" aria-labelledby="start-here">
             <h2 id="start-here" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                {startHere.map(({ icon: Icon, ...guide }) => (
+                {startHere.map((guide) => (
                     <a href={guide.href} class="cell group flex flex-col p-5 transition-colors">
                         <span class="flex items-center justify-between">
                             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary transition-colors group-hover:border-primary/40" aria-hidden="true">
-                                <Icon className="h-4 w-4" />
+                                <Icon name={guide.icon} class="h-4 w-4" />
                             </span>
                             <svg
                                 class="h-3.5 w-3.5 -translate-x-1 text-fg-muted opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 motion-reduce:transition-none"
@@ -94,10 +94,10 @@ const itemListJsonLd = {
         <section class="mt-12" aria-labelledby="all-guides">
             <h2 id="all-guides" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">All guides</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                {guideCategories.map(({ icon: Icon, ...category }) => (
+                {guideCategories.map((category) => (
                     <div id={category.id} class="cell scroll-mt-24 p-5">
                         <h3 class="flex items-center gap-2 text-[14px] font-medium text-fg">
-                            <Icon className="h-3.5 w-3.5 shrink-0 text-primary/80" />
+                            <Icon name={category.icon} class="h-3.5 w-3.5 shrink-0 text-primary/80" />
                             {category.title}
                         </h3>
                         <ul class="-mx-2 mt-3 space-y-px">

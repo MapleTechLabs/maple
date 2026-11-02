@@ -65,13 +65,17 @@ export const FLOW_FIT: Canvas.FitRequest = {
 
 export const Model = Schema.Struct({
 	canvas: Canvas.Model,
+	/** How the flow frames itself on mount and on resize. */
+	fit: Canvas.FitRequest,
 	selectedSpanId: Schema.Option(Schema.String),
 	hoveredEdgeId: Schema.Option(Schema.String),
 })
 export type Model = typeof Model.Type
 
-export const init = (): Model => ({
-	canvas: Canvas.init({ minZoom: 0.1, maxZoom: 2, fitOnInit: Option.some(FLOW_FIT) }),
+/** `fit` defaults to a legible zoom; {@link FIT_ALL} frames every node however small. */
+export const init = (fit: Canvas.FitRequest = FLOW_FIT): Model => ({
+	canvas: Canvas.init({ minZoom: 0.1, maxZoom: 2, fitOnInit: Option.some(fit) }),
+	fit,
 	selectedSpanId: Option.none(),
 	hoveredEdgeId: Option.none(),
 })
@@ -94,7 +98,7 @@ export const isNodeSelected = (node: FlowNode, selectedSpanId: Option.Option<str
 	})
 
 /** The Fit view control frames every node, with no legibility floor. */
-const FIT_ALL: Canvas.FitRequest = { padding: 0.2, minZoom: 0.1, maxZoom: 1.5 }
+export const FIT_ALL: Canvas.FitRequest = { padding: 0.2, minZoom: 0.1, maxZoom: 1.5 }
 
 /** The first real root: the node no edge points at, skipping missing-span placeholders. */
 const rootNodeId = (graph: FlowGraph): string | undefined => {
@@ -102,7 +106,7 @@ const rootNodeId = (graph: FlowGraph): string | undefined => {
 	return graph.nodes.find((node) => !targets.has(node.id) && node.data.span.isMissing !== true)?.id
 }
 
-const refit = (model: Model, graph: FlowGraph, request: Canvas.FitRequest = FLOW_FIT): Model => {
+const refit = (model: Model, graph: FlowGraph, request: Canvas.FitRequest = model.fit): Model => {
 	const root = rootNodeId(graph)
 	return modifyFields(model, {
 		canvas: () =>
