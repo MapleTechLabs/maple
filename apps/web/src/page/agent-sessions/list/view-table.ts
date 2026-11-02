@@ -280,7 +280,7 @@ const inlineModel = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<
 				h.span(
 					[
 						h.Class(
-							"ml-auto min-w-0 max-w-[55%] self-center text-muted-foreground @min-[1110px]/page:hidden",
+							"ml-auto min-w-0 max-w-[55%] shrink-[0.25] self-center text-muted-foreground @min-[1110px]/page:hidden",
 						),
 					],
 					[
