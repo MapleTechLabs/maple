@@ -2,7 +2,7 @@
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { Effect, Layer, Redacted } from "effect"
-import type { ScopedPlanStatusSession } from "alchemy/Report"
+import { noopSession } from "alchemy/Report"
 import { AlertDestination, AlertDestinationProvider } from "../src/AlertDestination"
 import { ApiKey, ApiKeyProvider } from "../src/ApiKey"
 import { Dashboard, DashboardProvider } from "../src/Dashboard"
@@ -44,11 +44,7 @@ const makeStub = (
 	}
 }
 
-const session: ScopedPlanStatusSession = {
-	emit: () => Effect.void,
-	done: () => Effect.void,
-	note: () => Effect.void,
-}
+const session = noopSession
 
 const wireDashboard = {
 	id: "dash_abc",

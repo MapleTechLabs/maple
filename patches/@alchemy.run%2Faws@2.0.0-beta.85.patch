@@ -1,7 +1,8 @@
 diff --git a/lib/CloudTrail/Trail.js b/lib/CloudTrail/Trail.js
+index bacf347..eeec2b3 100644
 --- a/lib/CloudTrail/Trail.js
 +++ b/lib/CloudTrail/Trail.js
-@@ -108,6 +108,8 @@
+@@ -108,6 +108,8 @@ export const Trail = Resource("AWS.CloudTrail.Trail");
  const retryThroughBucketPropagation = (self) => Effect.retry(self, {
      while: (e) => e._tag === "InsufficientS3BucketPolicyException" ||
          e._tag === "S3BucketDoesNotExistException" ||
@@ -11,9 +12,10 @@ diff --git a/lib/CloudTrail/Trail.js b/lib/CloudTrail/Trail.js
      schedule: Schedule.max([Schedule.fixed("3 seconds"), Schedule.recurs(10)]),
  });
 diff --git a/lib/Config/ConfigurationRecorder.js b/lib/Config/ConfigurationRecorder.js
+index 2a7fa33..a07dbe7 100644
 --- a/lib/Config/ConfigurationRecorder.js
 +++ b/lib/Config/ConfigurationRecorder.js
-@@ -66,6 +66,11 @@
+@@ -66,6 +66,11 @@ const retryWhileInvalidRole = (self) => Effect.retry(self, {
      while: (e) => e._tag === "InvalidRoleException",
      schedule: Schedule.max([Schedule.fixed("2 seconds"), Schedule.recurs(20)]),
  });
@@ -25,7 +27,7 @@ diff --git a/lib/Config/ConfigurationRecorder.js b/lib/Config/ConfigurationRecor
  export const ConfigurationRecorderProvider = () => Provider.effect(ConfigurationRecorder, Effect.gen(function* () {
      const createRecorderName = Effect.fn(function* (id, props) {
          return props.name ?? (yield* createPhysicalName({ id, maxLength: 256 }));
-@@ -185,9 +190,9 @@
+@@ -185,9 +190,9 @@ export const ConfigurationRecorderProvider = () => Provider.effect(Configuration
                  })
                      .pipe(Effect.map((r) => (r.ConfigurationRecordersStatus ?? []).at(0)?.recording ?? false), Effect.catchTag("NoSuchConfigurationRecorderException", () => Effect.succeed(false)));
                  if (news.recording && !status) {
@@ -38,9 +40,10 @@ diff --git a/lib/Config/ConfigurationRecorder.js b/lib/Config/ConfigurationRecor
                  else if (!news.recording && status) {
                      yield* config.stopConfigurationRecorder({
 diff --git a/src/CloudTrail/Trail.ts b/src/CloudTrail/Trail.ts
+index ca470e6..95ea316 100644
 --- a/src/CloudTrail/Trail.ts
 +++ b/src/CloudTrail/Trail.ts
-@@ -306,6 +306,8 @@
+@@ -306,6 +306,8 @@ const retryThroughBucketPropagation = <A, E extends { _tag: string }, R>(
      while: (e) =>
        e._tag === "InsufficientS3BucketPolicyException" ||
        e._tag === "S3BucketDoesNotExistException" ||
@@ -50,9 +53,10 @@ diff --git a/src/CloudTrail/Trail.ts b/src/CloudTrail/Trail.ts
      schedule: Schedule.max([Schedule.fixed("3 seconds"), Schedule.recurs(10)]),
    });
 diff --git a/src/Config/ConfigurationRecorder.ts b/src/Config/ConfigurationRecorder.ts
+index 31685d3..e84efd7 100644
 --- a/src/Config/ConfigurationRecorder.ts
 +++ b/src/Config/ConfigurationRecorder.ts
-@@ -191,6 +191,15 @@
+@@ -191,6 +191,15 @@ const retryWhileInvalidRole = <A, E extends { readonly _tag: string }, R>(
      schedule: Schedule.max([Schedule.fixed("2 seconds"), Schedule.recurs(20)]),
    });
  
@@ -68,7 +72,7 @@ diff --git a/src/Config/ConfigurationRecorder.ts b/src/Config/ConfigurationRecor
  export const ConfigurationRecorderProvider = () =>
    Provider.effect(
      ConfigurationRecorder,
-@@ -359,9 +368,11 @@
+@@ -359,9 +368,11 @@ export const ConfigurationRecorderProvider = () =>
                  ),
                );
              if (news.recording && !status) {
@@ -84,9 +88,10 @@ diff --git a/src/Config/ConfigurationRecorder.ts b/src/Config/ConfigurationRecor
                yield* config.stopConfigurationRecorder({
                  ConfigurationRecorderName: name,
 diff --git a/lib/ECS/Service.d.ts b/lib/ECS/Service.d.ts
+index e9fe430..0fc5a06 100644
 --- a/lib/ECS/Service.d.ts
 +++ b/lib/ECS/Service.d.ts
-@@ -87,6 +87,13 @@ export interface ServiceLoadBalancerRule {
+@@ -88,6 +88,13 @@ export interface ServiceLoadBalancerRule {
       * `priority` to resolve it (the engine never probes for free slots).
       */
      priority?: number;
@@ -100,7 +105,7 @@ diff --git a/lib/ECS/Service.d.ts b/lib/ECS/Service.d.ts
  }
  /** Object form of the {@link ServiceLoadBalancerConfig.domain} prop. */
  export interface ServiceDomainConfig {
-@@ -180,6 +187,8 @@ export interface ServiceManagedIngress {
+@@ -193,6 +200,8 @@ export interface ServiceManagedIngress {
      securityGroupId?: string;
      /** Custom domain pointed at the owned load balancer (URL derivation prefers it). */
      domain?: string;
@@ -110,9 +115,10 @@ diff --git a/lib/ECS/Service.d.ts b/lib/ECS/Service.d.ts
      targets: {
          /** ARN of the composed target group. */
 diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
+index aa53c6e..58650e1 100644
 --- a/lib/ECS/Service.js
 +++ b/lib/ECS/Service.js
-@@ -792,8 +792,8 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -845,8 +845,8 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
      const byoTask = taskRefOf(props);
      const defaultContainerPort = byoTask !== undefined ? byoTask.port : (props.port ?? 3000);
      const tgSpecs = new Map();
@@ -123,7 +129,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
          if (!tgSpecs.has(key)) {
              tgSpecs.set(key, {
                  key,
-@@ -801,6 +801,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -854,6 +854,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
                      "TargetGroup",
                      forward ? `${forward.port}-${forward.protocol}` : undefined,
                      container,
@@ -131,7 +137,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
                  ]
                      .filter((part) => part !== undefined)
                      .join("-"),
-@@ -813,6 +814,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -866,6 +867,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
                  container,
                  forwardPort: forward?.port,
                  forwardProtocol: forward?.protocol,
@@ -139,7 +145,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
              });
          }
          return key;
-@@ -845,7 +847,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -898,7 +900,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
                  type: "forward",
                  tgKey: ensureTgSpec(rule.forward !== undefined
                      ? yield* parseListenSpec(id, rule.forward, "forward")
@@ -148,7 +154,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
              };
          normalized.push({
              index,
-@@ -953,16 +955,20 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -1006,16 +1008,20 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
          // A path/successCodes override on a network target group opts its
          // health check into HTTP; otherwise NLB targets get TCP checks.
          const wantsHttpCheck = health?.path !== undefined || health?.successCodes !== undefined;
@@ -170,7 +176,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
              healthCheckProtocol: isNetworkTg && wantsHttpCheck ? "HTTP" : undefined,
              // Fast-converge defaults: targets go healthy in ~20s instead of
              // the AWS default ~150s, and drain in 30s instead of 300s.
-@@ -970,7 +976,11 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -1023,7 +1029,11 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
              healthCheckTimeout: health?.timeout,
              healthyThresholdCount: health?.healthyThreshold ?? 2,
              unhealthyThresholdCount: health?.unhealthyThreshold ?? 2,
@@ -183,7 +189,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
              attributes: { "deregistration_delay.timeout_seconds": "30" },
              tags: props.tags,
          }));
-@@ -1079,6 +1089,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -1133,6 +1143,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
      // ── listener rules ──────────────────────────────────────────────────
      const chain = yield* Namespace.CurrentChain;
      const namespacePrefix = [...chain].reverse().join("/");
@@ -191,7 +197,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
      for (const r of normalized) {
          if (defaultsTaken.has(r)) {
              continue;
-@@ -1093,13 +1104,14 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -1147,13 +1158,14 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
                  ? r.listen
                  : config.listener;
          const priority = r.rule.priority ?? deriveRulePriority(`${namespacePrefix}/${ruleId}`);
@@ -207,7 +213,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
      }
      // ── primary listener (attrs + URL derivation) ───────────────────────
      const primary = owned
-@@ -1130,6 +1142,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+@@ -1184,6 +1196,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
          listenerProtocol: primary.protocol,
          securityGroupId: managedSg?.groupId,
          domain: domain?.name,
@@ -216,6 +222,7 @@ diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
              targetGroupArn: targetGroups.get(spec.key).targetGroupArn,
              containerPort: spec.forwardPort,
 diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
+index bcd0d20..07480ac 100644
 --- a/src/ECS/Service.ts
 +++ b/src/ECS/Service.ts
 @@ -151,6 +151,13 @@ export interface ServiceLoadBalancerRule {
@@ -232,7 +239,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
  }
  
  /** Object form of the {@link ServiceLoadBalancerConfig.domain} prop. */
-@@ -248,6 +255,8 @@ export interface ServiceManagedIngress {
+@@ -260,6 +267,8 @@ export interface ServiceManagedIngress {
    securityGroupId?: string;
    /** Custom domain pointed at the owned load balancer (URL derivation prefers it). */
    domain?: string;
@@ -241,7 +248,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
    /** Target groups to wire into the ECS service definition. */
    targets: {
      /** ARN of the composed target group. */
-@@ -1759,13 +1768,15 @@ const composeManagedIngress = (
+@@ -1859,13 +1868,15 @@ const composeManagedIngress = (
        container: string | undefined;
        forwardPort: number | undefined;
        forwardProtocol: ServiceListenerProtocol | undefined;
@@ -258,7 +265,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
        if (!tgSpecs.has(key)) {
          tgSpecs.set(key, {
            key,
-@@ -1773,6 +1784,7 @@ const composeManagedIngress = (
+@@ -1873,6 +1884,7 @@ const composeManagedIngress = (
              "TargetGroup",
              forward ? `${forward.port}-${forward.protocol}` : undefined,
              container,
@@ -266,7 +273,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
            ]
              .filter((part): part is string => part !== undefined)
              .join("-"),
-@@ -1785,6 +1797,7 @@ const composeManagedIngress = (
+@@ -1885,6 +1897,7 @@ const composeManagedIngress = (
            container,
            forwardPort: forward?.port,
            forwardProtocol: forward?.protocol,
@@ -274,7 +281,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
          });
        }
        return key;
-@@ -1834,6 +1847,7 @@ const composeManagedIngress = (
+@@ -1934,6 +1947,7 @@ const composeManagedIngress = (
                    ? yield* parseListenSpec(id, rule.forward, "forward")
                    : undefined,
                  rule.container,
@@ -282,7 +289,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
                ),
              };
        normalized.push({
-@@ -1960,6 +1974,7 @@ const composeManagedIngress = (
+@@ -2060,6 +2074,7 @@ const composeManagedIngress = (
        // A path/successCodes override on a network target group opts its
        // health check into HTTP; otherwise NLB targets get TCP checks.
        const wantsHttpCheck = health?.path !== undefined || health?.successCodes !== undefined;
@@ -290,7 +297,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
        targetGroups.set(
          spec.key,
          yield* TargetGroup(spec.logicalId, {
-@@ -1967,11 +1982,14 @@ const composeManagedIngress = (
+@@ -2067,11 +2082,14 @@ const composeManagedIngress = (
            port: spec.port as number,
            protocol: spec.protocol,
            targetType: usesAwsvpc(props) ? "ip" : "instance",
@@ -306,7 +313,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
            healthCheckProtocol: isNetworkTg && wantsHttpCheck ? "HTTP" : undefined,
            // Fast-converge defaults: targets go healthy in ~20s instead of
            // the AWS default ~150s, and drain in 30s instead of 300s.
-@@ -1979,8 +1997,11 @@ const composeManagedIngress = (
+@@ -2079,8 +2097,11 @@ const composeManagedIngress = (
            healthCheckTimeout: health?.timeout,
            healthyThresholdCount: health?.healthyThreshold ?? 2,
            unhealthyThresholdCount: health?.unhealthyThreshold ?? 2,
@@ -320,7 +327,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
            attributes: { "deregistration_delay.timeout_seconds": "30" },
            tags: props.tags,
          }),
-@@ -2107,6 +2128,7 @@ const composeManagedIngress = (
+@@ -2211,6 +2232,7 @@ const composeManagedIngress = (
      // ── listener rules ──────────────────────────────────────────────────
      const chain = yield* Namespace.CurrentChain;
      const namespacePrefix = [...chain].reverse().join("/");
@@ -328,7 +335,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
      for (const r of normalized) {
        if (defaultsTaken.has(r)) {
          continue;
-@@ -2122,13 +2144,14 @@ const composeManagedIngress = (
+@@ -2226,13 +2248,14 @@ const composeManagedIngress = (
            ? r.listen
            : config.listener!;
        const priority = r.rule.priority ?? deriveRulePriority(`${namespacePrefix}/${ruleId}`);
@@ -344,7 +351,7 @@ diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
      }
  
      // ── primary listener (attrs + URL derivation) ───────────────────────
-@@ -2163,6 +2186,7 @@ const composeManagedIngress = (
+@@ -2267,6 +2290,7 @@ const composeManagedIngress = (
        listenerProtocol: primary.protocol as string,
        securityGroupId: managedSg?.groupId as unknown as string | undefined,
        domain: domain?.name,

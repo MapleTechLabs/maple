@@ -56,6 +56,7 @@
 		"@maple-dev/effect-sdk": "workspace:*"
 	},
 	"devDependencies": {
+		"@alchemy.run/test": "catalog:alchemy",
 		"@effect/platform-bun": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@maple/domain": "workspace:*",

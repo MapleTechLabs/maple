@@ -28,8 +28,8 @@
 	"dependencies": {
 		"@alchemy.run/aws": "catalog:alchemy",
 		"@alchemy.run/cloudflare": "catalog:alchemy",
-		"@distilled.cloud/aws": "1.0.0-rc.17",
-		"@distilled.cloud/cloudflare": "1.0.0-rc.17",
+		"@distilled.cloud/aws": "1.0.0-rc.18",
+		"@distilled.cloud/cloudflare": "1.0.0-rc.18",
 		"@maple-dev/alchemy": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/alchemy-portless": "workspace:*",

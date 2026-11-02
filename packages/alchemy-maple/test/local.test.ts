@@ -3,7 +3,7 @@ import { AlchemyContext } from "alchemy/AlchemyContext"
 import { ArtifactStore, createArtifactStore } from "alchemy/Artifacts"
 import { Stack } from "alchemy/Stack"
 import { Provider } from "alchemy/Provider"
-import * as Core from "alchemy/Test/Core"
+import * as Core from "@alchemy.run/test/Core"
 import * as State from "alchemy/State"
 import { ConfigProvider, Effect } from "effect"
 import { resolve } from "node:path"
@@ -17,7 +17,7 @@ describe("Maple.Local configuration", () => {
 		const config = localConfig({}, identity)
 		expect(config).toEqual(localConfig({}, identity))
 		expect(config.port).toBeUndefined()
-	expect(localConfig({ port: 5000 }, identity).port).toBe(5000)
+		expect(localConfig({ port: 5000 }, identity).port).toBe(5000)
 		expect(config.onDirtyStore).toBe("fail")
 		expect(config.dataDir.startsWith("/project/.alchemy/maple-local/")).toBe(true)
 		for (const changed of [
