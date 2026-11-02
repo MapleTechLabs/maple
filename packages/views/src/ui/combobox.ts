@@ -153,7 +153,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			const index = model.selected[0] === undefined ? -1 : items.indexOf(model.selected[0])
 			return transition.open({ ...model, inputValue: "", highlighted: index === -1 ? null : index })
 		},
-		HighlightedItem: ({ index }) => ({ model: { ...model, highlighted: index } }),
+		HighlightedItem: ({ index }) =>
+			model.highlighted === index ? { model } : { model: { ...model, highlighted: index } },
 		PressedInputKey: ({ key, items, isUnfiltered }) => {
 			const values = isUnfiltered === true ? items : visibleItems(model, items)
 			if (key === "Escape") return closed(model)
@@ -221,7 +222,10 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 			focus:
 				returnFocusId === undefined
 					? Option.none()
-					: Option.some({ returnFocusId: Option.some(returnFocusId), initialFocus: "first-tabbable" }),
+					: Option.some({
+							returnFocusId: Option.some(returnFocusId),
+							initialFocus: "first-tabbable",
+						}),
 		}).pipe(
 			Stream.map((event) => {
 				switch (event._tag) {

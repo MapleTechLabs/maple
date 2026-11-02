@@ -1,6 +1,7 @@
 // BOUNDARY: widget endpoints answer untyped JSON; this module narrows it into rows and values.
 import { QueryEngineValidationError } from "@maple/domain/http"
 import {
+	computeBucketSecondsForWidthRange,
 	formatRangeSeconds,
 	formatWarehouseDateTime,
 	hasUnresolvedVariableRefs,
@@ -62,6 +63,21 @@ export interface PlanInput {
 	readonly isNarrowed?: boolean
 }
 
+/**
+ * The width reaches a timeseries query only through the bucket it picks, so the key holds the
+ * bucket: a resize that keeps the bucket keeps the key, and refetches nothing.
+ */
+const keyParamsOf = (params: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
+	const { maxDataPoints, ...rest } = params
+	if (typeof maxDataPoints !== "number") return params
+	const startTime = typeof params.startTime === "string" ? params.startTime : undefined
+	const endTime = typeof params.endTime === "string" ? params.endTime : undefined
+	return {
+		...rest,
+		autoBucketSeconds: computeBucketSecondsForWidthRange(startTime, endTime, { maxDataPoints }),
+	}
+}
+
 /** `narrowRangeLabel`: the list cap as the CTA reads it. */
 export const NARROW_RANGE_LABEL = `Show last ${formatRangeSeconds(MAX_LIST_RANGE_SECONDS)}`
 
@@ -99,8 +115,12 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 						),
 						endTime: planned.window.endTime,
 					},
-					...(input.maxDataPoints === undefined ? undefined : { maxDataPoints: input.maxDataPoints }),
-					...(input.variables === undefined ? undefined : { variableValues: input.variables.values }),
+					...(input.maxDataPoints === undefined
+						? undefined
+						: { maxDataPoints: input.maxDataPoints }),
+					...(input.variables === undefined
+						? undefined
+						: { variableValues: input.variables.values }),
 				})
 			: planned
 	if (plan.kind === "disabled") {
@@ -124,7 +144,10 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 	return {
 		_tag: "Request",
 		request: {
-			key: requestKey(input.orgId, "widgetData", { endpoint: plan.endpoint, params }),
+			key: requestKey(input.orgId, "widgetData", {
+				endpoint: plan.endpoint,
+				params: keyParamsOf(params),
+			}),
 			shape: requestKey(input.orgId, "widgetShape", {
 				endpoint: plan.endpoint,
 				params:
