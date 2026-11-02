@@ -1,7 +1,7 @@
 ---
-import { buttonVariants } from "@maple/ui/components/ui/button";
+import { buttonVariants } from "@maple/ui/styles/ui/button";
 import * as m from "../paraglide/messages.js";
-import { HeroCta } from "./HeroCta";
+import HeroCta from "./HeroCta.astro";
 
 interface Props {
     label: string;
@@ -42,7 +42,7 @@ const { label, title, subtitle } = Astro.props;
 
         <!-- Dual CTAs -->
         <div class="mt-8 flex flex-wrap items-center gap-3">
-            <HeroCta client:load className={buttonVariants({ size: "default" })} />
+            <HeroCta class={buttonVariants({ size: "default" })} />
             <a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" class={buttonVariants({ variant: "outline", size: "default" })}>
                 {m.cta_github()}
             </a>

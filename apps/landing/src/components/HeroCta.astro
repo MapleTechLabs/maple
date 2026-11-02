@@ -1,0 +1,49 @@
+---
+import * as m from "../paraglide/messages.js";
+import { APP_SIGN_UP_URL, APP_URL } from "../lib/app-urls";
+
+interface Props {
+	class?: string;
+}
+
+const { class: className } = Astro.props;
+// "Start free trial" until the NavBar island broadcasts the signed-in signal, then "Dashboard".
+// `data-track-label` follows the label so conversions and returning users stay separable.
+const signedOutLabel = m.cta_get_started();
+---
+
+<a
+	href={APP_SIGN_UP_URL}
+	data-hero-cta
+	data-track="cta_click"
+	data-track-location="hero"
+	data-track-label={signedOutLabel}
+	data-track-destination={APP_SIGN_UP_URL}
+	data-signed-out-href={APP_SIGN_UP_URL}
+	data-signed-out-label={signedOutLabel}
+	data-signed-in-href={APP_URL}
+	data-signed-in-label={m.nav_dashboard()}
+	class={className}
+>{signedOutLabel}</a>
+
+<script>
+	import { SIGNED_IN_EVENT } from "./auth-signal";
+
+	const apply = (signedIn: boolean) => {
+		document.querySelectorAll<HTMLAnchorElement>("a[data-hero-cta]").forEach((link) => {
+			const href = signedIn ? link.dataset.signedInHref : link.dataset.signedOutHref;
+			const label = signedIn ? link.dataset.signedInLabel : link.dataset.signedOutLabel;
+			if (href === undefined || label === undefined) return;
+			link.href = href;
+			link.textContent = label;
+			link.dataset.trackLabel = label;
+			link.dataset.trackDestination = href;
+		});
+	};
+
+	// The NavBar island may have broadcast before this module ran; the window flag covers that.
+	apply(window.__mapleSignedIn === true);
+	document.addEventListener(SIGNED_IN_EVENT, (event) =>
+		apply(event instanceof CustomEvent && event.detail === true),
+	);
+</script>

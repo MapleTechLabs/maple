@@ -13,12 +13,14 @@ import {
 	navigationMenuTriggerStyle,
 	navigationMenuViewportStyles,
 } from "@maple/ui/styles/ui/navigation-menu"
-import { Duration, Effect, Number, Option, Schema, Stream } from "effect"
-import { Command, Mount, Submodel, type Update } from "foldkit"
+import { Array, Duration, Effect, Number, Option, Queue, Schema, Stream } from "effect"
+import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { icon } from "./icon"
+import { ChevronDownIcon } from "./control-icons"
+import { iconNode } from "./icon"
 import { anchoredPopup } from "./overlay/anchored"
+import { tabbables } from "./overlay/portal"
 import { initPopup, makeTransition, PopupState, popupId, portalId } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
@@ -44,6 +46,8 @@ export const HOVER_DELAY = Duration.millis(50)
 export const triggerIdOf = (id: string, value: string): string => `${id}-trigger-${value}`
 export const viewportId = (id: string): string => `${id}-viewport`
 export const rootId = (id: string): string => `${id}-root`
+const guardId = (id: string, place: "before" | "after" | "popup-start" | "popup-end"): string =>
+	`${id}-guard-${place}`
 
 /** `defaultValue`: the item open on mount. */
 export const init = (id: string, options: Readonly<{ value?: string }> = {}): Model => ({
@@ -63,7 +67,10 @@ export const Message = defineMessageUnion({
 	ElapsedHoverDelay: { generation: Schema.Number, value: Schema.NullOr(Schema.String) },
 	PressedEscape: {},
 	PressedOutside: {},
+	/** Tab past the popup's last link: focus moves on to what follows the trigger. */
+	TabbedOut: {},
 	CompletedMountNavigationMenu: {},
+	CompletedFocusTrigger: {},
 	ChangedPlacement: { side: Side, align: Align },
 	GotAnimationMessage: { message: Animation.Message },
 })
@@ -76,6 +83,14 @@ export const WaitHoverDelay = Command.define("WaitHoverDelay", {
 	args: { generation: Schema.Number, value: Schema.NullOr(Schema.String) },
 	messages: [Message.ElapsedHoverDelay],
 	execute: (args) => Effect.sleep(HOVER_DELAY).pipe(Effect.as(Message.ElapsedHoverDelay(args))),
+})
+
+/** Escape hands focus back to the trigger, as Base UI's menu does. */
+export const FocusTrigger = Command.define("FocusNavigationMenuTrigger", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocusTrigger],
+	execute: ({ id }) =>
+		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusTrigger())),
 })
 
 const transition = makeTransition<Model, Message>(
@@ -118,9 +133,19 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				: value === null
 					? close(model)
 					: show(model, value),
-		PressedEscape: () => close(model),
+		PressedEscape: () => {
+			const closed = close(model)
+			return model.value === null
+				? closed
+				: {
+						...closed,
+						commands: [...(closed.commands ?? []), FocusTrigger({ id: triggerIdOf(model.id, model.value) })],
+					}
+		},
 		PressedOutside: () => close(model),
+		TabbedOut: () => close(model),
 		CompletedMountNavigationMenu: () => ({ model }),
+		CompletedFocusTrigger: () => ({ model }),
 		ChangedPlacement: ({ side, align }) => ({ model: { ...model, side, align } }),
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
@@ -128,17 +153,78 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 // MOUNT
 
-/** Base UI sizes the positioner to the popup's fractional box (`--positioner-width/height`). */
+/**
+ * Base UI sizes the positioner to the popup's fractional box (`--positioner-width/height`). The
+ * popup is measured at its content's own size, untransformed: a shrink-to-fit positioner near the
+ * viewport edge, or a popup still scaled by its enter transition, would lock in a smaller box.
+ */
 const sizePositioner = (positioner: HTMLElement, popup: HTMLElement): void => {
-	const box = popup.getBoundingClientRect()
-	positioner.style.setProperty("--positioner-width", `${box.width}px`)
-	positioner.style.setProperty("--positioner-height", `${box.height}px`)
+	positioner.style.removeProperty("--positioner-width")
+	positioner.style.removeProperty("--positioner-height")
+	positioner.style.setProperty("width", "max-content")
+	const style = getComputedStyle(popup)
+	const width = style.width
+	const height = style.height
+	positioner.style.removeProperty("width")
+	positioner.style.setProperty("--positioner-width", width)
+	positioner.style.setProperty("--positioner-height", height)
 }
+
+const isFollowing = (anchor: Node, node: Node): boolean =>
+	(anchor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+
+/**
+ * Base UI's focus guards around the portaled popup: Tab from the open trigger enters it, Shift+Tab
+ * from the item after enters at its last link; leaving it goes back to the trigger or on past it.
+ */
+const focusGuards = (id: string, value: string): Stream.Stream<void> =>
+	Stream.callback<void>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				const onFocusIn = (event: FocusEvent) => {
+					const guard = event.target
+					const popup = document.getElementById(popupId(id))
+					if (!(guard instanceof HTMLElement) || popup === null) return
+					const inside = tabbables(popup)
+					const focus = (target: Option.Option<HTMLElement>) =>
+						Option.map(target, (element) => element.focus({ preventScroll: true }))
+					if (guard.id === guardId(id, "before")) focus(Array.head(inside))
+					else if (guard.id === guardId(id, "after")) focus(Array.last(inside))
+					else if (guard.id === guardId(id, "popup-start"))
+						focus(Option.fromNullishOr(document.getElementById(triggerIdOf(id, value))))
+					else if (guard.id === guardId(id, "popup-end")) {
+						const after = document.getElementById(guardId(id, "after"))
+						const trigger = Option.fromNullishOr(document.getElementById(triggerIdOf(id, value)))
+						// Nothing focusable after the menu: back to the trigger rather than the body.
+						focus(
+							Option.orElse(
+								Array.findFirst(
+									tabbables(document.body),
+									(element) =>
+										after !== null && !popup.contains(element) && isFollowing(after, element),
+								),
+								() => trigger,
+							),
+						)
+						Queue.offerUnsafe(queue, undefined)
+					}
+				}
+				document.addEventListener("focusin", onFocusIn)
+				return onFocusIn
+			}),
+			(onFocusIn) => Effect.sync(() => document.removeEventListener("focusin", onFocusIn)),
+		).pipe(Effect.andThen(Effect.never)),
+	)
 
 /** Portal, placement under the open trigger and presses outside the menu (no marking, no focus move). */
 export const MountNavigationMenu = Mount.defineStream("MountNavigationMenu", {
 	args: { id: Schema.String, value: Schema.String, align: Align },
-	messages: [Message.CompletedMountNavigationMenu, Message.ChangedPlacement, Message.PressedOutside],
+	messages: [
+		Message.CompletedMountNavigationMenu,
+		Message.ChangedPlacement,
+		Message.PressedOutside,
+		Message.TabbedOut,
+	],
 	execute: ({ element, id, value, align }) =>
 		anchoredPopup(element, {
 			positionerSelector: ":scope > [role=presentation]",
@@ -164,14 +250,25 @@ export const MountNavigationMenu = Mount.defineStream("MountNavigationMenu", {
 						? Message.ChangedPlacement({ side: event.placed.side, align: event.placed.align })
 						: Message.PressedOutside(),
 			),
+			Stream.merge(focusGuards(id, value).pipe(Stream.map(() => Message.TabbedOut()))),
 		),
 })
 
 // VIEW
 
 export type NavigationMenuItem =
-	| Readonly<{ _tag: "Trigger"; value: string; label: string; content: ReadonlyArray<Html> }>
+	| Readonly<{
+			_tag: "Trigger"
+			value: string
+			label: string
+			content: ReadonlyArray<Html>
+			/** `<NavigationMenuTrigger className>` and `<NavigationMenuContent className>`. */
+			className?: string
+			contentClassName?: string
+	  }>
 	| Readonly<{ _tag: "Link"; label: string; href: string }>
+	/** `<NavigationMenuItem>` around the caller's own children (a plain anchor). */
+	| Readonly<{ _tag: "Item"; content: ReadonlyArray<Html> }>
 
 export type ViewInputs = Readonly<{
 	items: ReadonlyArray<NavigationMenuItem>
@@ -185,10 +282,11 @@ export const navigationMenuLink = <M>(
 	h: HtmlBuilder<M>,
 	href: string,
 	children: ReadonlyArray<Html | string>,
+	className?: string,
 ): Html =>
 	h.a(
 		[
-			h.Class(cn(navigationMenuLinkStyles)),
+			h.Class(cn(navigationMenuLinkStyles, className)),
 			h.DataAttribute("slot", "navigation-menu-link"),
 			h.Href(href),
 		],
@@ -213,7 +311,7 @@ const trigger = (
 			...(isOpen ? [h.AriaControls(popupId(model.id))] : []),
 			h.AriaDisabled(false),
 			h.AriaExpanded(isOpen),
-			h.Class(cn(navigationMenuTriggerStyle(), navigationMenuTriggerGroupStyles)),
+			h.Class(cn(navigationMenuTriggerStyle(), navigationMenuTriggerGroupStyles, item.className)),
 			h.DataAttribute("base-ui-navigation-menu-trigger", ""),
 			...(isOpen ? [h.DataAttribute("popup-open", ""), h.DataAttribute("pressed", "")] : []),
 			h.DataAttribute("slot", "navigation-menu-trigger"),
@@ -228,7 +326,7 @@ const trigger = (
 		[
 			item.label,
 			" ",
-			icon(h, "ChevronDownIcon", {
+			iconNode(h, ChevronDownIcon, "ChevronDownIcon", {
 				className: navigationMenuTriggerIconStyles,
 				attributes: [h.Attribute("stroke-width", "2"), h.AriaHidden(true)],
 			}),
@@ -237,22 +335,26 @@ const trigger = (
 	if (!isOpen) return [button]
 	return [
 		button,
-		focusGuard(h, undefined, [h.Key("guard-before")]),
+		focusGuard(h, undefined, [h.Key("guard-before"), h.Id(guardId(model.id, "before"))]),
 		h.span([
 			h.Key("owner"),
 			h.AriaOwns(viewportId(model.id)),
 			h.Style({ clipPath: SR_ONLY_STYLE.clipPath, position: "fixed", top: "0px", left: "0px" }),
 		]),
-		focusGuard(h, undefined, [h.Key("guard-after")]),
+		focusGuard(h, undefined, [h.Key("guard-after"), h.Id(guardId(model.id, "after"))]),
 	]
 }
 
 const portal = (h: H, model: Model, inputs: ViewInputs, value: string): Html => {
 	const state = stateAttributes(h, model.isOpen, model.animation)
 	const placement = [h.DataAttribute("align", model.align), ...state, h.DataAttribute("side", model.side)]
-	const content = inputs.items.flatMap((item) =>
-		item._tag === "Trigger" && item.value === value ? item.content : [],
+	const open = Array.findFirst(
+		inputs.items,
+		(item): item is Extract<NavigationMenuItem, { _tag: "Trigger" }> =>
+			item._tag === "Trigger" && item.value === value,
 	)
+	const content = Option.match(open, { onNone: () => [], onSome: (item) => item.content })
+	const contentClassName = Option.match(open, { onNone: () => undefined, onSome: (item) => item.contentClassName })
 	return h.div(
 		[
 			// Keyed by the open item, so switching items re-anchors the Mount to the new trigger.
@@ -284,13 +386,13 @@ const portal = (h: H, model: Model, inputs: ViewInputs, value: string): Html => 
 							escapeKey(h),
 						],
 						[
-							focusGuard(h, undefined),
+							focusGuard(h, undefined, [h.Id(guardId(model.id, "popup-start"))]),
 							h.div(
 								[h.Class(navigationMenuViewportStyles), h.Id(viewportId(model.id))],
 								[
 									h.div(
 										[
-											h.Class(cn(navigationMenuContentStyles)),
+											h.Class(cn(navigationMenuContentStyles, contentClassName)),
 											...state,
 											h.DataAttribute("slot", "navigation-menu-content"),
 										],
@@ -298,7 +400,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs, value: string): Html => 
 									),
 								],
 							),
-							focusGuard(h, undefined),
+							focusGuard(h, undefined, [h.Id(guardId(model.id, "popup-end"))]),
 						],
 					),
 				],
@@ -332,7 +434,9 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						],
 						item._tag === "Trigger"
 							? trigger(h, model, item)
-							: [navigationMenuLink(h, item.href, [item.label])],
+							: item._tag === "Item"
+								? item.content
+								: [navigationMenuLink(h, item.href, [item.label])],
 					),
 				),
 			),

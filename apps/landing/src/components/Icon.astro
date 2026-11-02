@@ -1,0 +1,21 @@
+---
+import type { IconName } from "@maple/views/ui/icons.generated";
+import { iconSvg } from "../lib/icon-svg";
+
+interface Props {
+	name: IconName;
+	size?: number | string;
+	class?: string;
+	[attribute: `aria-${string}`]: string;
+}
+
+const { name, size, class: className, ...rest } = Astro.props;
+// Astro also passes `data-astro-cid-*: true` for a parent's scoped styles; keep it as a bare flag.
+const attributes = Object.fromEntries(
+	Object.entries(rest).flatMap(([key, value]): ReadonlyArray<[string, string]> =>
+		typeof value === "string" ? [[key, value]] : key.startsWith("data-astro-cid-") ? [[key, ""]] : [],
+	),
+);
+---
+
+<Fragment set:html={iconSvg(name, { size, className, attributes })} />

@@ -58,9 +58,3 @@ export function formatNumber(num: number): string {
 	if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
 	return num.toLocaleString()
 }
-
-export function formatBucketTick(value: string): string {
-	const d = new Date(value)
-	if (Number.isNaN(d.getTime())) return value
-	return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
-}
