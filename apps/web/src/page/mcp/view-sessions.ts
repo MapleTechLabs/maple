@@ -10,6 +10,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
+import { pressable } from "../../ui/pressable"
 import {
 	shareCell,
 	th,
@@ -404,15 +405,14 @@ const agentSessionsPanel = <M>(
 				: h.div(
 						[h.Class("flex flex-wrap gap-2")],
 						linked.map((entry) =>
-							h.button(
-								[
-									h.Type("button"),
-									h.Key(entry.sessionId),
-									h.Class(
+							pressable(
+								h,
+								{
+									onClick: options.onOpenAgentSession(entry.sessionId),
+									className:
 										"inline-flex max-w-full items-center gap-2 rounded-md border border-border px-2.5 py-1.5 font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-									),
-									h.OnClick(options.onOpenAgentSession(entry.sessionId)),
-								],
+									attributes: [h.Key(entry.sessionId)],
+								},
 								[
 									icon(h, "SquareSparkleIcon", {
 										size: 12,
