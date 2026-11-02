@@ -384,6 +384,11 @@ const DIRECT_CACHE_SET_KEYS = new Set([
 	"spanNames",
 ])
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+/** `JSON.stringify`: an absent payload keys as `undefined`, as it always has. */
+const stringifyJson = (value: unknown): string | undefined => Option.getOrUndefined(encodeJsonOption(value))
+
 function normalizeDirectCacheValue(value: unknown, snapWindowSeconds: number, parentKey?: string): unknown {
 	if (value == null) return value
 	if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -400,8 +405,8 @@ function normalizeDirectCacheValue(value: unknown, snapWindowSeconds: number, pa
 			DIRECT_CACHE_SET_KEYS.has(parentKey) &&
 			normalized.every((item) => ["string", "number", "boolean"].includes(typeof item))
 		) {
-			return [...new Map(normalized.map((item) => [JSON.stringify(item), item])).values()].sort(
-				(a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)),
+			return [...new Map(normalized.map((item) => [encodeJson(item), item])).values()].sort((a, b) =>
+				encodeJson(a).localeCompare(encodeJson(b)),
 			)
 		}
 		return normalized
@@ -429,7 +434,7 @@ export function buildDirectRouteCacheKey(
 	policyInput: DirectRouteCachePolicyInput = CACHE_SNAP_S,
 ): string {
 	const policy = resolveDirectRouteCachePolicy(policyInput)
-	return `direct:v${policy.version}:${orgId}:${routeName}:${JSON.stringify(normalizeDirectCacheValue(payload, policy.snapWindowSeconds))}`
+	return `direct:v${policy.version}:${orgId}:${routeName}:${stringifyJson(normalizeDirectCacheValue(payload, policy.snapWindowSeconds))}`
 }
 
 const floorToBucketMs = (epochMs: number, bucketSeconds: number): number => {

@@ -238,7 +238,8 @@ export class PrReviewConversationService extends Context.Service<
 		const repositories = yield* VcsRepository
 		const providers = yield* VcsProviderRegistry
 		const reviews = yield* PrReviewService
-		const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
+		const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
+		const chatSessions = Option.getOrUndefined(chatSessionsOption)
 
 		const skip = (reason: string): PrReplyOutcome => ({
 			replyId: null,

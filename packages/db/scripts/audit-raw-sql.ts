@@ -14,11 +14,13 @@
  */
 import { rawSqlIssue, type RawSqlIssue } from "@maple/domain/raw-sql"
 import * as PgClient from "@effect/sql-pg/PgClient"
-import { Effect, ManagedRuntime, Redacted } from "effect"
+import { Effect, ManagedRuntime, Redacted, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { withBranchConnection } from "./planetscale-connection"
+
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 export interface Finding {
 	readonly source: "alert_rule" | "dashboard_widget"
@@ -143,9 +145,7 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
 		const sourceFormLine = `raw-SQL widgets by source form: ${sourceFormCounts.kind} kind:"raw_sql", ${sourceFormCounts.route} route:"raw_sql_chart"`
 
 		if (asJson) {
-			console.log(
-				JSON.stringify({ findings, total: findings.length, sourceForms: sourceFormCounts }, null, 2),
-			)
+			console.log(encodeJsonPretty({ findings, total: findings.length, sourceForms: sourceFormCounts }))
 		} else if (findings.length === 0) {
 			console.log(
 				`No stored raw SQL would be rejected (${rules.length} alert rules, ${dashboards.length} dashboards scanned).`,

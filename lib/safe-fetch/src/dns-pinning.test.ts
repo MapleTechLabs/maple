@@ -53,8 +53,10 @@ const run = (
 	return Effect.flatMap(HttpClient.HttpClient, (client) => guardPinned(client, resolve).get(url)).pipe(
 		Effect.provide(FetchHttpClient.layer),
 		Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
-		Effect.map((response) => ({ response, seen })),
-		Effect.mapError((error) => ({ error, seen })),
+		Effect.mapBoth({
+			onSuccess: (response) => ({ response, seen }),
+			onFailure: (error) => ({ error, seen }),
+		}),
 	)
 }
 

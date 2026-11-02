@@ -115,9 +115,11 @@ const make = Effect.gen(function* () {
 									.limit(1),
 							)
 							const sourceId = installation?.sourceId ?? null
+							const now = yield* Clock.currentTimeMillis
+							const paused = yield* isSourcePaused(db, sourceId, now)
 							return {
 								stamped: stampedSourceId(sourceId),
-								paused: yield* isSourcePaused(db, sourceId, yield* Clock.currentTimeMillis),
+								paused,
 							}
 						}),
 					)

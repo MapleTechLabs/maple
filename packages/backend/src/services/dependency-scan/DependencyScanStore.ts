@@ -169,6 +169,9 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Dependency scan store operation failed",
 )
 
+// Byte-identical to `JSON.stringify`, which finding ids hash.
+const encodeJsonKey = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const newScanId = () => Schema.decodeSync(DependencyScanId)(crypto.randomUUID())
 
 /** Rows per statement: ~20 binds each keeps one insert far under Postgres's 65,535. */
@@ -200,7 +203,7 @@ const sha256Hex = (text: string) =>
 /** The finding's id from its key, so a replayed or concurrent scan lands on the same row. */
 const findingId = (orgId: OrgId, repositoryId: VcsRepositoryId, match: DependencyScanMatchInput) =>
 	sha256Hex(
-		JSON.stringify([
+		encodeJsonKey([
 			orgId,
 			repositoryId,
 			match.lockfilePath,
@@ -211,7 +214,7 @@ const findingId = (orgId: OrgId, repositoryId: VcsRepositoryId, match: Dependenc
 	).pipe(Effect.map((hex) => Schema.decodeSync(DependencyFindingId)(hex.slice(0, 32))))
 
 const findingKey = (match: DependencyScanMatchInput) =>
-	JSON.stringify([match.lockfilePath, match.ecosystem, match.packageName, match.advisoryId])
+	encodeJsonKey([match.lockfilePath, match.ecosystem, match.packageName, match.advisoryId])
 
 /**
  * OSV can later link a new record to an advisory a finding already tracks (a GO- entry gains its
@@ -246,7 +249,7 @@ const keepKnownAdvisoryId = (
 }
 
 const matchKey = (match: DependencyScanMatchInput) =>
-	JSON.stringify([match.lockfilePath, match.ecosystem, match.packageName, match.version, match.advisoryId])
+	encodeJsonKey([match.lockfilePath, match.ecosystem, match.packageName, match.version, match.advisoryId])
 
 const firstNonNull = (values: ReadonlyArray<string | null>) => values.find((value) => value !== null) ?? null
 
@@ -397,11 +400,11 @@ const reconcileFindings = (
 		const matched = new Set(groups.map((group) => group.id))
 		// A finding OSV now lists only as another advisory's alias is still matched, not fixed.
 		const matchedNames = groups.map((group) => ({
-			key: JSON.stringify([group.head.lockfilePath, group.head.ecosystem, group.head.packageName]),
+			key: encodeJsonKey([group.head.lockfilePath, group.head.ecosystem, group.head.packageName]),
 			names: new Set([group.head.advisoryId, ...group.aliases]),
 		}))
 		const namedByMatch = (row: (typeof open)[number]) => {
-			const key = JSON.stringify([row.lockfilePath, row.ecosystem, row.packageName])
+			const key = encodeJsonKey([row.lockfilePath, row.ecosystem, row.packageName])
 			return matchedNames.some(
 				(group) =>
 					group.key === key &&
@@ -501,7 +504,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 							)
 							const vulnerableCount = new Set(
 								matches.map((m) =>
-									JSON.stringify([m.lockfilePath, m.ecosystem, m.packageName, m.version]),
+									encodeJsonKey([m.lockfilePath, m.ecosystem, m.packageName, m.version]),
 								),
 							).size
 							yield* Effect.forEach(Arr.chunksOf(matches, WRITE_CHUNK), (chunk) =>

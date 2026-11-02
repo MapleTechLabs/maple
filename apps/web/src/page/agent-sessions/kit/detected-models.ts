@@ -35,7 +35,7 @@ const MAX_MODELS = 200
 
 /** One request per distinct set: sorted so two orders of the same models share the key. */
 export const detectionKey = (models: ReadonlyArray<string>): string =>
-	JSON.stringify([...new Set(models)].toSorted().slice(0, MAX_MODELS))
+	encodeModels([...new Set(models)].toSorted().slice(0, MAX_MODELS))
 
 /** `Some(key)` when the set has not been asked for yet. */
 export const missingDetection = (
@@ -61,6 +61,7 @@ export const modelTitle = (detected: DetectedModel): string =>
 	detected.vendorName === null ? detected.model : `${detected.vendorName} · ${detected.model}`
 
 const decodeModels = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
+const encodeModels = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
 
 /** The batch for one key; a failure leaves the models unresolved, like the atom's `orElse`. */
 export const detectModels = (key: string) =>

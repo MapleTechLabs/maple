@@ -136,7 +136,8 @@ const SUBSCRIBE_IDLE_MS = 25_000
  * `id:` carries the seq so a client that drops mid-stream resumes from exactly where it stopped
  * rather than re-reading the whole log.
  */
-const frameChatEvent = (event: ChatEvent): string => `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const frameChatEvent = (event: ChatEvent): string => `id: ${event.seq}\ndata: ${encodeJson(event)}\n\n`
 
 /** Sent once per connection so a browser falling back to its own reconnect logic paces itself. */
 const RETRY_HINT = "retry: 1000\n\n"
@@ -187,6 +188,7 @@ const TurnInput = Schema.Struct({
 })
 type TurnInput = typeof TurnInput.Type
 const decodeTurnInput = Schema.decodeUnknownOption(Schema.fromJsonString(TurnInput))
+const encodeTurnInput = Schema.encodeSync(Schema.fromJsonString(TurnInput))
 
 /**
  * Only an autonomous review is started again. Its kickoff is self-contained and its row guards
@@ -501,7 +503,7 @@ export class ChatSession {
 			"UPDATE session SET running = 1, running_since = ?, running_message_id = ?, running_input = ?, running_resumes = 0 WHERE id = 1",
 			Date.now(),
 			turnId,
-			JSON.stringify(turn),
+			encodeTurnInput(turn),
 		)
 		this.append({ type: "user-message", id: input.messageId, text: input.text })
 		this.startTurn(turnId, turn)

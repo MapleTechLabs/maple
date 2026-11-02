@@ -2,7 +2,7 @@ import { formatClock } from "@maple/ui/lib/replay-format"
 import { hostFromUrl } from "@maple/ui/lib/replay"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import { createKeyedLazy, createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { filterChip } from "@maple/views/ui/filter-chip"
@@ -39,6 +39,8 @@ import type { Model, ReplayDetail } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The replay surface and its transport controls.
 // TODO(scrubber-drag): the scrubber seeks on pointer down; drag-to-scrub and the hover time bubble
@@ -295,7 +297,7 @@ const engineMount = (
 		h.Class("absolute inset-0"),
 		h.DataAttribute(CONTROL_ATTRIBUTE, stage.control),
 		h.DataAttribute(SPEED_ATTRIBUTE, String(stage.speed)),
-		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(stage.isSkippingIdle ? stage.inactiveIntervals : [])),
+		h.DataAttribute(IDLE_ATTRIBUTE, encodeJson(stage.isSkippingIdle ? stage.inactiveIntervals : [])),
 		h.DataAttribute(HOLD_ATTRIBUTE, String(isHolding)),
 		h.DataAttribute(TOTAL_ATTRIBUTE, String(stage.totalMs)),
 		h.DataAttribute(COMPLETE_ATTRIBUTE, stage.complete),

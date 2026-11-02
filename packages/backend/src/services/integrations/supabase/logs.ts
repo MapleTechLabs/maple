@@ -66,9 +66,13 @@ const LogsResponse = Schema.Union([
 	Schema.Struct({ error: Schema.Unknown }),
 ])
 const decodeLogsResponse = Schema.decodeUnknownOption(Schema.fromJsonString(LogsResponse))
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 const errorText = (error: unknown) =>
-	(typeof error === "string" ? error : (JSON.stringify(error) ?? "unknown error")).slice(0, 300)
+	(typeof error === "string"
+		? error
+		: Option.getOrElse(encodeJsonOption(error), () => "unknown error")
+	).slice(0, 300)
 
 /** One page of raw rows; a refused query fails with {@link SupabaseLogsQueryError}. */
 export const queryLogs = Effect.fn("SupabaseApi.queryLogs")(function* (
@@ -173,7 +177,7 @@ const severityOfStatus = (status: string | undefined): Severity | undefined => {
 }
 
 const attributeText = (value: unknown) =>
-	typeof value === "string" ? value : (JSON.stringify(value) ?? String(value))
+	typeof value === "string" ? value : Option.getOrElse(encodeJsonOption(value), () => String(value))
 
 /** Severity hint order: postgres `parsed.error_severity`, then `level`, then an HTTP status, else INFO. */
 export const severityOf = (attributes: Readonly<Record<string, string>>): Severity =>

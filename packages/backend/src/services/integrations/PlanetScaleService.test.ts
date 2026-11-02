@@ -212,7 +212,7 @@ describe("PlanetScaleService", () => {
 			assert.strictEqual(second.refreshed, 0)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -259,7 +259,7 @@ describe("PlanetScaleService", () => {
 			assert.strictEqual(databaseListAttempts, 3)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -313,7 +313,7 @@ describe("PlanetScaleService", () => {
 			assert.strictEqual(rows.length, 101)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -386,7 +386,7 @@ describe("PlanetScaleService", () => {
 			assert.strictEqual(row.lastRunAt, Date.UTC(2026, 6, 10, 12, 0, 0))
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -418,7 +418,7 @@ describe("PlanetScaleService", () => {
 			assert.include(result.unavailableReason ?? "", "read_database")
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -450,7 +450,7 @@ describe("PlanetScaleService", () => {
 			assert.include(result.unavailableReason ?? "", "no insights")
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -482,7 +482,7 @@ describe("PlanetScaleService", () => {
 			assert.include(result.unavailableReason ?? "", "HTTP 500")
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -525,7 +525,7 @@ describe("PlanetScaleService", () => {
 			assert.isNull(result.unavailableReason)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -560,7 +560,7 @@ describe("PlanetScaleService", () => {
 			assert.isNotNull(connection?.last_inventory_error)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -599,7 +599,7 @@ describe("PlanetScaleService", () => {
 			assert.isNull(failed.disconnected_at)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -652,7 +652,7 @@ describe("PlanetScaleService", () => {
 			)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 })
@@ -962,7 +962,7 @@ describe("PlanetScaleService deploy-request backfill", () => {
 			assert.strictEqual((yield* countEvents(testDb))?.n, 4)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1012,9 +1012,7 @@ describe("PlanetScaleService deploy-request backfill", () => {
 			// testDb.layer is merged in as well as provided to the services:
 			// insertPlanetScaleEvent is called directly here, so the test body needs
 			// Database in its own context, not just inside the service graph.
-			Effect.provide(
-				Layer.mergeAll(makeLayer(testDb), testDb.layer, Layer.succeed(FetchHttpClient.Fetch, stub)),
-			),
+			Effect.provide([makeLayer(testDb), testDb.layer, Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1038,7 +1036,7 @@ describe("PlanetScaleService deploy-request backfill", () => {
 			assert.strictEqual((yield* countEvents(testDb))?.n, 0)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1067,7 +1065,7 @@ describe("PlanetScaleService deploy-request backfill", () => {
 			assert.strictEqual(rows.length, 1)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 })
@@ -1234,7 +1232,7 @@ describe("PlanetScaleService pagination truncation", () => {
 				assert.isNull(kept?.deleted_at)
 			}).pipe(
 				Effect.provideService(FetchHttpClient.Fetch, stub),
-				Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+				Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 			)
 		},
 		60_000,
@@ -1280,7 +1278,7 @@ describe("PlanetScaleService pagination truncation", () => {
 			assert.isNull(state?.watermark_at)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 })
@@ -1365,7 +1363,7 @@ describe("PlanetScaleService rejected tokens", () => {
 			assert.isNull(grant.revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1421,7 +1419,7 @@ describe("PlanetScaleService rejected tokens", () => {
 			assert.strictEqual(insights._tag, "@maple/http/errors/IntegrationsRevokedError")
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1468,7 +1466,7 @@ describe("PlanetScaleService rejected tokens", () => {
 			assert.isNull(grant.revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 })
@@ -1524,7 +1522,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			assert.strictEqual(calls.forbidden, callsBefore)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1554,7 +1552,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1606,7 +1604,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1640,7 +1638,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			assert.strictEqual((yield* oauth.grantStatus(asOrgId("org_1"))).updatedAt, before.updatedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1658,7 +1656,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			assert.isNull((yield* (yield* PlanetScaleOAuthService).grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -1680,7 +1678,7 @@ describe("PlanetScaleService forbidden grants", () => {
 			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 })

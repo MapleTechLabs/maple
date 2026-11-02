@@ -288,9 +288,8 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	): Effect.fn.Return<DirectoryAnswer> {
 		if (Option.isNone(readOrganization)) return { _tag: "Unreachable" }
 		const nowMs = yield* Clock.currentTimeMillis
-		const local = Option.filter(HashMap.get(yield* Ref.get(remembered), orgId), (entry) =>
-			isFresh(entry, nowMs),
-		)
+		const rememberedMap = yield* Ref.get(remembered)
+		const local = Option.filter(HashMap.get(rememberedMap, orgId), (entry) => isFresh(entry, nowMs))
 		if (Option.isSome(local)) {
 			yield* Effect.annotateCurrentSpan({ "cache.hit": true, "cache.layer": "isolate" })
 			return found(local.value.metadata)

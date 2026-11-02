@@ -20,6 +20,8 @@ import {
 } from "./auto-retry-budget"
 import { button } from "./button"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 // The error state. The failure is already the
 // `displayError` body (`data/load-failure.ts`).
 
@@ -424,7 +426,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			? [
 					h.OnMount(
 						Mount.mapMessage(
-							MountNetworkAutoRetry({ retryKey: JSON.stringify(onRetry) }),
+							MountNetworkAutoRetry({ retryKey: encodeJson(onRetry) }),
 							() => onRetry,
 						),
 					),

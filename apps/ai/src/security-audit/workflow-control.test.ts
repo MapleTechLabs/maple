@@ -1,10 +1,13 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Cause, Effect } from "effect"
 import { type AuditWorkflowHandle, securityAuditWorkflowControl } from "./workflow-control"
 
 /** Rejects the way alchemy's handle does: the binding's throw, wrapped by `tryPromise`, as a defect. */
 const bindingThrows = (message: string) =>
-	Effect.tryPromise(() => Promise.reject(new Error(message))).pipe(Effect.orDie)
+	Effect.tryPromise({
+		try: () => Promise.reject(new Error(message)),
+		catch: (cause) => new Cause.UnknownError(cause),
+	}).pipe(Effect.orDie)
 
 const handle = (instance: {
 	readonly get?: string

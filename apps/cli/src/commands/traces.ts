@@ -70,7 +70,8 @@ export const traces = Command.make("traces", {
 			if (result.spans.length === 0 && service !== undefined && a.offset === 0) {
 				yield* assertKnownService(service, range, window)
 			}
-			const output = Option.match(yield* Ops.localUiBase, {
+			const localUiBase = yield* Ops.localUiBase
+			const output = Option.match(localUiBase, {
 				onNone: () => result,
 				onSome: (base) => ({ ...result, spans: withTraceLinks(base, result.spans) }),
 			})
@@ -133,7 +134,8 @@ export const trace = Command.make("trace", {
 							: "try a wider window, e.g. --since 7d",
 				})
 			}
-			const output = Option.match(yield* Ops.localUiBase, {
+			const localUiBase = yield* Ops.localUiBase
+			const output = Option.match(localUiBase, {
 				onNone: () => result,
 				onSome: (base) => ({ url: traceLink(base, traceId), ...result }),
 			})
@@ -164,7 +166,8 @@ export const slowTraces = Command.make("slow-traces", {
 				environment: Option.getOrUndefined(a.environment),
 				limit: a.limit,
 			})
-			const output = Option.match(yield* Ops.localUiBase, {
+			const localUiBase = yield* Ops.localUiBase
+			const output = Option.match(localUiBase, {
 				onNone: () => result,
 				onSome: (base) => ({ ...result, traces: withTraceLinks(base, result.traces) }),
 			})

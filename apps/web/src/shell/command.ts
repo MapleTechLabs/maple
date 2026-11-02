@@ -12,6 +12,17 @@ export const INFRA_SURFACES_STORAGE_PREFIX = "maple.infra-surfaces."
 /** The theme key the app and the pre-paint script in index.html share. */
 export const THEME_STORAGE_KEY = "maple-theme"
 
+/** localStorage threw: disabled, full, or blocked by the browser. */
+export class ShellStorageError extends Schema.TaggedError<ShellStorageError>()(
+	"@maple/web/ShellStorageError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
+const encodeSurfaces = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
+
 /** Base UI moves DOM focus to the open popup and to the hovered or arrowed item. */
 export const FocusElement = Command.define("FocusElement", {
 	args: { id: Schema.String },
@@ -66,7 +77,14 @@ export const SaveNamespace = Command.define("SaveNamespace", {
 	execute: ({ orgId, maybeNamespace }) => {
 		const key = `${NAMESPACE_STORAGE_PREFIX}${orgId}`
 		return Option.match(maybeNamespace, {
-			onNone: () => Effect.ignore(Effect.try(() => localStorage.removeItem(key))),
+			onNone: () =>
+				Effect.ignore(
+					Effect.try({
+						try: () => localStorage.removeItem(key),
+						catch: (cause) =>
+							new ShellStorageError({ message: "Could not clear the namespace", cause }),
+					}),
+				),
 			onSome: (namespace) => Effect.sync(() => writeLocalStorage(key, namespace)),
 		}).pipe(Effect.as(Message.CompletedSaveNamespace()))
 	},
@@ -78,7 +96,7 @@ export const SaveInfraSurfaces = Command.define("SaveInfraSurfaces", {
 	messages: [Message.CompletedSaveInfraSurfaces],
 	execute: ({ orgId, surfaces }) =>
 		Effect.sync(() => {
-			writeLocalStorage(`${INFRA_SURFACES_STORAGE_PREFIX}${orgId}`, JSON.stringify(surfaces))
+			writeLocalStorage(`${INFRA_SURFACES_STORAGE_PREFIX}${orgId}`, encodeSurfaces(surfaces))
 			return Message.CompletedSaveInfraSurfaces()
 		}),
 })

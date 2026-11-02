@@ -2,6 +2,8 @@ import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { LoadFailure } from "./local-query"
 
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 /**
  * One query as Model data: the `AsyncData` and the key it was last requested
  * under. A new key keeps the previous rows on screen until its own rows arrive.
@@ -29,7 +31,8 @@ export const SlotSchema = <A, AI>(dataSchema: Schema.Codec<A, AI>) =>
 export const idle = <A>(): Slot<A> => ({ key: null, data: AsyncData.Idle(), isPlaceholder: false, updatedAtMs: null, isStandIn: false })
 
 /** A key for one query: its name and inputs, as the cache hashes it. */
-export const keyOf = (name: string, input: unknown): string => `${name}:${JSON.stringify(input)}`
+export const keyOf = (name: string, input: unknown): string =>
+	`${name}:${Option.getOrElse(encodeJson(input), () => String(input))}`
 
 /**
  * `Some(next)` when the key changed (or `force` refetches): put it in the Model and fetch.

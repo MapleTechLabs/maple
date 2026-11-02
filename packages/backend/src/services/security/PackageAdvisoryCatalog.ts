@@ -165,8 +165,10 @@ export class PackageAdvisoryCatalog extends Context.Service<
 						Effect.flatMap(HttpClientResponse.schemaBodyJson(OsvVulnResponse)),
 						Effect.timeout(REQUEST_TIMEOUT),
 						Effect.retry(RETRY),
-						Effect.map(toOsvRecord),
-						Effect.mapError(catalogError(`OSV read failed for ${vuln.id}`)),
+						Effect.mapBoth({
+							onSuccess: toOsvRecord,
+							onFailure: catalogError(`OSV read failed for ${vuln.id}`),
+						}),
 						Effect.withSpan("osv.vuln", {
 							kind: "client",
 							attributes: { "peer.service": "osv.dev", "maple.depscan.advisory_id": vuln.id },

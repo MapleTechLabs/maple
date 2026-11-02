@@ -1,5 +1,6 @@
 import { createHash, createHmac } from "node:crypto"
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
+import { Schema } from "effect"
 
 // Tinybird per-org read JWT minting.
 //
@@ -38,6 +39,8 @@ export interface MintOrgReadJwtInput {
 	readonly rpsLimit?: number
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const base64url = (input: string | Buffer): string =>
 	(Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8")).toString("base64url")
 
@@ -61,9 +64,9 @@ export function mintOrgReadJwt(input: MintOrgReadJwtInput): string {
 		filter: orgLiteral,
 	}))
 
-	const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }))
+	const header = base64url(encodeJson({ alg: "HS256", typ: "JWT" }))
 	const payload = base64url(
-		JSON.stringify({
+		encodeJson({
 			workspace_id: input.workspaceId,
 			name: tokenNameForOrg(input.orgId),
 			exp: input.nowSeconds + input.ttlSeconds,

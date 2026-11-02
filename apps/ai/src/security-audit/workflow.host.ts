@@ -49,6 +49,5 @@ const runServices = (env: Record<string, unknown>) => {
 export const runHostedAudit = (payload: SecurityAuditWorkflowPayload, env: Record<string, unknown>) =>
 	withPgConnectionScope(runSecurityAuditWorkflow(payload)).pipe(
 		// The Workflow run is the entry point these layers belong to.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(runServices(env), auditTelemetry)),
+		Effect.provide([runServices(env), auditTelemetry]),
 	)

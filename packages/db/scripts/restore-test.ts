@@ -51,7 +51,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import * as Predicate from "effect/Predicate"
 import * as PgClient from "@effect/sql-pg/PgClient"
-import { Effect, ManagedRuntime, Redacted } from "effect"
+import { Effect, ManagedRuntime, Option, Redacted, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { fail, resolveDatabase, runPscale, withBranchConnection } from "./planetscale-connection"
@@ -100,25 +100,19 @@ interface Check {
 
 type JsonObject = Record<string, unknown>
 
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 const parseObject = (raw: string, what: string): JsonObject => {
-	try {
-		const value: unknown = JSON.parse(raw)
-		if (!Predicate.isObject(value)) throw new TypeError("not an object")
-		return value
-	} catch {
-		return fail(`Could not parse ${what} as a JSON object`)
-	}
+	const value = Option.getOrUndefined(decodeJson(raw))
+	return Predicate.isObject(value) ? value : fail(`Could not parse ${what} as a JSON object`)
 }
 
 const parseObjectArray = (raw: string, what: string): ReadonlyArray<JsonObject> => {
-	try {
-		const value: unknown = JSON.parse(raw)
-		if (!Array.isArray(value) || !value.every(Predicate.isObject))
-			throw new TypeError("not an object array")
-		return value
-	} catch {
-		return fail(`Could not parse ${what} as a JSON object array`)
-	}
+	const value = Option.getOrUndefined(decodeJson(raw))
+	return Array.isArray(value) && value.every(Predicate.isObject)
+		? value
+		: fail(`Could not parse ${what} as a JSON object array`)
 }
 
 const str = (o: JsonObject, key: string): string | null => {
@@ -481,7 +475,7 @@ const renderMarkdown = (r: Report): string => {
 const writeReport = (dir: string, report: Report): string => {
 	mkdirSync(dir, { recursive: true })
 	const json = resolve(dir, "restore-test-report.json")
-	writeFileSync(json, `${JSON.stringify(report, null, 2)}\n`)
+	writeFileSync(json, `${encodeJsonPretty(report)}\n`)
 	writeFileSync(resolve(dir, "restore-test-report.md"), renderMarkdown(report))
 	return json
 }

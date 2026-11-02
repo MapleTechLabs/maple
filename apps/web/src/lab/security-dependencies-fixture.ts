@@ -459,3 +459,472 @@ export const noFindings: DependencyFindingsResponse = {
 	findings: [],
 	production: { available: true, runningServices: 3, linkedServices: 3, complete: true },
 }
+
+const MANY_NAMES = [
+	"billing-worker",
+	"ingest-gateway",
+	"admin",
+	"mobile-bff",
+	"notifications",
+	"search",
+	"auth",
+	"reports",
+	"scheduler",
+	"docs",
+	"sdk-js",
+	"landing",
+] as const
+
+/** The fixture's three repositories and twelve more copied from them, past what the matrix gives a column. */
+export const manyRepositoriesOf = (
+	nowMs: number,
+): Readonly<{ repositories: DependencyScanRepositoriesResponse; findings: DependencyFindingsResponse }> => {
+	const sources = repositoriesOf(nowMs).repositories
+	const findings = findingsOf(nowMs)
+	const copies = MANY_NAMES.flatMap((name, index) => {
+		const source = sources[index % sources.length]
+		return source === undefined
+			? []
+			: [
+					{
+						source,
+						repository: {
+							...source,
+							id: repositoryId(
+								`00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+							),
+							fullName: `acme/${name}`,
+						},
+					},
+				]
+	})
+	return {
+		repositories: { repositories: [...sources, ...copies.map(({ repository }) => repository)] },
+		findings: {
+			...findings,
+			findings: [
+				...findings.findings,
+				...copies.flatMap(({ source, repository }, copy) =>
+					findings.findings
+						.filter((finding) => finding.repositoryId === source.id)
+						.map((finding, index) => ({
+							...finding,
+							id: findingId(
+								`${String(copy).padStart(2, "0")}${String(index).padStart(2, "0")}${"c".repeat(28)}`,
+							),
+							repositoryId: repository.id,
+							repositoryFullName: repository.fullName,
+						})),
+				),
+			],
+		},
+	}
+}
+
+type CatalogAdvisory = Readonly<{
+	id: string
+	severity: DependencyFindingView["severity"]
+	fixedIn: string | null
+	summary: string
+}>
+
+type CatalogPackage = Readonly<{
+	ecosystem: DependencyFindingView["ecosystem"]
+	name: string
+	version: string
+	lockfile: string
+	/** How many repositories in a hundred carry it. */
+	spread: number
+	advisories: ReadonlyArray<CatalogAdvisory>
+}>
+
+const advisory = (
+	id: string,
+	severity: CatalogAdvisory["severity"],
+	fixedIn: string | null,
+	summary = "A crafted input reaches an unsafe code path.",
+): CatalogAdvisory => ({ id, severity, fixedIn, summary })
+
+const NPM = "pnpm-lock.yaml"
+const CATALOG: ReadonlyArray<CatalogPackage> = [
+	{
+		ecosystem: "npm",
+		name: "axios",
+		version: "1.7.4",
+		lockfile: NPM,
+		spread: 55,
+		advisories: [
+			advisory("GHSA-jr5f-v2jv-69x6", "critical", "1.8.2"),
+			advisory("GHSA-4hjh-wcwx-xvwj", "high", "1.12.0"),
+		],
+	},
+	{
+		ecosystem: "npm",
+		name: "undici",
+		version: "6.19.2",
+		lockfile: NPM,
+		spread: 48,
+		advisories: [
+			advisory("GHSA-c76h-2ccp-4975", "critical", "6.21.1"),
+			advisory("GHSA-m4v8-wqvr-p9f7", "high", "6.21.1"),
+			advisory("GHSA-3787-6prv-h9w3", "medium", "6.11.1"),
+		],
+	},
+	{
+		ecosystem: "npm",
+		name: "vite",
+		version: "5.4.2",
+		lockfile: NPM,
+		spread: 62,
+		advisories: [
+			advisory("GHSA-x574-m823-4x7w", "medium", "5.4.12"),
+			advisory("GHSA-vg6x-rcgg-rjx6", "medium", "5.4.12"),
+			advisory("GHSA-356w-63v5-8wf4", "low", "5.4.15"),
+		],
+	},
+	{
+		ecosystem: "npm",
+		name: "esbuild",
+		version: "0.21.5",
+		lockfile: NPM,
+		spread: 58,
+		advisories: [advisory("GHSA-67mh-4wv8-2f99", "medium", "0.25.0")],
+	},
+	{
+		ecosystem: "npm",
+		name: "cross-spawn",
+		version: "7.0.3",
+		lockfile: NPM,
+		spread: 70,
+		advisories: [advisory("GHSA-3xgq-45jj-v275", "high", "7.0.5")],
+	},
+	{
+		ecosystem: "npm",
+		name: "path-to-regexp",
+		version: "0.1.7",
+		lockfile: NPM,
+		spread: 30,
+		advisories: [
+			advisory("GHSA-9wv6-86v2-598j", "high", "0.1.10"),
+			advisory("GHSA-rhx6-c78j-4q9w", "high", null),
+		],
+	},
+	{
+		ecosystem: "npm",
+		name: "next",
+		version: "14.1.0",
+		lockfile: NPM,
+		spread: 14,
+		advisories: [
+			advisory("GHSA-f82v-jwr5-mffw", "critical", "14.2.25"),
+			advisory("GHSA-7gfc-8cq8-jh5f", "high", "14.2.15"),
+		],
+	},
+	{
+		ecosystem: "npm",
+		name: "jsonwebtoken",
+		version: "8.5.1",
+		lockfile: NPM,
+		spread: 12,
+		advisories: [
+			advisory("GHSA-27h2-hvpr-p74q", "high", "9.0.0"),
+			advisory("GHSA-8cf7-32gw-wr33", "medium", "9.0.0"),
+		],
+	},
+	{
+		ecosystem: "npm",
+		name: "ws",
+		version: "8.16.0",
+		lockfile: NPM,
+		spread: 33,
+		advisories: [advisory("GHSA-3h5v-q93c-6h6q", "high", "8.17.1")],
+	},
+	{
+		ecosystem: "npm",
+		name: "braces",
+		version: "3.0.2",
+		lockfile: NPM,
+		spread: 66,
+		advisories: [advisory("GHSA-grv7-fg5c-xmjg", "high", "3.0.3")],
+	},
+	{
+		ecosystem: "npm",
+		name: "micromatch",
+		version: "4.0.5",
+		lockfile: NPM,
+		spread: 60,
+		advisories: [advisory("GHSA-952p-6rrq-rcjv", "medium", "4.0.8")],
+	},
+	{
+		ecosystem: "npm",
+		name: "tar",
+		version: "6.1.11",
+		lockfile: NPM,
+		spread: 28,
+		advisories: [advisory("GHSA-f5x3-32g6-xq36", "medium", "6.2.1")],
+	},
+	{
+		ecosystem: "npm",
+		name: "semver",
+		version: "7.5.1",
+		lockfile: NPM,
+		spread: 40,
+		advisories: [advisory("GHSA-c2qf-rxjj-qqgw", "medium", "7.5.2")],
+	},
+	{
+		ecosystem: "npm",
+		name: "follow-redirects",
+		version: "1.15.4",
+		lockfile: NPM,
+		spread: 42,
+		advisories: [advisory("GHSA-cxjh-pqwp-8mfp", "medium", "1.15.6")],
+	},
+	{
+		ecosystem: "npm",
+		name: "marked",
+		version: "4.0.9",
+		lockfile: NPM,
+		spread: 9,
+		advisories: [advisory("GHSA-4r62-v4vq-hr96", "unknown", null)],
+	},
+	{
+		ecosystem: "npm",
+		name: "lodash.template",
+		version: "4.5.0",
+		lockfile: NPM,
+		spread: 11,
+		advisories: [advisory("GHSA-35jh-r3h4-6jhm", "high", null)],
+	},
+	{
+		ecosystem: "npm",
+		name: "body-parser",
+		version: "1.20.2",
+		lockfile: NPM,
+		spread: 25,
+		advisories: [advisory("GHSA-qwcr-r2fm-qrc7", "high", "1.20.3")],
+	},
+	{
+		ecosystem: "npm",
+		name: "express",
+		version: "4.18.2",
+		lockfile: NPM,
+		spread: 24,
+		advisories: [
+			advisory("GHSA-qw6h-vgh9-j6wx", "low", "4.20.0"),
+			advisory("GHSA-rv95-896h-c2vc", "medium", "4.19.2"),
+		],
+	},
+	{
+		ecosystem: "npm",
+		name: "nanoid",
+		version: "3.3.7",
+		lockfile: NPM,
+		spread: 36,
+		advisories: [advisory("GHSA-mwcw-c2x4-8c55", "medium", "3.3.8")],
+	},
+	{
+		ecosystem: "npm",
+		name: "postcss",
+		version: "8.4.24",
+		lockfile: NPM,
+		spread: 50,
+		advisories: [advisory("GHSA-7fh5-64p2-3v2j", "medium", "8.4.31")],
+	},
+	{
+		ecosystem: "Go",
+		name: "golang.org/x/net",
+		version: "0.33.0",
+		lockfile: "go.sum",
+		spread: 80,
+		advisories: [
+			advisory("GHSA-vvgc-356p-c3xw", "high", "0.36.0"),
+			advisory("GHSA-qxp5-gwg8-xv66", "medium", "0.36.0"),
+		],
+	},
+	{
+		ecosystem: "Go",
+		name: "golang.org/x/crypto",
+		version: "0.30.0",
+		lockfile: "go.sum",
+		spread: 70,
+		advisories: [
+			advisory("GHSA-v778-237x-gjrc", "critical", "0.31.0"),
+			advisory("GHSA-hcg3-q754-cr77", "high", "0.35.0"),
+		],
+	},
+	{
+		ecosystem: "Go",
+		name: "google.golang.org/grpc",
+		version: "1.58.2",
+		lockfile: "go.sum",
+		spread: 45,
+		advisories: [advisory("GHSA-m425-mq94-257g", "high", "1.58.3")],
+	},
+	{
+		ecosystem: "Go",
+		name: "github.com/golang-jwt/jwt/v4",
+		version: "4.5.0",
+		lockfile: "go.sum",
+		spread: 25,
+		advisories: [advisory("GHSA-mh63-6h87-95cp", "high", "4.5.2")],
+	},
+	{
+		ecosystem: "Go",
+		name: "github.com/docker/docker",
+		version: "24.0.7",
+		lockfile: "go.sum",
+		spread: 15,
+		advisories: [advisory("GHSA-v23v-6jw2-98fq", "critical", null)],
+	},
+	{
+		ecosystem: "crates.io",
+		name: "tokio",
+		version: "1.38.0",
+		lockfile: "Cargo.lock",
+		spread: 70,
+		advisories: [advisory("RUSTSEC-2025-0023", "low", "1.38.2")],
+	},
+	{
+		ecosystem: "crates.io",
+		name: "rustls",
+		version: "0.23.10",
+		lockfile: "Cargo.lock",
+		spread: 55,
+		advisories: [advisory("RUSTSEC-2024-0399", "critical", "0.23.18")],
+	},
+	{
+		ecosystem: "crates.io",
+		name: "openssl",
+		version: "0.10.64",
+		lockfile: "Cargo.lock",
+		spread: 35,
+		advisories: [
+			advisory("RUSTSEC-2025-0004", "high", "0.10.70"),
+			advisory("RUSTSEC-2024-0357", "medium", "0.10.66"),
+		],
+	},
+	{
+		ecosystem: "crates.io",
+		name: "hyper",
+		version: "0.14.27",
+		lockfile: "Cargo.lock",
+		spread: 40,
+		advisories: [advisory("RUSTSEC-2024-0042", "medium", "0.14.28")],
+	},
+	{
+		ecosystem: "crates.io",
+		name: "time",
+		version: "0.1.45",
+		lockfile: "Cargo.lock",
+		spread: 20,
+		advisories: [advisory("RUSTSEC-2020-0071", "medium", null)],
+	},
+]
+
+const WORDS = [
+	"api",
+	"web",
+	"worker",
+	"gateway",
+	"billing",
+	"auth",
+	"search",
+	"admin",
+	"notifications",
+	"ingest",
+	"reports",
+	"scheduler",
+	"sdk",
+	"docs",
+	"mobile",
+	"edge",
+	"ledger",
+	"payments",
+	"export",
+	"sync",
+] as const
+
+/** A small deterministic generator, so the lab draws the same org every time. */
+const seeded = (seed: number) => {
+	let state = seed * 2654435761 + 1
+	return () => {
+		state = (state * 1103515245 + 12345) % 2147483648
+		return state / 2147483648
+	}
+}
+
+/**
+ * A large org: `count` repositories (npm, Go or Rust, a third of them running in production) and
+ * the advisories their lockfiles carry, a few thousand findings. For stress-testing the tab.
+ */
+export const largeOrgOf = (
+	nowMs: number,
+	count: number,
+): Readonly<{ repositories: DependencyScanRepositoriesResponse; findings: DependencyFindingsResponse }> => {
+	const sources = repositoriesOf(nowMs).repositories
+	const template = findingsOf(nowMs).findings[0]
+	const ecosystems = ["npm", "npm", "npm", "Go", "crates.io"] as const
+	const repositories = Array.from({ length: count }, (_, index) => {
+		const random = seeded(index + 1)
+		const source = sources[index % sources.length]
+		const word = WORDS[Math.floor(random() * WORDS.length)] ?? "service"
+		return {
+			index,
+			random,
+			ecosystem: ecosystems[Math.floor(random() * ecosystems.length)] ?? "npm",
+			isRunning: random() < 0.35,
+			repository:
+				source === undefined
+					? null
+					: {
+							...source,
+							id: repositoryId(
+								`a0000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`,
+							),
+							fullName: `acme/${word}-${index}`,
+						},
+		}
+	})
+	let next = 0
+	const findings = repositories.flatMap(({ random, ecosystem, isRunning, repository }) =>
+		repository === null || template === undefined
+			? []
+			: CATALOG.filter(
+					(entry) => entry.ecosystem === ecosystem && random() * 100 < entry.spread,
+				).flatMap((entry) =>
+					entry.advisories.map((item) => {
+						const roll = random()
+						next += 1
+						return {
+							...template,
+							id: findingId(next.toString(16).padStart(32, "0")),
+							repositoryId: repository.id,
+							repositoryFullName: repository.fullName,
+							lockfilePath: entry.lockfile,
+							ecosystem: entry.ecosystem,
+							packageName: entry.name,
+							advisoryId: item.id,
+							aliases: [],
+							severity: item.severity,
+							summary: item.summary,
+							versions: [entry.version],
+							fixedIn: item.fixedIn,
+							relation: roll < 0.4 ? ("direct" as const) : ("transitive" as const),
+							status:
+								roll < 0.06
+									? ("dismissed" as const)
+									: roll < 0.1
+										? ("fixed" as const)
+										: ("open" as const),
+							production: isRunning ? template.production : [],
+						}
+					}),
+				),
+	)
+	return {
+		repositories: {
+			repositories: repositories.flatMap(({ repository }) => (repository === null ? [] : [repository])),
+		},
+		findings: { ...findingsOf(nowMs), findings },
+	}
+}

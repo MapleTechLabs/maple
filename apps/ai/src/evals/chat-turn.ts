@@ -7,7 +7,7 @@
  * and what it was shown back, so a grade can always be checked against the trial.
  */
 import { randomUUID } from "node:crypto"
-import { Effect } from "effect"
+import { Effect, Option, Schema } from "effect"
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { ChatTurnEvent } from "../chat/events"
@@ -49,7 +49,10 @@ export interface ChatTurnInput {
 
 const OUTPUT_CHARS = 4_000
 
-const render = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value))
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
+const render = (value: unknown): string =>
+	typeof value === "string" ? value : Option.getOrElse(encodeJson(value), () => String(value))
 
 export const solveChatTurn = (input: ChatTurnInput): Effect.Effect<Transcript> => {
 	const { model, clients } = evalModel()

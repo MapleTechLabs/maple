@@ -1,4 +1,5 @@
 import type { StatusPageComponentStatus } from "@maple/domain/primitives"
+import { Schema } from "effect"
 import {
 	dayState,
 	incidentComponentStatus,
@@ -227,9 +228,11 @@ const pageData = (
 	}
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** JSON safe inside a `<script>` element: nothing in it can close the element or open a comment. */
 const scriptJson = (value: ReturnType<typeof pageData>): string =>
-	JSON.stringify(value)
+	encodeJson(value)
 		.replaceAll("<", "\\u003c")
 		.replaceAll(">", "\\u003e")
 		.replaceAll("&", "\\u0026")

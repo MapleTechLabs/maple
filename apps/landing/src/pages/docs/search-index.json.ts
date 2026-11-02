@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro"
 import { experimental_AstroContainer as AstroContainer } from "astro/container"
 import { getCollection, render } from "astro:content"
+import { Schema } from "effect"
 import BrandMarkIcon from "../../components/BrandMarkIcon.astro"
 import DocsCategoryIcon from "../../components/docs/DocsCategoryIcon.astro"
 import LanguageLogo from "../../components/docs/LanguageLogo.astro"
@@ -8,6 +9,7 @@ import { isDocGroup } from "../../lib/docs-nav"
 import { splitSections, type SearchDoc, type SearchIndexPayload } from "../../lib/docs-search"
 
 const ICON_CLASS = "size-4 shrink-0"
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * Prebuilt search index for the docs ⌘K palette. Emitted as a static
@@ -73,7 +75,7 @@ export const GET: APIRoute = async () => {
 		),
 	}
 
-	return new Response(JSON.stringify(payload), {
+	return new Response(encodeJson(payload), {
 		headers: { "Content-Type": "application/json" },
 	})
 }

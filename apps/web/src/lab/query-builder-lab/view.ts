@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { textInput } from "../../page/kit/query-builder/parts"
@@ -15,6 +16,8 @@ import { DEFAULT_PRESET } from "./update"
 import { fieldEyebrow } from "./view-controls"
 import { queryRow } from "./view-query"
 import { resultsContent } from "./view-results"
+
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // `QueryBuilderLabPage` inside `DashboardLayout`: the header time controls and the lab card.
 
@@ -172,17 +175,13 @@ const statePreview = (h: H, model: Model): Html =>
 					),
 				],
 				[
-					JSON.stringify(
-						{
-							startTime: model.window.startTime,
-							endTime: model.window.endTime,
-							queries: model.queries,
-							formulas: model.formulas,
-							submittedInput: model.submitted,
-						},
-						null,
-						2,
-					),
+					encodePrettyJson({
+						startTime: model.window.startTime,
+						endTime: model.window.endTime,
+						queries: model.queries,
+						formulas: model.formulas,
+						submittedInput: model.submitted,
+					}),
 				],
 			),
 		],

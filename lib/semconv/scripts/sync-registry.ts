@@ -42,6 +42,7 @@ const loadText = async (): Promise<string> => {
 	return response.text()
 }
 // SAFETY: every field of SourcePayload is optional, and the ones read are checked right below.
+// oxlint-disable-next-line effecttsgo/global-json -- lib/semconv does not depend on effect
 const payload = JSON.parse(await loadText()) as SourcePayload
 const attributes = payload.attributes
 const versions = payload.registries
@@ -82,6 +83,7 @@ for (const [id, registry] of previous.ATTRIBUTES) {
 	}
 }
 
+// oxlint-disable-next-line effecttsgo/global-json -- lib/semconv does not depend on effect
 const quote = (value: unknown) => JSON.stringify(value)
 
 const lines = [

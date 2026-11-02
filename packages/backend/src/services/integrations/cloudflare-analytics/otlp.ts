@@ -18,6 +18,7 @@
 import type { MetricAttrs, MetricGaugeRow, MetricSumRow } from "@maple/backend/services/warehouse/metric-rows"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
+import { Schema } from "effect"
 
 interface OtlpKeyValue {
 	readonly key: string
@@ -86,8 +87,10 @@ const dataPoint = (row: MetricGaugeRow): OtlpNumberDataPoint => ({
  * Stable identity keys for grouping. Resource/scope attribute maps are produced by the same
  * builders per (service, dataset), so JSON of the sorted entries is a sound grouping key.
  */
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const stableJson = (attrs: MetricAttrs): string =>
-	JSON.stringify(Object.entries(attrs).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+	encodeJsonSync(Object.entries(attrs).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
 
 interface ScopeAcc {
 	readonly scope: OtlpScopeMetrics["scope"]

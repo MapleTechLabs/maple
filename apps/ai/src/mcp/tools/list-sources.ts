@@ -59,7 +59,8 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 				"maple.sources.count": rows.length,
 				"maple.sources.unhealthy": rows.filter((row) => row.status !== "healthy").length,
 			})
-			return { generatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(), sources: rows }
+			const now = yield* Clock.currentTimeMillis
+			return { generatedAt: new Date(now).toISOString(), sources: rows }
 		}),
 		render: (output) => {
 			if (output.sources.length === 0) {

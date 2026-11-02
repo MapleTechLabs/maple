@@ -1,4 +1,7 @@
+import { Option, Schema } from "effect"
 import * as Predicate from "effect/Predicate"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const decodeBase64Url = (segment: string): string => {
 	const padded = segment.replace(/-/g, "+").replace(/_/g, "/")
@@ -10,7 +13,7 @@ export const readJwtExpMs = (token: string): number | undefined => {
 	const segments = token.split(".")
 	if (segments.length !== 3 || segments[1] === undefined) return undefined
 	try {
-		const claims: unknown = JSON.parse(decodeBase64Url(segments[1]))
+		const claims = Option.getOrUndefined(decodeJson(decodeBase64Url(segments[1])))
 		if (!Predicate.isObject(claims)) return undefined
 		const exp = claims.exp
 		return Predicate.isNumber(exp) && Number.isFinite(exp) ? exp * 1000 : undefined

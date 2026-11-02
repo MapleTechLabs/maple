@@ -67,7 +67,8 @@ export const layoutSpans = (
 	traceStartMs: number,
 ): ReadonlyArray<Bar> => {
 	const statusPreset = isStatusCodePreset(colorBy)
-	const visit = (node: SpanNodeData): ReadonlyArray<Bar> => {
+	const bars: Array<Bar> = []
+	const visit = (node: SpanNodeData): void => {
 		const startMs = spanStartMs(node)
 		const endMs = startMs + node.durationMs
 		const hasChildren = node.children.length > 0
@@ -88,9 +89,11 @@ export const layoutSpans = (
 			borderColor: barBorderFromHue(hue, isError, statusPreset),
 			hasChildren,
 		}
-		return isCollapsed ? [bar] : [bar, ...node.children.flatMap(visit)]
+		bars.push(bar)
+		if (!isCollapsed) node.children.forEach(visit)
 	}
-	return rootSpans.flatMap(visit)
+	rootSpans.forEach(visit)
+	return bars
 }
 
 /** Every span id with children, bucketed by depth (`collectParentIdsByLevel`). */
@@ -176,8 +179,20 @@ export const computeTimeAxisTicks = (
 	return { ticks, intervalMs }
 }
 
+const NO_MATCHES: ReadonlySet<string> = new Set()
+const lastMatches: Array<{ bars: ReadonlyArray<Bar>; query: string; matches: ReadonlySet<string> }> = []
+
+/** The span ids matching `query`, reused while the bars and query are the same. */
 export const computeSearchMatches = (bars: ReadonlyArray<Bar>, query: string): ReadonlySet<string> => {
-	if (query.trim() === "") return new Set()
+	if (query.trim() === "") return NO_MATCHES
+	const last = lastMatches[0]
+	if (last !== undefined && last.bars === bars && last.query === query) return last.matches
+	const matches = searchMatches(bars, query)
+	lastMatches[0] = { bars, query, matches }
+	return matches
+}
+
+const searchMatches = (bars: ReadonlyArray<Bar>, query: string): ReadonlySet<string> => {
 	const q = query.toLowerCase()
 	return new Set(
 		bars

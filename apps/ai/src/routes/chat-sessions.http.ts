@@ -41,8 +41,10 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { Env } from "@maple/backend/platform/Env"
 import { resolveChatSessionTenantContext } from "../mcp/lib/resolve-tenant"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const json = (body: unknown, status = 200) =>
-	HttpServerResponse.text(JSON.stringify(body), {
+	HttpServerResponse.text(encodeJson(body), {
 		status,
 		headers: { "content-type": "application/json; charset=utf-8" },
 	})

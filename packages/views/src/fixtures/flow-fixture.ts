@@ -1,5 +1,8 @@
+import { Schema } from "effect"
 import { buildTraceDetail, type SpanHierarchyRow } from "@maple/ui/lib/span-tree"
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const T0_MS = new Date("2026-07-21T10:00:00.000Z").getTime()
 
@@ -35,7 +38,7 @@ const ROWS: SpanHierarchyRow[] = [
 		spanName: "POST /api/checkout",
 		spanKind: "Server",
 		durationMs: 480,
-		spanAttributes: JSON.stringify({
+		spanAttributes: encodeJson({
 			"http.request.method": "POST",
 			"http.route": "/api/checkout",
 			"http.response.status_code": "200",
@@ -49,7 +52,7 @@ const ROWS: SpanHierarchyRow[] = [
 		serviceName: "edge-router",
 		spanKind: "Server",
 		durationMs: 34,
-		spanAttributes: JSON.stringify({
+		spanAttributes: encodeJson({
 			"cloud.platform": "cloudflare.workers",
 			"cloudflare.script_name": "checkout-edge",
 			"cloudflare.colo": "ORD",
@@ -77,7 +80,7 @@ const ROWS: SpanHierarchyRow[] = [
 		parentSpanId: "pricing",
 		spanName: "cache.get price-book",
 		durationMs: 2,
-		spanAttributes: JSON.stringify({
+		spanAttributes: encodeJson({
 			"cache.system": "redis",
 			"cache.name": "price-book:v2",
 			"cache.operation": "get",
@@ -91,7 +94,7 @@ const ROWS: SpanHierarchyRow[] = [
 		spanName: "SELECT orders",
 		spanKind: "Client",
 		durationMs: 41,
-		spanAttributes: JSON.stringify({
+		spanAttributes: encodeJson({
 			"db.system.name": "postgresql",
 			"db.operation.name": "SELECT",
 			"db.collection.name": "orders",
@@ -105,7 +108,7 @@ const ROWS: SpanHierarchyRow[] = [
 		spanName: "POST",
 		spanKind: "Client",
 		durationMs: 210,
-		spanAttributes: JSON.stringify({
+		spanAttributes: encodeJson({
 			"http.request.method": "POST",
 			"url.full": "https://api.stripe.com/v1/charges",
 			"http.response.status_code": "201",
@@ -119,7 +122,7 @@ const ROWS: SpanHierarchyRow[] = [
 		spanKind: "Client",
 		durationMs: 87,
 		statusCode: "Error",
-		spanAttributes: JSON.stringify({
+		spanAttributes: encodeJson({
 			"http.request.method": "GET",
 			"url.full": "https://inventory.internal/v1/stock/sku-9182",
 			"http.response.status_code": "503",
@@ -131,7 +134,7 @@ const ROWS: SpanHierarchyRow[] = [
 		parentSpanId: "inventory",
 		spanName: "cache.get stock",
 		durationMs: 1,
-		spanAttributes: JSON.stringify({
+		spanAttributes: encodeJson({
 			"cache.system": "redis",
 			"cache.name": "stock:sku-9182",
 			"cache.operation": "get",
@@ -165,7 +168,7 @@ const ROWS: SpanHierarchyRow[] = [
 			serviceName: "email-worker",
 			spanKind: "Client",
 			durationMs: 9 + i * 4,
-			spanAttributes: JSON.stringify({
+			spanAttributes: encodeJson({
 				"db.system.name": "clickhouse",
 				"db.operation.name": "INSERT",
 				"db.collection.name": "events",

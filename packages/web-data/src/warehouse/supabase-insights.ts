@@ -34,7 +34,8 @@ export const getSupabaseApiTraffic = Effect.fn("QueryEngine.getSupabaseApiTraffi
 	data: SupabaseBucketedProjectInput
 }) {
 	const input = yield* decodeInput(BucketedProjectInput, data, "getSupabaseApiTraffic")
-	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	return yield* runWarehouseQuery("supabaseApiTraffic", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -56,7 +57,8 @@ export const getSupabaseApiTopPaths = Effect.fn("QueryEngine.getSupabaseApiTopPa
 	data: SupabaseProjectInput
 }) {
 	const input = yield* decodeInput(ProjectInput, data, "getSupabaseApiTopPaths")
-	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	return yield* runWarehouseQuery("supabaseApiTopPaths", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -74,7 +76,8 @@ export const getSupabaseProjectCallers = Effect.fn("QueryEngine.getSupabaseProje
 	data: SupabaseBucketedProjectInput
 }) {
 	const input = yield* decodeInput(BucketedProjectInput, data, "getSupabaseProjectCallers")
-	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	return yield* runWarehouseQuery("supabaseProjectCallers", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -96,7 +99,8 @@ export const getSupabaseLogIssues = Effect.fn("QueryEngine.getSupabaseLogIssues"
 	data: SupabaseLogIssuesInput
 }) {
 	const input = yield* decodeInput(LogIssuesInput, data, "getSupabaseLogIssues")
-	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	return yield* runWarehouseQuery("supabaseLogIssues", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp

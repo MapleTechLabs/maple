@@ -80,7 +80,8 @@ const getReleasesEffect = Effect.fn("QueryEngine.getReleases")(function* ({
 	data: GetReleasesInput
 }) {
 	const input = yield* decodeInput(GetReleasesInput, data ?? {}, "getReleases")
-	const fallback = defaultWindow(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultWindow(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 	// Whole minutes: the rollup tiers cannot place a row inside a minute, and

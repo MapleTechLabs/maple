@@ -58,10 +58,11 @@ export const FetchMetrics = Command.define("FetchQueryBuilderLabMetrics", {
 	messages: [Message.CompletedFetchMetrics],
 	execute: ({ key }) =>
 		listMetrics({ data: { limit: 300 } }).pipe(
-			Effect.map((response) =>
-				response.data.map((row) => ({ metricName: row.metricName, metricType: row.metricType })),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					response.data.map((row) => ({ metricName: row.metricName, metricType: row.metricType })),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMetrics({ key, result })),
 		),
@@ -80,11 +81,13 @@ export const FetchTimeseries = Command.define("FetchQueryBuilderLabTimeseries", 
 				formulas: input.formulas.map((formula) => ({ ...formula })),
 			},
 		}).pipe(
-			Effect.map((response) => ({
-				points: toRunPoints(response.data),
-				warnings: debugWarnings(response.diagnostics),
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({
+					points: toRunPoints(response.data),
+					warnings: debugWarnings(response.diagnostics),
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTimeseries({ key, result })),
 		),

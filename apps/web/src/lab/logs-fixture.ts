@@ -3,6 +3,8 @@ import { Schema } from "effect"
 
 import type { LogRow as Log } from "@maple/query-engine"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /**
  * A realistic slice of a production log stream for `/lab/logs`: HTTP access
  * lines, DB slow-query warnings, a payment outage with stack traces, JSON
@@ -144,7 +146,7 @@ const TEMPLATES: readonly [Template, ...Template[]] = [
 		make: (r) => {
 			const user = pick(r, USERS)
 			return {
-				body: JSON.stringify({ event: "session.refreshed", user, ttl_s: 3600, mfa: r() < 0.3 }),
+				body: encodeJson({ event: "session.refreshed", user, ttl_s: 3600, mfa: r() < 0.3 }),
 				attrs: { "user.id": user, "enduser.auth.method": pick(r, ["passkey", "oauth", "password"]) },
 			}
 		},

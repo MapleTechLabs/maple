@@ -10,6 +10,7 @@
  * keys at the parameter they were probably meant to be.
  */
 import { Schema, SchemaIssue } from "effect"
+import { stringifyJson } from "./json"
 
 export interface NormalizedArguments {
 	readonly args: unknown
@@ -188,7 +189,7 @@ interface ParameterDoc {
 
 const typeOf = (schema: Readonly<Record<string, unknown>>): string => {
 	if (Array.isArray(schema.enum))
-		return `one of ${schema.enum.map((value) => JSON.stringify(value)).join(", ")}`
+		return `one of ${schema.enum.map((value) => stringifyJson(value)).join(", ")}`
 	if (typeof schema.type === "string") return schema.type === "array" ? "list" : schema.type
 	const branches = Array.isArray(schema.anyOf)
 		? schema.anyOf
