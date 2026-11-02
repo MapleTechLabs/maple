@@ -48,24 +48,14 @@ export const badgeClass = (
 		}),
 	)
 
-/** `<Badge>`: the same `badgeVariants` call, className folded in by cva. */
+/** `<Badge>`: `badgeClass` on a span, or a button / link when `onClick` / `href` is set. */
 export const badge = <Message>(
 	h: HtmlBuilder<Message>,
 	options: BadgeOptions<Message>,
 	children: Children,
 ): Html => {
 	const attributes = [
-		h.Class(
-			cn(
-				badgeVariants({
-					className: options.className,
-					mono: options.mono ?? false,
-					pill: options.pill ?? false,
-					size: options.size,
-					variant: options.variant,
-				}),
-			),
-		),
+		h.Class(badgeClass(options)),
 		h.DataAttribute("slot", "badge"),
 		...(options.attributes ?? []),
 	]
