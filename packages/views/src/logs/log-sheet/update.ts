@@ -1,20 +1,19 @@
 import { Duration, Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import * as AttributesPanel from "@maple/views/ui/attributes/attributes-panel"
-import * as InfraCorrelation from "../../kit/infra-correlation"
-import type { CopyStatus } from "@maple/views/ui/copy-button"
+import { type CopyStatus, writeClipboard } from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import * as Keyed from "@maple/views/data/keyed"
-import { writeClipboard } from "../../kit/clipboard"
-import type { Resources } from "../../../platform/resources"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import type { LogSource } from "../log-source"
 import { tabValues } from "./derive"
 import { Message, type Model, OutMessage } from "./model"
 import { requestPanels } from "./panels"
 
-type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
+export type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, LogSource>
 
 const COPY_TIMEOUT = Duration.millis(2000)
 
@@ -39,10 +38,10 @@ export const WriteDetailClipboard = Command.define("WriteDetailClipboard", {
 
 /** `logPermalink`: the origin is read when copying, never in the view. */
 export const WritePermalinkClipboard = Command.define("WritePermalinkClipboard", {
-	args: { logKey: Schema.String, generation: Schema.Number, copyId: Schema.String },
+	args: { path: Schema.String, generation: Schema.Number, copyId: Schema.String },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
-	execute: ({ logKey, generation, copyId }) =>
-		Effect.suspend(() => writeClipboard(`${window.location.origin}/logs/${logKey}`)).pipe(
+	execute: ({ path, generation, copyId }) =>
+		Effect.suspend(() => writeClipboard(`${window.location.origin}${path}`)).pipe(
 			Effect.map((isOk) =>
 				isOk
 					? Message.SucceededCopy({ generation, copyId })
@@ -62,12 +61,19 @@ const TABS_ID_BASE = 900
 
 const initScope = () => ToggleGroup.init({ label: "Context scope", values: ["instance"] })
 
-/** `isPage`: `/logs/$logId` shows every panel at once, outside a sheet. */
-export const init = (id: string, isPage = false): Model => ({
+export type InitOptions = Readonly<{
+	/** `/logs/$logId` shows every panel at once, outside a sheet. */
+	isPage?: boolean
+	/** The app's path for one log's page, before its key; without it, no full-page link or permalink. */
+	logPagePath?: string
+}>
+
+export const init = (id: string, options: InitOptions = {}): Model => ({
 	id,
 	orgId: "",
 	pinnedNamespace: null,
-	isPage,
+	isPage: options.isPage ?? false,
+	logPagePath: options.logPagePath ?? null,
 	isErrorExpanded: false,
 	contextScope: initScope(),
 	contextBefore: Keyed.idle(),
@@ -78,9 +84,9 @@ export const init = (id: string, isPage = false): Model => ({
 	log: null,
 	tabs: Tabs.init({ idBase: TABS_ID_BASE, values: ["attributes"], selected: "attributes" }),
 	attributes: AttributesPanel.init(`${id}-attributes`),
-	infra: InfraCorrelation.init(`${id}-infra`, ""),
 	isHeroExpanded: false,
 	copy: { id: "", status: "idle", generation: 0 },
+	tooltip: Tooltip.init(`${id}-tooltip`),
 })
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
@@ -89,9 +95,9 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	outMessage: result.outMessage?._tag === "Closed" ? OutMessage.Closed() : undefined,
 })
 
-/** A log on show: the attributes and context panels start fresh. */
-const viewing = (model: Model, log: LogRecord, selected: string): Model => {
-	const values = tabValues(log)
+/** A log on show: the attributes and context panels start fresh, the tooltip closed. */
+const viewing = (model: Model, log: LogRecord, selected: string, hasInfra: boolean): Model => {
+	const values = tabValues(log, hasInfra)
 	const isSameTabs = model.tabs.selected === selected && values.join() === model.tabs.values.join()
 	return {
 		...model,
@@ -104,7 +110,7 @@ const viewing = (model: Model, log: LogRecord, selected: string): Model => {
 					selected: values.includes(selected) ? selected : "attributes",
 				}),
 		attributes: AttributesPanel.init(`${model.id}-attributes`),
-		infra: InfraCorrelation.init(`${model.id}-infra`, model.orgId),
+		tooltip: Tooltip.init(`${model.id}-tooltip`),
 		contextScope: initScope(),
 		isHeroExpanded: false,
 		isErrorExpanded: false,
@@ -123,13 +129,30 @@ const withPanels = (result: Return): Return => {
 /** The org and namespace pin the panel reads are keyed under (`PageContext`'s). */
 export type Scope = Readonly<{ orgId: string; pinnedNamespace: string | null }>
 
-/** Shows `log`, starting fresh on the Attributes tab with new panels. */
-export const open = (model: Model, log: LogRecord, scope: Scope): Return =>
-	withPanels(liftDialog(viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes"), Dialog.open(model.dialog)))
+/**
+ * Shows `log`, starting fresh on the Attributes tab with new panels. `hasInfra`: the app backs an
+ * Infrastructure tab for this log (it passes the tab's body to the view).
+ */
+export const open = (model: Model, log: LogRecord, scope: Scope, hasInfra = false): Return =>
+	withPanels(
+		liftDialog(
+			viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes", hasInfra),
+			Dialog.open(model.dialog),
+		),
+	)
 
 /** `/logs/$logId`: the page's log, every panel reading at once. */
 export const show = (model: Model, log: LogRecord, scope: Scope): Return =>
-	withPanels({ model: viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes") })
+	withPanels({
+		model: viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes", false),
+	})
+
+/** The app closes the sheet (its page moved on, as to the trace the sheet linked to). */
+export const close = (model: Model): Return => liftDialog(model, Dialog.close(model.dialog))
+
+/** Another log in the open sheet (`SelectedLog`): its panels start fresh, the tab stays. */
+export const viewLog = (model: Model, log: LogRecord, hasInfra = false): Return =>
+	withPanels({ model: viewing(model, log, model.tabs.selected, hasInfra) })
 
 const settled = (model: Model, generation: number, status: CopyStatus): Return =>
 	generation === model.copy.generation
@@ -171,7 +194,7 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			})
 		},
-		ClickedLog: ({ log }) => withPanels({ model: viewing(model, log, model.tabs.selected) }),
+		ClickedLog: ({ log }) => ({ model, outMessage: OutMessage.SelectedLog({ log }) }),
 		PositionedLogRow: () => ({ model }),
 		CompletedFetchContext: ({ key, side, result }) => ({
 			model:
@@ -203,11 +226,11 @@ export const update = (model: Model, message: Message): Return =>
 							}),
 			}
 		},
-		GotInfraMessage: ({ message: inner }) => {
-			const next = InfraCorrelation.update(model.infra, inner)
+		GotTooltipMessage: ({ message: inner }) => {
+			const next = Tooltip.update(model.tooltip, inner)
 			return {
-				model: { ...model, infra: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotInfraMessage({ message: m })),
+				model: { ...model, tooltip: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotTooltipMessage({ message: m })),
 			}
 		},
 		ClickedShowFullMessage: () => ({ model: { ...model, isHeroExpanded: !model.isHeroExpanded } }),
@@ -218,11 +241,11 @@ export const update = (model: Model, message: Message): Return =>
 				commands: [WriteDetailClipboard({ text, generation: started.generation, copyId })],
 			}
 		},
-		ClickedCopyPermalink: ({ copyId, logKey }) => {
+		ClickedCopyPermalink: ({ copyId, path }) => {
 			const started = startCopy(model, copyId)
 			return {
 				model: started.model,
-				commands: [WritePermalinkClipboard({ logKey, generation: started.generation, copyId })],
+				commands: [WritePermalinkClipboard({ path, generation: started.generation, copyId })],
 			}
 		},
 		SucceededCopy: ({ generation, copyId }) => ({

@@ -11,7 +11,8 @@ import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as Menu from "@maple/views/ui/menu"
 import * as Popover from "@maple/views/ui/popover"
 import * as Tooltip from "@maple/views/ui/tooltip"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
@@ -107,6 +108,8 @@ export const Model = Schema.Struct({
 	searchHelp: Popover.Model,
 	/** `LogDetailSheet` and the row it shows (`selectedLog`, by index into the stream). */
 	detail: LogDetail.Model,
+	/** The sheet's Infrastructure tab, rebuilt per log. */
+	detailInfra: InfraCorrelation.Model,
 	selectedIndex: Schema.NullOr(Schema.Number),
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),

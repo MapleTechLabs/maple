@@ -15,7 +15,7 @@ import { load } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { navigate, selectPattern, setRange, settleRefresh, toSections, type UpdateReturn } from "./update"
-import * as LogSheet from "../kit/log-sheet/update"
+import * as LogSheet from "@maple/views/logs/log-sheet"
 import { updateFetch, updateFound } from "./update-fetch"
 import { appendPage, foldStream, liftSheet, syncStream } from "./update-stream"
 
@@ -125,7 +125,7 @@ const updatePage = (model: Model, message: Message, context: PageContext): Updat
 		GotModeToggleMessage: ({ message: child }) => foldModeToggle(model, context, child),
 		ClickedPattern: ({ pattern }) => selectPattern(model, context, pattern.template),
 		GotLogSheetMessage: ({ message: child }) =>
-			Option.match(model.maybeDetail, { onNone: () => ({ model }), onSome: (sheet) => liftSheet(model, LogSheet.update(sheet, child)) }),
+			Option.match(model.maybeDetail, { onNone: () => ({ model }), onSome: (sheet) => liftSheet(model, LogSheet.update(sheet, child), context) }),
 		GotFilterSectionsMessage: ({ message: child }) => {
 			const next = FilterSections.update(model.sections, child)
 			return { model: { ...model, sections: next.model }, commands: Command.mapMessages(next.commands ?? [], toSections) }

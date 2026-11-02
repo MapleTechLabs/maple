@@ -1,4 +1,4 @@
-import { OrgId } from "@maple/domain"
+import { OrgId, TraceId } from "@maple/domain"
 import { Option, Result, Schema } from "effect"
 import {
 	Command,
@@ -18,6 +18,8 @@ import * as Chart from "@maple/views/charts/chart"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tabs from "@maple/views/ui/tabs"
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import { VirtualizeLogStream } from "@maple/views/ui/logs/virtualize"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -313,5 +315,32 @@ describe("logs list", () => {
 		// A click without a drag does not zoom.
 		const clicked = pageUpdate(released.model, Message.PressedVolumeChart()).model
 		expect(pageUpdate(clicked, Message.ReleasedVolumeChart()).outMessage).toBeUndefined()
+	})
+
+	test("the sheet's trace link points at the trace; a host log gets the Infrastructure tab", () => {
+		const traceId = Schema.decodeSync(TraceId)("4bf92f3577b34da6a3ce929d0e0e4736")
+		const hosted = { ...log(0), traceId, resourceAttributes: { "host.name": "web-1" } }
+		const loaded = pageUpdate(
+			windowed(),
+			Message.CompletedFetchFirstPage({ key: windowed().firstPage.key ?? "", result: Result.succeed({ logs: [hosted], cursor: null }) }),
+		).model
+		const opened = pageUpdate(loaded, Message.GotStreamMessage({ message: LogsStream.Message.ClickedRow({ index: 0 }) })).model
+		expect(opened.detail.tabs.values).toEqual(["attributes", "trace", "context", "raw", "infrastructure"])
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(VirtualizeLogStream, streamWindow(0, 0)),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(
+				Tabs.MeasureTabIndicator,
+				Tabs.Message.MeasuredIndicator({ rect: { left: 16, right: 420, top: 4, bottom: 5, width: 122, height: 32 } }),
+			),
+			expectView(role("link", { name: /trace:/ })).toHaveAttr(
+				"href",
+				`/traces/${traceId}?t=${encodeURIComponent(hosted.timestamp)}`,
+			),
+		)
 	})
 })

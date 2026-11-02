@@ -8,10 +8,12 @@ Foldkit surface (dashboard, Maple Local, marketing site) uses it.
 
 A shared view takes its data through its Model and reports what it needs as an `OutMessage`
 (`Requested*`). It never fetches, never reads the org or the route, and never navigates: the app
-turns `RequestedTrace { id }` into a URL (`apps/web`) or a hash (`apps/local-ui`). Where a view
-needs Commands that load data, they go through one service per signal (for example `TraceSource`:
-`listTraces`, `spanDetail`, `spanLogs`), provided by `@maple/web-data` in the dashboard and by
-`CH.compile` plus `/local/query` in Maple Local. `ui/logs/logs-stream.ts` (rows handed in by the
+turns `RequestedTrace { id }` into a URL (`apps/web`) or a hash (`apps/local-ui`). A plain link the
+reader may open in a new tab takes its href from the app as a view input (the log sheet's
+`traceHref`). Where a view needs Commands that load data, they go through one service per signal
+(for example `TraceSource`: `listTraces`, `spanDetail`, `spanLogs`; `LogSource` for the log
+sheet), provided by `@maple/web-data` in the dashboard and by `CH.compile` plus `/local/query` in
+Maple Local. `ui/logs/logs-stream.ts` (rows handed in by the
 parent) is the working example.
 
 ## Maple Local onto shared views
@@ -30,8 +32,9 @@ Ranked by duplication removed per effort.
    Maple Local bundle.
 4. **One async slot.** Web's `Keyed` and local's `Slot` are the same idea with forked fields and
    two `LoadFailure` shapes. Merge them into `@maple/views/data`. Prerequisite for 5 and 6.
-5. **Log detail sheet** (`apps/web/src/page/logs/detail`) with an injected source; removes
-   local's `page/kit/log-sheet` (about 750 lines).
+5. **Log detail sheet.** Done: `logs/log-sheet` reads through `LogSource` (`listLogs`,
+   `traceSpans`); the app passes its trace URL, log page path and an optional Infrastructure
+   tab. Local's fork is gone.
 6. **Whole page Submodels:** traces list, metrics browse, the service map side panel, the signal
    empty state. Each takes a page-context adapter (time format, navigation OutMessage) and a
    source service.

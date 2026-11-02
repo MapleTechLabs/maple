@@ -14,7 +14,10 @@ import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import * as Tabs from "@maple/views/ui/tabs"
-import { init, Message, OutMessage, open, update, view } from "./index"
+import { inertHtml as ih } from "foldkit/html"
+import { encodeLogKey } from "../../lib/log-key"
+import { buildLogJsonPayload } from "./derive"
+import { init, Message, OutMessage, open, update, view, viewLog } from "../log-sheet"
 import type { Model } from "./model"
 import { contextKeyOf, mergeLogContext, traceLogsInput } from "./panels"
 import { requestKey } from "@maple/views/data/request-key"
@@ -36,7 +39,8 @@ const log: LogRecord = {
 
 const scope = { orgId: "org_test", pinnedNamespace: null }
 const opened = (): Model => open(init("log-detail"), log, scope).model
-const sceneView = withViewInputs(view, { timeZone: "UTC" })()
+const traceHref = (traceId: string, spanId: string | undefined) => `/traces/${traceId}?span=${spanId ?? ""}`
+const sceneView = withViewInputs(view, { timeZone: "UTC", canFilter: true, traceHref })()
 const program = { update, view: sceneView }
 
 const RECT = { left: 16, right: 420, top: 4, bottom: 5, width: 122, height: 32 }
@@ -148,16 +152,85 @@ describe("log detail sheet", () => {
 		])
 	})
 
-	test("picking a surrounding log shows it and keeps the tab", () => {
+	test("picking a surrounding log asks the app, and showing it keeps the tab", () => {
 		const onContext = update(
 			opened(),
 			Message.GotTabsMessage({ message: Tabs.Message.ClickedTab({ index: 1 }) }),
 		)
 		const other = { ...log, body: "GET /health 200", exactTimestamp: "c" }
 		const picked = update(onContext.model, Message.ClickedLog({ log: other }))
-		expect(picked.model.log?.body).toBe("GET /health 200")
-		expect(picked.model.tabs.selected).toBe("context")
-		expect(picked.commands?.length).toBe(2)
+		expect(picked.outMessage).toEqual(OutMessage.SelectedLog({ log: other }))
+		const shown = viewLog(onContext.model, other)
+		expect(shown.model.log?.body).toBe("GET /health 200")
+		expect(shown.model.tabs.selected).toBe("context")
+		expect(shown.commands?.length).toBe(2)
+	})
+
+	test("the trace link is a real link to the app's trace URL", () => {
+		const traced = { ...log, traceId: TraceId.make("4bf92f3577b34da6a3ce929d0e0e4736") }
+		scene(
+			program,
+			given(open(init("log-detail"), traced, scope).model),
+			...mounted,
+			expectView(role("link", { name: /trace:/ })).toHaveAttr("href", "/traces/4bf92f3577b34da6a3ce929d0e0e4736?span="),
+		)
+	})
+
+	test("the time follows the app's clock and the Raw JSON keeps the stored timestamp", () => {
+		const clock24 = withViewInputs(view, { timeZone: "UTC", canFilter: true, traceHref, hourCycle: "h23" })()
+		scene(
+			{ update, view: clock24 },
+			given(opened()),
+			...mounted,
+			expectView(text("Oct 1, 11:59:59.023")).toExist(),
+		)
+		expect(JSON.parse(buildLogJsonPayload(log)).timestamp).toBe("2026-10-01 11:59:59.023412000")
+	})
+
+	test("the full-page link and the permalink copy show only where the app has a log page", () => {
+		scene(
+			program,
+			given(opened()),
+			...mounted,
+			expectView(role("link", { name: "Open in full page" })).not.toExist(),
+			expectView(role("button", { name: /Link to log/ })).not.toExist(),
+		)
+		const withPage = open(init("log-detail", { logPagePath: "/logs/" }), log, scope).model
+		scene(
+			program,
+			given(withPage),
+			...mounted,
+			expectView(role("link", { name: "Open in full page" })).toHaveAttr("href", `/logs/${encodeLogKey(log)}`),
+			expectView(role("button", { name: /Link to log/ })).toExist(),
+		)
+	})
+
+	test("the Infrastructure tab shows only when the app backs it", () => {
+		expect(opened().tabs.values).not.toContain("infrastructure")
+		const withInfra = open(init("log-detail"), log, scope, true).model
+		expect(withInfra.tabs.values.at(-1)).toBe("infrastructure")
+		const infraView = withViewInputs(view, {
+			timeZone: "UTC",
+			canFilter: true,
+			traceHref,
+			infraTab: () => ih.p([], ["Host charts"]),
+		})()
+		scene(
+			{ update, view: infraView },
+			given(withInfra),
+			...mounted,
+			click(role("tab", { name: /Infrastructure/ })),
+			expectView(text("Host charts")).toExist(),
+		)
+	})
+
+	test("a CRITICAL log gets the error banner too", () => {
+		scene(
+			program,
+			given(open(init("log-detail"), { ...log, severityText: "CRITICAL", body: "disk full" }, scope).model),
+			...mounted,
+			expectView(role("button", { name: "Copy error message" })).toExist(),
+		)
 	})
 
 	test("an error log gets the error banner with its exception type", () => {

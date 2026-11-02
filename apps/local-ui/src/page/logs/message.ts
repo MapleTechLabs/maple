@@ -9,7 +9,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import { Message as LogSheetMessage } from "../kit/log-sheet/message"
+import * as LogSheet from "@maple/views/logs/log-sheet"
 import { FacetOption, LocalLog, LogPages, LogPatterns, LogPattern } from "./model"
 
 export const FacetParam = Schema.Literals(["severity", "service"])
@@ -60,7 +60,7 @@ export const Message = defineMessageUnion({
 	CompletedSavePreferences: {},
 	GotToolbarTooltipMessage: { message: Tooltip.Message },
 	GotColumnsPopoverMessage: { message: Popover.Message },
-	GotLogSheetMessage: { message: LogSheetMessage },
+	GotLogSheetMessage: { message: LogSheet.Message },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 })

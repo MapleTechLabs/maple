@@ -2,10 +2,10 @@ import { SpanId, TraceId } from "@maple/domain"
 import { type LocalLog, logKey } from "../../lib/log-shape"
 import { cachedSpanLogRecords, fetchSpanLogRecords } from "../../data/trace-source"
 import { readCached, recordCached } from "../../data/cached"
-import { traceCacheKey, traceFromCached, traceToCached } from "./cache"
+import { traceCacheKey, traceFromCached, traceToCached } from "../../data/trace-cache"
 import { Clock, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
-import { fetchTrace } from "./fetch"
+import { fetchTrace } from "../../data/trace-fetch"
 import { Message } from "./message"
 
 export const FetchTrace = Command.define("FetchLocalTraceDetail", {

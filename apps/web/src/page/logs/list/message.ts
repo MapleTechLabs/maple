@@ -9,7 +9,8 @@ import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as Menu from "@maple/views/ui/menu"
 import * as Popover from "@maple/views/ui/popover"
 import * as Tooltip from "@maple/views/ui/tooltip"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 import { SignalPresences } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Density } from "@maple/views/ui/logs/viewer"
@@ -71,6 +72,7 @@ export const Message = defineMessageUnion({
 	GotColumnsPopoverMessage: { message: Popover.Message },
 	GotSearchHelpMessage: { message: Popover.Message },
 	GotDetailMessage: { message: LogDetail.Message },
+	GotDetailInfraMessage: { message: InfraCorrelation.Message },
 	ToggledColumn: { key: Schema.String },
 	GotVolumeChartMessage: { message: Chart.Message },
 	PressedVolumeChart: {},

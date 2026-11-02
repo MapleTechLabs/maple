@@ -1,19 +1,17 @@
 import { formatWarehouseDateTime, formatWarehouseDateTimeMs } from "@maple/query-engine"
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { computeTraceTimeWindow } from "@maple/web-data/lib/trace-time-window"
-import { listLogs } from "@maple/web-data/warehouse/logs"
-import { getSpanHierarchy } from "@maple/web-data/warehouse/traces"
 import { TraceId } from "@maple/domain"
 import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { toLoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
-import type { Resources } from "../../../platform/resources"
 import { LogRecord } from "@maple/views/ui/logs/log-row-view"
+import { LogSource, LogsRequest } from "../log-source"
 import { Message, type Model } from "./model"
 
-// The reads behind `LogTraceTimeline` and `LogContextPanel`, sent while their panel is on show.
+// The reads behind `LogTraceTimeline` and `LogContextPanel`, sent while their panel is on show,
+// through `LogSource`.
 
 const CONTEXT_SIZE = 25
 const CONTEXT_WINDOW_MS = 60 * 60 * 1000
@@ -21,7 +19,7 @@ export const TRACE_LOG_LIMIT = 200
 const INSTANCE_KEYS = ["k8s.pod.name", "service.instance.id"] as const
 const WAREHOUSE_DATETIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/
 
-type Cmd = Command.Command<Message, never, Resources>
+type Cmd = Command.Command<Message, never, LogSource>
 
 const InstanceAttribute = Schema.Struct({ key: Schema.String, value: Schema.String })
 export type InstanceAttribute = typeof InstanceAttribute.Type
@@ -49,7 +47,7 @@ export const scopedInstance = (model: Model, log: LogRecord): InstanceAttribute 
 }
 
 /** `applyGlobalNamespace(data, "top")`: the pin is the only namespace filter. */
-const pinned = (pinnedNamespace: string | null) =>
+const pinned = (pinnedNamespace: string | null): Pick<LogsRequest, "namespaces"> =>
 	pinnedNamespace === null ? {} : { namespaces: [pinnedNamespace] }
 
 /** `contextInputs`: 25 logs each side within an hour; both sides include this instant. */
@@ -58,21 +56,17 @@ export const contextInput = (
 	instance: InstanceAttribute | undefined,
 	side: Side,
 	pinnedNamespace: string | null,
-) => {
+): LogsRequest | undefined => {
 	const ms = timestampMs(log.timestamp)
 	if (Number.isNaN(ms)) return undefined
 	const at = WAREHOUSE_DATETIME.test(log.exactTimestamp)
 		? log.exactTimestamp
 		: formatWarehouseDateTimeMs(ms)
-	const shared = {
-		services: [log.serviceName],
-		limit: CONTEXT_SIZE + 1,
-		resourceAttributeFilters:
-			instance === undefined
-				? undefined
-				: [{ key: instance.key, value: instance.value, mode: "equals" as const }],
-		...pinned(pinnedNamespace),
-	}
+	const service: LogsRequest = { services: [log.serviceName], limit: CONTEXT_SIZE + 1, ...pinned(pinnedNamespace) }
+	const shared: LogsRequest =
+		instance === undefined
+			? service
+			: { ...service, resourceAttributeFilters: [{ key: instance.key, value: instance.value, mode: "equals" }] }
 	return side === "before"
 		? {
 				...shared,
@@ -108,18 +102,10 @@ export const mergeLogContext = (
 
 /** `listLogsResultAtom({ data: before | after })`. */
 export const FetchContext = Command.define("FetchLogContext", {
-	args: {
-		key: Schema.String,
-		side: Side,
-		log: LogRecord,
-		instance: Schema.UndefinedOr(InstanceAttribute),
-		pinnedNamespace: Schema.NullOr(Schema.String),
-	},
+	args: { key: Schema.String, side: Side, request: LogsRequest },
 	messages: [Message.CompletedFetchContext],
-	execute: ({ key, side, log, instance, pinnedNamespace }) =>
-		Effect.suspend(() => listLogs({ data: contextInput(log, instance, side, pinnedNamespace) ?? {} })).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+	execute: ({ key, side, request }) =>
+		LogSource.use((source) => source.listLogs(request)).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchContext({ key, side, result })),
 		),
@@ -135,9 +121,7 @@ export const FetchTraceLogs = Command.define("FetchLogTraceLogs", {
 	},
 	messages: [Message.CompletedFetchTraceLogs],
 	execute: ({ key, traceId, timestamp, pinnedNamespace }) =>
-		listLogs({ data: traceLogsInput(traceId, timestamp, pinnedNamespace) }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+		LogSource.use((source) => source.listLogs(traceLogsInput(traceId, timestamp, pinnedNamespace))).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTraceLogs({ key, result })),
 		),
@@ -148,12 +132,7 @@ export const FetchTraceSpans = Command.define("FetchLogTraceSpans", {
 	args: { key: Schema.String, traceId: TraceId, timestamp: Schema.String },
 	messages: [Message.CompletedFetchTraceSpans],
 	execute: ({ key, traceId, timestamp }) =>
-		getSpanHierarchy({ data: { traceId, timestamp } }).pipe(
-			Effect.map((response) => ({
-				traceStartTime: response.traceStartTime ?? null,
-				spanNames: response.spans.map((span) => ({ spanId: span.spanId, spanName: span.spanName })),
-			})),
-			Effect.mapError(toLoadFailure),
+		LogSource.use((source) => source.traceSpans({ traceId, timestamp })).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTraceSpans({ key, result })),
 		),
@@ -167,7 +146,7 @@ export const traceWindow = (timestamp: string) => {
 		: { startTime: snapTimestamp(window.startTime), endTime: snapTimestamp(window.endTime) }
 }
 
-export const traceLogsInput = (traceId: TraceId, timestamp: string, pinnedNamespace: string | null) => ({
+export const traceLogsInput = (traceId: TraceId, timestamp: string, pinnedNamespace: string | null): LogsRequest => ({
 	traceId,
 	limit: TRACE_LOG_LIMIT,
 	...traceWindow(timestamp),
@@ -196,27 +175,18 @@ export const contextKeyOf = (model: Model, log: LogRecord, side: Side): string |
 	return input === undefined ? undefined : requestKey(model.orgId, "listLogs", { data: input })
 }
 
+/** A log without a readable timestamp has no context to read. */
 const requestContext = (step: Step, log: LogRecord): Step => {
 	if (!isShowing(step.model, "context")) return step
 	const instance = scopedInstance(step.model, log)
 	return (["before", "after"] as const).reduce((acc, side) => {
-		const key = contextKeyOf(acc.model, log, side)
-		if (key === undefined) return acc
+		const request = contextInput(log, instance, side, acc.model.pinnedNamespace)
+		if (request === undefined) return acc
+		const key = requestKey(acc.model.orgId, "listLogs", { data: request })
+		const fetch = FetchContext({ key, side, request })
 		return side === "before"
-			? slotStep(
-					acc,
-					(m) => m.contextBefore,
-					key,
-					(m, contextBefore) => ({ ...m, contextBefore }),
-					FetchContext({ key, side, log, instance, pinnedNamespace: acc.model.pinnedNamespace }),
-				)
-			: slotStep(
-					acc,
-					(m) => m.contextAfter,
-					key,
-					(m, contextAfter) => ({ ...m, contextAfter }),
-					FetchContext({ key, side, log, instance, pinnedNamespace: acc.model.pinnedNamespace }),
-				)
+			? slotStep(acc, (m) => m.contextBefore, key, (m, contextBefore) => ({ ...m, contextBefore }), fetch)
+			: slotStep(acc, (m) => m.contextAfter, key, (m, contextAfter) => ({ ...m, contextAfter }), fetch)
 	}, step)
 }
 

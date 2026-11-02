@@ -3,7 +3,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { LogRecord } from "@maple/views/ui/logs/log-row-view"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
 
 // `/logs/$logId`: one log's shareable page.
 

@@ -6,7 +6,7 @@ import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TimeFormat } from "../kit/local-time"
-import { logKey } from "../../lib/log-shape"
+import { logKey, logRecordKey } from "../../lib/log-shape"
 import { attributeFiltersOf, type LogFilters } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -37,7 +37,9 @@ const selectedIndexOf = (model: Model): number | undefined =>
 	Option.match(model.maybeDetail, {
 		onNone: () => undefined,
 		onSome: (detail) => {
-			const index = rowsOf(model).findIndex((log) => logKey(log) === logKey(detail.log))
+			if (detail.log === null) return undefined
+			const key = logRecordKey(detail.log)
+			const index = rowsOf(model).findIndex((log) => logKey(log) === key)
 			return index === -1 ? undefined : index
 		},
 	})

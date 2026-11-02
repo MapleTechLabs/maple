@@ -9,12 +9,12 @@ import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
 import { scrollArea } from "@maple/views/ui/scroll-area"
 import * as TabsView from "@maple/views/ui/tabs-view"
-import * as InfraCorrelation from "../../kit/infra-correlation"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { buildLogJsonPayload, TAB_LABELS } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { heroHeader } from "./view-hero"
-import { metaStrip } from "./view-meta"
+import { type MetaInputs, metaStrip, type TooltipParts, tooltipContent, triggerIdsOf } from "./view-meta"
 import { contextPanel, errorBanner, showsErrorBanner, traceTimeline } from "./view-panels"
 import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
@@ -23,7 +23,12 @@ import { vstack, vstackClass } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-export type ViewInputs = Readonly<{ timeZone: string }>
+export type ViewInputs = MetaInputs & Readonly<{
+	/** The attributes' Filter actions (`ChoseAttributeFilter`), where the app can filter by them. */
+	canFilter: boolean
+	/** The Infrastructure tab's body, built by the app that can back it (`open`'s `hasInfra`). */
+	infraTab?: (() => Html) | undefined
+}>
 
 const TAB_ICONS = new Map<string, IconName>([
 	["attributes", "CircleInfoIcon"],
@@ -68,7 +73,7 @@ const scrolled = (h: H, model: Model, tab: string, child: Html): ReadonlyArray<H
 	]),
 ]
 
-const panelOf = (h: H, model: Model, log: LogRecord, timeZone: string) => (value: string) => {
+const panelOf = (h: H, model: Model, log: LogRecord, inputs: ViewInputs) => (value: string) => {
 	switch (value) {
 		case "attributes":
 			return scrolled(
@@ -82,7 +87,7 @@ const panelOf = (h: H, model: Model, log: LogRecord, timeZone: string) => (value
 					viewInputs: {
 						logAttributes: log.logAttributes,
 						resourceAttributes: log.resourceAttributes,
-						canFilter: true,
+						canFilter: inputs.canFilter,
 					},
 					toParentMessage: (message) => Message.GotAttributesMessage({ message }),
 				}),
@@ -90,33 +95,17 @@ const panelOf = (h: H, model: Model, log: LogRecord, timeZone: string) => (value
 		case "trace":
 			return scrolled(h, model, value, traceTimeline(h, model, log) ?? h.div([], []))
 		case "context":
-			return [contextPanel(h, model, log, timeZone)]
+			return [contextPanel(h, model, log, inputs.timeZone)]
 		case "raw":
 			return scrolled(h, model, value, rawPanel(h, model, log))
 		case "infrastructure":
-			return scrolled(
-				h,
-				model,
-				value,
-				h.submodel({
-					slotId: `${model.id}-infra-panel`,
-					model: model.infra,
-					view: InfraCorrelation.view,
-					viewInputs: {
-						resourceAttributes: log.resourceAttributes,
-						anchor: log.timestamp,
-						spanDurationMs: 0,
-						timeZone,
-					},
-					toParentMessage: (message) => Message.GotInfraMessage({ message }),
-				}),
-			)
+			return inputs.infraTab === undefined ? undefined : scrolled(h, model, value, inputs.infraTab())
 		default:
 			return undefined
 	}
 }
 
-const tabs = (h: H, model: Model, log: LogRecord, timeZone: string): Html =>
+const tabs = (h: H, model: Model, log: LogRecord, inputs: ViewInputs): Html =>
 	h.submodel({
 		slotId: `${model.id}-tabs`,
 		model: model.tabs,
@@ -131,25 +120,48 @@ const tabs = (h: H, model: Model, log: LogRecord, timeZone: string): Html =>
 				icon(h, TAB_ICONS.get(value) ?? "CircleInfoIcon", { size: 14 }),
 				` ${label}`,
 			],
-			panel: panelOf(h, model, log, timeZone),
+			panel: panelOf(h, model, log, inputs),
 			hasPanel: () => true,
 			panelClassNameFor: (value) => (value === "context" ? "p-3" : undefined),
 		},
 		toParentMessage: (message) => Message.GotTabsMessage({ message }),
 	})
 
+/** The copy controls' one Tooltip around `render`; each trigger keeps its portal beside it. */
+const withTooltip = (h: H, model: Model, render: (tooltip: TooltipParts) => ReadonlyArray<Html | null>): Html =>
+	h.submodel({
+		slotId: `${model.tooltip.id}-slot`,
+		model: model.tooltip,
+		view: Tooltip.view,
+		viewInputs: {
+			triggerIds: triggerIdsOf(model),
+			toContent: (triggerId) => tooltipContent(model, triggerId),
+			toView: ({ trigger, portal }) =>
+				h.div(
+					[h.Class("contents")],
+					render({
+						trigger,
+						portalFor: (id) => (portal !== null && model.tooltip.triggerId === id ? [portal] : []),
+					}),
+				),
+		},
+		toParentMessage: (message) => Message.GotTooltipMessage({ message }),
+	})
+
 const content = (
 	h: H,
 	model: Model,
 	log: LogRecord,
-	timeZone: string,
+	inputs: ViewInputs,
 	close: ReadonlyArray<ChildAttribute>,
 ) => [
 	DialogView.dialogTitle(h, "sheet", model.dialog.id, ["Log: ", log.body.slice(0, 80)], "sr-only"),
-	heroHeader(h, model, log, close),
-	metaStrip(h, model, log, timeZone),
-	...(showsErrorBanner(log) ? [errorBanner(h, model, log)] : []),
-	tabs(h, model, log, timeZone),
+	withTooltip(h, model, (tooltip) => [
+		heroHeader(h, model, log, close),
+		metaStrip(h, model, log, inputs, tooltip),
+		...(showsErrorBanner(log) ? [errorBanner(h, model, log, tooltip)] : []),
+		tabs(h, model, log, inputs),
+	]),
 ]
 
 /** The sheet's portal while it is open or closing, else nothing. */
@@ -167,14 +179,14 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			showCloseButton: false,
 			hasDescription: false,
 			toView: ({ portal }) => portal,
-			toContent: (close) => content(h, model, log, inputs.timeZone, close),
+			toContent: (close) => content(h, model, log, inputs, close),
 		},
 		toParentMessage: (message) => Message.GotDialogMessage({ message }),
 	})
 })
 
 /** `/logs/$logId`'s body: hero and meta as one card, attributes beside trace, context and raw. */
-export const pageView = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+export const pageView = Submodel.defineView<Model, Message, MetaInputs>((model, inputs, h) => {
 	const { log } = model
 	if (log === null) return null
 	const trace = traceTimeline(h, model, log)
@@ -182,9 +194,11 @@ export const pageView = Submodel.defineView<Model, Message, ViewInputs>((model, 
 		[h.Class("contents")],
 		[
 			panel(h, { tone: "background" }, [
-				heroHeader(h, model, log, null),
-				metaStrip(h, model, log, inputs.timeZone, false),
-				...(showsErrorBanner(log) ? [errorBanner(h, model, log)] : []),
+				withTooltip(h, model, (tooltip) => [
+					heroHeader(h, model, log, null),
+					metaStrip(h, model, log, inputs, tooltip, false),
+					...(showsErrorBanner(log) ? [errorBanner(h, model, log, tooltip)] : []),
+				]),
 			]),
 			h.div(
 				[h.Class("grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]")],

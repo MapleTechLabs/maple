@@ -8,7 +8,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import { Message as LogSheetMessage } from "../kit/log-sheet/message"
+import * as LogSheet from "@maple/views/logs/log-sheet"
 import { LocalLog } from "../../lib/log-shape"
 
 export const Message = defineMessageUnion({
@@ -30,7 +30,7 @@ export const Message = defineMessageUnion({
 	FoundSpanLog: { log: LocalLog },
 	/** The clicked row's log could not be read again: the panel's reads are refreshed. */
 	FailedReadSpanLog: {},
-	GotLogSheetMessage: { message: LogSheetMessage },
+	GotLogSheetMessage: { message: LogSheet.Message },
 	CompletedFocusSpanPanel: {},
 })
 export type Message = typeof Message.Type

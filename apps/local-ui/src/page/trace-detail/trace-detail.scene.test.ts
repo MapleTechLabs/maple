@@ -117,7 +117,27 @@ describe("local trace detail", () => {
 		expect((clicked.commands ?? []).map(({ name }) => name)).toEqual([ReadSpanLog.name])
 		const found = update(clicked.model, Message.FoundSpanLog({ log: spanLog }), ctx).model
 		const sheet = Option.getOrNull(found.maybeLogSheet)
-		expect([sheet?.dialog.isOpen, sheet?.log.body]).toEqual([true, "card declined"])
+		expect([sheet?.dialog.isOpen, sheet?.log?.body]).toEqual([true, "card declined"])
+	})
+
+	test("the log sheet closes when its trace link moves the hash to the log's span", () => {
+		const ctx = contextAt(`spanId=${SPAN_ID}`)
+		const open = answered(init(ctx, TRACE_ID).model, Option.some(trace), ctx).model
+		const spanLog = {
+			timestamp: "2026-10-01 11:59:00.004000000",
+			severityText: "INFO",
+			severityNumber: 9,
+			serviceName: "storefront",
+			body: "charged",
+			traceId: TRACE_ID,
+			spanId: "2222222222222222",
+			recordIdentity: "2",
+			logAttributes: {},
+			resourceAttributes: {},
+		}
+		const found = update(open, Message.FoundSpanLog({ log: spanLog }), ctx).model
+		const followed = locationChanged(found, contextAt("spanId=2222222222222222"))
+		expect(Option.map(followed.model.maybeLogSheet, (sheet) => sheet.dialog.isOpen)).toEqual(Option.some(false))
 	})
 
 	test("a clicked log that can no longer be read refreshes the span's reads", () => {

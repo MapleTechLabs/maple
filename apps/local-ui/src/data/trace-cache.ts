@@ -1,6 +1,6 @@
 import { TraceData } from "@maple/views/traces/trace-data"
 import { Option, Schema } from "effect"
-import type { CacheValue, QueryKey } from "../../data/cache-store"
+import type { CacheValue, QueryKey } from "./cache-store"
 
 // `useLocalTraceDetail`'s key and data (`buildTraceDetail`'s `TraceDetail`) in the result cache.
 
