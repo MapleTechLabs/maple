@@ -38,7 +38,7 @@ import {
 import { gestureStep } from "./gesture"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { replan, shownDocumentOf, slotOf, withCharts } from "./plan"
+import { replan, slotOf, withCharts } from "./plan"
 import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
@@ -265,14 +265,6 @@ const replanAfter = (stepped: Return, context: PageContext): Return => {
 	const planned = replan(stepped.model, context, "Load")
 	return { ...stepped, model: planned.model, commands: [...(stepped.commands ?? []), ...planned.commands] }
 }
-
-/** Some revealed stat with a sparkline waits on `key` for its value. */
-const gatesSparkline = (model: Model, key: string): boolean =>
-	(shownDocumentOf(model)?.widgets ?? []).some((widget) => {
-		if (widget.visualization !== "stat" || widget.display.sparkline?.enabled !== true) return false
-		const gate = slotOf(model, widget.id).gate
-		return gate?._tag === "Request" && gate.request.key === key
-	})
 
 const withReplan = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const planned = replan(model, context, mode)
@@ -528,16 +520,30 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		RevealedWidget: ({ widgetId }) => {
 			const slot = slotOf(model, widgetId)
-			return slot.isRevealed
+			return slot.isRevealed && slot.isOffscreen !== true
 				? { model }
 				: withReplan(
 						{
 							...model,
-							widgets: { ...model.widgets, [widgetId]: { ...slot, isRevealed: true } },
+							widgets: {
+								...model.widgets,
+								[widgetId]: { ...slot, isRevealed: true, isOffscreen: false },
+							},
 						},
 						context,
 						"Load",
 					)
+		},
+		HidWidget: ({ widgetId }) => {
+			const slot = slotOf(model, widgetId)
+			return !slot.isRevealed || slot.isOffscreen === true
+				? { model }
+				: {
+						model: {
+							...model,
+							widgets: { ...model.widgets, [widgetId]: { ...slot, isOffscreen: true } },
+						},
+					}
 		},
 		CompletedFetchVariableOptions: ({ name, key, result }) => {
 			const slot = model.variableOptions[name]
@@ -555,12 +561,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchWidget: ({ key, result }) => {
 			const slot = model.requests[key]
 			if (slot === undefined) return { model }
-			const accepted = {
-				...model,
-				requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) },
+			// Sparklines are planned with their stat, so an answer re-plans nothing.
+			return {
+				model: { ...model, requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) } },
 			}
-			// A stat that just got its value asks for its sparkline series next; nothing else re-plans.
-			return gatesSparkline(model, key) ? withReplan(accepted, context, "Load") : { model: accepted }
 		},
 		GotShareMessage: ({ message: inner }) => shareStep(model, context, inner),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
