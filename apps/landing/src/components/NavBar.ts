@@ -133,10 +133,18 @@ const AnnounceSignedInUser = Command.define("AnnounceSignedInUser", {
 const MARK_SVG = "/brand/logo/maple-mark-amber.svg"
 const BRAND_KIT = "/brand/maple-brand-kit.zip"
 
+class BrandAssetLoadError extends Schema.TaggedError<BrandAssetLoadError>()(
+	"@maple/landing/BrandAssetLoadError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 const CopyMark = Command.define("CopyMapleMarkSvg", {
 	messages: [Message.CompletedSideEffect],
 	// A chunk that no longer loads (a deploy since, offline) counts as a failed copy.
-	execute: Effect.tryPromise(() => import("../lib/copy-brand-asset")).pipe(
+	execute: Effect.tryPromise({
+		try: () => import("../lib/copy-brand-asset"),
+		catch: (cause) => new BrandAssetLoadError({ message: "Couldn't load the brand copy module", cause }),
+	}).pipe(
 		Effect.flatMap(({ copyBrandAsset }) => copyBrandAsset(MARK_SVG)),
 		Effect.orElseSucceed(() => false),
 		Effect.map((copied) => {

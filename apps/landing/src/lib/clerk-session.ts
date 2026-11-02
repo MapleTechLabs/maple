@@ -102,7 +102,8 @@ export const watchSignedInUser: Stream.Stream<string | null> = Stream.suspend(()
 	})
 	const changes = Stream.unwrap(
 		Effect.gen(function* () {
-			if (!hasClerkSessionCookie(document.cookie, yield* suffix)) return Stream.empty
+			const cookieSuffix = yield* suffix
+			if (!hasClerkSessionCookie(document.cookie, cookieSuffix)) return Stream.empty
 			return yield* Effect.map(loadedClerk, (clerk) =>
 				Stream.callback<string | null>((queue) =>
 					Effect.acquireRelease(
