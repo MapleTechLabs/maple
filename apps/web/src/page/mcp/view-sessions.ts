@@ -9,6 +9,7 @@ import { formatLatency, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { emptyMessage } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { pressable } from "../../ui/pressable"
 import {
@@ -495,7 +496,11 @@ const toolsPanel = <M>(h: HtmlBuilder<M>, data: McpSessionResponse, options: Ses
 				toolTableBody(
 					h,
 					tools.length === 0
-						? [filteredEmpty(h, { noun: "tool calls", description: "", className: "py-8" })]
+						? [
+								emptyMessage(h, { className: "py-8 font-mono" }, [
+									"No tool calls in this session",
+								]),
+							]
 						: tools.map((tool) => toolRow(h, tool, max, options)),
 				),
 			]),
