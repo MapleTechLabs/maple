@@ -4,7 +4,7 @@
  * is compared against on the right, each mark linking to its page. Five don't
  * fit one row in the hero's aside, so the list wraps to 3 + 2, centered.
  */
-import { MapleMark } from "@maple/ui/components/icons/maple-mark";
+import Icon from "../Icon.astro";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
 import { comparePath, competitors } from "../../lib/competitors";
 
@@ -14,7 +14,7 @@ const locale = Astro.currentLocale ?? "en";
 <div class="relative grid grid-cols-[1fr_1.6fr] gap-px overflow-hidden rounded-xl border border-border bg-border">
 	<div class="pair-cell flex flex-col items-center gap-4 px-6 py-10 text-center md:py-12" style="--pair: var(--primary)">
 		<span class="flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-bg-elevated">
-			<MapleMark size={34} className="text-primary" />
+			<Icon name="MapleMark" size={34} class="text-primary" />
 		</span>
 		<div>
 			<div class="font-display text-lg font-medium tracking-[-0.01em] text-fg md:text-xl">Maple</div>

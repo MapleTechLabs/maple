@@ -11,9 +11,9 @@ import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors
 import { formatNumber } from "@maple/ui/lib/format"
 import { HEATMAP_SPIKE_ROWS, heatmapSpikeModel } from "./spike-heatmap-model"
 import { RAMP_TOKENS, type TokenWithFallback } from "./spike-timeseries-tokens"
-import { registerLabChartHost } from "@maple/views/charts/chart-mounts"
+import { registerChartHost } from "@maple/views/charts/chart-mounts"
 
-registerLabChartHost(() => import("./spike-host"))
+registerChartHost("lab", () => import("./spike-host"))
 
 // A `/lab/charts` prototype in its `PlotFrame`: the lab host draws it from `ChartSpec.LabSpike`,
 // the frame carries its DOM legend (`PlotSeriesLegend`) and the tooltip body.

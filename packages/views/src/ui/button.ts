@@ -3,7 +3,8 @@ import { buttonLoadingIndicatorStyles, buttonVariants } from "@maple/ui/styles/u
 import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "./icon"
+import { LoaderIcon } from "./control-icons"
+import { iconNode } from "./icon"
 
 export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 	Readonly<{
@@ -42,7 +43,7 @@ export const button = <Message>(
 			...children,
 			...(isLoading
 				? [
-						icon(h, "LoaderIcon", {
+						iconNode(h, LoaderIcon, "LoaderIcon", {
 							// The loader's graded spokes vanish on a solid fill; draw every spoke in the button's foreground.
 							className: cn(
 								spinnerStyles,

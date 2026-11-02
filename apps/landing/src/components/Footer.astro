@@ -5,7 +5,7 @@ import LanguageSwitcher from "./LanguageSwitcher.astro";
 import { getGitHubStars, formatStars } from "../lib/github-stars";
 import { features } from "../lib/features";
 import { featurePath } from "../lib/page-registry";
-import { MapleMark } from "@maple/ui/components/icons/maple-mark";
+import Icon from "./Icon.astro";
 
 const locale = Astro.currentLocale ?? "en";
 const l = (path: string) => getRelativeLocaleUrl(locale, path);
@@ -40,7 +40,7 @@ const stars = await getGitHubStars();
             <!-- Col 1: Logo + tagline -->
             <div class="col-span-2 md:col-span-3 lg:col-span-2">
                 <div class="flex items-center gap-2.5 mb-4">
-                    <MapleMark size={26} className="text-primary shrink-0" />
+                    <Icon name="MapleMark" size={26} class="text-primary shrink-0" />
                     <span class="text-foreground text-sm font-medium">Maple</span>
                 </div>
                 <p class="text-fg-muted text-xs leading-relaxed max-w-xs">

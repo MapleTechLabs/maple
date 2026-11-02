@@ -42,21 +42,7 @@ Ranked by duplication removed per effort.
 
 Sessions, errors and the app shell stay separate (Postgres-backed issues, Clerk).
 
-## Marketing site (`apps/landing`) off React
+## Marketing site (`apps/landing`) off React: done
 
-The site's React islands (NavBar, docs search, pricing calculators, trace visualization, logs
-volume chart, hero CTA, logo context menu, GitHub star button) move to Foldkit or plain Astro.
-
-- **Mounting.** Islands cannot hydrate (Foldkit hydrates one application per document). Render
-  each on the server with `renderToString(config, { isHydratable: false })` for SEO and no layout
-  shift, then start `Runtime.makeElement({ container, ... })` on the client. A small Astro
-  renderer integration keeps `client:visible` and `client:idle`.
-- **Order.** Static pieces first (GitHub star button, icons from `ui/icons.generated`, hero CTA as
-  a script); then the renderer with the pricing calculator, measuring bundle size before going
-  further (the site ships React today and would ship Foldkit plus Effect); then the logs chart,
-  docs search, NavBar with Clerk loaded the way the dashboard does, and the trace visualization
-  (trace flow exists in `service-map/trace-flow`; the flamegraph tab needs a port or the waterfall).
-- **Then delete** `@astrojs/react`, `react`, `react-dom`, `@clerk/clerk-react`, and the React
-  half of `packages/ui` (`components/ui/*.tsx`, `components/icons`, the React trace and plot
-  components, `hooks/`, their browser tests) with `@base-ui/react`, `@xyflow/react` and
-  `@testing-library/*`.
+Every island runs on Foldkit or plain Astro; `@astrojs/react`, `react` and the React half of
+`packages/ui` (with `@base-ui/react`, `@xyflow/react`, `@testing-library/*`) are deleted.

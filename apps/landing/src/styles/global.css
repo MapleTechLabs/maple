@@ -7,6 +7,16 @@
 @import "./fonts.generated.css";
 
 @source "../../../../packages/ui/src";
+/* The @maple/views chart frame and tooltip the Foldkit logs volume island renders. */
+@source "../../../../packages/views/src/charts/plot-frame.ts";
+@source "../../../../packages/views/src/charts/bucket-tooltip.ts";
+@source "../../../../packages/views/src/ui/{layer,stack,typography}.ts";
+/* The kit's command dialog the docs search island renders. */
+@source "../../../../packages/views/src/ui/{command,dialog-view,autocomplete,combobox-view,scroll-area}.ts";
+/* The trace flow and flamegraph the trace explorer island renders. */
+@source "../../../../packages/views/src/service-map/{trace-flow,xyflow}";
+@source "../../../../packages/views/src/traces";
+@source "../../../../packages/views/src/ui/{tooltip,button,display,empty,middle-truncate,pressable,tone-box}.ts";
 
 /* Landing-only tokens — marketing surfaces, not part of the shared system. */
 :root {

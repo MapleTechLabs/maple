@@ -9,12 +9,14 @@ import {
 	commandListStyles,
 	commandShortcutStyles,
 } from "@maple/ui/styles/ui/command"
-import { Array } from "effect"
+import { Array, Effect, Queue, Stream } from "effect"
+import { Mount } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { defineMessageUnion } from "foldkit/message"
 import { autocompleteField } from "./autocomplete"
 import { filterItems, itemId, listId, Message, type Model } from "./combobox"
 import { hiddenInput } from "./combobox-view"
-import { scrollArea } from "./scroll-area"
+import { applyScrollOverflow, scrollArea, trackScrollbar } from "./scroll-area"
 
 /**
  * `@maple/ui/command`: the command palette's body, an inline Autocomplete (always open, first
@@ -30,8 +32,19 @@ export type CommandItem = Readonly<{
 	href?: string
 	/** A glyph before the title (an icon, a service dot). */
 	leading?: Html
+	/** Replaces the one-line title (a title over a description). */
+	body?: ReadonlyArray<Html>
+	/** After the title, e.g. a badge pushed to the end. */
+	trailing?: Html
 }>
-export type CommandGroup = Readonly<{ label: string; items: ReadonlyArray<CommandItem> }>
+/** No `label`: the items sit straight in the list (`CommandItem`s outside any `CommandGroup`). */
+export type CommandGroup = Readonly<{
+	label?: string
+	/** Before the label text, e.g. the group's icon. */
+	labelLeading?: Html
+	labelClassName?: string
+	items: ReadonlyArray<CommandItem>
+}>
 
 const valueOf = (item: CommandItem): string => item.value ?? item.title
 
@@ -99,7 +112,8 @@ const commandItem = <M>(
 	]
 	const children = [
 		...(item.leading === undefined ? [] : [item.leading]),
-		h.span([h.Class("truncate text-sm")], [item.title]),
+		...(item.body ?? [h.span([h.Class("truncate text-sm")], [item.title])]),
+		...(item.trailing === undefined ? [] : [item.trailing]),
 		...(item.shortcut === undefined
 			? []
 			: [
@@ -119,6 +133,8 @@ export type ListOptions<M> = Readonly<{
 	onClickItem?: (value: string) => M
 	/** `CommandItem className`. */
 	itemClassName?: string
+	/** `CommandList className`. */
+	listClassName?: string
 	/** `CommandEmpty`, shown in the list when no group has items. */
 	empty?: Html
 	/** On the ScrollArea viewport, e.g. a Mount that measures its overflow. */
@@ -126,6 +142,51 @@ export type ListOptions<M> = Readonly<{
 	/** The scrollbar, sized and shown by that Mount (`trackScrollbar`). */
 	hasMeasuredScrollbar?: boolean
 }>
+
+const MeasureMessage = defineMessageUnion({ CompletedMeasureCommandList: {} })
+
+/**
+ * On the list's ScrollArea viewport (`viewportAttributes`): its overflow (fades, gutter,
+ * scrollbar) kept current on scroll and resize, and option presses keep focus in the input.
+ * Map its one message with `Mount.mapMessage`.
+ */
+export const MeasureCommandList = Mount.defineStream("MeasureCommandList", {
+	messages: [MeasureMessage.CompletedMeasureCommandList],
+	execute: ({ element }) =>
+		Stream.callback<typeof MeasureMessage.CompletedMeasureCommandList.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					if (!(element instanceof HTMLElement)) return undefined
+					const measure = () => applyScrollOverflow(element)
+					// Base UI keeps focus in the input while an option is pressed.
+					const keepFocus = (event: Event) => {
+						if (
+							event.target instanceof Element &&
+							event.target.closest('[role="option"]') !== null
+						)
+							event.preventDefault()
+					}
+					element.addEventListener("mousedown", keepFocus)
+					const observer = new ResizeObserver(measure)
+					observer.observe(element)
+					if (element.firstElementChild !== null) observer.observe(element.firstElementChild)
+					element.addEventListener("scroll", measure, { passive: true })
+					measure()
+					const untrack = trackScrollbar(element)
+					Queue.offerUnsafe(queue, MeasureMessage.CompletedMeasureCommandList())
+					return { observer, measure, keepFocus, untrack }
+				}),
+				(handles) =>
+					Effect.sync(() => {
+						if (handles === undefined) return
+						handles.observer.disconnect()
+						element.removeEventListener("scroll", handles.measure)
+						element.removeEventListener("mousedown", handles.keepFocus)
+						handles.untrack()
+					}),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
+})
 
 /** `CommandList` in its ScrollArea: the groups whose items match the input, numbered in order. */
 export const commandList = <M>(
@@ -147,35 +208,41 @@ export const commandList = <M>(
 		})),
 		(group) => group.items.length > 0,
 	)
-	const rendered = Array.mapAccum(visible, 0, (start, group, groupIndex): [number, Html] => {
+	const rendered = Array.mapAccum(visible, 0, (start, group, groupIndex): [number, ReadonlyArray<Html>] => {
 		const labelId = `${model.id}-group-${groupIndex}`
+		const items = group.items.map((item, offset) =>
+			commandItem(h, model, item, start + offset, toMessage, options),
+		)
+		if (group.label === undefined) return [start + group.items.length, items]
 		return [
 			start + group.items.length,
-			h.div(
-				[
-					h.Key(group.label),
-					h.AriaLabelledBy(labelId),
-					h.Class(cn(A.autocompleteGroupStyles)),
-					h.DataAttribute("slot", "command-group"),
-					h.Role("group"),
-				],
-				[
-					h.div(
-						[
-							h.AriaHidden(true),
-							h.Class(cn(A.autocompleteGroupLabelStyles)),
-							h.DataAttribute("slot", "command-group-label"),
-							h.Id(labelId),
-						],
-						[group.label],
-					),
-					...group.items.map((item, offset) =>
-						commandItem(h, model, item, start + offset, toMessage, options),
-					),
-				],
-			),
+			[
+				h.div(
+					[
+						h.Key(group.label),
+						h.AriaLabelledBy(labelId),
+						h.Class(cn(A.autocompleteGroupStyles)),
+						h.DataAttribute("slot", "command-group"),
+						h.Role("group"),
+					],
+					[
+						h.div(
+							[
+								h.AriaHidden(true),
+								h.Class(cn(A.autocompleteGroupLabelStyles, group.labelClassName)),
+								h.DataAttribute("slot", "command-group-label"),
+								h.Id(labelId),
+							],
+							group.labelLeading === undefined
+								? [group.label]
+								: [group.labelLeading, group.label],
+						),
+						...items,
+					],
+				),
+			],
 		]
-	})[1]
+	})[1].flat()
 	const body = rendered.length === 0 && options.empty !== undefined ? [options.empty] : rendered
 	const scroll = {
 		idPrefix: `${model.id}-scroll`,
@@ -190,7 +257,7 @@ export const commandList = <M>(
 				...(model.highlighted === null
 					? []
 					: [h.AriaActiveDescendant(itemId(model.id, model.highlighted))]),
-				h.Class(cn(A.autocompleteListStyles, commandListStyles)),
+				h.Class(cn(A.autocompleteListStyles, commandListStyles, options.listClassName)),
 				h.DataAttribute("empty", ""),
 				h.DataAttribute("slot", "command-list"),
 				h.Id(listId(model.id)),
@@ -230,8 +297,15 @@ export const commandGroup = <M>(
 	)
 
 /** `CommandFooter`. Positioned so the popup's tinted `::before` layer paints under its hints, not over them. */
-export const commandFooter = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class(cn("relative", commandFooterStyles)), h.DataAttribute("slot", "command-footer")], children)
+export const commandFooter = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	className?: string,
+): Html =>
+	h.div(
+		[h.Class(cn("relative", commandFooterStyles, className)), h.DataAttribute("slot", "command-footer")],
+		children,
+	)
 
 /** The autocomplete's hidden input, last in the popup. */
 export const commandHiddenInput = hiddenInput
