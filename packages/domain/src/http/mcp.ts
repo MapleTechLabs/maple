@@ -265,6 +265,8 @@ export class McpSessionsResponse extends Schema.Class<McpSessionsResponse>("McpS
 	toolCalls: Schema.Number,
 	withSession: Schema.Number,
 	withUser: Schema.Number,
+	/** Tool calls in a session of either kind: carrying a session id, a user, or both. */
+	inSession: Schema.Number,
 	/** The read of users' activity hit its limit: the oldest user sessions are missing or cut short. */
 	isUserActivityCut: Schema.Boolean,
 	/** The latest sessions under the selection, at most the list's limit. */

@@ -546,6 +546,8 @@ const USER_SESSION_LOOKAHEAD_MS = 86_400_000
 export const USER_SESSION_GAP_MS = 30 * 60_000
 
 const USER_SESSION_PREFIX = "user:"
+/** 9999-12-31T23:59:59.999Z: the last instant a four-digit-year warehouse time can hold. */
+const LATEST_KEY_START_MS = 253_402_300_799_999
 
 /** base64url: no `/`, `:` or `%`, which the key's separator and the route path would trip on. */
 const toKeyPart = (value: string): string =>
@@ -571,13 +573,20 @@ export const parseUserSessionKey = (
 	if (!key.startsWith(USER_SESSION_PREFIX)) return undefined
 	const parts = key.slice(USER_SESSION_PREFIX.length).split(":")
 	const [start = "", client = "", user = ""] = parts
-	if (parts.length !== 3 || !/^\d+$/.test(start) || client === "" || user === "") return undefined
+	const startMs = Number(start)
+	// A start a date can hold: past it the warehouse time it formats to would throw.
+	if (
+		parts.length !== 3 ||
+		!/^\d+$/.test(start) ||
+		startMs > LATEST_KEY_START_MS ||
+		client === "" ||
+		user === ""
+	)
+		return undefined
 	return Option.match(Option.all([fromKeyPart(client), fromKeyPart(user)]), {
 		onNone: () => undefined,
 		onSome: ([clientName, userId]) =>
-			clientName === "" || userId === ""
-				? undefined
-				: { startMs: Number(start), client: clientName, user: userId },
+			clientName === "" || userId === "" ? undefined : { startMs, client: clientName, user: userId },
 	})
 }
 
@@ -753,6 +762,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 		toolCalls: sumBy(calls, (row) => row.spans),
 		withSession: sumBy(calls, (row) => row.withSession),
 		withUser: sumBy(calls, (row) => row.withUser),
+		inSession: sumBy(calls, (row) => row.inSession),
 		isUserActivityCut,
 		sessions,
 		allClients: clientItems(allClients),
@@ -847,6 +857,8 @@ export const readMcpSession = Effect.fn("McpReads.session")(function* (
 	const rows = read.slice(0, SESSION_REQUEST_LIMIT)
 	const traceIds = [...new Set(rows.flatMap(callerTraces))]
 	const firstMs = rows[0] === undefined ? parseWarehouseDateTime(window.startTime) : toMs(rows[0].timestamp)
+	const lastRow = rows.at(-1)
+	const lastMs = lastRow === undefined ? 0 : toMs(lastRow.timestamp)
 	const filed =
 		traceIds.length === 0
 			? []
@@ -855,7 +867,10 @@ export const readMcpSession = Effect.fn("McpReads.session")(function* (
 					CH.compile(Integrations.aiSessionsOfTracesQuery(traceIds), {
 						orgId: tenant.orgId,
 						startTime: formatWarehouseDateTime(firstMs - AGENT_TURN_LEAD_MS),
-						endTime: window.endTime,
+						// A user session is read past the window's end; its callers' traces run as far.
+						endTime: formatWarehouseDateTime(
+							Math.max(parseWarehouseDateTime(window.endTime), lastMs + 1_000),
+						),
 					}),
 					{ profile: "list", context: "mcpSessionAgentSessions" },
 				)

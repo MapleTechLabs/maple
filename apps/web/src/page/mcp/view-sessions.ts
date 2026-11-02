@@ -139,7 +139,7 @@ const activityCut = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): ReadonlyA
 
 /** The calls in no session: neither a session id nor a user to build one from. */
 const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): ReadonlyArray<Html> => {
-	const inSessions = Math.min(data.toolCalls, data.withSession + data.withUser)
+	const inSessions = data.inSession
 	return inSessions >= data.toolCalls
 		? []
 		: [

@@ -237,6 +237,8 @@ export function mcpSpanSummaryQuery() {
 			withUserAgent: CH.countIf(userAgent($).neq("")),
 			withSession: CH.countIf($.SpanAttributes.get("mcp.session.id").neq("")),
 			withUser: CH.countIf(userId($).neq("")),
+			// In a session either way: the two counts above overlap where a call carries both.
+			inSession: CH.countIf($.SpanAttributes.get("mcp.session.id").neq("").or(userId($).neq(""))),
 			// A call with a caller span from `params._meta` links the HTTP span instead of hanging off it.
 			withCallerTrace: CH.countIf(CH.arrayElement($.LinksTraceId, 1).neq("")),
 			withMessage: CH.countIf($.StatusMessage.neq("")),

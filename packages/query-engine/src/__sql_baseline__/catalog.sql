@@ -3242,7 +3242,7 @@ SELECT
           AND (traces.SpanAttributes['mcp.session.id'] != '' OR if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != '')
         FORMAT JSON
 
--- builder:mcp:mcpSpanSummaryQuery:default  [9e90cc16]
+-- builder:mcp:mcpSpanSummaryQuery:default  [49cda42d]
 SELECT
           traces.SpanAttributes['mcp.method.name'] AS method,
           traces.SpanAttributes['error.type'] AS errorType,
@@ -3251,6 +3251,7 @@ SELECT
           countIf(traces.SpanAttributes['user_agent.original'] != '') AS withUserAgent,
           countIf(traces.SpanAttributes['mcp.session.id'] != '') AS withSession,
           countIf(if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != '') AS withUser,
+          countIf((traces.SpanAttributes['mcp.session.id'] != '' OR if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != '')) AS inSession,
           countIf(arrayElement(traces.LinksTraceId, 1) != '') AS withCallerTrace,
           countIf(traces.StatusMessage != '') AS withMessage,
           min(traces.Timestamp) AS firstSpan,

@@ -185,6 +185,7 @@ describe("parseUserSessionKey", () => {
 	it("refuses a key whose start, client or user is missing or malformed", () => {
 		expect(parseUserSessionKey("user:abc:Cursor:u1")).toBeUndefined()
 		expect(parseUserSessionKey("user:1700000000000::u1")).toBeUndefined()
+		expect(parseUserSessionKey(`user:${"9".repeat(20)}:QQ:QQ`)).toBeUndefined()
 		expect(parseUserSessionKey("user:1700000000000:Cursor:")).toBeUndefined()
 		expect(parseUserSessionKey("user:1700000000000:%E0%A4%A:u1")).toBeUndefined()
 	})
