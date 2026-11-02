@@ -1,6 +1,6 @@
 import { cloudflareDisplay } from "@maple/ui/lib/cloud-platforms/cloudflare-display"
 import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
-import type { IconName } from "../../ui/icon"
+import type { FlowIconName } from "../../ui/flow-icons"
 
 // copied: packages/ui/src/lib/cloud-platforms/{database,index}.ts, the fields the flow card
 // reads, with `Icon` as an icon name (the adapters import React icon components). Workers
@@ -10,7 +10,7 @@ export interface CloudPlatformInfo {
 	readonly id: string
 	readonly label: string
 	readonly kind: string
-	readonly icon: IconName
+	readonly icon: FlowIconName
 	readonly edge: string | null
 	readonly location: string | null
 	readonly outcome: { readonly value: string; readonly bad: boolean } | null
