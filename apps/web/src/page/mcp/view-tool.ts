@@ -35,6 +35,7 @@ import {
 	resultCell,
 	sectionTitle,
 	seriesRows,
+	RESULT_LANE,
 } from "./view-kit"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
@@ -294,7 +295,7 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 						hidden: "hidden @min-[640px]/panel:flex",
 					}),
 					th(h, { label: "Duration", width: "w-52 shrink-0", align: "right" }),
-					th(h, { label: "Result", width: "w-28 shrink-0 pl-4" }),
+					th(h, { label: "Result", width: RESULT_LANE }),
 					th(h, {
 						label: "Trace",
 						width: "w-20 shrink-0",
