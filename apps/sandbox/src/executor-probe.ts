@@ -332,7 +332,8 @@ export const PROBE_CHECKS: ReadonlyArray<ProbeCheck> = [
 		id: "isolated-no-escape",
 		question: "Inside Execute's isolation, is entering the container's own network namespace refused?",
 		expect: "fails",
-		contains: ["Operation not permitted", "Permission denied"],
+		// nsenter's own words: an `unshare` that failed says "Operation not permitted" too.
+		contains: ["nsenter: cannot open", "nsenter: reassociate"],
 		command: isolated("nsenter --net=/proc/1/ns/net true"),
 	},
 	{

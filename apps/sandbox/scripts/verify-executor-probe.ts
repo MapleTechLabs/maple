@@ -109,7 +109,8 @@ const startGateway = () => {
 		if (docker(["exec", GATEWAY, "node", "-e", ready]).status === 0) return
 		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200)
 	}
-	throw new Error("the stand-in gateway did not start")
+	console.error("the stand-in gateway did not answer within 10s; see `docker logs` for it")
+	process.exit(1)
 }
 
 execFileSync("docker", ["build", "--quiet", "--tag", IMAGE, `${import.meta.dirname}/../image`], {
