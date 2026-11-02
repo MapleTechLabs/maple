@@ -18,8 +18,8 @@ import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { type PresetValue, presetLabel } from "../../kit/time-controls"
+import { summaryChecksOf } from "../shared/check-summary"
 import { previewPayload } from "../shared/preview"
-import { isoMs } from "../shared/time"
 import type { ChecksResponse, Model } from "./model"
 
 export const DEFAULT_PRESET: PresetValue = "24h"
@@ -68,44 +68,7 @@ export const chartChecksOf = (
 	page: ChecksResponse | null,
 ): ReadonlyArray<AlertCheckDocument> => {
 	if (page === null) return []
-	if (page.summary.points.length === 0) return page.checks
-	return page.summary.points.map((point) => {
-		const status: AlertCheckDocument["status"] =
-			point.errorCount > 0
-				? "error"
-				: point.breachedCount > 0
-					? "breached"
-					: point.healthyCount > 0
-						? "healthy"
-						: "skipped"
-		const bucketStart = IsoDateTimeString.make(point.bucket)
-		const bucketEnd = IsoDateTimeString.make(
-			new Date(isoMs(point.bucket) + page.summary.bucketSeconds * 1000).toISOString(),
-		)
-		return new AlertCheckDocument({
-			timestamp: bucketStart,
-			groupKey: point.groupKey,
-			status,
-			skipReason: null,
-			signalType: rule.signalType,
-			comparator: rule.comparator,
-			threshold: point.threshold,
-			thresholdUpper: rule.thresholdUpper,
-			observedValue: point.observedValue,
-			sampleCount: point.totalCount,
-			windowMinutes: Math.max(1, Math.round(page.summary.bucketSeconds / 60)),
-			windowStart: bucketStart,
-			windowEnd: bucketEnd,
-			consecutiveBreaches: 0,
-			consecutiveHealthy: 0,
-			incidentId: null,
-			incidentTransition: point.transitionCount > 0 ? "continued" : "none",
-			level: null,
-			evaluationDurationMs: 0,
-			errorMessage: null,
-			errorCategory: null,
-		})
-	})
+	return page.summary.points.length === 0 ? page.checks : summaryChecksOf(rule, page.summary)
 }
 
 export const payloadOf = (

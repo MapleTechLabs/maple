@@ -2525,6 +2525,8 @@ export interface BucketGroupObs {
 	readonly groupKey: string
 	readonly value: number | null
 	readonly sampleCount: number
+	/** A raw-SQL row without a `bucket` column: one aggregate over the whole range, not a window. */
+	readonly untimed?: true
 }
 
 /**
@@ -2725,18 +2727,18 @@ const rawSqlRowsToObs = (
 			}
 			seenGroups.add(groupKey)
 		}
+		const timed = typeof row.bucket === "string" || row.bucket instanceof Date
 		obs.push({
 			// A query without `$__timeGroup` has no bucket column: the whole window
 			// collapses into one synthetic bucket at its start. Normalize either way
 			// — `windowStart` is a Tinybird datetime, and consumers key buckets
 			// by `Date.parse`, which would read that space-separated form as local
 			// time rather than UTC.
-			bucket: normalizeBucket(
-				typeof row.bucket === "string" || row.bucket instanceof Date ? row.bucket : windowStart,
-			),
+			bucket: normalizeBucket(timed ? row.bucket : windowStart),
 			groupKey,
 			value,
 			sampleCount: value == null ? 0 : rawSamples,
+			...(timed ? undefined : { untimed: true as const }),
 		})
 	}
 	return Result.succeed(obs)

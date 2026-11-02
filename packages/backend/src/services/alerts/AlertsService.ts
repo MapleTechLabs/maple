@@ -1910,7 +1910,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							sampleCountStrategy: plan.sampleCountStrategy,
 						})
 						.pipe(
-							Effect.map((observations) => ({ observations, failure: null })),
+							// A query without a time bucket answers once for the whole range, so it has no
+							// per-window series to chart; the scheduler still evaluates it per window.
+							Effect.map((observations) => ({
+								observations,
+								failure: observations.some((obs) => obs.untimed === true)
+									? ("not_time_grouped" as const)
+									: null,
+							})),
 							// A raw query too heavy to chart the whole range still gets its one-check timing back.
 							Effect.catchIf(
 								(error) =>

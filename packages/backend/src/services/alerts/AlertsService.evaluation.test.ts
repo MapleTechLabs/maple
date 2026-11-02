@@ -669,7 +669,7 @@ describe("AlertsService.previewRule", () => {
 
 	it.effect("previews a raw-SQL rule through the same path as every other kind", () => {
 		const testDb = createTestDb(trackedDbs)
-		const state = { rawQueryRows: [{ value: 42, samples: 20 }] }
+		const state = { rawQueryRows: [{ bucket: "2026-01-01 00:10:00", value: 42, samples: 20 }] }
 
 		return Effect.gen(function* () {
 			const alerts = yield* AlertsService
@@ -682,7 +682,7 @@ describe("AlertsService.previewRule", () => {
 					enabled: true,
 					signalType: "raw_query",
 					rawQuerySql:
-						"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+						"SELECT $__timeGroup(Timestamp) AS bucket, count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY bucket",
 					rawQueryReducer: "max",
 					comparator: "gt",
 					threshold: 10,
@@ -706,6 +706,38 @@ describe("AlertsService.previewRule", () => {
 			assert.isTrue(points.some((p) => p.value === 42))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
+
+	it.effect(
+		"reports raw SQL without a time bucket as not chartable instead of one whole-range point",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { rawQueryRows: [{ value: 0, samples: 1 }] }
+
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const request = decodePreviewRequest({
+					rule: {
+						name: "Raw untimed",
+						severity: "warning",
+						signalType: "raw_query",
+						rawQuerySql:
+							"SELECT max(lag) AS value FROM metrics_gauge WHERE $__orgFilter AND $__timeFilter(TimeUnix)",
+						comparator: "gt",
+						threshold: 3600,
+						windowMinutes: 5,
+						destinationIds: [],
+					},
+					startTime: "2026-01-01T00:00:00.000Z",
+					endTime: "2026-01-01T03:30:00.000Z",
+				})
+
+				const preview = yield* alerts.previewRule(asOrgId("org_preview_untimed"), adminRoles, request)
+				assert.strictEqual(preview.seriesFailure, "not_time_grouped")
+				assert.lengthOf(preview.series, 0)
+				assert.lengthOf(preview.wouldFire, 0)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+		},
+	)
 
 	describe("query timing", () => {
 		const rawPreview = (windowMinutes: number) =>

@@ -262,7 +262,9 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					...(preview.seriesFailure === undefined
 						? []
 						: [
-								`The query ${preview.seriesFailure === "query_too_much_memory" ? "ran out of memory" : "ran past 25 s"} charting this whole range, so no windows were evaluated. Preview a shorter range.`,
+								preview.seriesFailure === "not_time_grouped"
+									? "The SQL returns no `bucket` column, so it answers once for the whole range and has no per-window series (the scheduler still evaluates it per window). Select `$__timeGroup(<time column>) AS bucket` and group by it to chart it."
+									: `The query ${preview.seriesFailure === "query_too_much_memory" ? "ran out of memory" : "ran past 25 s"} charting this whole range, so no windows were evaluated. Preview a shorter range.`,
 							]),
 					...previewWarnings(
 						groups,
@@ -407,7 +409,9 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 								message:
 									output.seriesFailure === undefined
 										? "The preview returned no series for this range."
-										: "The range was too heavy to chart; see the notice above.",
+										: output.seriesFailure === "not_time_grouped"
+											? "The SQL has no time bucket to chart; see the notice above."
+											: "The range was too heavy to chart; see the notice above.",
 							},
 						}
 					: undefined),

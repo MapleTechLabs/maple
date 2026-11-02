@@ -1,4 +1,9 @@
-import type { AlertIncidentDocument, AlertRulePreviewResponse, AlertRuleDocument } from "@maple/domain/http"
+import type {
+	AlertCheckDocument,
+	AlertIncidentDocument,
+	AlertRulePreviewResponse,
+	AlertRuleDocument,
+} from "@maple/domain/http"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import {
@@ -34,6 +39,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
 import { alertsHref } from "../shared/links"
+import { incidentChecksOf, summaryChecksOf } from "../shared/check-summary"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
 import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
@@ -133,6 +139,8 @@ export type IncidentBodyInputs<M> = Readonly<{
 	ruleIncidents: ReadonlyArray<AlertIncidentDocument>
 	states: ReadonlyArray<AlertRuleStateRow>
 	preview: AlertRulePreviewResponse | null
+	/** The evaluator's recorded checks: the line when the preview has none, else its dashed comparison. */
+	checks: ReadonlyArray<AlertCheckDocument>
 	isPreviewLoading: boolean
 	previewError: string | null
 	range: Readonly<{ start: number; end: number }>
@@ -179,6 +187,7 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 											colors: inputs.colors,
 											timeZone: inputs.timeZone,
 											preview: inputs.preview,
+											checks: inputs.checks,
 											incidents: [incident],
 											threshold: incident.threshold,
 											thresholdUpper: incident.thresholdUpper,
@@ -218,6 +227,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		Option.isSome(view.payload),
 		previewIssue(rule === null ? null : ruleToFormState(rule)),
 	)
+	const checkSummary = AsyncData.getOrElse(model.checks.data, () => null)
 	const deliveries = AsyncData.getOrElse(model.deliveries.data, () => [])
 	const investigation = AsyncData.getOrElse(model.investigation.data, () => null)
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
@@ -227,7 +237,16 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),
-		isPreviewLoading: previewState.isLoading || !isChartReady,
+		checks:
+			rule === null || checkSummary === null
+				? []
+				: incidentChecksOf(summaryChecksOf(rule, checkSummary), incident),
+		// A raw SQL rule may only chart from its checks, so it waits for them instead of flashing the error.
+		isPreviewLoading:
+			previewState.isLoading ||
+			!isChartReady ||
+			(incident.signalType === "raw_query" &&
+				(AsyncData.isIdle(model.checks.data) || AsyncData.isLoading(model.checks.data))),
 		previewError: previewState.error,
 		range: view.range,
 		now,

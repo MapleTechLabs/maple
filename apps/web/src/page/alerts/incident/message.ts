@@ -10,6 +10,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import { CheckSummary } from "../shared/check-summary"
 import { PreviewFailure } from "../shared/preview"
 
 const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Schema.Array(row) })
@@ -19,7 +20,11 @@ export const Message = defineMessageUnion({
 	UpdatedIncidents: rows(AlertIncidentRowSchema),
 	UpdatedRules: rows(AlertRuleRowSchema),
 	UpdatedRuleStates: rows(AlertRuleStateRowSchema),
-	CompletedFetchPreview: { key: Schema.String, result: Schema.Result(AlertRulePreviewResponse, PreviewFailure) },
+	CompletedFetchPreview: {
+		key: Schema.String,
+		result: Schema.Result(AlertRulePreviewResponse, PreviewFailure),
+	},
+	CompletedFetchChecks: { key: Schema.String, result: Schema.Result(CheckSummary, LoadFailure) },
 	CompletedFetchDeliveries: {
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(AlertDeliveryEventDocument), LoadFailure),

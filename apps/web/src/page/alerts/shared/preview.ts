@@ -77,7 +77,11 @@ export const fetchPreview = (payload: V2AlertRulePreviewParams) =>
 		const client = yield* MapleApiV2Client
 		const response = yield* client.alertRules.preview({ payload })
 		return v2PreviewToResponse(response)
-	}).pipe(Effect.mapError((error): PreviewFailure => ({ message: mapBuilderChartFailure(displayError(error).message) })))
+	}).pipe(
+		Effect.mapError((error): PreviewFailure => ({
+			message: mapBuilderChartFailure(displayError(error).message),
+		})),
+	)
 
 export interface PreviewState {
 	readonly preview: AlertRulePreviewResponse | null
@@ -85,11 +89,13 @@ export interface PreviewState {
 	readonly error: string | null
 }
 
-/** A raw query too heavy to chart the range still answers, with its timing and no series. */
+/** A raw query that cannot chart the range still answers, with its timing and no series. */
 const seriesFailureMessage = (preview: AlertRulePreviewResponse): string | null =>
 	preview.seriesFailure === undefined
 		? null
-		: `The query ${preview.seriesFailure === "query_too_much_memory" ? "ran out of memory" : "ran past 25 s"} charting this range. Pick a shorter preview range.`
+		: preview.seriesFailure === "not_time_grouped"
+			? "This SQL returns one value for the whole range, so it has no line to chart. Select $__timeGroup(Timestamp) AS bucket and group by it to chart each window."
+			: `The query ${preview.seriesFailure === "query_too_much_memory" ? "ran out of memory" : "ran past 25 s"} charting this range. Pick a shorter preview range.`
 
 /** The hook's result, read off the slot (`hasPayload` false is the no-payload branch). */
 export const previewStateOf = (slot: PreviewSlot, hasPayload: boolean, issue: string | null): PreviewState =>
@@ -98,7 +104,11 @@ export const previewStateOf = (slot: PreviewSlot, hasPayload: boolean, issue: st
 		: AsyncData.match(slot.data, {
 				onIdle: () => ({ preview: null, isLoading: true, error: null }),
 				onLoading: () => ({ preview: null, isLoading: true, error: null }),
-				onRefreshing: (preview) => ({ preview, isLoading: false, error: seriesFailureMessage(preview) }),
+				onRefreshing: (preview) => ({
+					preview,
+					isLoading: false,
+					error: seriesFailureMessage(preview),
+				}),
 				onSuccess: (preview) => ({ preview, isLoading: false, error: seriesFailureMessage(preview) }),
 				onFailure: (failure) => ({ preview: null, isLoading: false, error: failure.message }),
 				onStale: ({ error }) => ({ preview: null, isLoading: false, error: error.message }),
