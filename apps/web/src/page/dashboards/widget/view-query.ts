@@ -1,11 +1,9 @@
-import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { fieldErrorStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as Checkbox from "../../../ui/checkbox"
+import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
+import { fieldErrorText } from "../../../ui/field"
 import * as TabsView from "../../../ui/tabs-view"
 import { textarea } from "../../../ui/textarea"
 import { textInput } from "../../kit/query-builder/parts"
@@ -76,19 +74,12 @@ const formulaPanel = (h: H, formula: FormulaDraft): Html =>
 								id: `formula-visible-${formula.id}-root`,
 								inputId: `formula-visible-${formula.id}`,
 							}),
-							h.span(
-								[
-									h.Class(
-										cn(
-											badgeVariants({
-												variant: "outline",
-												className:
-													"font-mono text-xs bg-chart-3/10 border-chart-3/30",
-											}),
-										),
-									),
-									h.DataAttribute("slot", "badge"),
-								],
+							badge(
+								h,
+								{
+									variant: "outline",
+									className: "font-mono text-xs bg-chart-3/10 border-chart-3/30",
+								},
 								[formula.name],
 							),
 						],
@@ -149,7 +140,7 @@ const markdownEditor = (h: H, content: string): Html =>
 			h.div(
 				[h.Class("flex items-baseline justify-between")],
 				[
-					h.p([h.Class(eyebrowVariants({})), h.DataAttribute("slot", "eyebrow")], ["Content"]),
+					eyebrow(h, { as: "p" }, ["Content"]),
 					h.p(
 						[h.Class("text-2xs text-muted-foreground")],
 						[
@@ -197,15 +188,7 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 					: [
 							...(error === null
 								? []
-								: [
-										h.div(
-											[
-												h.Class(cn(fieldErrorStyles, "font-medium")),
-												h.DataAttribute("slot", "field-error"),
-											],
-											[error],
-										),
-									]),
+								: [fieldErrorText(h, { className: "font-medium" }, error)]),
 							...(panel === "list"
 								? listPanel(h, model, state)
 								: panel === "paths"

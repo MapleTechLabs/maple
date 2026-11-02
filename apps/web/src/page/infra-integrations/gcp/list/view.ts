@@ -30,6 +30,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
+import { pressable } from "../../../../ui/pressable"
 import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
 import { button } from "../../../../ui/button"
 import { textLink } from "../../../../ui/text-link"
@@ -281,14 +282,13 @@ const projectsStrip = (
 				const fraction = share.get(project) ?? 0
 				const projectHealth = health.get(project)
 				const problem = projectHealth !== undefined && projectHealth.tone !== "ok"
-				return h.button(
-					[
-						h.Type("button"),
-						h.OnClick(Message.SelectedProject({ project })),
-						h.Class(
+				return pressable(
+					h,
+					{
+						onClick: Message.SelectedProject({ project }),
+						className:
 							"flex min-w-0 flex-1 flex-col gap-2 border-b px-4 py-3 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
-						),
-					],
+					},
 					[
 						h.span(
 							[h.Class("flex items-center gap-2")],

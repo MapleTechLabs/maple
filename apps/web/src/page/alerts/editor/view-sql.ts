@@ -5,14 +5,15 @@ import { RAW_QUERY_REDUCER_LABELS } from "@maple/web-data/alerts/form-utils"
 import { formatQuerySeconds } from "@maple/web-data/alerts/query-time"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { tokenizeSql } from "../../../lib/sql-highlight"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
+import { label } from "../../../ui/label"
 import type * as Select from "../../../ui/select"
+import { sqlEditor } from "../../../ui/sql-editor"
 import type { RuleForm } from "./form"
 import { formIntervalMinutes, intervalWindowIssue, shortestFittingInterval } from "./interval"
 import { Message } from "./message"
@@ -39,7 +40,7 @@ const MACRO_HINTS: ReadonlyArray<string> = [
 	"$__interval_s",
 ]
 
-const REDUCER_OPTIONS = Object.entries(RAW_QUERY_REDUCER_LABELS).map(([value, label]) => ({ value, label }))
+const REDUCER_OPTIONS = Object.entries(RAW_QUERY_REDUCER_LABELS).map(([value, text]) => ({ value, label: text }))
 
 const header = (h: H, model: SqlView, sql: string): Html => {
 	const issue = rawSqlIssue(sql)
@@ -57,18 +58,12 @@ const header = (h: H, model: SqlView, sql: string): Html => {
 				},
 				[icon(h, model.isSqlCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
 			),
-			h.span(
-				[
-					h.Class(
-						cn(
-							badgeVariants({
-								variant: "outline",
-								className: cn("font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80"),
-							}),
-						),
-					),
-					h.DataAttribute("slot", "badge"),
-				],
+			badge(
+				h,
+				{
+					variant: "outline",
+					className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
+				},
 				["sql"],
 			),
 			h.span([h.Class("text-2xs text-muted-foreground")], ["ClickHouse"]),
@@ -86,40 +81,12 @@ const header = (h: H, model: SqlView, sql: string): Html => {
 }
 
 const editor = (h: H, sql: string): Html =>
-	h.div(
-		[h.Class("relative w-full text-xs font-mono leading-5")],
-		[
-			h.pre(
-				[
-					h.AriaHidden(true),
-					h.Class(
-						"pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words rounded-sm border border-transparent px-2 py-1.5 leading-5",
-					),
-				],
-				[
-					h.code(
-						[h.Class("font-mono")],
-						[
-							...tokenizeSql(sql).map((token) =>
-								h.span(token.className === undefined ? [] : [h.Class(token.className)], [token.text]),
-							),
-							"\n",
-						],
-					),
-				],
-			),
-			h.textarea([
-				h.Id(SQL_TEXTAREA_ID),
-				h.AriaLabel("SQL query"),
-				h.Value(sql),
-				h.OnInput((value) => Message.ChangedField({ field: "rawQuerySql", value })),
-				h.Spellcheck(false),
-				h.Class(
-					"relative w-full bg-transparent text-transparent caret-foreground border border-border rounded-sm px-2 py-1.5 min-h-[200px] resize-y outline-none focus:ring-1 focus:ring-foreground/20 leading-5",
-				),
-			]),
-		],
-	)
+	sqlEditor(h, {
+		id: SQL_TEXTAREA_ID,
+		label: "SQL query",
+		value: sql,
+		onInput: (value) => Message.ChangedField({ field: "rawQuerySql", value }),
+	})
 
 /** The macro chips: one-click inserts at the caret. TODO(alert-editor): their description tooltips. */
 const macros = (h: H): Html =>
@@ -296,8 +263,12 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm, timing: Ale
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-3")],
 						[
-							h.label(
-								[h.For("rule-raw-reducer"), h.Class("text-sm text-muted-foreground")],
+							label(
+								h,
+								{
+									className: "font-normal text-sm text-muted-foreground sm:text-sm",
+									attributes: [h.For("rule-raw-reducer")],
+								},
 								["Reduce each window by"],
 							),
 							...parts,

@@ -11,7 +11,6 @@ import type { Model } from "./model"
 import type { SpanNodeData, TraceData } from "./trace-data"
 import { init, routeChanged, update } from "./update"
 import * as Tabs from "../../../ui/tabs"
-import * as SpanPanel from "./span-panel"
 import { MeasureSplit } from "./split"
 import { MeasureTimelineBody, MountAltToggle } from "./timeline/command"
 import { Message as TimelineMessage } from "./timeline/message"
@@ -184,10 +183,7 @@ describe("trace detail", () => {
 			Mount.resolve(MountAltToggle, TimelineMessage.AltClickedToggleCollapse({ spanId: "none" })),
 			Mount.resolve(MeasureTimelineBody, TimelineMessage.MeasuredScroller({ width: 390, height: 400 })),
 			Mount.resolve(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
-			Mount.resolve<string, SpanPanel.Message>(
-				Tabs.MeasureTabIndicator,
-				SpanPanel.Message.GotTabsMessage({ message: Tabs.Message.MeasuredIndicator({ rect: RECT }) }),
-			),
+			Mount.resolve(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
 			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(role("dialog", { name: "Span details" })).toExist(),
 		)

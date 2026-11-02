@@ -8,6 +8,7 @@ import { DateTime } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ciRunsSkeleton } from "./skeletons"
+import { pressable } from "../../../ui/pressable"
 import { truncatedId } from "../../../ui/truncated-id"
 import { relativeTime } from "../../kit/relative-time"
 import { bulletList, ciResultBadge, section, traceLink } from "./parts"
@@ -182,20 +183,17 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 				return h.li(
 					[h.Key(entry.id)],
 					[
-						h.button(
-							[
-								h.Class(
-									cn(
-										"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-										isCurrent
-											? "bg-muted"
-											: "hover:bg-surface-sunken active:bg-surface-sunken",
-									),
+						pressable(
+							h,
+							{
+								onClick: SheetMessage.ClickedHistoryEntry({ reviewId: entry.id }),
+								// The current review is marked by its tint, not dimmed like a disabled control.
+								isDisabled: isCurrent,
+								className: cn(
+									"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors disabled:cursor-default disabled:opacity-100",
+									isCurrent ? "bg-muted" : "hover:bg-surface-sunken active:bg-surface-sunken",
 								),
-								...(isCurrent ? [h.Disabled(true)] : []),
-								h.Type("button"),
-								h.OnClick(SheetMessage.ClickedHistoryEntry({ reviewId: entry.id })),
-							],
+							},
 							[
 								truncatedId(h, {
 									value: entry.headSha,

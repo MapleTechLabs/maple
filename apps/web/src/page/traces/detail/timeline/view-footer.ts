@@ -1,6 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../../ui/button"
 import { kbd } from "../../../../ui/display"
+import { textLink } from "../../../../ui/text-link"
 import { serviceDot } from "../../../../ui/values"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -27,12 +28,14 @@ export const footer = (h: H, model: Model): Html =>
 					hint(h, "Drag", "zoom"),
 					hint(h, "W A S D", "navigate"),
 					hint(h, "/", "search"),
-					h.button(
-						[
-							h.Class("hover:text-foreground-soft active:text-foreground-soft"),
-							h.Type("button"),
-							h.OnClick(Message.ClickedShortcuts()),
-						],
+					textLink(
+						h,
+						{
+							tone: "muted",
+							onClick: Message.ClickedShortcuts(),
+							className:
+								"gap-0 text-foreground-faint hover:text-foreground-soft active:text-foreground-soft hover:no-underline active:no-underline",
+						},
 						[kbd(h, HINT_KBD, ["?"]), " all shortcuts"],
 					),
 				],

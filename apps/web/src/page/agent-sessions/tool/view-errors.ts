@@ -17,6 +17,7 @@ import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { miniBars } from "../../../ui/mini-bars"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { truncatedText } from "../../../ui/truncated-text"
@@ -27,7 +28,7 @@ import {
 	type SortState,
 	sortRows,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableHead,
@@ -123,15 +124,14 @@ const errorRow = (
 	maxShare: number,
 	sharedType: string | undefined,
 ): Html =>
-	h.button(
-		[
-			h.Key(row.fingerprint),
-			h.AriaPressed(String(row.fingerprint === inputs.selected)),
-			h.Class(toolRowClass(row.fingerprint === inputs.selected)),
-			...(row.display === "" ? [] : [h.Title(row.display)]),
-			h.Type("button"),
-			h.OnClick(Message.ClickedErrorRow({ fingerprint: row.fingerprint })),
-		],
+	toolTableRow(
+		h,
+		{
+			onClick: Message.ClickedErrorRow({ fingerprint: row.fingerprint }),
+			isSelected: row.fingerprint === inputs.selected,
+			isToggle: true,
+			attributes: [h.Key(row.fingerprint), ...(row.display === "" ? [] : [h.Title(row.display)])],
+		},
 		[
 			h.span(
 				[
@@ -299,15 +299,14 @@ const head = (h: H, inputs: ErrorsTableInputs, headHint: string): Html => {
 
 const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): Html => {
 	const hiddenCalls = hidden.reduce((sum, row) => sum + row.calls, 0)
-	return h.button(
-		[
-			h.AriaExpanded(isExpanded),
-			h.Class(
+	return pressable(
+		h,
+		{
+			onClick: Message.ToggledErrorsExpanded(),
+			className:
 				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-			h.Type("button"),
-			h.OnClick(Message.ToggledErrorsExpanded()),
-		],
+			attributes: [h.AriaExpanded(isExpanded)],
+		},
 		[
 			icon(h, "ChevronDownIcon", {
 				size: 12,

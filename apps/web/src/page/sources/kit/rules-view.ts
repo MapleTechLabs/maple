@@ -8,6 +8,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
+import { label } from "../../../ui/label"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import {
 	type AttributeDraft,
@@ -56,17 +57,16 @@ const signalCard = <P>(
 ): Html => {
 	const isChecked = config.model.signals.includes(signal.value)
 	const inputId = `${config.idPrefix}-signal-${signal.value}`
-	return h.label(
-		[
-			h.Key(signal.value),
-			h.Id(Checkbox.labelId(inputId)),
-			h.Class(
-				cn(
-					"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
-					isChecked ? "border-primary-a4 bg-primary-a1" : "hover:bg-surface-sunken active:bg-surface-sunken",
-				),
+	return label(
+		h,
+		{
+			// A card: the kit label's centring and medium weight stay off.
+			className: cn(
+				"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
+				isChecked ? "border-primary-a4 bg-primary-a1" : "hover:bg-surface-sunken active:bg-surface-sunken",
 			),
-		],
+			attributes: [h.Key(signal.value), h.Id(Checkbox.labelId(inputId))],
+		},
 		[
 			...Checkbox.view(h, {
 				model: { isChecked },

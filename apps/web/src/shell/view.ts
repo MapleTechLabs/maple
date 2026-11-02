@@ -1,9 +1,3 @@
-import { pageLayoutStyles } from "@maple/ui/styles/ui/page-layout"
-import {
-	sidebarMobileHeaderStyles,
-	sidebarMobileInnerStyles,
-	sidebarMobileStyles,
-} from "@maple/ui/styles/ui/sidebar"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Submodel } from "foldkit"
@@ -11,8 +5,8 @@ import { alert, alertAction, alertDescription, alertTitle } from "../ui/alert"
 import { button } from "../ui/button"
 import { menuPopup } from "../ui/dropdown-menu"
 import { icon } from "../ui/icon"
-import { leftSheet } from "../ui/sheet"
-import { sidebarContent, sidebarDesktop, sidebarInset, sidebarWrapper } from "../ui/sidebar"
+import { pageLayoutRoot } from "../ui/page-layout"
+import { sidebarContent, sidebarDesktop, sidebarInset, sidebarMobile, sidebarWrapper } from "../ui/sidebar"
 import * as Tooltip from "../ui/tooltip"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { billingBanners } from "./billing-banners"
@@ -168,29 +162,26 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 					],
 					["Skip to main content"],
 				),
-				h.div(
-					[h.Class(pageLayoutStyles), h.DataAttribute("slot", "page-layout")],
-					[
-						topbar(
-							h,
-							model,
-							inputs.breadcrumbs,
-							inputs.topbarActions(),
-							railTriggers,
-							!hidesTopbarConnect(inputs.currentPath),
-							inputs.sourceLink ?? null,
-						),
-						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
-						...(inputs.clerk === undefined || inputs.clerk === null
-							? []
-							: billingBanners(
-									h,
-									Option.fromNullishOr(inputs.clerk.customer),
-									model.isQuotaApproachingDismissed,
-								)),
-						page.body,
-					],
-				),
+				pageLayoutRoot(h, [
+					topbar(
+						h,
+						model,
+						inputs.breadcrumbs,
+						inputs.topbarActions(),
+						railTriggers,
+						!hidesTopbarConnect(inputs.currentPath),
+						inputs.sourceLink ?? null,
+					),
+					...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
+					...(inputs.clerk === undefined || inputs.clerk === null
+						? []
+						: billingBanners(
+								h,
+								Option.fromNullishOr(inputs.clerk.customer),
+								model.isQuotaApproachingDismissed,
+							)),
+					page.body,
+				]),
 				// The rails' sheets below `lg` (each portal moves itself to <body> while open).
 				...railSheets,
 				// Clerk: the Support menu's shared Slack channel dialog (its portal moves to <body>).
@@ -210,23 +201,10 @@ const mobileNav = (
 	currentPath: string,
 	clerk: ShellClerk | null,
 ): Html =>
-	leftSheet(
+	sidebarMobile(
 		h,
-		{
-			id: "shell-mobile-sidebar",
-			className: sidebarMobileStyles,
-			title: "Sidebar",
-			description: "Displays the mobile sidebar.",
-			headerClassName: sidebarMobileHeaderStyles,
-			slot: "sidebar",
-			popupAttributes: [
-				h.DataAttribute("mobile", "true"),
-				h.DataAttribute("sidebar", "sidebar"),
-				h.Style({ "--nested-dialogs": "0", "--sidebar-width": "18rem" }),
-			],
-			onDismiss: Message.DismissedMobileNav(),
-		},
-		[h.div([h.Class(sidebarMobileInnerStyles)], sidebarRegions(h, model, currentPath, clerk))],
+		{ id: "shell-mobile-sidebar", onDismiss: Message.DismissedMobileNav() },
+		sidebarRegions(h, model, currentPath, clerk),
 	)
 // OVERLAYS
 

@@ -1,10 +1,9 @@
-import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as Combobox from "../../../ui/combobox"
 import { hiddenInput, inputField, listPopup } from "../../../ui/combobox-view"
+import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { isMounted } from "../../../ui/overlay/transition"
 
@@ -48,13 +47,7 @@ export const tagFilterView = Submodel.defineView<Combobox.Model, Combobox.Messag
 					...(selected.length === 0
 						? []
 						: [
-								h.span(
-									[
-										h.Class(cn(badgeVariants({ className: "ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs" }))),
-										h.DataAttribute("slot", "badge"),
-									],
-									[String(selected.length)],
-								),
+								badge(h, { className: "ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs" }, [String(selected.length)]),
 							]),
 					icon(h, "ChevronDownIcon", { className: "text-muted-foreground" }),
 				],

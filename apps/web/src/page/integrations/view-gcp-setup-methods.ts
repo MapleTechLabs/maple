@@ -1,13 +1,15 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { GcpManualStep, GcpStepField } from "../../components/integrations/gcp-setup-steps"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../../ui/pressable"
+import { heading } from "../../ui/heading"
 import { icon } from "../../ui/icon"
 import { inlineCode } from "../../ui/inline-code"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
-import { copyOf, GCP_TITLE, SMALL } from "./view-gcp-parts"
+import { copyOf, SMALL } from "./view-gcp-parts"
 
 // `GcpValue` and `GcpManualSteps`.
 
@@ -127,7 +129,7 @@ export const manualSteps = (
 					h.div(
 						[h.Class("flex flex-col gap-0.5")],
 						[
-							h.h3([h.Class(GCP_TITLE)], [options.heading]),
+							heading(h, { level: 3, variant: "subsection" }, [options.heading]),
 							h.p([h.Class(SMALL)], [options.detail]),
 						],
 					),
@@ -156,20 +158,14 @@ export const manualSteps = (
 										],
 										[String(index + 1)],
 									),
-									h.button(
-										[
-											h.Type("button"),
-											h.AriaExpanded(expanded),
-											h.OnClick(
-												Message.ClickedGcpManualStep({
-													title: step.title,
-													firstTitle,
-												}),
-											),
-											h.Class(
-												"flex min-w-0 flex-1 items-center gap-3 text-left text-sm font-medium outline-none focus-visible:underline",
-											),
-										],
+									pressable(
+										h,
+										{
+											onClick: Message.ClickedGcpManualStep({ title: step.title, firstTitle }),
+											className:
+												"flex min-w-0 flex-1 items-center gap-3 text-left text-sm font-medium outline-none focus-visible:underline focus-visible:ring-0",
+											attributes: [h.AriaExpanded(expanded)],
+										},
 										[
 											h.span([h.Class("min-w-0 flex-1")], [step.title]),
 											...(expanded

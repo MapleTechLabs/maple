@@ -6,10 +6,12 @@ import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../ui/button"
 import { badge } from "../ui/display"
+import { heading } from "../ui/heading"
 import { icon } from "../ui/icon"
 import { iconButton } from "../ui/icon-button"
 import { meter } from "../ui/meter"
 import * as PopoverView from "../ui/popover"
+import { pressable } from "../ui/pressable"
 import { Message, type Model } from "./onboarding-checklist"
 
 type H = HtmlBuilder<Message>
@@ -60,14 +62,13 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 			h.div(
 				[h.Class("flex items-start gap-2 p-3 pr-2")],
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(Message.ClickedPointer()),
-							h.Class(
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedPointer(),
+							className:
 								"min-w-0 flex-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-							),
-						],
+						},
 						[
 							h.span(
 								[h.Class("block whitespace-nowrap text-sm font-semibold")],
@@ -171,14 +172,11 @@ export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingCheckl
 								h.div(
 									[h.Class("min-w-0 space-y-1")],
 									[
-										h.h3(
-											[h.Class("text-base font-semibold leading-tight")],
-											[
-												isClaimed
-													? `${amount} in credits added`
-													: `Get ${amount} in credits`,
-											],
-										),
+										heading(h, { level: 3, variant: "section" }, [
+											isClaimed
+												? `${amount} in credits added`
+												: `Get ${amount} in credits`,
+										]),
 										h.p(
 											[h.Class("text-xs leading-relaxed text-muted-foreground")],
 											[

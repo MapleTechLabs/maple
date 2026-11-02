@@ -2,6 +2,7 @@ import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { badge } from "../../ui/display"
@@ -53,7 +54,7 @@ const header = (
 			[
 				h.div(
 					[h.Class("flex items-center gap-2")],
-					[h.h3([h.Class("text-sm font-semibold")], ["PlanetScale"]), badgeNode],
+					[heading(h, { level: 3, variant: "section" }, ["PlanetScale"]), badgeNode],
 				),
 				h.p([h.Class("mt-1 text-xs text-muted-foreground")], line),
 			],
@@ -92,7 +93,7 @@ const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
 					h.div(
 						[h.Class("flex items-center gap-2")],
 						[
-							h.h3([h.Class("text-sm font-semibold")], ["Webhooks"]),
+							heading(h, { level: 3, variant: "section" }, ["Webhooks"]),
 							webhooks.state === "active"
 								? badge(h, { variant: "ok" }, ["Active"])
 								: webhooks.state === "pending"
@@ -249,7 +250,7 @@ const statusFailed = (h: H): Html =>
 	item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
 		itemMedia(h, {}, [integrationIconPlate(h, BRAND)]),
 		itemContent(h, [
-			h.h3([h.Class("text-sm font-semibold")], ["PlanetScale"]),
+			heading(h, { level: 3, variant: "section" }, ["PlanetScale"]),
 			h.p(
 				[h.Class("text-xs text-muted-foreground")],
 				["Couldn't load the PlanetScale connection status. Refresh the page to try again."],

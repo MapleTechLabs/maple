@@ -19,6 +19,7 @@ import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { searchInput } from "../../../ui/search-input"
+import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton } from "../../../ui/skeleton"
 import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
@@ -30,7 +31,6 @@ import {
 	apiKpis,
 	ENDPOINT_FILTER_LABELS,
 	ENDPOINT_FILTERS,
-	type EndpointFilter,
 	isServerError,
 	kpiSparks,
 	matchesFilter,
@@ -408,25 +408,6 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 
 // TABLE
 
-const filterChip = (h: H, filter: EndpointFilter, active: EndpointFilter): Html =>
-	h.button(
-		[
-			h.Key(filter),
-			h.Type("button"),
-			h.AriaPressed(filter === active ? "true" : "false"),
-			h.Class(
-				cn(
-					"rounded-sm px-2 py-1 transition-colors",
-					filter === active
-						? "bg-accent text-foreground"
-						: "text-muted-foreground hover:text-foreground active:text-foreground",
-				),
-			),
-			h.OnClick(Message.ClickedEndpointFilter({ filter })),
-		],
-		[ENDPOINT_FILTER_LABELS[filter]],
-	)
-
 const toolbar = (h: H, model: Model, count: number): Html =>
 	tableTitle(h, {
 		title: "Endpoints",
@@ -442,14 +423,13 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 							),
 						]
 					: []),
-				h.div(
-					[
-						h.Class("flex items-center gap-1 text-2xs"),
-						h.Role("group"),
-						h.AriaLabel("Filter endpoints"),
-					],
-					ENDPOINT_FILTERS.map((filter) => filterChip(h, filter, model.endpointFilter)),
-				),
+				segmentedSelect(h, {
+					options: ENDPOINT_FILTERS.map((filter) => ({ value: filter, label: ENDPOINT_FILTER_LABELS[filter] })),
+					value: model.endpointFilter,
+					onChange: (filter) => Message.ClickedEndpointFilter({ filter }),
+					size: "xs",
+					ariaLabel: "Filter endpoints",
+				}),
 				searchInput(h, {
 					id: "service-endpoint-search",
 					value: model.endpointQuery,

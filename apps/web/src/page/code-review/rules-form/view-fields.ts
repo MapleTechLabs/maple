@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder, TextareaAttribute } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
 import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "../../../ui/field"
 import { input } from "../../../ui/input"
+import { label } from "../../../ui/label"
 import * as Switch from "../../../ui/switch"
 import { textarea } from "../../../ui/textarea"
 import { Message, type Model, parentCategories, type TextField } from "./form"
@@ -139,13 +140,12 @@ export const lenses = (h: H, model: Model): Html => {
 					"Lenses",
 					...(isRepository
 						? [
-								h.label(
-									[
-										h.Class(
-											"flex items-center gap-2 text-xs font-normal text-muted-foreground",
-										),
-										h.Id(`${model.id}-inherit-lenses-label`),
-									],
+								label(
+									h,
+									{
+										className: "flex text-xs font-normal text-muted-foreground sm:text-xs",
+										attributes: [h.Id(`${model.id}-inherit-lenses-label`)],
+									},
 									[
 										"Use the organization's",
 										...Switch.switchControl(h, {
@@ -166,12 +166,12 @@ export const lenses = (h: H, model: Model): Html => {
 				[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
 				ALL_CATEGORIES.map((category) => {
 					const inputId = `${model.id}-lens-${category}`
-					return h.label(
-						[
-							h.Key(category),
-							h.Class("flex items-center gap-2 text-sm has-disabled:text-muted-foreground"),
-							h.Id(Checkbox.labelId(inputId)),
-						],
+					return label(
+						h,
+						{
+							className: "flex text-sm font-normal has-disabled:text-muted-foreground sm:text-sm",
+							attributes: [h.Key(category), h.Id(Checkbox.labelId(inputId))],
+						},
 						[
 							...Checkbox.view(h, {
 								model: { isChecked: current.includes(category) },

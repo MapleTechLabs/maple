@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { isExcluded } from "../../components/infra/planetscale/branch-selection"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { choiceCard } from "../../ui/choice-card"
 import { button } from "../../ui/button"
 import * as DialogView from "../../ui/dialog-view"
 import * as Field from "../../ui/field"
@@ -52,42 +53,27 @@ const drawnCheck = (h: H, isChecked: boolean, className: string): Html =>
 
 /** `OptionCard type="radio" layout="row"`. */
 const optionCard = (h: H, name: string, isChecked: boolean): Html =>
-	h.label(
-		[h.Class("group relative cursor-pointer")],
+	choiceCard(
+		h,
+		{
+			type: "radio",
+			name: "planetscale-organization",
+			isChecked,
+			label: name,
+			onChange: Message.SelectedOrganization({ name }),
+			className: "items-start gap-3 p-4",
+		},
 		[
-			h.input([
-				h.Type("radio"),
-				h.Name("planetscale-organization"),
-				h.Class("peer sr-only"),
-				h.Checked(isChecked),
-				h.AriaLabel(name),
-				h.OnChange(() => Message.SelectedOrganization({ name })),
-			]),
 			h.div(
+				[h.Class("min-w-0 flex-1 pt-px")],
 				[
-					h.Class(
-						cn(
-							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-							"items-start gap-3 p-4",
-							!isChecked
-								? "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
-								: "border-primary bg-primary-a1",
-						),
+					h.span(
+						[h.Class("block text-sm font-semibold")],
+						[h.span([h.Class("truncate")], [name])],
 					),
-				],
-				[
-					h.div(
-						[h.Class("min-w-0 flex-1 pt-px")],
-						[
-							h.span(
-								[h.Class("block text-sm font-semibold")],
-								[h.span([h.Class("truncate")], [name])],
-							),
-						],
-					),
-					drawnCheck(h, isChecked, cn("mt-0.5", !isChecked && "opacity-0")),
 				],
 			),
+			drawnCheck(h, isChecked, cn("mt-0.5", !isChecked && "opacity-0")),
 		],
 	)
 

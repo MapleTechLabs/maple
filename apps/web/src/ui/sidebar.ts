@@ -25,17 +25,22 @@ import {
 	sidebarMenuSubButtonStyles,
 	sidebarMenuSubItemStyles,
 	sidebarMenuSubStyles,
+	sidebarMobileHeaderStyles,
+	sidebarMobileInnerStyles,
+	sidebarMobileStyles,
 	sidebarRailStyles,
 	sidebarSeparatorStyles,
 	sidebarTriggerLabelStyles,
 	sidebarTriggerStyles,
 	sidebarWrapperStyles,
 } from "@maple/ui/styles/ui/sidebar"
+import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { separatorStyles } from "@maple/ui/styles/ui/separator"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"
 import { scrollArea } from "./scroll-area"
+import { leftSheet } from "./sheet"
 
 // The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
 
@@ -119,6 +124,31 @@ export const sidebarDesktop = <Message>(
 				[sidebarInner(h, children)],
 			),
 		],
+	)
+
+/** `<Sidebar>` below `md`: a left sheet (`data-mobile`) with the sr-only "Sidebar" header. */
+export const sidebarMobile = <Message>(
+	h: HtmlBuilder<Message>,
+	options: Readonly<{ id: string; onDismiss: Message }>,
+	children: Children,
+): Html =>
+	leftSheet(
+		h,
+		{
+			id: options.id,
+			className: sidebarMobileStyles,
+			title: "Sidebar",
+			description: "Displays the mobile sidebar.",
+			headerClassName: sidebarMobileHeaderStyles,
+			slot: "sidebar",
+			popupAttributes: [
+				h.DataAttribute("mobile", "true"),
+				h.DataAttribute("sidebar", "sidebar"),
+				h.Style({ "--nested-dialogs": "0", "--sidebar-width": "18rem" }),
+			],
+			onDismiss: options.onDismiss,
+		},
+		[h.div([h.Class(sidebarMobileInnerStyles)], children)],
 	)
 // SIDEBAR PARTS
 
@@ -296,7 +326,17 @@ export type SidebarMenuButtonOptions<Message> = Readonly<{
 	/** `data-slot` when the button is another primitive's trigger (`dropdown-menu-trigger`). */
 	slot?: string
 	attributes?: Attributes<Message>
+	/**
+	 * The 2px leading lane a row reserves: `lane` keeps it empty, `active` paints it (and the
+	 * label) in `sidebar-primary` while the row is active.
+	 */
+	rail?: "lane" | "active"
 }>
+
+const RAIL_CLASS = {
+	lane: ROW_LANE,
+	active: `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`,
+} satisfies Record<"lane" | "active", string>
 
 /** `<SidebarMenuButton>`, as a `<button>` or a router `<a>`. */
 export const sidebarMenuButton = <Message>(
@@ -306,7 +346,11 @@ export const sidebarMenuButton = <Message>(
 ): Html => {
 	const size = options.size ?? "default"
 	const linkActive = options.link !== undefined && isLinkActive(options.link.currentPath, options.link.href)
-	const className = cn(sidebarMenuButtonVariants({ size, variant: "default" }), options.className)
+	const className = cn(
+		sidebarMenuButtonVariants({ size, variant: "default" }),
+		options.rail === undefined ? undefined : RAIL_CLASS[options.rail],
+		options.className,
+	)
 	const attributes: Array<Attribute<Message> | ChildAttribute> = [
 		h.Class(linkActive ? `${className} active` : className),
 		h.DataAttribute("active", String(options.isActive ?? false)),

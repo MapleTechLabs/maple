@@ -9,7 +9,6 @@ import { EMPTY_VALUE, formatLatency, formatNumber, formatPercent } from "@maple/
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../../data/load-failure"
@@ -19,7 +18,8 @@ import { icon } from "../../../../ui/icon"
 import { errorState } from "../../../../ui/error-state"
 import { meter } from "../../../../ui/meter"
 import { skeletonList } from "../../../../ui/skeleton"
-import { textLinkClass } from "../../../../ui/text-link"
+import { pressable } from "../../../../ui/pressable"
+import { textLink, textLinkClass } from "../../../../ui/text-link"
 import { columnHead, dataTable } from "../../../infra/kit/data-table"
 import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
@@ -73,19 +73,16 @@ const statementRow = (
 	const rowsPerCall = row.calls > 0 ? row.rows / row.calls : undefined
 	const db = row.p95LatencyMillis
 	const app = traced?.appP95Ms
-	return h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedStatement({ queryHash: row.queryHash })),
-			h.AriaLabel(`Open statement: ${row.querystring}`),
-			...(isPeeked ? [h.AriaCurrent("true")] : []),
-			h.Class(
-				cn(
-					"flex w-full cursor-pointer items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
-					rowSelectedClass(isPeeked),
-				),
-			),
-		],
+	return pressable(
+		h,
+		{
+			onClick: Message.ClickedStatement({ queryHash: row.queryHash }),
+			label: `Open statement: ${row.querystring}`,
+			selectedLane: isPeeked,
+			className:
+				"flex w-full items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+			attributes: isPeeked ? [h.AriaCurrent("true")] : [],
+		},
 		[
 			h.div(
 				[h.Class(cn(STATEMENT, "space-y-0.5"))],
@@ -196,12 +193,9 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 						),
 						...(rows.length > SHOWN
 							? [
-									h.button(
-										[
-											h.Type("button"),
-											h.OnClick(Message.ClickedShowAllQueries()),
-											h.Class(textLinkClass("primary", false, "shrink-0")),
-										],
+									textLink(
+										h,
+										{ onClick: Message.ClickedShowAllQueries(), className: "shrink-0" },
 										[inputs.showAll ? "Show fewer" : `Show all ${rows.length}`],
 									),
 								]

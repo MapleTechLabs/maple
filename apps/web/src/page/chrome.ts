@@ -1,10 +1,9 @@
-import { pageContentStyles } from "@maple/ui/styles/ui/page-layout"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import { skeleton, skeletonList } from "../ui/skeleton"
-import { dashboardPage, pageBody } from "./kit/dashboard-page"
+import { dashboardPage, pageBody, pageContent } from "./kit/dashboard-page"
 import { resourceNotFound } from "./kit/resource-not-found"
 import { resolveLegacySettingsTab } from "./settings/nav"
 
@@ -37,20 +36,15 @@ export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =
  */
 export const placeholderContent = <Message>(h: HtmlBuilder<Message>): Html =>
 	pageBody(h, [
-		h.main(
-			[
-				h.Class(pageContentStyles),
-				h.DataAttribute("slot", "page-content"),
-				h.Id("main-content"),
-				h.AriaBusy(true),
-				h.AriaLabel("Loading"),
-			],
+		pageContent(
+			h,
 			[
 				h.div(
 					[h.Class("flex flex-col gap-4 p-4")],
 					[skeleton(h, "h-7 w-48"), skeletonList(h, { rows: 6, rowClassName: "h-10", gap: "2" })],
 				),
 			],
+			[h.AriaBusy(true), h.AriaLabel("Loading")],
 		),
 	])
 

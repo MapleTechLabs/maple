@@ -1,11 +1,9 @@
-import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
-import * as CommandStyles from "@maple/ui/styles/ui/command"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "../../ui/combobox"
 import {
 	type CommandGroup,
+	commandEmpty,
 	commandFooter,
 	commandHiddenInput,
 	commandInput,
@@ -66,16 +64,7 @@ const hint = <M>(h: HtmlBuilder<M>, key: string, text: string): Html =>
 
 /** `CommandEmpty`: `No results for “{query}”.`, the query its own text run. */
 const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>
-	h.div(
-		[
-			h.AriaAtomic(true),
-			h.AriaLive("polite"),
-			h.Class(cn(A.autocompleteEmptyStyles, CommandStyles.commandEmptyStyles)),
-			h.DataAttribute("slot", "command-empty"),
-			h.Role("status"),
-		],
-		["No results for “", query, "”."],
-	)
+	commandEmpty(h, {}, ["No results for “", query, "”."])
 
 const PLACEHOLDER = "Search pages, dashboards, actions…"
 

@@ -2,6 +2,7 @@ import type { BranchCandidate } from "../../../../components/infra/planetscale/b
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../../../../ui/pressable"
 import { panel, panelHeader } from "../../../../ui/panel"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import { skeleton, skeletonList } from "../../../../ui/skeleton"
@@ -242,20 +243,17 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 							)
 						}
 						const isSelected = inputs.selectedBranches.includes(row.branch)
-						return h.button(
-							[
-								h.AriaPressed(String(isSelected)),
-								h.Class(
-									cn(
-										"flex w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-										isSelected && "bg-surface-strong",
-									),
+						return pressable(
+							h,
+							{
+								onClick: Message.ToggledBranch({ branch: row.branch }),
+								isSelected,
+								className: cn(
+									"flex w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+									isSelected && "bg-surface-strong",
 								),
-								...styleAttrs,
-								h.Title(`Filter to ${row.branch}`),
-								h.Type("button"),
-								h.OnClick(Message.ToggledBranch({ branch: row.branch })),
-							],
+								attributes: [...styleAttrs, h.Title(`Filter to ${row.branch}`)],
+							},
 							cells(h, row, spec, isSelected),
 						)
 					}),

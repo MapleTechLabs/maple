@@ -2,7 +2,6 @@ import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/dom
 import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import {
 	releaseDayLabel,
 	releaseHeadline,
@@ -11,8 +10,8 @@ import {
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
 } from "../../../components/releases/release-model"
-import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { panel } from "../../../ui/panel"
@@ -195,14 +194,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 			...(showDay
 				? [
 						tableRow(h, [
-							h.td(
-								[
-									h.Attribute("class", cn(tableCellStyles, cn(eyebrowVariants({}), "bg-surface-sunken py-1"))),
-									h.Attribute("colspan", "6"),
-									h.DataAttribute("slot", "eyebrow"),
-								],
-								[day],
-							),
+							tableCell(h, [eyebrow(h, {}, [day])], "bg-surface-sunken py-1", [h.Attribute("colspan", "6")]),
 						], "hover:bg-transparent active:bg-transparent", [h.Key(`day:${group.commitSha}`)]),
 					]
 				: []),

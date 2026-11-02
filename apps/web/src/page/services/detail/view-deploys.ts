@@ -2,7 +2,6 @@ import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { countLabel, formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
-import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { IssueSeverity } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -210,14 +209,7 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolean): Html => {
 	if (isLoading) {
 		return sectionCard(h, { title: "Recent deploys" }, [
-			h.div(
-				[
-					h.AriaBusy(true),
-					h.Class(cn(skeletonListStyles, skeletonListGapStyles.px, "p-2")),
-					h.DataAttribute("slot", "skeleton-list"),
-				],
-				Array.from({ length: 4 }, () => deploySkeleton(h)),
-			),
+			skeletonList(h, { rows: 4, className: "p-2", renderRow: () => deploySkeleton(h) }),
 		])
 	}
 	const releases = AsyncData.getOrElse(

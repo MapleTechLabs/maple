@@ -3,6 +3,7 @@ import { formatErrorRate, formatLatency, formatNumber, formatPercent } from "@ma
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { textLink } from "../../../../ui/text-link"
 import * as BarChart from "../../../../charts/bar-chart"
 import * as Chart from "../../../../charts/chart"
 import type { ThemeColors } from "../../../../charts/theme-colors"
@@ -74,13 +75,14 @@ const legend = (h: H, traffic: SupabaseApiTrafficResponse, isOpen: boolean): Htm
 					),
 				),
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.AriaExpanded(isOpen),
-					h.OnClick(Message.ClickedToggleTopPaths()),
-					h.Class("text-2xs text-muted-foreground hover:text-foreground active:text-foreground"),
-				],
+			textLink(
+				h,
+				{
+					onClick: Message.ClickedToggleTopPaths(),
+					tone: "muted",
+					className: "text-2xs",
+					attributes: [h.AriaExpanded(isOpen)],
+				},
 				[isOpen ? "Hide top paths" : "Top paths →"],
 			),
 		],

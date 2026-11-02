@@ -19,7 +19,6 @@ import { shortId } from "@maple/ui/lib/ids"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -29,6 +28,7 @@ import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { segmentedBar } from "../../../ui/meter"
+import { pressable } from "../../../ui/pressable"
 import { type DetectedModel, detectLookup } from "../kit/detected-models"
 import { modelLabel } from "../kit/model-label"
 import { virtualAttributes, virtualize } from "../kit/virtualize"
@@ -122,18 +122,16 @@ const traceLink = (h: H, traceId: string, timestamp: string): Html =>
 	)
 
 const turnToggle = (h: H, row: Extract<WaterfallRow, { kind: "turn" }>, isCollapsed: boolean): Html =>
-	h.button(
-		[
-			h.AriaExpanded(!isCollapsed),
-			h.Class(
-				cn(
-					"flex min-w-0 flex-1 items-center gap-1.5 rounded-xs text-left",
-					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-				),
+	pressable(
+		h,
+		{
+			onClick: Message.ToggledTurn({ turnId: row.turn.id }),
+			className: cn(
+				"flex min-w-0 flex-1 items-center gap-1.5 rounded-xs text-left",
+				"focus-visible:ring-ring focus-visible:ring-inset",
 			),
-			h.Type("button"),
-			h.OnClick(Message.ToggledTurn({ turnId: row.turn.id })),
-		],
+			attributes: [h.AriaExpanded(!isCollapsed)],
+		},
 		[
 			icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon", {
 				size: 12,
@@ -319,26 +317,28 @@ const spanRow = (
 	const isErrored = spanFailed(span)
 	const target = spanTarget(span, category)
 	const model = category === "tool" ? undefined : spanModel(span)
-	return h.button(
-		[
-			...(state.isSelected ? [h.AriaCurrent("true")] : []),
-			h.AriaExpanded(state.isSelected),
-			h.AriaHasPopup("dialog"),
-			h.Class(
-				cn(
-					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-					isErrored && "bg-severity-error-a1",
-					state.isFocused && "bg-surface-strong",
-					rowSelectedClass(state.isSelected || state.isRevealed),
-					state.isRevealed && "bg-primary-a2",
-				),
+	// The lane's own tint wins over the error and focus tints; a revealed row's wins over the lane.
+	const hasLane = state.isSelected || state.isRevealed
+	return pressable(
+		h,
+		{
+			onClick: Message.ClickedWaterfallSpan({ spanId: span.spanId }),
+			selectedLane: hasLane,
+			className: cn(
+				"flex h-full w-full items-center px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
+				"focus-visible:ring-ring focus-visible:ring-inset",
+				!hasLane && isErrored && "bg-severity-error-a1",
+				!hasLane && state.isFocused && "bg-surface-strong",
+				state.isRevealed && "bg-primary-a2",
 			),
-			...(state.isRevealed ? [h.DataAttribute("revealed", "true")] : []),
-			h.DataAttribute("span-row", span.spanId),
-			h.Type("button"),
-			h.OnClick(Message.ClickedWaterfallSpan({ spanId: span.spanId })),
-		],
+			attributes: [
+				...(state.isSelected ? [h.AriaCurrent("true")] : []),
+				h.AriaExpanded(state.isSelected),
+				h.AriaHasPopup("dialog"),
+				...(state.isRevealed ? [h.DataAttribute("revealed", "true")] : []),
+				h.DataAttribute("span-row", span.spanId),
+			],
+		},
 		[
 			spanCell(h, span, row.depth, category, isDelegation(span, spansById)),
 			h.span(

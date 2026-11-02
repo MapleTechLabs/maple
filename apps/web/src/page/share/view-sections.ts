@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { DashboardSection } from "@maple/widgets/dashboard"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../../ui/pressable"
 import { emptyMessage } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
@@ -29,14 +30,13 @@ const tabBar = (h: H, section: DashboardSection, activeTabId: string): Html =>
 					),
 				],
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.Role("tab"),
-							h.AriaSelected(isActive),
-							h.OnClick(Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id })),
-							h.Class("min-w-0 max-w-48 cursor-pointer font-medium outline-none"),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id }),
+							className: "min-w-0 max-w-48 font-medium outline-none",
+							attributes: [h.Role("tab"), h.AriaSelected(isActive)],
+						},
 						[h.span([h.Class("block truncate text-xs font-medium"), h.Title(tab.title)], [tab.title])],
 					),
 				],

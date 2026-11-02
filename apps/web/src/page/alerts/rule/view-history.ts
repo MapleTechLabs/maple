@@ -13,6 +13,7 @@ import { button } from "../../../ui/button"
 import { card, cardPanel } from "../../../ui/card"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import * as Menu from "../../../ui/menu"
 import { meter } from "../../../ui/meter"
@@ -87,7 +88,7 @@ export const historyTab = (
 						h.div(
 							[h.Class("space-y-2")],
 							[
-								h.h3([h.Class("text-sm font-semibold")], ["Top contributors"]),
+								heading(h, { level: 3, variant: "section" }, ["Top contributors"]),
 								card(h, [
 									cardPanel(
 										h,

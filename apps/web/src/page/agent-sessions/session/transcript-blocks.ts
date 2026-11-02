@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed } from "./payload-view"
@@ -29,14 +30,13 @@ const toolHeader = (
 	timeZone: string,
 ): Html => {
 	const name = tool.toolName ?? tool.span.spanName
-	return h.button(
-		[
-			h.AriaExpanded(isOpen),
-			h.Class("group flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 text-left"),
-			h.Title(clockOf(tool.startMs, timeZone)),
-			h.Type("button"),
-			h.OnClick(Message.ToggledRow({ key: `${tool.key}:payloads` })),
-		],
+	return pressable(
+		h,
+		{
+			onClick: Message.ToggledRow({ key: `${tool.key}:payloads` }),
+			className: "group flex h-8 w-full min-w-0 items-center gap-2 px-2.5 text-left",
+			attributes: [h.AriaExpanded(isOpen), h.Title(clockOf(tool.startMs, timeZone))],
+		},
 		[
 			icon(h, "GearIcon", {
 				size: 12,

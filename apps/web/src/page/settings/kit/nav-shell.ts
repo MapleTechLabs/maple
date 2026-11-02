@@ -1,8 +1,7 @@
-import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
+import { navRailRow } from "../../../ui/nav-rail-row"
 
 // `SettingsNavShell`: the rail of `/settings`, `/account` and `/integrations`. Tabs are buttons, sibling
 // pages are links.
@@ -16,16 +15,6 @@ export type NavShellSection<Id extends string> = Readonly<{
 	title: string
 	items: ReadonlyArray<NavShellRow<Id>>
 }>
-
-// The app sidebar's row beside it: same height, type, radius and flush 2px active lane.
-const rowClass = (isActive: boolean) =>
-	cn(
-		ROW_LANE,
-		"group flex h-8 items-center gap-2 rounded-lg px-2 text-xs transition-colors text-left",
-		isActive
-			? "rounded-l-none bg-accent font-medium text-primary before:bg-primary"
-			: "text-muted-foreground before:bg-transparent hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-	)
 
 const rowChildren = <M>(h: HtmlBuilder<M>, name: IconName, label: string) => [
 	icon(h, name, { size: 16, className: "shrink-0" }),
@@ -51,28 +40,14 @@ export const navShell = <M, Id extends string>(
 						section.items.map((row) => {
 							const isActive = row.id === active
 							return row.kind === "link"
-								? h.a(
-										[
-											h.Key(row.id),
-											h.Href(row.href),
-											// TanStack's active `<Link>`: `aria-current`, the `active` class and `data-status`.
-											...(isActive
-												? [
-														h.AriaCurrent("page"),
-														h.Class(`${rowClass(isActive)} active`),
-														h.DataAttribute("status", "active"),
-													]
-												: [h.Class(rowClass(isActive))]),
-										],
+								? navRailRow(
+										h,
+										{ isActive, href: row.href, attributes: [h.Key(row.id)] },
 										rowChildren(h, row.icon, row.label),
 									)
-								: h.button(
-										[
-											h.Key(row.id),
-											h.Class(rowClass(isActive)),
-											h.Type("button"),
-											h.OnClick(onSelectTab(row.id)),
-										],
+								: navRailRow(
+										h,
+										{ isActive, onClick: onSelectTab(row.id), attributes: [h.Key(row.id)] },
 										rowChildren(h, row.icon, row.label),
 									)
 						}),

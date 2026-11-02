@@ -6,6 +6,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../../../ui/heading"
 import type { LoadFailure } from "../../../../data/load-failure"
 import { AppRoute, hrefOf } from "../../../../route"
 import { linkButton } from "../../../../ui/button"
@@ -49,7 +50,7 @@ const sectionHead = (h: H, title: string, hint: string): Html =>
 	h.div(
 		[h.Class("flex items-baseline justify-between gap-3")],
 		[
-			h.h3([h.Class("shrink-0 text-xs font-semibold text-foreground")], [title]),
+			heading(h, { level: 3, variant: "section", className: "shrink-0" }, [title]),
 			h.span([h.Class(cn(SUB, "truncate"))], [hint]),
 		],
 	)
@@ -312,7 +313,7 @@ const notTraced = (h: H): Html =>
 				],
 				[icon(h, "DatabaseIcon", { size: 16 })],
 			),
-			h.h3([h.Class("text-sm font-semibold text-foreground")], ["No traces recorded this query"]),
+			heading(h, { level: 3, variant: "section" }, ["No traces recorded this query"]),
 			h.p(
 				[h.Class("max-w-md text-xs leading-relaxed text-muted-foreground")],
 				[

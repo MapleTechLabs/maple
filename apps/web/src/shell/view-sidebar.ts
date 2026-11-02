@@ -1,5 +1,4 @@
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { MAPLE_REGION_LABELS } from "@maple/domain/organization-regions"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { hasMultipleRegions } from "../lib/region"
@@ -23,9 +22,6 @@ import { Menu, Message } from "./message"
 import type { Model, ShellClerk } from "./model"
 import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
-
-/** The selected row's rail: a 2px lane every row reserves, painted only when active. */
-export const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -237,7 +233,7 @@ const footerNavRow = (
 		sidebarMenuButton(
 			h,
 			{
-				className: ACTIVE_RAIL,
+				rail: "active",
 				isActive: [
 					options.href,
 					...(options.alsoActive === undefined ? [] : [options.alsoActive]),

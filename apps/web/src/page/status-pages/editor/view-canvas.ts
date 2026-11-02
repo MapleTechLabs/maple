@@ -10,6 +10,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { segmentedSelect } from "../../../ui/segmented-select"
+import { pressable } from "../../../ui/pressable"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -137,14 +138,14 @@ const componentItem = (
 	return h.li(
 		[h.Key(component.id), h.Class("group flex items-center gap-1")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.Id(`status-page-item-${component.id}`),
-					h.AriaPressed(isSelected ? "true" : "false"),
-					h.OnClick(Message.ClickedComponent({ componentId: component.id })),
-					h.Class(itemClass(isSelected)),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedComponent({ componentId: component.id }),
+					isSelected,
+					className: itemClass(isSelected),
+					attributes: [h.Id(`status-page-item-${component.id}`)],
+				},
 				[
 					statusDot(h, status),
 					h.span([h.Class("truncate")], [component.name]),
@@ -153,7 +154,7 @@ const componentItem = (
 						? []
 						: [
 								h.span(
-									[h.Class("ml-auto truncate font-mono text-[11px] text-muted-foreground")],
+									[h.Class("ml-auto truncate font-mono text-2xs text-muted-foreground")],
 									[component.group],
 								),
 							]),
@@ -215,14 +216,14 @@ const incidentItem = (h: H, model: Model, incident: V2StatusPageIncident): Html 
 	return h.li(
 		[h.Key(incident.id)],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.Id(`status-page-item-${incident.id}`),
-					h.AriaPressed(isSelected ? "true" : "false"),
-					h.OnClick(Message.ClickedIncident({ incidentId: incident.id })),
-					h.Class(itemClass(isSelected)),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedIncident({ incidentId: incident.id }),
+					isSelected,
+					className: itemClass(isSelected),
+					attributes: [h.Id(`status-page-item-${incident.id}`)],
+				},
 				[
 					icon(h, incident.kind === "incident" ? "CircleWarningIcon" : "CalendarIcon", {
 						size: 14,
@@ -231,12 +232,7 @@ const incidentItem = (h: H, model: Model, incident: V2StatusPageIncident): Html 
 					h.span([h.Class("truncate")], [incident.title]),
 					...(incident.published
 						? []
-						: [
-								h.span(
-									[h.Class("ml-auto font-mono text-[11px] text-muted-foreground")],
-									["Draft"],
-								),
-							]),
+						: [h.span([h.Class("ml-auto font-mono text-2xs text-muted-foreground")], ["Draft"])]),
 				],
 			),
 		],

@@ -4,8 +4,11 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { capForDisplay, prettyJson, tryParseJson } from "../../../../lib/display-text"
 import { attributeFilterAction } from "../../../../ui/attributes/attribute-row"
+import { collapsible } from "../../../../ui/collapsible"
+import { heading } from "../../../../ui/heading"
 import { icon } from "../../../../ui/icon"
 import { truncationNote } from "../../../../ui/logs/log-message"
+import { pressable } from "../../../../ui/pressable"
 import { copyableValue, copyButton, selectableValue } from "./copy"
 import { type AttributeScope, Message } from "./message"
 import type { PanelState as Model } from "./model"
@@ -28,18 +31,14 @@ const commitShaValue = (h: H, id: string, value: string): Html => {
 		"cursor-pointer",
 		"-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 hover:bg-surface-sunken active:bg-surface-sunken",
 	)
-	const onClick = h.OnClick(Message.ClickedCopy({ id, text: value }))
+	const onClick = Message.ClickedCopy({ id, text: value })
 	return FULL_SHA.test(value)
-		? h.button(
-				[
-					h.Class(className),
-					h.DataAttribute("slot", "hover-card-trigger"),
-					h.Type("button"),
-					onClick,
-				],
+		? pressable(
+				h,
+				{ onClick, className, attributes: [h.DataAttribute("slot", "hover-card-trigger")] },
 				[value],
 			)
-		: h.button([h.Class(className), h.Type("button"), onClick], [value])
+		: pressable(h, { onClick, className }, [value])
 }
 
 const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
@@ -50,15 +49,14 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 	return h.div(
 		[h.Class("min-w-0")],
 		[
-			h.button(
-				[
-					h.Class(
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledCollapsible({ id }),
+					className:
 						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken rounded-sm px-0.5 -mx-0.5",
-					),
-					h.Title(isOpen ? "Collapse" : "Expand JSON"),
-					h.Type("button"),
-					h.OnClick(Message.ToggledCollapsible({ id })),
-				],
+					attributes: [h.Title(isOpen ? "Collapse" : "Expand JSON")],
+				},
 				[
 					icon(h, "ChevronRightIcon", {
 						size: 12,
@@ -202,8 +200,8 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 
 const pick = (row: RowInput) => ({ scope: row.scope, key: row.attrKey, value: row.value })
 
-const heading = (h: H, title: string): Html =>
-	h.h4([h.Class("text-xs font-medium tracking-wide text-foreground-soft")], [title])
+const tableTitle = (h: H, title: string): Html =>
+	heading(h, { level: 4, variant: "label" }, [title])
 
 /** `AttributesTable` without search or namespace grouping (the span panel uses neither). */
 const attributesTable = (
@@ -219,7 +217,7 @@ const attributesTable = (
 		: h.div(
 				[h.Class("space-y-1.5")],
 				[
-					heading(h, title),
+					tableTitle(h, title),
 					h.div(
 						[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
 						entries.map(([attrKey, value]) =>
@@ -242,7 +240,7 @@ const genAiSection = (
 		: h.div(
 				[h.Class("space-y-1.5")],
 				[
-					heading(h, "AI attributes"),
+					tableTitle(h, "AI attributes"),
 					h.div(
 						[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
 						groups.map((group) =>
@@ -308,54 +306,26 @@ export const attributesSection = (
 			...(internal.length === 0
 				? []
 				: [
-						h.div(
-							[
-								h.DataAttribute(isInternalOpen ? "open" : "closed", ""),
-								h.DataAttribute("slot", "collapsible"),
-							],
-							[
-								h.button(
-									[
-										h.AriaDisabled(false),
-										h.AriaExpanded(isInternalOpen),
-										h.Class(
-											"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground group",
-										),
-										...(isInternalOpen ? [h.DataAttribute("panel-open", "")] : []),
-										h.DataAttribute("slot", "collapsible-trigger"),
-										h.Tabindex(0),
-										h.Type("button"),
-										h.OnClick(Message.ToggledCollapsible({ id: internalId })),
-									],
-									[
-										icon(h, "ChevronRightIcon", {
-											size: 10,
-											className:
-												"transition-transform group-data-[panel-open]:rotate-90",
-										}),
-										"Maple internal (",
-										String(internal.length),
-										")",
-									],
-								),
-								...(isInternalOpen
-									? [
-											h.div(
-												[h.Class("mt-1")],
-												[
-													attributesTable(
-														h,
-														model,
-														scope,
-														internal,
-														"Maple internal",
-														isFilterable,
-													),
-												],
-											),
-										]
-									: []),
-							],
+						collapsible(
+							h,
+							{
+								isOpen: isInternalOpen,
+								onToggle: Message.ToggledCollapsible({ id: internalId }),
+								panelId: `${internalId}-panel`,
+								triggerClassName:
+									"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground group",
+								panelClassName: "mt-1",
+								trigger: [
+									icon(h, "ChevronRightIcon", {
+										size: 10,
+										className: "transition-transform group-data-[panel-open]:rotate-90",
+									}),
+									"Maple internal (",
+									String(internal.length),
+									")",
+								],
+							},
+							[attributesTable(h, model, scope, internal, "Maple internal", isFilterable)],
 						),
 					]),
 		],

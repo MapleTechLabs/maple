@@ -3,6 +3,7 @@ import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { accountLayout } from "../../layout/account-layout"
 import { button } from "../../ui/button"
+import { heading } from "../../ui/heading"
 import { field, fieldError, fieldLabel, input, type FieldIds, type FieldState } from "../../ui/field"
 import { Message, type Model, SignInFailure, Submission } from "./sign-in"
 
@@ -77,10 +78,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 				h.div(
 					[h.Class("space-y-2")],
 					[
-						h.h1(
-							[h.Class("font-display font-semibold text-3xl leading-[1.1] tracking-tight")],
-							["Sign in to Maple"],
-						),
+						heading(h, { level: 1, variant: "display" }, ["Sign in to Maple"]),
 						h.p(
 							[h.Class("font-display text-muted-foreground text-sm leading-relaxed")],
 							["This deployment is self-hosted. Enter the root password to continue."],

@@ -174,3 +174,58 @@ export const view = <ParentMessage>(
 		),
 	)
 }
+
+/** One item of a `controlledView`: its pressed state and click Message come from the owner. */
+export type ControlledToggleGroupItem<M> = Readonly<{
+	isPressed: boolean
+	onClick: M
+	children: ReadonlyArray<Html | string>
+}>
+
+/**
+ * A connected `<ToggleGroup>` whose pressed item lives in the owner's Model (a tab strip of
+ * toggles): no Submodel, and the pressed item is the tab stop.
+ */
+export const controlledView = <M>(
+	h: HtmlBuilder<M>,
+	config: Readonly<{
+		label: string
+		items: ReadonlyArray<ControlledToggleGroupItem<M>>
+		size?: "xs" | "sm" | "default" | "lg"
+		className?: string
+		itemClassName?: string
+	}>,
+): Html => {
+	const size = config.size ?? "default"
+	return h.div(
+		[
+			h.Role("group"),
+			h.AriaLabel(config.label),
+			h.Class(
+				cn(toggleGroupStyles, toggleGroupHorizontalStyles, toggleGroupConnectedStyles, config.className),
+			),
+			h.DataAttribute("orientation", "horizontal"),
+			h.DataAttribute("size", size),
+			h.DataAttribute("slot", "toggle-group"),
+			h.DataAttribute("variant", "default"),
+		],
+		config.items.map((item) =>
+			togglePrimitive(
+				h,
+				{
+					isPressed: item.isPressed,
+					onClick: item.onClick,
+					className: cn(toggleVariants({ size, variant: "default" }), config.itemClassName),
+					slot: "toggle",
+					tabIndex: item.isPressed ? 0 : -1,
+					attributes: [
+						h.AriaDisabled(false),
+						h.DataAttribute("size", size),
+						h.DataAttribute("variant", "default"),
+					],
+				},
+				item.children,
+			),
+		),
+	)
+}

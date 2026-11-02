@@ -1,7 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
+import { badge, badgeClass } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 
 // `HeroChip`.
@@ -37,7 +36,7 @@ const FIELD_CLASS = "min-w-0 gap-1 font-normal text-muted-foreground"
  */
 export const heroFieldChipClass = (isPicker: boolean): string =>
 	cn(
-		badgeVariants({ variant: isPicker ? "meta" : "muted", size: "xs", mono: true }),
+		badgeClass({ variant: isPicker ? "meta" : "muted", size: "xs", mono: true }),
 		FIELD_CLASS,
 		isPicker && "cursor-pointer hover:text-foreground active:text-foreground",
 	)

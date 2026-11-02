@@ -4,12 +4,11 @@ import {
 	type CloudflareFilters,
 	hasActiveFilters,
 } from "../../../../components/infra/cloudflare/filters"
-import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { Option } from "effect"
 import { sectionOf } from "./derive"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../../../ui/button"
 import type * as FilterSections from "../../../../ui/filters/filter-sections"
 import { type FilterOption, filterSection } from "../../../../ui/filters/filter-section"
 import {
@@ -142,21 +141,14 @@ export const filterPopover = (h: H, model: Model, filters: CloudflareFilters): H
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.DataAttribute("slot", "button"),
-								h.Class(
-									cn(
-										buttonVariants({
-											variant: "outline",
-											size: "xs",
-											className: "h-6 border-dashed font-mono text-2xs font-normal",
-										}),
-									),
-								),
-								...trigger,
-							],
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								className: "h-6 border-dashed font-mono text-2xs font-normal",
+								attributes: [...trigger],
+							},
 							["+ Filter"],
 						),
 					),

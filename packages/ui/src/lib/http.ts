@@ -188,17 +188,16 @@ export const HTTP_METHOD_HEX: Record<string, string> = {
 	OPTIONS: "#5A5248",
 } satisfies Record<string, string>
 
-// Kept as literals (not derived from HTTP_METHOD_HEX) because Tailwind's JIT
-// scanner can't see class names built from template strings. A colocated test
-// asserts the two maps agree.
+// The `--color-http-*` tokens in tokens.css carry the HTTP_METHOD_HEX values. Kept as literals
+// because Tailwind's JIT scanner can't see class names built from template strings.
 export const HTTP_METHOD_COLORS: Record<string, string> = {
-	GET: "bg-[#4A9EFF]",
-	POST: "bg-[#E8872B]",
-	PUT: "bg-[#4AA865]",
-	PATCH: "bg-[#8A7F72]",
-	DELETE: "bg-[#E85D4A]",
-	HEAD: "bg-[#8A7F72]",
-	OPTIONS: "bg-[#5A5248]",
+	GET: "bg-http-get",
+	POST: "bg-http-post",
+	PUT: "bg-http-put",
+	PATCH: "bg-http-patch",
+	DELETE: "bg-http-delete",
+	HEAD: "bg-http-head",
+	OPTIONS: "bg-http-options",
 } satisfies Record<string, string>
 
 /** HTTP status → tone: 5xx is critical, 4xx a warning, everything else quiet. */

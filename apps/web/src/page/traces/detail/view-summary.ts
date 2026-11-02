@@ -8,6 +8,7 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "../../../ui/pressable"
 import { traceIdBadge } from "../../../ui/trace-badges"
 import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
@@ -149,14 +150,13 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 									),
 							commitSha === undefined || commitSha === ""
 								? null
-								: h.button(
-										[
-											h.Class(
+								: pressable(
+										h,
+										{
+											className:
 												"cursor-pointer font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-											),
-											h.DataAttribute("slot", "hover-card-trigger"),
-											h.Type("button"),
-										],
+											attributes: [h.DataAttribute("slot", "hover-card-trigger")],
+										},
 										[shortId(commitSha, "sha")],
 									),
 							traceIdBadge(h, trace.data.traceId, {

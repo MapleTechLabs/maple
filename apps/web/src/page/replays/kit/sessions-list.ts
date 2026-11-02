@@ -3,6 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import type { SessionListItem } from "./session-row"
@@ -27,15 +28,14 @@ const quietRunRow = <M>(
 	item: Extract<SessionListItem, { kind: "quiet" }>,
 	onToggle: M,
 ): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(onToggle),
-			h.AriaExpanded(item.expanded),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: onToggle,
+			className:
 				"flex w-full items-center gap-3 border-b border-border bg-surface-sunken px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @2xl:gap-4",
-			),
-		],
+			attributes: [h.AriaExpanded(item.expanded)],
+		},
 		[
 			h.span([h.Class("shrink-0 whitespace-nowrap font-medium tabular-nums")], [
 				countLabel(item.count, "low-signal session"),

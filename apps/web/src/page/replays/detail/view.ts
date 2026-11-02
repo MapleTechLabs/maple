@@ -10,6 +10,7 @@ import type { BreadcrumbEntry } from "../../../shell"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { inlineCode, inlineCodeClassName } from "../../../ui/inline-code"
 import { skeleton } from "../../../ui/skeleton"
@@ -84,8 +85,14 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 						],
 						[initialsFrom(label)],
 					),
-					h.h2(
-						[h.Class("min-w-0 truncate text-sm font-medium leading-tight"), h.Title(label)],
+					heading(
+						h,
+						{
+							level: 2,
+							variant: "subsection",
+							className: "min-w-0 truncate leading-tight",
+							attributes: [h.Title(label)],
+						},
 						[label],
 					),
 					sessionActive

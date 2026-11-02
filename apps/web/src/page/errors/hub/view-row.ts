@@ -1,7 +1,6 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { ErrorSignal } from "../../../lib/models/error-signal"
-import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -21,7 +20,6 @@ import {
 import * as QuickPick from "../kit/quick-pick"
 import type * as ContextMenu from "../../../ui/context-menu"
 import * as ContextMenuView from "../../../ui/context-menu-view"
-import { contextMenuTriggerStyles } from "@maple/ui/styles/ui/context-menu"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { formatExactCount } from "../../kit/locale"
@@ -107,11 +105,7 @@ export const signalRowSkeleton = (h: H, index: number): Html =>
 			h.span(
 				[h.Class(LANE.identity)],
 				[
-					h.div([
-						h.Class(cn(skeletonStyles, "h-3.5")),
-						h.DataAttribute("slot", "skeleton"),
-						h.Style({ width: SKELETON_WIDTHS[index % 6] ?? "72%" }),
-					]),
+					skeleton(h, "h-3.5", { width: SKELETON_WIDTHS[index % 6] ?? "72%" }),
 				],
 			),
 			h.span(
@@ -235,17 +229,19 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 /** `IssueContextMenu`'s trigger around the row; the row last pressed carries the menu itself. */
 const rowMenuTrigger = (h: H, signal: ErrorSignal, state: RowState, children: ReadonlyArray<Html>): Html =>
 	state.rowMenu === null
-		? h.div(
-				[
-					h.Class(cn(contextMenuTriggerStyles, "select-none")),
-					h.DataAttribute("slot", "context-menu-trigger"),
-					h.OnPointerDown((_type, _button, _sx, _sy, _t, clientX, clientY) =>
-						Option.some(
-							Message.PressedRowPointer({ id: signal.id, point: { x: clientX, y: clientY } }),
+		? ContextMenuView.idleTrigger(
+				h,
+				{
+					className: "select-none",
+					attributes: [
+						h.OnPointerDown((_type, _button, _sx, _sy, _t, clientX, clientY) =>
+							Option.some(
+								Message.PressedRowPointer({ id: signal.id, point: { x: clientX, y: clientY } }),
+							),
 						),
-					),
-					h.OnContextMenu(Message.OpenedRowMenu({ id: signal.id })),
-				],
+						h.OnContextMenu(Message.OpenedRowMenu({ id: signal.id })),
+					],
+				},
 				children,
 			)
 		: h.submodel({

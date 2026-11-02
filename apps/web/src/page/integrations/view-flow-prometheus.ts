@@ -1,6 +1,7 @@
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
 import { button } from "../../ui/button"
 import { inlineCode } from "../../ui/inline-code"
@@ -139,7 +140,7 @@ const warpstreamGuide = (h: H): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-2 rounded-md bg-surface-sunken p-4")],
 		[
-			h.h3([h.Class("text-sm font-medium")], ["Where to find it in WarpStream"]),
+			heading(h, { level: 3, variant: "subsection" }, ["Where to find it in WarpStream"]),
 			h.ul(
 				[h.Class("flex list-disc flex-col gap-1.5 pl-4 text-xs text-muted-foreground")],
 				[

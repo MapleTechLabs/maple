@@ -1,7 +1,6 @@
 import { formatNumber } from "@maple/ui/lib/format"
 import { unwrapToolErrorText, type VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
 import { sessionRowId } from "@maple/agent-sessions"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -11,6 +10,8 @@ import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { meter } from "../../../ui/meter"
+import { pressable } from "../../../ui/pressable"
+import { selectableRow } from "../../../ui/selectable-row"
 import { skeleton } from "../../../ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
 import { type ErrorDetail, Message, type Model } from "./error-modal-model"
@@ -67,20 +68,17 @@ const variantsSection = (
 			),
 			...detail.variants.map((row) => {
 				const isSelected = row.message === selected
-				return h.button(
-					[
-						h.Key(row.message),
-						h.AriaPressed(String(isSelected)),
-						h.Class(
-							cn(
-								"-mx-2 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left font-mono text-xs transition-colors",
-								isSelected ? "bg-primary-a2" : "hover:bg-surface-sunken active:bg-surface-sunken",
-							),
+				return pressable(
+					h,
+					{
+						onClick: Message.ClickedVariant({ variant: isSelected ? undefined : row.message }),
+						isSelected,
+						className: cn(
+							"-mx-2 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left font-mono text-xs transition-colors",
+							isSelected ? "bg-primary-a2" : "hover:bg-surface-sunken active:bg-surface-sunken",
 						),
-						h.Title(unwrapToolErrorText(row.message).text),
-						h.Type("button"),
-						h.OnClick(Message.ClickedVariant({ variant: isSelected ? undefined : row.message })),
-					],
+						attributes: [h.Key(row.message), h.Title(unwrapToolErrorText(row.message).text)],
+					},
 					[
 						h.span(
 							[
@@ -188,7 +186,6 @@ export const sessionLink = (
 const sessionRowClass = (isSelected: boolean) =>
 	cn(
 		"group flex w-full shrink-0 items-center gap-3 border-b border-border-subtle pr-4 pl-4 text-left transition-colors",
-		rowSelectedClass(isSelected),
 		!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken",
 	)
 
@@ -224,13 +221,14 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 					h.span([h.Class("w-14 shrink-0 text-right")], ["Last"]),
 				],
 			),
-			h.button(
-				[
-					h.AriaPressed(String(selected === undefined)),
-					h.Class(cn(sessionRowClass(selected === undefined), "h-10")),
-					h.Type("button"),
-					h.OnClick(Message.ClickedSession({ session: undefined })),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedSession({ session: undefined }),
+					isSelected: selected === undefined,
+					selectedLane: selected === undefined,
+					className: cn(sessionRowClass(selected === undefined), "h-10"),
+				},
 				[
 					h.span([h.Class("grow font-mono text-xs font-medium text-foreground")], ["All sessions"]),
 					h.span(
@@ -256,23 +254,25 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 					]
 				: detail.sessions.map((row) => {
 						const isSelected = row.sessionId === selected
-						return h.div(
-							[h.Key(row.sessionId), h.Class(cn(sessionRowClass(isSelected), "h-[52px]"))],
+						return selectableRow(
+							h,
+							{
+								isSelected,
+								className: cn(sessionRowClass(isSelected), "h-[52px]"),
+								attributes: [h.Key(row.sessionId)],
+							},
 							[
-								h.button(
-									[
-										h.AriaPressed(String(isSelected)),
-										h.AriaLabel(`Show samples in ${sessionRowId(row.sessionId)}`),
-										h.Class(
-											"absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-										),
-										h.Type("button"),
-										h.OnClick(
-											Message.ClickedSession({
-												session: isSelected ? undefined : row.sessionId,
-											}),
-										),
-									],
+								pressable(
+									h,
+									{
+										onClick: Message.ClickedSession({
+											session: isSelected ? undefined : row.sessionId,
+										}),
+										isSelected,
+										label: `Show samples in ${sessionRowId(row.sessionId)}`,
+										className:
+											"absolute inset-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+									},
 									[],
 								),
 								h.span(

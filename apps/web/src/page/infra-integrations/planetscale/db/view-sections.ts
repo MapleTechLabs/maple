@@ -4,6 +4,7 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { textLink } from "../../../../ui/text-link"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
@@ -39,15 +40,15 @@ const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): H
 			...(event.branchName === ""
 				? []
 				: [
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(Message.SelectedBranch({ branch: event.branchName })),
-								h.Class(
-									"min-w-0 max-w-[40%] truncate font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-								h.Title(event.branchName),
-							],
+						textLink(
+							h,
+							{
+								onClick: Message.SelectedBranch({ branch: event.branchName }),
+								tone: "muted",
+								isMono: true,
+								className: "block min-w-0 max-w-[40%] truncate text-2xs",
+								attributes: [h.Title(event.branchName)],
+							},
 							[event.branchName],
 						),
 					]),

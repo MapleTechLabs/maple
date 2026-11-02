@@ -3,7 +3,6 @@ import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { hostFromUrl } from "@maple/ui/lib/replay"
 import { formatSessionDuration, isSessionLive, sessionDurationMs } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import {
 	SESSION_TAG_DESCRIPTIONS,
 	SESSION_TAG_LABELS,
@@ -13,6 +12,8 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
+import { textLink } from "../../../ui/text-link"
 import { truncatedText } from "../../../ui/truncated-text"
 import { relativeTime } from "../../kit/relative-time"
 import type { SessionRow } from "./session-row"
@@ -37,12 +38,14 @@ const orgButton = <M>(
 ): Html => {
 	const className = "min-w-0 truncate text-xs font-medium text-foreground"
 	if (onFilter === undefined) return h.span([h.Class(className)], [name])
-	return h.button(
-		[
-			h.Type("button"),
-			h.Class(cn(className, "rounded-sm hover:underline active:underline")),
-			h.OnClick(onFilter(name), { propagation: "Stop" }),
-		],
+	return textLink(
+		h,
+		{
+			tone: "muted",
+			onClick: onFilter(name),
+			clickOptions: { propagation: "Stop" },
+			className: cn(className, "block rounded-sm text-left"),
+		},
 		[name],
 	)
 }
@@ -53,15 +56,29 @@ const sessionTags = <M>(
 	onFilter: ((tag: SessionTag) => M) | undefined,
 ): ReadonlyArray<Html> =>
 	SESSION_TAG_ORDER.filter((tag) => tags.includes(tag)).map((tag) => {
-		const className = cn(badgeVariants({ pill: true, size: "xs" }), SESSION_TAG_STYLES[tag])
 		return onFilter === undefined
-			? h.span([h.Class(className), h.Title(SESSION_TAG_DESCRIPTIONS[tag])], [SESSION_TAG_LABELS[tag]])
-			: h.button(
-					[
-						h.Type("button"),
-						h.Class(cn(className, "hover:ring-1 active:ring-1 hover:ring-border active:ring-border")),
-						h.OnClick(onFilter(tag), { propagation: "Stop" }),
-					],
+			? badge(
+					h,
+					{
+						pill: true,
+						size: "xs",
+						className: SESSION_TAG_STYLES[tag],
+						attributes: [h.Title(SESSION_TAG_DESCRIPTIONS[tag])],
+					},
+					[SESSION_TAG_LABELS[tag]],
+				)
+			: badge(
+					h,
+					{
+						pill: true,
+						size: "xs",
+						className: cn(
+							SESSION_TAG_STYLES[tag],
+							"hover:ring-1 active:ring-1 hover:ring-border active:ring-border",
+						),
+						onClick: onFilter(tag),
+						clickOptions: { propagation: "Stop" },
+					},
 					[SESSION_TAG_LABELS[tag]],
 				)
 	})
@@ -182,15 +199,13 @@ export const sessionListRow = <M>(
 			),
 		],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(open, { propagation: "Stop" }),
-					h.AriaLabel(`Open session from ${identityLabel(session)}`),
-					h.Class(
-						"absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-					),
-				],
+			pressable(
+				h,
+				{
+					label: `Open session from ${identityLabel(session)}`,
+					className: "absolute inset-0 focus-visible:ring-inset focus-visible:ring-ring",
+					attributes: [h.OnClick(open, { propagation: "Stop" })],
+				},
 				[],
 			),
 			...(session.errorCount > 0

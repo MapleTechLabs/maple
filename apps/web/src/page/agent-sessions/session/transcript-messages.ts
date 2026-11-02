@@ -2,6 +2,8 @@ import type { TranscriptRow } from "@maple/agent-sessions"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
+import { textLink } from "../../../ui/text-link"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, messageBody, viewSwitch } from "./payload-view"
@@ -28,20 +30,18 @@ const historyToggle = (h: H, model: Model, user: Extract<TranscriptRow, { kind: 
 	const historyKey = `${user.key}:history`
 	const isShown = disclosed(model.openRows, historyKey, false)
 	// TODO(tooltip): "N earlier messages re-sent with this one, shown once" is drawn as its trigger.
-	return h.button(
-		[
-			h.AriaExpanded(isShown),
-			h.Class(
-				cn(
-					"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-					!isShown && ON_HOVER,
-				),
-			),
-			h.DataAttribute("base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.Type("button"),
-			h.OnClick(Message.ToggledRow({ key: historyKey })),
-		],
+	return textLink(
+		h,
+		{
+			tone: "muted",
+			onClick: Message.ToggledRow({ key: historyKey }),
+			className: cn("shrink-0 text-2xs", !isShown && ON_HOVER),
+			attributes: [
+				h.AriaExpanded(isShown),
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				h.DataAttribute("slot", "tooltip-trigger"),
+			],
+		},
 		[isShown ? "hide history" : `+${user.earlierCount} re-sent`],
 	)
 }
@@ -119,15 +119,14 @@ const systemCoverage = (calls: number, turnCalls: number): string =>
 export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, { kind: "system" }>): Html => {
 	const isOpen = disclosed(model.openRows, system.key, false)
 	return row(h, { depth: system.depth, className: "pt-3" }, [
-		h.button(
-			[
-				h.AriaExpanded(isOpen),
-				h.Class(
-					"flex w-full cursor-pointer items-center gap-2 py-0.5 text-left text-muted-foreground hover:text-foreground active:text-foreground",
-				),
-				h.Type("button"),
-				h.OnClick(Message.ToggledRow({ key: system.key })),
-			],
+		pressable(
+			h,
+			{
+				onClick: Message.ToggledRow({ key: system.key }),
+				className:
+					"flex w-full items-center gap-2 py-0.5 text-left text-muted-foreground hover:text-foreground active:text-foreground",
+				attributes: [h.AriaExpanded(isOpen)],
+			},
 			[
 				chevron(h, isOpen, "shrink-0 text-muted-foreground"),
 				h.span([h.Class("shrink-0 font-medium text-xs")], ["System prompt"]),
@@ -186,15 +185,16 @@ export const thinkingBlock = (
 	const isOpen = disclosed(model.openRows, thinking.key, false)
 	const { text } = thinking
 	return row(h, { depth: thinking.depth, className: "pt-2" }, [
-		h.button(
-			[
-				h.AriaExpanded(isOpen),
-				h.Class("flex w-full items-center gap-2 py-0.5 text-left enabled:cursor-pointer"),
-				...(text === undefined ? [h.Disabled(true)] : []),
-				h.Title(clockOf(thinking.startMs, timeZone)),
-				h.Type("button"),
-				h.OnClick(Message.ToggledRow({ key: thinking.key })),
-			],
+		pressable(
+			h,
+			{
+				onClick: Message.ToggledRow({ key: thinking.key }),
+				isDisabled: text === undefined,
+				// Nothing to expand reads as a plain line, not a dimmed control.
+				className:
+					"flex w-full items-center gap-2 py-0.5 text-left disabled:cursor-default disabled:opacity-100",
+				attributes: [h.AriaExpanded(isOpen), h.Title(clockOf(thinking.startMs, timeZone))],
+			},
 			[
 				text === undefined
 					? h.span([h.AriaHidden(true), h.Class("w-[11px] shrink-0")], [])

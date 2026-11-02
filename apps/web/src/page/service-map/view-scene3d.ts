@@ -14,9 +14,11 @@ import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as ServiceMap from "../../service-map/map/service-map"
 import { button } from "../../ui/button"
+import { heading } from "../../ui/heading"
 import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
 import { middleTruncate } from "../../ui/middle-truncate"
+import { pressable } from "../../ui/pressable"
 import { statusDot } from "../../ui/status-dot"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { machineBadge } from "./badge"
@@ -174,20 +176,20 @@ const nodeLabels = <M>(
 	return topology.nodes.map((node) => {
 		const badge = machineBadge(node)
 		const isSelected = selectedId === node.id
-		return h.button(
-			[
-				h.Key(node.id),
-				h.Type("button"),
-				h.Attribute(LABEL, node.id),
-				h.Title(badge ? `${node.label} · ${badge.label}` : node.label),
-				h.Class(
-					`pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current active:border-current"}`,
-				),
-				h.Style(nodeSignStyle(palette, node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1)),
-				h.OnClick(toMessage(Message.PickedNode({ nodeId: isSelected ? null : node.id }))),
-				h.AriaLabel(`Select ${node.label}${badge ? `, ${badge.label}` : ""}`),
-				h.AriaPressed(String(isSelected)),
-			],
+		return pressable(
+			h,
+			{
+				onClick: toMessage(Message.PickedNode({ nodeId: isSelected ? null : node.id })),
+				isSelected,
+				label: `Select ${node.label}${badge ? `, ${badge.label}` : ""}`,
+				className: `pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0 ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current active:border-current"}`,
+				attributes: [
+					h.Key(node.id),
+					h.Attribute(LABEL, node.id),
+					h.Title(badge ? `${node.label} · ${badge.label}` : node.label),
+					h.Style(nodeSignStyle(palette, node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1)),
+				],
+			},
 			[middleTruncate(h, { text: node.label, tail: 10 })],
 		)
 	})
@@ -209,21 +211,21 @@ const linkTags = <M>(
 		)
 		.map((link) => {
 			const rate = formatRate(link.edge.callsPerSecond, link.edge.hasSampling)
-			return h.button(
-				[
-					h.Key(link.id),
-					h.Type("button"),
-					h.Attribute(LABEL, link.id),
-					h.Class(
-						`pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current active:border-current focus-visible:outline-2 focus-visible:outline-ring ${TAG_CLASS}`,
-					),
-					h.Style(signStyle(palette)),
-					h.Title(
-						`${labelOf(link.edge.source)} → ${labelOf(link.edge.target)} · ${rate} calls · ${edgeLatency(link.edge)}`,
-					),
-					h.AriaLabel(`Inspect connection to ${labelOf(link.edge.target)}, ${rate}`),
-					h.OnClick(toMessage(Message.PickedNode({ nodeId: link.edge.target }))),
-				],
+			return pressable(
+				h,
+				{
+					onClick: toMessage(Message.PickedNode({ nodeId: link.edge.target })),
+					label: `Inspect connection to ${labelOf(link.edge.target)}, ${rate}`,
+					className: `pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current active:border-current focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0 ${TAG_CLASS}`,
+					attributes: [
+						h.Key(link.id),
+						h.Attribute(LABEL, link.id),
+						h.Style(signStyle(palette)),
+						h.Title(
+							`${labelOf(link.edge.source)} → ${labelOf(link.edge.target)} · ${rate} calls · ${edgeLatency(link.edge)}`,
+						),
+					],
+				},
 				[rate],
 			)
 		})
@@ -321,7 +323,7 @@ const overlays = <M>(
 				h.Class(`pointer-events-none absolute top-4 left-4 px-3 py-2 ${PANEL_CLASS}`),
 			],
 			[
-				h.h2([h.Class("font-display text-base font-medium")], [copy.title]),
+				heading(h, { level: 2, variant: "section", className: "font-display text-current" }, [copy.title]),
 				h.p([h.Class(`mt-1 text-2xs opacity-75`)], [copy.description]),
 			],
 		),

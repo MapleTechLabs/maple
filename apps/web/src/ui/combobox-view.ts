@@ -108,6 +108,25 @@ export const inputAttributes = <M>(
 	]
 }
 
+/** A bare input drawn as the chips input, for a search field atop a trigger's popup; pass `inputAttributes`. */
+export const chipsInput = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ size?: "sm" | "default"; className?: string; attributes: ReadonlyArray<Attribute<M>> }>,
+): Html => {
+	const size = options.size ?? "default"
+	return h.input([
+		...options.attributes,
+		h.DataAttribute("size", size),
+		h.Class(
+			cn(
+				C.comboboxChipsInputStyles,
+				size === "sm" ? C.comboboxChipsInputSmStyles : C.comboboxChipsInputDefaultStyles,
+				options.className,
+			),
+		),
+	])
+}
+
 /** `<input aria-hidden>` Base UI keeps for form submission, after the field. */
 export const hiddenInput = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 	h.input([
@@ -359,10 +378,23 @@ export type ChipsViewInputs = Readonly<{
 	isDisabled?: boolean
 	/** Places the chips field and, while open, the hidden input and the portal. */
 	toView: (parts: ReadonlyArray<Html>) => Html
+	/** A chip's leading media (a member's avatar), before its text. */
+	chipLeading?: (h: H, value: string) => Html
+	/** A chip's text when the value is not readable (a member's name for a user id). */
+	chipLabel?: (value: string) => string
+	/** A list item's children when they are more than its value. */
+	renderItem?: (h: H, value: string) => ReadonlyArray<Html | string>
+	/** `items` are already filtered by the caller; Empty shows once something is typed. */
+	isUnfiltered?: boolean
 }>
 
 /** Base UI hides the chips from assistive tech while the list is open. */
-const chip = (h: H, value: string, isOpen: boolean): Html =>
+const chip = (
+	h: H,
+	value: string,
+	isOpen: boolean,
+	parts: Pick<ChipsViewInputs, "chipLeading" | "chipLabel"> = {},
+): Html =>
 	h.div(
 		[
 			h.Key(`chip-${value}`),
@@ -372,7 +404,11 @@ const chip = (h: H, value: string, isOpen: boolean): Html =>
 			h.Tabindex(-1),
 		],
 		[
-			h.span([h.Class(C.comboboxChipTextStyles), h.Title(value)], [value]),
+			...(parts.chipLeading === undefined ? [] : [parts.chipLeading(h, value)]),
+			h.span(
+				[h.Class(C.comboboxChipTextStyles), h.Title(parts.chipLabel?.(value) ?? value)],
+				[parts.chipLabel?.(value) ?? value],
+			),
 			h.button(
 				[
 					h.AriaDisabled(false),
@@ -403,7 +439,7 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 			...(model.selected.length === 0 ? [] : [h.Role("toolbar")]),
 		],
 		[
-			...model.selected.map((value) => chip(h, value, isOpen)),
+			...model.selected.map((value) => chip(h, value, isOpen, inputs)),
 			...(isOpen ? [dismissButton(h)] : []),
 			h.input([
 				h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputDefaultStyles)),
@@ -417,6 +453,7 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 						ariaLabel: inputs.ariaLabel,
 						placeholder: inputs.placeholder,
 						items: inputs.items,
+						isUnfiltered: inputs.isUnfiltered,
 					},
 					(message) => message,
 				),
@@ -435,6 +472,8 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 						items: inputs.items,
 						emptyText: inputs.emptyText,
 						anchorSelector: chipsSelector,
+						isUnfiltered: inputs.isUnfiltered,
+						renderItem: (value: string) => inputs.renderItem?.(h, value) ?? [value],
 					}),
 				]
 			: []),

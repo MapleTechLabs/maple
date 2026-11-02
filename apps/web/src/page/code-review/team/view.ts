@@ -9,10 +9,9 @@ import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMessage, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { PageViewInputs } from "../../contract"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
@@ -269,24 +268,16 @@ const sortHead = (h: H, column: Column, model: Model, ranked: boolean): Html => 
 	return tableHead(
 		h,
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.Title(column.hint),
-					h.OnClick(Message.ClickedSort({ sort: column.metric })),
-					h.Class(
-						cn(
-							"inline-flex items-center gap-1 hover:text-foreground active:text-foreground focus-visible:underline focus-visible:outline-none",
-							isActive && "text-foreground",
-						),
-					),
-				],
-				[
-					column.label,
-					...(isActive
-						? [icon(h, isAscending ? "ArrowUpIcon" : "ArrowDownIcon", { className: "size-3" })]
-						: []),
-				],
+			sortButton(
+				h,
+				{
+					isActive,
+					direction: isAscending ? "asc" : "desc",
+					onClick: Message.ClickedSort({ sort: column.metric }),
+					align: "right",
+					attributes: [h.Title(column.hint)],
+				},
+				[column.label],
 			),
 		],
 		className,
@@ -299,17 +290,9 @@ const personHead = (h: H, model: Model): Html => {
 	return tableHead(
 		h,
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ClickedSort({ sort: "person" })),
-					h.Class(
-						cn(
-							"inline-flex items-center gap-1 hover:text-foreground active:text-foreground focus-visible:underline focus-visible:outline-none",
-							isActive && "text-foreground",
-						),
-					),
-				],
+			sortButton(
+				h,
+				{ isActive, direction: "asc", onClick: Message.ClickedSort({ sort: "person" }) },
 				["Person"],
 			),
 		],

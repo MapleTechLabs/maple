@@ -5,6 +5,7 @@ import { gcpAgentPrompt, gcpManualSteps, gcpRemovalList } from "../../components
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { skeleton } from "../../ui/skeleton"
 import { IAC_DOCS, MANUAL_DOCS } from "./gcp-configure-copy"
@@ -24,7 +25,7 @@ import {
 import { runAs, runSummary } from "./view-gcp-configure-run"
 import { fileCard, loadFailure } from "./view-gcp-configure-script"
 import { runStatus } from "./view-gcp-configure-status"
-import { GCP_TITLE, type ScriptFailure, SMALL } from "./view-gcp-parts"
+import { type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { manualSteps, removalItem } from "./view-gcp-setup-methods"
 
 // `GcpMethodStage` and `GcpMethodApplyView`: how Google Cloud is set up, and the setup without the script.
@@ -96,8 +97,9 @@ const removalSection = (
 				h.div(
 					[h.Class("flex flex-col gap-0.5")],
 					[
-						h.h3(
-							[h.Class(GCP_TITLE)],
+						heading(
+							h,
+							{ level: 3, variant: "subsection" },
 							[
 								isCode
 									? "If your file didn't create these, delete them in the console"
@@ -197,8 +199,9 @@ const codeBody = (
 			h.div(
 				[h.Class("flex flex-col gap-0.5")],
 				[
-					h.h3(
-						[h.Class(GCP_TITLE)],
+					heading(
+						h,
+						{ level: 3, variant: "subsection" },
 						[
 							isTerraform
 								? "Add this to your Terraform configuration"

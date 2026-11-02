@@ -5,16 +5,17 @@ import type {
 } from "@maple/domain/http"
 import { type AdvisorySeverity, displayAdvisoryId } from "@maple/domain/package-advisories"
 import { countLabel, formatRate } from "@maple/ui/lib/format"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
+import { pressable } from "../../../ui/pressable"
 import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { textLink } from "../../../ui/text-link"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
@@ -110,7 +111,7 @@ const toolbar = (
 		repositories.find((repository) => repository.id === value)?.fullName ?? "All repositories"
 	return listToolbar(h, {
 		framed: true,
-		leading: h.h2([h.Class("px-1 text-sm font-medium")], ["Vulnerable packages"]),
+		leading: heading(h, { level: 2, variant: "subsection", className: "px-1" }, ["Vulnerable packages"]),
 		trailing: [
 			filterSelect(
 				h,
@@ -237,20 +238,15 @@ const findingRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(
-				h,
-				[dependencySeverityBadge(h, finding.severity)],
-				cn("w-24", rowSelectedClass(isSelected)),
-			),
+			laneTableCell(h, isSelected, [dependencySeverityBadge(h, finding.severity)], "w-24"),
 			tableCell(h, [
-				h.button(
-					[
-						h.Type("button"),
-						h.OnClick(open, { propagation: "Stop" }),
-						h.Class(
+				pressable(
+					h,
+					{
+						className:
 							"flex min-w-0 max-w-72 flex-col items-start text-left focus-visible:underline focus-visible:outline-none",
-						),
-					],
+						attributes: [h.OnClick(open, { propagation: "Stop" })],
+					},
 					[
 						h.span(
 							[h.Class("truncate font-mono text-sm"), h.Title(versionsLabel(finding))],
