@@ -144,6 +144,20 @@ describe("teamScores", () => {
 		expect(new Map(teamScores(members.toReversed()))).toEqual(new Map(teamScores(members)))
 	})
 
+	test("people without a score still count toward the team rates others are judged against", () => {
+		const reviewsOnly = new CodeReviewTeamMember({
+			...steady("reviews-only", 12, 0.8),
+			ciRuns: 0,
+			firstTryRuns: 0,
+			firstTryGreen: 0,
+			reruns: 0,
+		})
+		const flaky = member("flaky", { ciRuns: 200, firstTryRuns: 200, firstTryGreen: 20, reruns: 120 })
+		expect(scoreOf([...team, reviewsOnly, flaky], "reviews-only")).toBeLessThan(
+			scoreOf([...team, reviewsOnly], "reviews-only"),
+		)
+	})
+
 	test("someone with only CI runs has no score", () => {
 		const members = [...team, member("ci-only", { ciRuns: 30, firstTryRuns: 30, firstTryGreen: 30 })]
 		expect(teamScores(members).has("ci-only")).toBe(false)

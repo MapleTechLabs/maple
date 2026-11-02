@@ -80,16 +80,16 @@ export const medianOf = (values: ReadonlyArray<number>): number | null => {
 export const teamScores = (members: ReadonlyArray<CodeReviewTeamMember>): ReadonlyMap<string, Score> => {
 	const scored = members.filter((member) => member.mergedPullRequests > 0)
 
-	// The team's pooled rate per column; null when nobody on the team has any evidence for it.
+	// The team's pooled rate per column, over everyone, scored or not; null when nobody has evidence.
 	const pooled = new Map(
 		RATE_KEYS.map((key) => {
-			const tallies = scored.map(TALLIES[key])
+			const tallies = members.map(TALLIES[key])
 			const trials = sum(tallies.map((tally) => tally.trials))
 			return [key, trials === 0 ? null : sum(tallies.map((tally) => tally.hits)) / trials]
 		}),
 	)
 	// Merge time has no pooled rate: the team median of medians, compared in log space.
-	const mergeMedians = scored.flatMap((m) =>
+	const mergeMedians = members.flatMap((m) =>
 		m.mergedPullRequests > 0 && m.medianMergeSeconds !== null ? [m.medianMergeSeconds] : [],
 	)
 	const teamMerge = medianOf(mergeMedians)
