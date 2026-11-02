@@ -8,7 +8,7 @@ import {
 } from "@maple/web-data/warehouse/supabase-insights"
 import { Effect, Result } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import type { SupabaseFleetInsights, SupabaseProjectRow, SupabaseProjectTimeseriesRow } from "./model"
 

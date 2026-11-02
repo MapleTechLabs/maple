@@ -1,16 +1,16 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Autocomplete from "../../../ui/autocomplete"
-import { badge } from "../../../ui/display"
-import { eyebrow } from "../../../ui/eyebrow"
-import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
-import * as Field from "../../../ui/field"
-import { formDialog } from "../../../ui/form-dialog"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
-import { panel } from "../../../ui/panel"
-import * as SelectView from "../../../ui/select-view"
+import * as Autocomplete from "@maple/views/ui/autocomplete"
+import { badge } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "@maple/views/ui/field"
+import * as Field from "@maple/views/ui/field"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel } from "@maple/views/ui/panel"
+import * as SelectView from "@maple/views/ui/select-view"
 import {
 	isFormValid,
 	type KeyField,
@@ -20,6 +20,7 @@ import {
 	type SelectField,
 	sourceContextOf,
 } from "./mapping-dialog"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -93,8 +94,7 @@ const keyField = (h: H, model: Model, name: KeyField, label: string, placeholder
 const contextRow = (h: H, value: string) => {
 	const option = CONTEXT_OPTIONS.find((entry) => entry.value === value) ?? CONTEXT_OPTIONS[0]
 	return [
-		h.span(
-			[h.Class("flex items-center gap-2")],
+		hstack(h, { gap: "2", as: "span" },
 			[icon(h, option.icon, { className: "text-muted-foreground" }), option.label],
 		),
 	]
@@ -167,13 +167,12 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 				entries: OPERATION_OPTIONS,
 				renderValue: (value) => {
 					const option = OPERATION_OPTIONS.find((entry) => entry.value === value) ?? OPERATION_OPTIONS[0]
-					return [h.span([h.Class("flex items-center gap-2")], [icon(h, option.icon, { className: option.tone }), option.label])]
+					return [hstack(h, { gap: "2", as: "span" }, [icon(h, option.icon, { className: option.tone }), option.label])]
 				},
 				renderItem: (item) => {
 					const option = OPERATION_OPTIONS.find((entry) => entry.value === item.value) ?? OPERATION_OPTIONS[0]
 					return [
-						h.span(
-							[h.Class("flex items-center gap-2")],
+						hstack(h, { gap: "2", as: "span" },
 							[
 								icon(h, option.icon, { className: option.tone }),
 								h.span([], [...option.lead, h.span([h.Class("text-muted-foreground")], [option.note])]),

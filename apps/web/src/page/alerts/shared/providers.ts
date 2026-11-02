@@ -2,8 +2,8 @@ import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-
 import type { AlertDestinationType } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
-import { manifestGlyph } from "../../../ui/manifest-glyph"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { LINEAR_ACCENT } from "../../integrations/catalog"
 
 // `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.

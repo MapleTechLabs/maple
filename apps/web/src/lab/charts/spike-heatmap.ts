@@ -5,8 +5,8 @@ import { colorGradientLegend } from "@tanstack/charts/legend"
 import { tooltip } from "@tanstack/charts/tooltip"
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { Option } from "effect"
-import { ChartTooltip } from "../../charts/chart-spec"
-import type { BuiltChart } from "../../charts/definitions/built-chart"
+import { ChartTooltip } from "@maple/views/charts/chart-spec"
+import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import {
 	HEATMAP_SPIKE_ROWS,
 	type HeatmapHole,

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import { CompleteReloadSpin } from "../../page/infra-integrations/gcp/list/command"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
 import { ALL_PROJECTS, MANAGE_CONNECTIONS } from "../../page/infra-integrations/gcp/list/view-project-menu"
-import * as Menu from "../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import { Message, type Model } from "./model"
 import { init, LoadIntegrationsPage, update } from "./update"
 

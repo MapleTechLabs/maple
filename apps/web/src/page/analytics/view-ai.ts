@@ -11,16 +11,16 @@ import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/l
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { delta } from "../../ui/delta"
-import { errorState } from "../../ui/error-state"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
-import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
-import { skeleton } from "../../ui/skeleton"
+import { delta } from "@maple/views/ui/delta"
+import { errorState } from "@maple/views/ui/error-state"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { sectionHeading } from "../kit/section-heading"
 import { docsLink, emptyActions } from "../kit/signal-empty-state"
 import { statRail, statRailItem } from "../kit/stat-rail"
-import type { FilterKey, Message } from "./message"
+import { type FilterKey, Message } from "./message"
 import type { AiCrawlers, Model } from "./model"
 import { filtersOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
@@ -36,6 +36,7 @@ import {
 	rankingTable,
 } from "./view-ai-parts"
 import { favicon } from "./view-icons"
+import { hstack } from "@maple/views/ui/stack"
 
 // `AnalyticsAiTab`: the AI traffic tab.
 
@@ -101,7 +102,9 @@ const NO_CRAWLS = (h: H): ReadonlyArray<Html | string> => [
 	"AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are counted from your server’s traces: HTTP server spans whose ",
 	inlineCode(h, {}, ["user_agent.original"]),
 	" names GPTBot, ClaudeBot, PerplexityBot or another AI fetcher.",
-	h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "traces")]),
+	hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+		docsLink(h, "traces"),
+	]),
 ]
 
 export const aiTab = (h: H, model: Model, timeZone: string): Html => {
@@ -138,7 +141,12 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
 						CARD_PRODUCTS.map(() => skeleton(h, "h-[148px] w-full")),
 					),
-				onFailure: (failure) => errorState(h, { failure, title: "Couldn't load AI referrals" }),
+				onFailure: (failure) =>
+					errorState(h, {
+						failure,
+						title: "Couldn't load AI referrals",
+						onRetry: Message.ClickedRetryAiReferrals(),
+					}),
 				onData: () =>
 					h.div(
 						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
@@ -163,7 +171,11 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 					AsyncData.matchData(model.aiCrawlers.data, {
 						onEmpty: () => skeleton(h, "h-64 w-full"),
 						onFailure: (failure) =>
-							errorState(h, { failure, title: "Couldn't load AI crawlers" }),
+							errorState(h, {
+								failure,
+								title: "Couldn't load AI crawlers",
+								onRetry: Message.ClickedRetryAiCrawlers(),
+							}),
 						onData: (data) => crawlersPanel(h, data, clock),
 					}),
 				],

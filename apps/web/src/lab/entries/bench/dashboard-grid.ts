@@ -18,7 +18,7 @@ import { pointerEvents } from "../../../page/dashboards/view/subscription"
 import { init as pageInit, update as pageUpdate } from "../../../page/dashboards/view/update"
 import { dashboardSections } from "../../../page/dashboards/view/view-grid"
 import type { Resources } from "../../../platform/resources"
-import { icon } from "../../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import { defineLabWithFlags } from "../../define"
 
 /**

@@ -2,14 +2,14 @@ import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { serviceMapLoading } from "../../service-map/map/loading"
-import * as ServiceMap from "../../service-map/map/service-map"
-import { view as mapView } from "../../service-map/map/view"
-import { alert, alertDescription } from "../../ui/alert"
-import { errorState } from "../../ui/error-state"
-import { segmentedSelect } from "../../ui/segmented-select"
-import type * as Select from "../../ui/select"
-import * as SelectView from "../../ui/select-view"
+import { serviceMapLoading } from "@maple/views/service-map/map/loading"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
+import { view as mapView } from "@maple/views/service-map/map/view"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { errorState } from "@maple/views/ui/error-state"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import type * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { timeControls } from "../kit/time-controls"
@@ -24,13 +24,14 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { ResolveThemeColors } from "../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { DB_CHART_TOKENS } from "./view-db-charts"
 import { databasePanel } from "./view-db-panel"
 import { serviceMapEmptyState } from "./view-empty"
 import type * as Scene3d from "./scene3d"
 import { scene3dView } from "./view-scene3d"
 import { servicePanel } from "./view-service-panel"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -88,8 +89,7 @@ const headerActions = (h: H, model: Model): Html => {
 			renderValue: (value) => [
 				environmentItems(model).find((item) => item.value === value)?.label ?? value,
 			],
-			toView: (parts) =>
-				h.div([h.Class("flex flex-wrap items-center gap-2")], [views, ...parts, controls]),
+			toView: (parts) => hstack(h, { gap: "2", wrap: true }, [views, ...parts, controls]),
 		},
 	})
 }
@@ -178,7 +178,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: DB_CHART_TOKENS }))],
 		[
-			dashboardPage(h, { title: "Service Map", actions: headerActions(h, model) }, [
+			dashboardPage(h, { title: "Service map", actions: headerActions(h, model) }, [
 				Option.match(AsyncData.getError(model.facets.data), {
 					onSome: (failure) =>
 						errorState(h, {

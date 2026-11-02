@@ -11,14 +11,14 @@ import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/securit
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { SeverityBucket } from "../kit/findings"
 import { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"
 
-// `/security`, `/security/findings` and `/security/runs` as one page instance: the three tabs read
+// `/security/code`, `/security/code/findings` and `/security/code/runs` as one page instance: the three tabs read
 // the same targets, runs and findings, so a tab change reuses what the last one read.
 
 export const Tab = Schema.Literals(["overview", "findings", "runs"])

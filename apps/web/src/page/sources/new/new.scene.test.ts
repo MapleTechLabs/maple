@@ -21,9 +21,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
-import * as Field from "../../../ui/field"
-import * as Tabs from "../../../ui/tabs"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Field from "@maple/views/ui/field"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message as IntegrationMessage } from "../../integrations/message"
 import { ScrollToTop } from "./command"

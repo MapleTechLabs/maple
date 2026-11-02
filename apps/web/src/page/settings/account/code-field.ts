@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { label } from "../../../ui/label"
-import * as OtpField from "../../../ui/otp-field"
+import { label } from "@maple/views/ui/label"
+import * as OtpField from "@maple/views/ui/otp-field"
 
 // `CodeField`: six digits for an email or TOTP code. Slot one carries the field's name through a real label;
 // the others name their position.

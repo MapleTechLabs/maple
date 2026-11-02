@@ -311,13 +311,29 @@ const articleJsonLd = {
             </aside>
 
             <article class="pylog-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        Python's built-in <code>logging</code> module tags every message with a <strong>log level</strong>: DEBUG, INFO, WARNING, ERROR or CRITICAL. The level you set decides which messages are written, so you can keep detailed output while developing and only the important messages in production.
+                    </p>
+                    <p>
+                        This guide explains what each level is for, how to set the level in code, from a command-line flag or from an environment variable, how logger and handler levels work together, and how levels carry over when you send Python logs to OpenTelemetry.
+                    </p>
+
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Python's default level is WARNING, so <code>info()</code> and <code>debug()</code> print nothing until you set one.</li>
+                            <li>Run production at INFO and switch to DEBUG only while you investigate.</li>
+                            <li>Read the level from a <code>--log-level</code> flag or a <code>LOG_LEVEL</code> variable, so changing it needs no code edit.</li>
+                            <li><code>basicConfig</code> does nothing if logging is already set up: pass <code>force=True</code> or set the root logger's level.</li>
+                            <li>Set library loggers such as <code>urllib3</code> to WARNING to hide their DEBUG and INFO lines.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="levels" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · Basics</p>
                     <h2>The Python logging levels</h2>
-
-                    <div class="guide-answer">
-                        <p>A <strong>log level</strong> is a label on each log message that says how serious it is. You choose a level for your program, and Python drops every message below it.</p>
-                    </div>
 
                     <p>
                         The method you call sets a message's level: <code>log.debug()</code>, <code>log.info()</code>, <code>log.warning()</code>, <code>log.error()</code> or <code>log.critical()</code>. These are the five levels, from least to most serious:
@@ -389,7 +405,7 @@ const articleJsonLd = {
                     </LanguageTabs>
                     <div class="guide-callout">
                         <p class="guide-kicker">basicConfig runs once</p>
-                        <p>If a framework or library already set up logging, <code>basicConfig</code> silently does nothing. Set the level directly instead:</p>
+                        <p>If a framework or library already set up logging, <code>basicConfig</code> silently does nothing. Pass <code>force=True</code> to replace the existing setup, or set the level directly instead:</p>
                         <pre><code set:html={code(basicConfigFix)} /></pre>
                     </div>
 
@@ -536,16 +552,17 @@ const articleJsonLd = {
     .pylog-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .pylog-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .pylog-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .pylog-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .pylog-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .pylog-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .pylog-guide strong { font-weight: 600; color: var(--foreground); }
     .pylog-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .pylog-guide pre { position: relative; margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .pylog-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .pylog-guide a:not(.guide-button):hover { color: var(--foreground); }
     .pylog-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
-    .pylog-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .pylog-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .pylog-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .pylog-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pylog-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .pylog-guide .guide-takeaways li::marker { color: var(--primary); }
 
     /* One color per level: set --lvl on the element. */
     .pylog-guide .lvl { color: color-mix(in oklab, var(--lvl) 85%, var(--foreground)); }

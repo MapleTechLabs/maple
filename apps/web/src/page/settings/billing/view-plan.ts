@@ -8,16 +8,18 @@ import { formatCount } from "../../../lib/billing/usage"
 import type { BillingCustomer } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as DialogView from "../../../ui/dialog-view"
-import { badge } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { button } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -58,28 +60,26 @@ const planLine = (
 			h.Class("flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3"),
 		],
 		[
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-0.5")],
+			vstack(h, { gap: "0.5", shrink: true },
 				[
 					h.span(
 						[
 							h.Class(
-								cn("text-sm font-medium", options.muted === true && "text-muted-foreground"),
+								cn(typographyClass({ size: "sm", weight: "medium" }), options.muted === true && "text-muted-foreground"),
 							),
 						],
 						[options.name],
 					),
-					h.span([h.Class("text-2xs text-muted-foreground")], [options.caption]),
+					typography(h, { size: "2xs", tone: "muted" }, [options.caption]),
 				],
 			),
-			h.div(
-				[h.Class("flex items-center gap-4")],
+			hstack(h, { gap: "4" },
 				[
 					h.span(
 						[
 							h.Class(
 								cn(
-									"font-mono text-sm tabular-nums",
+									typographyClass({ size: "sm", mono: true, numeric: true }),
 									options.muted === true && "text-muted-foreground",
 								),
 							),
@@ -96,7 +96,7 @@ const planLine = (
 const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, canManage: boolean): Html => {
 	if (spend.planName === null)
 		return panel(h, { padded: true }, [
-			h.p([h.Class("text-sm text-muted-foreground")], ["No active plan. Compare plans to pick one."]),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, ["No active plan. Compare plans to pick one."]),
 		])
 	const { price, suffix } = priceLabel(spend)
 	const activeIds = new Set(spend.addOns.map((addOn) => addOn.id))
@@ -115,8 +115,7 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, can
 		...activeCharges.map((charge) =>
 			planLine(h, {
 				key: charge.key,
-				name: h.span(
-					[h.Class("flex items-center gap-2")],
+				name: hstack(h, { gap: "2", as: "span" },
 					[sentenceCasePlanName(charge.name), badge(h, { size: "sm", variant: "ok" }, ["Active"])],
 				),
 				caption: "Add-on, billed with your plan",
@@ -202,8 +201,7 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 			h.div(
 				[h.Class("max-w-sm")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2" },
 						[
 							h.span([h.Class("text-sm")], [spend.planName ?? "Your plan"]),
 							currentBadge(h, "Current plan"),
@@ -216,8 +214,7 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 								[h.Class("font-mono text-3xl font-semibold tabular-nums")],
 								[isPriced ? `$${price}` : "Custom"],
 							),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
+							typography(h, { size: "2xs", tone: "muted" },
 								[
 									!isPriced
 										? "negotiated pricing"
@@ -281,8 +278,7 @@ const offerPanel = (
 			h.div(
 				[h.Class("max-w-sm")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2" },
 						[
 							h.span([h.Class("text-sm")], [plan.name]),
 							...(isActive ? [currentBadge(h, options.trialText ?? "Current plan")] : []),
@@ -295,8 +291,7 @@ const offerPanel = (
 								[h.Class("font-mono text-3xl font-semibold tabular-nums")],
 								["$", String(plan.price?.amount ?? 0)],
 							),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
+							typography(h, { size: "2xs", tone: "muted" },
 								["/", plan.price?.interval ?? "month", " + usage"],
 							),
 						],
@@ -325,8 +320,7 @@ const offerPanel = (
 								h.div(
 									[h.Class("mt-3 space-y-1")],
 									addOns.map((addOn) =>
-										h.p(
-											[h.Key(addOn.id), h.Class("text-2xs text-muted-foreground")],
+										typography(h, { size: "2xs", tone: "muted", as: "p", attributes: [h.Key(addOn.id)] },
 											[
 												addOn.customerEligibility?.status === "active"
 													? "Add-on active · "
@@ -392,13 +386,13 @@ const planOffer = (
 		onIdle: () => [
 			h.div(
 				[h.Class("space-y-3")],
-				[skeleton(h, "h-32 w-full rounded-md"), skeleton(h, "h-16 w-full rounded-md")],
+				[skeletonBlock(h, { height: "32" }), skeletonBlock(h, { height: "16" })],
 			),
 		],
 		onLoading: () => [
 			h.div(
 				[h.Class("space-y-3")],
-				[skeleton(h, "h-32 w-full rounded-md"), skeleton(h, "h-16 w-full rounded-md")],
+				[skeletonBlock(h, { height: "32" }), skeletonBlock(h, { height: "16" })],
 			),
 		],
 		onFailure: (failure) => [

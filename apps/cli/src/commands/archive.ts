@@ -5,21 +5,25 @@ import * as Argument from "effect/cli/Argument"
 import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
-import { createArchiveGeneration, runArchiveReconciliation } from "../server/archives/generation"
+import { createArchiveGeneration, runArchiveReconciliation } from "@maple/local-server/archives/generation"
 import {
 	listActiveGenerations,
 	activeParquetPaths,
 	rebuildCatalogWithMaintenanceLock,
 	verifyActiveGenerations,
-} from "../server/archives/listing"
-import { runArchiveGc } from "../server/archives/gc"
-import { resolveArchiveTuning, tuningRecord } from "../server/archives/config"
-import { ARCHIVE_SIGNALS, isArchiveSignalName, type ArchiveSignalName } from "../server/archives/signals"
-import { expireArchiveDay, readRetiredDayLedger, retireLiveDay } from "../server/archives/retention"
-import { validateRangeDate } from "../server/archives/paths"
-import { maintenanceOperation } from "../server/checkpoints"
+} from "@maple/local-server/archives/listing"
+import { runArchiveGc } from "@maple/local-server/archives/gc"
+import { resolveArchiveTuning, tuningRecord } from "@maple/local-server/archives/config"
+import {
+	ARCHIVE_SIGNALS,
+	isArchiveSignalName,
+	type ArchiveSignalName,
+} from "@maple/local-server/archives/signals"
+import { expireArchiveDay, readRetiredDayLedger, retireLiveDay } from "@maple/local-server/archives/retention"
+import { validateRangeDate } from "@maple/local-server/archives/paths"
+import { maintenanceOperation } from "@maple/local-server/checkpoints"
 import { amber, bold, dim, green, red } from "../lib/style"
-import { ArchiveError } from "../server/archives/errors"
+import { ArchiveError } from "@maple/local-server/archives/errors"
 import { debugLog } from "../lib/debug"
 import { jsonFormatRequested, writeJson } from "./json-output"
 

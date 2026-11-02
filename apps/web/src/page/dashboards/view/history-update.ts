@@ -1,6 +1,6 @@
 import { AsyncData, Command } from "foldkit"
 import { Result } from "effect"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { FetchSnapshot, FetchVersions, RestoreVersion } from "./command-history"
 import type { HistoryState } from "./history"

@@ -1,6 +1,6 @@
 import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { accept, acceptCached, idle } from "../../data/slot"

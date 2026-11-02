@@ -1,8 +1,8 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as Tabs from "../../../ui/tabs"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "../../kit/signal-presence"
 import { GroupKey, IncidentPage, StatusTab } from "./model"
 

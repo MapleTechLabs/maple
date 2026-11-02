@@ -4,17 +4,17 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
 import { Effect, Schema } from "effect"
-import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
-import { Chdb } from "../src/server/chdb"
+import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
+import { Chdb } from "@maple/local-server/chdb"
 import { LOCAL_ORG_ID } from "../src/core/executor"
-import { decodeJsonEachRow } from "../src/server/chdb-rows"
+import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import { describeWithChdb } from "./libchdb-test-support"
 import {
 	type LocalServiceMapRollupDeps,
 	type LocalServiceMapRollupState,
 	ROLLUP_SETTLE_MS,
 	runLocalServiceMapRollupTick,
-} from "../src/server/service-map-rollup"
+} from "@maple/local-server/service-map-rollup"
 
 const HOUR_MS = 3_600_000
 const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")

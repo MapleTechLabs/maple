@@ -103,7 +103,7 @@ describe("workloads", () => {
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, { context: reporting })() },
 			given(model),
-			expectView(text("No StatefulSets in this window.")).toExist(),
+			expectView(text("No StatefulSets in this window")).toExist(),
 			expectView(text("No StatefulSets reporting yet")).not.toExist(),
 		)
 	})
@@ -123,7 +123,7 @@ describe("workloads", () => {
 			{ update: pageUpdate, view: withViewInputs(pageView, { context: probing })() },
 			given(model),
 			expectView(text("No StatefulSets reporting yet")).not.toExist(),
-			expectView(text("No StatefulSets in this window.")).not.toExist(),
+			expectView(text("No StatefulSets in this window")).not.toExist(),
 		)
 		const failed: PageContext = {
 			...context,

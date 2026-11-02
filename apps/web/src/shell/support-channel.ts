@@ -3,10 +3,10 @@ import { Effect, Schema } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../data/analytics"
-import { LoadFailure, toLoadFailure } from "../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
-import * as Dialog from "../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 
 // The support channel dialog: the shared Slack
 // channel with the Maple team, read when the dialog opens; one button creates it or invites you.

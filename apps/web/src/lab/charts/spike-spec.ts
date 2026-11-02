@@ -1,4 +1,4 @@
-import type { ChartSpec } from "../../charts/chart-spec"
+import type { ChartSpec } from "@maple/views/charts/chart-spec"
 
 // The `/lab/charts` prototypes' spec (`ChartSpec.LabSpike`) and the emphasis helpers they share.
 

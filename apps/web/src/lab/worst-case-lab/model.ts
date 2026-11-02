@@ -5,10 +5,10 @@ import { Model as HubModel } from "../../page/alerts/hub/model"
 import { Message as SignalMessage } from "../../page/errors/hub/message"
 import { HostSortKey } from "../../page/infra/hosts/list/message"
 import { SortState } from "../../page/kit/table-sort"
-import * as AttributesPanel from "../../ui/attributes/attributes-panel"
-import * as LogsStream from "../../ui/logs/logs-stream"
+import * as AttributesPanel from "@maple/views/ui/attributes/attributes-panel"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as ReleaseOverlays from "../../page/releases/overlays"
-import * as Toast from "../../ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 import * as TraceBox from "./trace-box"
 
 // `/lab/worst-case`: product components over worst-case

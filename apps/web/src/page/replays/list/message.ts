@@ -1,14 +1,14 @@
 import { SessionTag } from "@maple/domain/query-engine"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
-import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresences } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { VirtualWindow } from "../kit/virtualize"
 import { ReplaysFacets, ReplaysPage } from "./model"
-import { HistogramMessage } from "../../../ui/filters/range-histogram"
+import { HistogramMessage } from "@maple/views/ui/filters/range-histogram"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
@@ -59,6 +59,7 @@ export const Message = defineMessageUnion({
 	ClickedClearUser: {},
 	ClickedClearUserId: {},
 	ClickedClearVisitor: {},
+	ClickedClearGroupId: {},
 	ClickedClearSidebarFilters: {},
 	ClickedClearFilters: {},
 	ClickedSession: { sessionId: Schema.String, startTime: Schema.String },

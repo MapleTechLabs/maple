@@ -3,12 +3,12 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as BarChart from "../../../charts/bar-chart"
-import type * as Chart from "../../../charts/chart"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { panel } from "../../../ui/panel"
-import { emptyMessage } from "../../../ui/empty"
-import { skeleton } from "../../../ui/skeleton"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import type * as Chart from "@maple/views/charts/chart"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { panel } from "@maple/views/ui/panel"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	integrationPlatformOf,
 	hasToken,
@@ -20,12 +20,14 @@ import {
 	viaLabel,
 } from "../kit/shared"
 import { platformMeta } from "../kit/platforms"
-import { icon } from "../../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import { sourceStatusBadge, sourceStatusLabel } from "../kit/status"
 import { signalCounts, volumeSize } from "../kit/volume"
 import { usageRows, usageTotals } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
 
 // `SourceOverview`.
 
@@ -34,9 +36,9 @@ type Children = ReadonlyArray<Html | string>
 
 const statCard = (h: H, label: string, value: Html | string, hint: string): Html =>
 	panel(h, { padded: true, className: "gap-1.5" }, [
-		h.span([h.Class("text-muted-foreground text-xs")], [label]),
+		typography(h, { size: "xs", tone: "muted" }, [label]),
 		h.span([h.Class("truncate text-base font-medium")], [value]),
-		h.span([h.Class("text-muted-foreground text-xs")], [hint]),
+		typography(h, { size: "xs", tone: "muted" }, [hint]),
 	])
 
 const configRow = (h: H, label: string, children: Children): Html =>
@@ -127,14 +129,14 @@ const volumePanel = (h: H, model: Model, timeZone: string, nowMs: number): Html 
 	const isFailed = AsyncData.isFailure(model.usage.data)
 	const body = Option.match(usage, {
 		onNone: () =>
-			isFailed ? emptyMessage(h, {}, ["Volume is unavailable right now."]) : skeleton(h, "h-48 w-full"),
+			isFailed ? emptyMessage(h, {}, ["Volume is unavailable right now"]) : skeleton(h, "h-48 w-full"),
 		onSome: (value) =>
 			value.buckets.length === 0
-				? emptyMessage(h, {}, ["Nothing stored from this source in the last 24 hours."])
+				? emptyMessage(h, {}, ["Nothing stored from this source in the last 24 hours"])
 				: usageChart(h, model, usageRows(value), timeZone, nowMs),
 	})
 	return panel(h, { padded: true, className: "gap-3" }, [
-		h.span([h.Class("text-sm font-medium")], ["Volume, last 24 hours"]),
+		typography(h, { size: "sm", weight: "medium" }, ["Volume, last 24 hours"]),
 		body,
 	])
 }
@@ -215,12 +217,20 @@ const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number):
 		h.div(
 			[h.Class("flex items-center justify-between gap-4 border-b px-4 py-3")],
 			[
-				h.span([h.Class("text-sm font-medium")], ["What Maple collects"]),
+				typography(h, { size: "sm", weight: "medium" }, ["What Maple collects"]),
 				h.a(
 					[
 						h.Href(sourceHref(source, "connection")),
 						h.Class(
-							"text-muted-foreground hover:text-foreground active:text-foreground inline-flex items-center gap-1 text-xs",
+							hstackClass({
+								gap: "1",
+								inline: true,
+								className: typographyClass({
+									size: "xs",
+									tone: "muted",
+									hoverTone: "foreground",
+								}),
+							}),
 						),
 					],
 					["Manage connection", icon(h, "ArrowRightIcon", { size: 12 })],
@@ -235,37 +245,34 @@ const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number):
 }
 
 export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: string, nowMs: number): Html => {
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			...notices(h, source, nowMs),
-			h.div(
-				[h.Class("grid gap-3 sm:grid-cols-3")],
-				[
-					statCard(
-						h,
-						"Status",
-						sourceStatusBadge(h, source, { nowMs, showTime: false }),
-						source.health.last_data_at === null
-							? "Updates once the first data lands"
-							: "Updated at most once a minute",
-					),
-					statCard(
-						h,
-						integrationPlatformOf(source) === null ? "Last data" : "Last sync",
-						source.health.last_data_at === null
-							? "Never"
-							: formatRelativeTime(source.health.last_data_at, nowMs),
-						hasToken(source) || source.is_default
-							? "Last request the gateway accepted"
-							: "Last successful collection",
-					),
-					last24h(h, model),
-				],
-			),
-			volumePanel(h, model, timeZone, nowMs),
-			...(hasToken(source) ? [rulesSummary(h, source, nowMs)] : []),
-			...(integrationPlatformOf(source) === null ? [] : [collectionSummary(h, model, source, nowMs)]),
-		],
-	)
+	return vstack(h, { gap: "4" }, [
+		...notices(h, source, nowMs),
+		h.div(
+			[h.Class("grid gap-3 sm:grid-cols-3")],
+			[
+				statCard(
+					h,
+					"Status",
+					sourceStatusBadge(h, source, { nowMs, showTime: false }),
+					source.health.last_data_at === null
+						? "Updates once the first data lands"
+						: "Updated at most once a minute",
+				),
+				statCard(
+					h,
+					integrationPlatformOf(source) === null ? "Last data" : "Last sync",
+					source.health.last_data_at === null
+						? "Never"
+						: formatRelativeTime(source.health.last_data_at, nowMs),
+					hasToken(source) || source.is_default
+						? "Last request the gateway accepted"
+						: "Last successful collection",
+				),
+				last24h(h, model),
+			],
+		),
+		volumePanel(h, model, timeZone, nowMs),
+		...(hasToken(source) ? [rulesSummary(h, source, nowMs)] : []),
+		...(integrationPlatformOf(source) === null ? [] : [collectionSummary(h, model, source, nowMs)]),
+	])
 }

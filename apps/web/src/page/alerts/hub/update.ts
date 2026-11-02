@@ -7,12 +7,12 @@ import { AsyncData } from "foldkit"
 import type { Command } from "foldkit"
 import { Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../../data/keyed"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import type { Resources } from "../../../platform/resources"
 import type { AppRoute } from "../../../route"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
@@ -189,7 +189,7 @@ const withoutId = <A extends string>(ids: ReadonlyArray<A>, id: A): ReadonlyArra
 	ids.filter((existing) => existing !== id)
 
 const destinationById = (model: Model, id: AlertDestinationId) =>
-	Option.map(
+	Option.flatMap(
 		Array.findFirst(model.destinations ?? [], (row) => row.id === id),
 		rowToAlertDestinationDocument,
 	)
@@ -367,7 +367,7 @@ const pickedFromMenu = (model: Model, menuId: string, value: string): Return => 
 		})
 	}
 	return Option.match(
-		Option.map(
+		Option.flatMap(
 			Array.findFirst(model.destinations ?? [], (row) => row.id === target),
 			rowToAlertDestinationDocument,
 		),

@@ -1,8 +1,8 @@
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { filterSection } from "../../../../ui/filters/filter-section"
-import * as FilterSections from "../../../../ui/filters/filter-sections"
+import { filterSection } from "@maple/views/ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -10,7 +10,7 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../../ui/filters/filter-sidebar"
+} from "@maple/views/ui/filters/filter-sidebar"
 import { EXCLUDED_OF, filtersOf } from "./update"
 import { type Facet, Message } from "./message"
 import type { PodFacets, Model } from "./model"

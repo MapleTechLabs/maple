@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import * as HoverCard from "../../ui/hover-card"
+import * as HoverCard from "@maple/views/ui/hover-card"
 import { commitTriggerId, init, Message, update } from "./overlays"
 
 // `CommitShaHoverCard`'s arm on the releases pages: 20 ms into a hover the lookup starts, once.

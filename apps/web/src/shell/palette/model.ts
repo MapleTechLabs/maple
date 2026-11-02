@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Combobox from "../../ui/combobox"
-import * as Dialog from "../../ui/dialog"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
 import { PaletteAction } from "./entries"
 
 // The command palette: mounted while open, so

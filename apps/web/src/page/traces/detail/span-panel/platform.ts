@@ -1,7 +1,8 @@
 import { CLOUDFLARE_ACCENT_CLASS, dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
 import { cloudflareDisplay } from "@maple/ui/lib/cloud-platforms/cloudflare-display"
 import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
-import type { IconName } from "../../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
+import { toneBoxClass } from "@maple/views/ui/tone-box"
 
 // copied: packages/ui/src/lib/cloud-platforms/{types,database}.ts with `Icon` as an icon name
 // (the adapters import React icon components). Workers detection and rows are shared.
@@ -24,10 +25,7 @@ export interface PlatformInfo {
 	readonly fields: ReadonlyArray<PlatformField>
 }
 
-export const outcomeBadgeStyle = (bad: boolean): string =>
-	bad
-		? "bg-severity-error-a2 text-severity-error border-severity-error-a3"
-		: "bg-severity-info-a2 text-severity-info border-severity-info-a3"
+export const outcomeBadgeStyle = (bad: boolean): string => toneBoxClass(bad ? "error" : "info")
 
 type Attrs = Readonly<Record<string, string>>
 

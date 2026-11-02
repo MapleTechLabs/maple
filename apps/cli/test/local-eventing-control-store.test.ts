@@ -20,7 +20,7 @@ import {
 	restoreControlSnapshot,
 	validateControlSnapshot,
 	writeControlSnapshot,
-} from "../src/server/eventing/control-store"
+} from "@maple/local-server/eventing/control-store"
 import { metricRecorder, openStore, run, runAsync } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void>): Promise<void> => {

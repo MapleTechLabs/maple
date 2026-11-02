@@ -1,14 +1,29 @@
-import { DEFAULT_HEATMAP_COLOR_SCALE, HEATMAP_COLOR_SCALES, type PanelType, STAT_AGGREGATES } from "@maple/domain/http"
+import {
+	DEFAULT_HEATMAP_COLOR_SCALE,
+	HEATMAP_COLOR_SCALES,
+	type PanelType,
+	STAT_AGGREGATES,
+} from "@maple/domain/http"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { input } from "../../../ui/input"
+import { input } from "@maple/views/ui/input"
 import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import { ProductEdit } from "./product-edit"
 import type { Model } from "./model"
-import { checkboxRow, divider, legendField, queryOptions, railSetting, segments, unitField } from "./view-rail"
+import {
+	checkboxRow,
+	divider,
+	legendField,
+	queryOptions,
+	railSetting,
+	segments,
+	unitField,
+} from "./view-rail"
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
+import { hstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // Each non-timeseries panel type's `ConfigPanel` over the `WidgetSettings` fields.
 
@@ -65,22 +80,31 @@ const numberInput = (
 
 /** `GaugeRange`: the arc's sweep. */
 const gaugeRange = (h: H, state: EditorState): Html =>
-	h.div(
-		[h.Class("grid grid-cols-2 gap-2")],
-		[
-			railSetting(h, "gauge-min", "Min", state.gaugeMin !== "", [
-				numberInput(h, "gauge-min", state.gaugeMin, "0", (value) => Message.ChangedGaugeBound({ bound: "min", value })),
-			]),
-			railSetting(h, "gauge-max", "Max", state.gaugeMax !== "", [
-				numberInput(h, "gauge-max", state.gaugeMax, "100", (value) => Message.ChangedGaugeBound({ bound: "max", value })),
-			]),
-		],
-	)
+	grid(h, { cols: 2, gap: "2" }, [
+		railSetting(h, "gauge-min", "Min", state.gaugeMin !== "", [
+			numberInput(h, "gauge-min", state.gaugeMin, "0", (value) =>
+				Message.ChangedGaugeBound({ bound: "min", value }),
+			),
+		]),
+		railSetting(h, "gauge-max", "Max", state.gaugeMax !== "", [
+			numberInput(h, "gauge-max", state.gaugeMax, "100", (value) =>
+				Message.ChangedGaugeBound({ bound: "max", value }),
+			),
+		]),
+	])
 
 /** `Sparkline`: only in builder mode, since it re-runs the builder's queries. */
 const sparkline = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> =>
 	model.sourceMode === "builder"
-		? [checkboxRow(h, "qb-sparkline", "Show sparkline", state.sparklineEnabled, Message.ToggledSparkline())]
+		? [
+				checkboxRow(
+					h,
+					"qb-sparkline",
+					"Show sparkline",
+					state.sparklineEnabled,
+					Message.ToggledSparkline(),
+				),
+			]
 		: []
 
 /** `RowLimit`. */
@@ -97,12 +121,15 @@ const rampSwatch = (h: H, scale: string): Html =>
 	h.span(
 		[h.Class("flex shrink-0 gap-px")],
 		[0, 1, 2, 3, 4].map((stop) =>
-			h.span([h.Class("size-2 rounded-xs"), h.Style({ backgroundColor: `var(--heatmap-${scale}-${stop})` })]),
+			h.span([
+				h.Class("size-2 rounded-xs"),
+				h.Style({ backgroundColor: `var(--heatmap-${scale}-${stop})` }),
+			]),
 		),
 	)
 
 const swatchLabel = (h: H, scale: string): ReadonlyArray<Html | string> => [
-	h.span([h.Class("flex items-center gap-2")], [rampSwatch(h, scale), titleCase(scale)]),
+	hstack(h, { gap: "2", as: "span" }, [rampSwatch(h, scale), titleCase(scale)]),
 ]
 
 /** `HeatmapColors`: an unset palette shows the ramp the chart already renders. */
@@ -167,7 +194,12 @@ const funnelStepPercent = (h: H, state: EditorState): Html => {
 }
 
 /** The `ConfigPanel` of a panel type other than line, bar and area. */
-export const typeSettings = (h: H, model: Model, state: EditorState, panel: PanelType): ReadonlyArray<Html> => {
+export const typeSettings = (
+	h: H,
+	model: Model,
+	state: EditorState,
+	panel: PanelType,
+): ReadonlyArray<Html> => {
 	switch (panel) {
 		case "stat":
 			return [
@@ -197,7 +229,12 @@ export const typeSettings = (h: H, model: Model, state: EditorState, panel: Pane
 		case "histogram":
 			return queryOptions(h, model, state)
 		case "funnel":
-			return [divider(h), funnelVariant(h, state), funnelStepPercent(h, state), ...queryOptions(h, model, state)]
+			return [
+				divider(h),
+				funnelVariant(h, state),
+				funnelStepPercent(h, state),
+				...queryOptions(h, model, state),
+			]
 		case "paths":
 			return [divider(h), ...queryOptions(h, model, state)]
 		default:

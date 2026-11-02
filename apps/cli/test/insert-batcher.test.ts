@@ -2,12 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
+import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Effect, Result } from "effect"
-import { Chdb } from "../src/server/chdb"
-import { type InsertBatch, InsertBatcher } from "../src/server/insert-batcher"
-import { MAX_ESCAPED_PAYLOAD_BYTES } from "../src/server/inserts"
-import { encodeLogs } from "../src/server/otlp/encode"
+import { Chdb } from "@maple/local-server/chdb"
+import { type InsertBatch, InsertBatcher } from "@maple/local-server/insert-batcher"
+import { MAX_ESCAPED_PAYLOAD_BYTES } from "@maple/local-server/inserts"
+import { encodeLogs } from "@maple/local-server/otlp/encode"
 import { describeWithChdb } from "./libchdb-test-support"
 
 const rows = (...bodies: string[]) => bodies.map((body) => JSON.stringify({ body })).join("\n")

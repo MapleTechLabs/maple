@@ -1,7 +1,7 @@
-import { button } from "@maple/web/ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/web/ui/empty"
-import { icon } from "@maple/web/ui/icon"
-import { skeletonList } from "@maple/web/ui/skeleton"
+import { button } from "@maple/views/ui/button"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { skeletonList } from "@maple/views/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../data/local-query"
 

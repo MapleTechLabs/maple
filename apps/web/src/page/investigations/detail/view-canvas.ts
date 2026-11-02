@@ -1,7 +1,6 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
 import type { ActionKind } from "@maple/web-data/investigations/action-target"
 import { splitDuration } from "@maple/web-data/investigations/display"
 import {
@@ -18,8 +17,8 @@ import {
 import { getSmoothStepPath, Position } from "@xyflow/system"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { DEFAULT_GESTURES } from "../../../service-map/xyflow/attach"
-import * as Canvas from "../../../service-map/xyflow/canvas"
+import { DEFAULT_GESTURES } from "@maple/views/service-map/xyflow/attach"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
 import {
 	edgesLayer,
 	flowCanvas,
@@ -27,18 +26,21 @@ import {
 	flowHandle,
 	flowNode,
 	nodesLayer,
-} from "../../../service-map/xyflow/view"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+} from "@maple/views/service-map/xyflow/view"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
+import { skeleton, skeletonMeter } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { relativeTime } from "../../kit/relative-time"
 import { NODE_LINK_ATTRIBUTE } from "../clicks"
 import { MountNodeLinks } from "./command"
 import { CONTROL_GUTTER, fitScale, graphOf, HEADING_GUTTER } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
 
@@ -107,8 +109,7 @@ const nodeLink = (h: H) => h.Attribute(NODE_LINK_ATTRIBUTE, "")
 const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): ReadonlyArray<Html> => {
 	const isCurrent = data.current === true
 	const body = [
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
+		hstack(h, { gap: "1.5" },
 			[
 				h.span(
 					[
@@ -235,7 +236,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 			? h.a(
 					[
 						h.Href(data.href),
-						h.Class(cn(shell, "hover:border-primary/60 active:border-primary/60")),
+						h.Class(cn(shell, "hover:border-primary-a4 active:border-primary-a4")),
 						h.Title(data.titleHint ?? data.title),
 						nodeLink(h),
 					],
@@ -255,8 +256,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-start gap-1.5")],
+			hstack(h, { gap: "1.5", align: "start" },
 				[
 					h.span(
 						[
@@ -276,7 +276,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 				: []),
 			h.div(
 				[h.AriaHidden(true), h.Class("flex flex-col gap-1 pt-0.5")],
-				[skeleton(h, "h-1.5 w-full rounded-full"), skeleton(h, "h-1.5 w-1/2 rounded-full")],
+				[skeletonMeter(h), skeletonMeter(h, "half")],
 			),
 			liveBar(h, true),
 		],
@@ -290,7 +290,7 @@ const actionGhostNode = (h: H, id: string): ReadonlyArray<Html> => [
 		[
 			h.AriaHidden(true),
 			h.Class(
-				"pointer-events-none flex size-full items-center gap-2.5 rounded-md border border-dashed bg-card/40 px-3",
+				"pointer-events-none flex size-full items-center gap-2.5 rounded-md border border-dashed bg-surface-faint px-3",
 			),
 		],
 		[
@@ -326,7 +326,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 				h.OnClick(Message.ClickedAction({ index: data.index })),
 				h.OnKeyDownPreventDefault(openKey(data.index)),
 				h.Class(
-					"flex size-full cursor-pointer items-center gap-2.5 rounded-md border bg-card px-3 hover:border-primary/60 active:border-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+					"flex size-full cursor-pointer items-center gap-2.5 rounded-md border bg-card px-3 hover:border-primary-a4 active:border-primary-a4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
 				),
 			],
 			[
@@ -351,7 +351,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 					[
 						h.p([h.Class("line-clamp-2 text-xs leading-[1.4] text-foreground")], [data.text]),
 						h.p(
-							[h.Class("flex items-center gap-1.5")],
+							[h.Class(hstackClass({ gap: "1.5" }))],
 							[
 								...(data.target === null
 									? []
@@ -522,31 +522,27 @@ const controls = (h: H): Html =>
 				[h.AriaHidden(true), h.Class(cn(CONTROL, "cursor-default"))],
 				[icon(h, "CursorIcon", { size: 12 })],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.Class(CONTROL),
-					h.AriaLabel("Zoom in"),
-					h.OnClick(Message.GotCanvasMessage({ message: Canvas.Message.ClickedZoomIn() })),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.GotCanvasMessage({ message: Canvas.Message.ClickedZoomIn() }),
+					label: "Zoom in",
+					className: CONTROL,
+				},
 				[icon(h, "PlusIcon", { size: 12 })],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.Class(CONTROL),
-					h.AriaLabel("Zoom out"),
-					h.OnClick(Message.GotCanvasMessage({ message: Canvas.Message.ClickedZoomOut() })),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.GotCanvasMessage({ message: Canvas.Message.ClickedZoomOut() }),
+					label: "Zoom out",
+					className: CONTROL,
+				},
 				[icon(h, "MinusIcon", { size: 12 })],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.Class(CONTROL),
-					h.AriaLabel("Fit the graph to the view"),
-					h.OnClick(Message.ClickedPlaceGraph()),
-				],
+			pressable(
+				h,
+				{ onClick: Message.ClickedPlaceGraph(), label: "Fit the graph to the view", className: CONTROL },
 				[icon(h, "MaximizeIcon", { size: 12 })],
 			),
 		],
@@ -577,11 +573,9 @@ const outline = (h: H, graph: ProvenanceGraph): Html =>
 					[],
 					node.type === "action"
 						? [
-								h.button(
-									[
-										h.Type("button"),
-										h.OnClick(Message.ClickedAction({ index: node.data.index })),
-									],
+								pressable(
+									h,
+									{ onClick: Message.ClickedAction({ index: node.data.index }) },
 									[`Proposed action ${node.data.ordinal}: ${node.data.text}`],
 								),
 							]
@@ -596,11 +590,10 @@ const PROVENANCE_HINT = "what produced this investigation, and what it produced"
 const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 	const running =
 		graph.runningSince === null ? null : splitDuration(Math.max(0, nowMs - graph.runningSince))
-	return h.div(
-		[h.Class("flex items-center gap-2.5")],
+	return hstack(h, { gap: "2.5" },
 		[
 			eyebrow(h, {}, ["Provenance"]),
-			h.span([h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")], [PROVENANCE_HINT]),
+			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [PROVENANCE_HINT]),
 			...(graph.caption
 				? [
 						h.span(
@@ -628,7 +621,7 @@ const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 	)
 }
 
-const PANEL = "shrink-0 gap-3.5 bg-card/40 px-6 pb-5.5 pt-4.5"
+const PANEL = "shrink-0 gap-3.5 bg-surface-faint px-6 pb-5.5 pt-4.5"
 
 /** `ProvenanceCanvas`; a chain of fewer than two cards draws nothing (or the ghost, mid-run). */
 export const provenanceCanvas = (
@@ -834,22 +827,17 @@ const actionGhost = (h: H, card: Card, delay: number): Html =>
 
 /** `ProvenanceCanvasLoading`: the chain it is about to be replaced by, drawn as a ghost. */
 export const provenanceLoading = (h: H): Html =>
-	h.section(
+	panel(
+		h,
+		{ className: PANEL, attributes: [h.AriaBusy(true)] },
 		[
-			h.Class(cn(panelStyles, panelToneStyles.default, PANEL)),
-			h.DataAttribute("slot", "panel"),
-			h.AriaBusy(true),
-		],
-		[
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
+			hstack(h, { gap: "2.5" },
 				[
 					eyebrow(h, {}, ["Provenance"]),
-					h.span(
-						[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" },
 						[PROVENANCE_HINT],
 					),
-					eyebrow(h, { variant: "mono", className: "flex shrink-0 items-center gap-1.5" }, [
+					eyebrow(h, { variant: "mono", className: hstackClass({ gap: "1.5", className: "shrink-0" }) }, [
 						h.span([], ["Mapping the chain"]),
 						h.span(
 							[h.Class("inline-flex"), h.AriaHidden(true)],

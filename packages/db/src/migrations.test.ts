@@ -439,6 +439,139 @@ describe("bundled migrations", () => {
 		expect(table.rows).toEqual([{ name: null }])
 	}, 30_000)
 
+	it("retires hazel-oauth destinations and every reference to them", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("drop_hazel_oauth_destinations"))
+
+		const now = "2026-11-01T00:00:00.000Z"
+		await pg.query(
+			`INSERT INTO alert_destinations (
+				id, org_id, name, type, config_json, secret_ciphertext, secret_iv, secret_tag,
+				created_at, updated_at, created_by, updated_by
+			) VALUES
+				('dest_hazel', 'org_1', 'Hazel', 'hazel-oauth', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1'),
+				('dest_webhook', 'org_1', 'Webhook', 'webhook', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1')`,
+			[now],
+		)
+		const tier = (severity: string, destinationIds: unknown) => ({
+			severity,
+			value: 1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds,
+		})
+		const rule = (id: string, enabled: boolean, destinationIds: unknown, thresholds: unknown) =>
+			pg.query(
+				`INSERT INTO alert_rules (
+					id, org_id, name, enabled, severity, signal_type, comparator, threshold, window_minutes,
+					destination_ids_json, thresholds_json, query_spec_json, reducer, no_data_behavior,
+					created_at, updated_at, created_by, updated_by
+				) VALUES ($1, 'org_1', $1, $2, 'warning', 'error_rate', 'gt', 0.1, 5, $3, $4, '{}', 'max', 'skip',
+					$5, $5, 'user_1', 'user_1')`,
+				[id, enabled, JSON.stringify(destinationIds), JSON.stringify(thresholds), now],
+			)
+		await rule(
+			"rule_mixed",
+			true,
+			["dest_hazel", "dest_webhook"],
+			[tier("warning", ["dest_webhook"]), tier("critical", ["dest_hazel", "dest_webhook"])],
+		)
+		await rule("rule_hazel_only", true, ["dest_hazel"], [tier("warning", ["dest_hazel"])])
+		await rule("rule_untouched", true, ["dest_webhook"], null)
+		await rule("rule_corrupt", true, { not: "an array" }, [tier("warning", "dest_hazel")])
+		await pg.query(
+			`INSERT INTO error_notification_policies (org_id, destination_ids_json, updated_at, updated_by) VALUES
+				('org_1', '["dest_hazel", "dest_webhook"]', $1, 'user_1'),
+				('org_2', '"not an array"', $1, 'user_1')`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO issue_escalation_policies (org_id, enabled, rules_json, updated_at, updated_by) VALUES
+				('org_1', true, $1, $3, 'user_1'),
+				('org_2', true, $2, $3, 'user_1')`,
+			[
+				JSON.stringify([
+					{ severity: "critical", destinationIds: ["dest_hazel"], minConfidence: "high" },
+					{ severity: "high", destinationIds: ["dest_webhook", "dest_hazel"] },
+				]),
+				JSON.stringify([
+					{ severity: "critical", destinationIds: ["dest_hazel"] },
+					{ severity: "high", destinationIds: "not an array" },
+				]),
+				now,
+			],
+		)
+		await pg.query(
+			`INSERT INTO alert_delivery_events (
+				id, org_id, incident_id, rule_id, destination_id, delivery_key, event_type,
+				attempt_number, status, scheduled_at, payload_json, created_at, updated_at
+			) VALUES
+				('delivery_hazel', 'org_1', 'inc_1', 'rule_mixed', 'dest_hazel', 'k1', 'trigger', 1, 'queued', $1, '{}', $1, $1),
+				('delivery_webhook', 'org_1', 'inc_1', 'rule_mixed', 'dest_webhook', 'k2', 'trigger', 1, 'queued', $1, '{}', $1, $1)`,
+			[now],
+		)
+
+		await pg.exec(readMigrationSql("drop_hazel_oauth_destinations"))
+
+		const rules = await pg.query<{
+			id: string
+			enabled: boolean
+			destination_ids_json: unknown
+			thresholds_json: unknown
+		}>("SELECT id, enabled, destination_ids_json, thresholds_json FROM alert_rules ORDER BY id")
+		expect(rules.rows).toEqual([
+			// Malformed jsonb is left for the readers that already tolerate it.
+			{
+				id: "rule_corrupt",
+				enabled: true,
+				destination_ids_json: { not: "an array" },
+				thresholds_json: [tier("warning", "dest_hazel")],
+			},
+			{
+				id: "rule_hazel_only",
+				enabled: false,
+				destination_ids_json: [],
+				thresholds_json: [tier("warning", [])],
+			},
+			{
+				id: "rule_mixed",
+				enabled: true,
+				destination_ids_json: ["dest_webhook"],
+				thresholds_json: [tier("warning", ["dest_webhook"]), tier("critical", ["dest_webhook"])],
+			},
+			{
+				id: "rule_untouched",
+				enabled: true,
+				destination_ids_json: ["dest_webhook"],
+				thresholds_json: null,
+			},
+		])
+		const errorPolicies = await pg.query<{ org_id: string; destination_ids_json: unknown }>(
+			"SELECT org_id, destination_ids_json FROM error_notification_policies ORDER BY org_id",
+		)
+		expect(errorPolicies.rows).toEqual([
+			{ org_id: "org_1", destination_ids_json: ["dest_webhook"] },
+			{ org_id: "org_2", destination_ids_json: "not an array" },
+		])
+		const escalations = await pg.query<{ org_id: string; rules_json: unknown }>(
+			"SELECT org_id, rules_json FROM issue_escalation_policies ORDER BY org_id",
+		)
+		expect(escalations.rows).toEqual([
+			{ org_id: "org_1", rules_json: [{ severity: "high", destinationIds: ["dest_webhook"] }] },
+			{
+				org_id: "org_2",
+				rules_json: [
+					{ severity: "critical", destinationIds: ["dest_hazel"] },
+					{ severity: "high", destinationIds: "not an array" },
+				],
+			},
+		])
+		const destinations = await pg.query<{ id: string }>("SELECT id FROM alert_destinations")
+		expect(destinations.rows).toEqual([{ id: "dest_webhook" }])
+		const deliveries = await pg.query<{ id: string }>("SELECT id FROM alert_delivery_events")
+		expect(deliveries.rows).toEqual([{ id: "delivery_webhook" }])
+	}, 30_000)
+
 	it("links every integration row to the source it sends as", async () => {
 		const pg = new PGlite()
 		await pg.exec(readMigrationSqlBefore("source_ownership"))
@@ -562,7 +695,9 @@ describe("bundled migrations", () => {
 			VALUES ('src_old', 'org_2', 'Old', 'nodejs', false, 'old-hash', $1, $1)`,
 			[now],
 		)
-		expect((await pg.query("SELECT kind FROM sources WHERE id = 'src_old'")).rows).toEqual([{ kind: "token" }])
+		expect((await pg.query("SELECT kind FROM sources WHERE id = 'src_old'")).rows).toEqual([
+			{ kind: "token" },
+		])
 
 		// Deleting a source deletes the integration row that owns it.
 		await pg.query("DELETE FROM sources WHERE id = $1", [await owner("railway_connections", "r1")])
@@ -607,7 +742,12 @@ describe("bundled migrations", () => {
 
 		await pg.exec(readMigrationSql("source_ownership_contract"))
 
-		const owners = await pg.query<{ id: string; managed_by: string | null; platform: string; kind: string }>(
+		const owners = await pg.query<{
+			id: string
+			managed_by: string | null
+			platform: string
+			kind: string
+		}>(
 			`SELECT t.id, t.managed_by, s.platform, s.kind FROM scrape_targets t JOIN sources s ON s.id = t.source_id
 			UNION ALL SELECT r.id, NULL, s.platform, s.kind FROM railway_connections r JOIN sources s ON s.id = r.source_id
 			ORDER BY 1`,

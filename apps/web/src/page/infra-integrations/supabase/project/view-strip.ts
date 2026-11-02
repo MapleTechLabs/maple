@@ -8,6 +8,7 @@ import { SUPABASE_ACCENT } from "../connect"
 import { SATURATION } from "../health"
 import type { HealthStrip } from "./derive"
 import type { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
 
 // The health strip: six tiles, each value over a line spark of the window and a caption.
 
@@ -31,7 +32,7 @@ const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
 	h.div(
 		[h.Class("flex min-w-0 flex-col gap-2 rounded-md border bg-card p-4")],
 		[
-			h.span([h.Class("truncate text-2xs font-medium text-muted-foreground")], [options.label]),
+			typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [options.label]),
 			h.span(
 				[
 					h.Class(
@@ -44,7 +45,9 @@ const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
 				[options.value],
 			),
 			windowSparkline(h, { points: options.spark, window, color: SUPABASE_ACCENT }),
-			h.span([h.Class("truncate font-mono text-2xs text-muted-foreground")], [options.caption ?? ""]),
+			typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+				options.caption ?? "",
+			]),
 		],
 	)
 

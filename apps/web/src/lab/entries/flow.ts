@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import * as TraceFlow from "../../service-map/trace-flow/trace-flow"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import { FLOW_LAB_GRAPH, pageBody } from "../flow-lab"
 import { defineShellLab } from "../shell-lab"
 

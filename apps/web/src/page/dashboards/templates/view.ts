@@ -2,19 +2,21 @@ import { AsyncData, Submodel } from "foldkit"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
-import type { LoadFailure } from "../../../data/load-failure"
-import { errorState } from "../../../ui/error-state"
-import { pageTitle } from "../../../ui/page-layout"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { pageTitle } from "@maple/views/ui/page-layout"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { BLANK_TEMPLATE_ID, computeReadiness } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { PANEL_SHEET_ID, selectedOf, templatesOf } from "./update"
-import * as DialogView from "../../../ui/dialog-view"
+import * as DialogView from "@maple/views/ui/dialog-view"
 import { templateList } from "./view-list"
 import { detailPanel, panelRestState } from "./view-panel"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // The templates page: below `lg` the detail panel is a
 // right sheet over the list (`panelIsSheet`), else the side pane.
@@ -27,7 +29,7 @@ const summary = (h: H, readyCount: number, catalogueCount: number): Html =>
 		[
 			h.span([h.Class("text-primary font-mono")], [String(readyCount), " ready for your data"]),
 			h.span([h.Class("text-muted-foreground")], ["·"]),
-			h.span([h.Class("text-muted-foreground font-mono")], [String(catalogueCount), " templates"]),
+			typography(h, { tone: "muted", mono: true }, [String(catalogueCount), " templates"]),
 		],
 	)
 
@@ -72,13 +74,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					titleContent: h.div(
-						[h.Class("flex flex-col gap-1")],
-						[
-							pageTitle(h, { className: "leading-8" }, ["Templates"]),
-							...(isLoaded && metrics !== null ? [summary(h, readyCount, listed.length)] : []),
-						],
-					),
+					titleContent: vstack(h, { gap: "1" }, [
+						pageTitle(h, { className: "leading-8" }, ["Templates"]),
+						...(isLoaded && metrics !== null ? [summary(h, readyCount, listed.length)] : []),
+					]),
 					fill: true,
 				},
 				[

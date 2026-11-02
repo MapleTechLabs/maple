@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
+import { Option } from "effect"
 
 import {
 	type AlertDestinationRow,
@@ -9,6 +10,7 @@ import {
 	rowToAlertDestinationDocument,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
+	rowsToAlertDestinationDocuments,
 } from "./alerts"
 
 const RULE_ID = "99999999-8888-4777-8666-555544443333"
@@ -255,8 +257,10 @@ describe("rowToAlertDestinationDocument", () => {
 		updated_at: "2026-07-04T00:00:00.000Z",
 	}
 
+	const toDocument = (row: AlertDestinationRow) => Option.getOrThrow(rowToAlertDestinationDocument(row))
+
 	it("maps a raw alert_destinations row and derives the public config", () => {
-		const doc = rowToAlertDestinationDocument(base)
+		const doc = toDocument(base)
 		assert.strictEqual(doc.id, DEST_ID)
 		assert.strictEqual(doc.name, "Ops Telegram")
 		assert.strictEqual(doc.type, "telegram")
@@ -269,7 +273,7 @@ describe("rowToAlertDestinationDocument", () => {
 	})
 
 	it("carries why Maple auto-disabled a destination", () => {
-		const doc = rowToAlertDestinationDocument({
+		const doc = toDocument({
 			...base,
 			enabled: false,
 			disabled_at: "2026-07-05T00:00:00.000Z",
@@ -280,13 +284,23 @@ describe("rowToAlertDestinationDocument", () => {
 	})
 
 	it("falls back to the server's invalid-config summary when config_json is unusable", () => {
-		const doc = rowToAlertDestinationDocument({ ...base, config_json: { nope: true } })
+		const doc = toDocument({ ...base, config_json: { nope: true } })
 		assert.strictEqual(doc.summary, "Invalid destination config")
 		assert.strictEqual(doc.channelLabel, null)
 	})
 
 	it("leaves lastTestedAt null when the destination was never tested", () => {
-		const doc = rowToAlertDestinationDocument({ ...base, last_tested_at: null })
+		const doc = toDocument({ ...base, last_tested_at: null })
 		assert.strictEqual(doc.lastTestedAt, null)
+	})
+
+	it("drops a row whose type this build no longer knows instead of throwing", () => {
+		const retired = { ...base, id: PAGER_ID, type: "hazel-oauth" }
+		assert.isTrue(Option.isNone(rowToAlertDestinationDocument(retired)))
+		const docs = rowsToAlertDestinationDocuments([retired, base])
+		assert.deepStrictEqual(
+			docs.map((doc) => doc.id),
+			[DEST_ID],
+		)
 	})
 })

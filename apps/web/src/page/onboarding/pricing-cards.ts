@@ -12,7 +12,7 @@ import { load } from "foldkit/navigation"
 import { MapleApiClient, MapleInternalApiClient } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import { trackProduct } from "../../data/analytics"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { getScenario } from "./pricing-plans"
 
 // `PricingCards` for a planless org: the catalog (`billingPlansAtom`), and a plan's trial or subscribe

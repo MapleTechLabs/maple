@@ -3,9 +3,9 @@ import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { defineLabWithFlags, type LabEntry } from "../define"
-import * as Chart from "../../charts/chart"
-import { ChartRuntime, isChartRuntimeReady, LoadChartRuntime } from "../../charts/chart-runtime"
-import { ThemeColors } from "../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime, isChartRuntimeReady, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import type { Resources } from "../../platform/resources"
 
 // The chart benches' shared state: a canvas chart per id,

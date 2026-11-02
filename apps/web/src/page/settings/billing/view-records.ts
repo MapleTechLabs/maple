@@ -7,19 +7,21 @@ import { planDisplayName } from "../../../lib/billing/plans"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
-import { button, linkButton } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { keyValue, keyValueList } from "../../../ui/key-value"
-import { panel } from "../../../ui/panel"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { errorState } from "../../../ui/error-state"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { errorState } from "@maple/views/ui/error-state"
 import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { taxIdValue, view as detailsDialogView } from "./details/view"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -156,8 +158,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 						title: "Couldn't load invoices",
 						onRetry: Message.ClickedRetryInvoices(),
 					}),
-					h.p(
-						[h.Class("font-prose text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" },
 						model.isAdmin
 							? [
 									"You can still view them in the ",
@@ -195,7 +196,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 											h,
 											[column.label],
 											cn(
-												"text-2xs font-medium text-muted-foreground",
+												typographyClass({ size: "2xs", tone: "muted", weight: "medium" }),
 												column.className,
 											),
 											[h.Key(column.label)],
@@ -267,8 +268,7 @@ export const detailsSection = (h: H, model: Model): Html => {
 		onFailure: (failure) =>
 			failure.isNotConfigured
 				? panel(h, { padded: true }, [
-						h.p(
-							[h.Class("font-prose text-sm text-muted-foreground")],
+						typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" },
 							[
 								"Billing details aren't set up for this deployment. Company name, address and tax IDs are managed in the billing portal instead.",
 							],
@@ -304,8 +304,7 @@ export const detailsSection = (h: H, model: Model): Html => {
 											? "None on file"
 											: "Available once your organization has a plan",
 									)
-								: h.span(
-										[h.Class("flex flex-col gap-1")],
+								: vstack(h, { gap: "1", as: "span" },
 										details.taxIds.map((taxId) => taxIdValue(h, taxId)),
 									),
 						]),

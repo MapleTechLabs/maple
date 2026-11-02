@@ -1,5 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "@maple/views/ui/heading"
+import { typography } from "@maple/views/ui/typography"
 
 // `RuleStep` and the editor's shared width.
 
@@ -35,11 +37,9 @@ export const ruleStep = <M>(h: HtmlBuilder<M>, options: RuleStepOptions, childre
 							h.div(
 								[h.Class("flex items-baseline gap-3")],
 								[
-									h.h2(
-										[
-											h.Id(headingId),
-											h.Class("font-display text-lg font-medium tracking-tight text-foreground"),
-										],
+									heading(
+										h,
+										{ level: 2, variant: "title", id: headingId },
 										[
 											h.span(
 												[h.Class("mr-2.5 font-mono text-sm font-normal text-muted-foreground")],
@@ -49,13 +49,13 @@ export const ruleStep = <M>(h: HtmlBuilder<M>, options: RuleStepOptions, childre
 										],
 									),
 									...(options.status === "missing"
-										? [h.span([h.Class("text-xs text-severity-warn")], ["Required"])]
+										? [typography(h, { size: "xs", tone: "warning" }, ["Required"])]
 										: []),
 								],
 							),
 							...(options.hint === undefined
 								? []
-								: [h.p([h.Class("text-xs text-muted-foreground")], [options.hint])]),
+								: [typography(h, { size: "xs", tone: "muted", as: "p" }, [options.hint])]),
 						],
 					),
 				],

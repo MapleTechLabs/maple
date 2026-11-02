@@ -34,11 +34,15 @@ export type ResultReporterApi = BatchReporterApi<ScrapeResultReport>
 export const makeBatchReporter = <A>(options: {
 	readonly deliver: (batch: ReadonlyArray<A>) => Effect.Effect<void, ApiRequestError>
 	readonly gauge: Metric.Gauge<number>
+	/** Span around one batch's delivery, retries included: it errors only if the batch is dropped. */
+	readonly spanName: string
+	/** Span around the shutdown flush: it errors if the flush drops results. */
+	readonly shutdownSpanName: string
 	/** Plural noun for log lines, e.g. `scrape results`. */
 	readonly noun: string
 }): Effect.Effect<BatchReporterApi<A>> =>
 	Effect.gen(function* () {
-		const { deliver, gauge, noun } = options
+		const { deliver, gauge, noun, spanName, shutdownSpanName } = options
 		const queue = yield* Queue.sliding<A>(MAX_BUFFERED_RESULTS)
 
 		// The batch under delivery has left the queue but is still undelivered.
@@ -54,6 +58,8 @@ export const makeBatchReporter = <A>(options: {
 				yield* Effect.forEach(Arr.chunksOf(all, REPORT_BATCH_SIZE), deliver, { discard: true })
 			}).pipe(
 				Effect.timeout(FINAL_FLUSH_TIMEOUT),
+				// Anything this fails to deliver is dropped, so the span errors.
+				Effect.withSpan(shutdownSpanName),
 				Effect.catch((error) =>
 					Effect.logWarning(`Dropped unreported ${noun} on shutdown`).pipe(
 						Effect.annotateLogs({ error: error.message }),
@@ -72,6 +78,7 @@ export const makeBatchReporter = <A>(options: {
 				),
 				// Transient failures retry until they land; a refusal (400, 401) would block every later batch.
 				Effect.retry({ schedule: RETRY, while: (error) => isTransientStatus(error.status) }),
+				Effect.withSpan(spanName, { attributes: { "maple.report.batch_size": batch.length } }),
 				Effect.catch((error) =>
 					Effect.logWarning(`Dropped ${noun} the API refused`).pipe(
 						Effect.annotateLogs({ error: error.message, batchSize: batch.length }),
@@ -96,6 +103,8 @@ export class ResultReporter extends Context.Service<ResultReporter, ResultReport
 			return yield* makeBatchReporter<ScrapeResultReport>({
 				deliver: api.reportResults,
 				gauge: bufferedResults,
+				spanName: "ResultReporter.deliver",
+				shutdownSpanName: "ResultReporter.shutdown_flush",
 				noun: "scrape results",
 			})
 		}),
@@ -113,6 +122,8 @@ export class UptimeReporter extends Context.Service<UptimeReporter, BatchReporte
 			return yield* makeBatchReporter<UptimeCheckReport>({
 				deliver: api.reportUptimeResults,
 				gauge: bufferedUptimeResults,
+				spanName: "UptimeReporter.deliver",
+				shutdownSpanName: "UptimeReporter.shutdown_flush",
 				noun: "uptime check results",
 			})
 		}),

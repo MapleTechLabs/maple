@@ -1,17 +1,18 @@
 import type { CodeReviewAnalytics } from "@maple/domain/http"
 import { bucketIso } from "../../../components/code-review/code-review-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as BarChart from "../../../charts/bar-chart"
-import type * as Chart from "../../../charts/chart"
-import type { ThemeColors } from "../../../charts/theme-colors"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import type * as Chart from "@maple/views/charts/chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import type * as Select from "../../../ui/select"
-import { type SelectEntry, view as selectView } from "../../../ui/select-view"
-import { icon } from "../../../ui/icon"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import { icon } from "@maple/views/ui/icon"
 import { analyticsPanel, chartFrame } from "../kit/analytics-panel"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { repositoryList } from "./view-lists"
+import { vstack } from "@maple/views/ui/stack"
 
 // `VolumeCard` and `IssuesCard`.
 
@@ -150,21 +151,18 @@ export const issuesCard = (
 			},
 		}),
 	)
-	const footer = h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			repositoryList(h, "Repositories with the most issues", topRepositories(analytics, "findings")),
-			h.a(
-				[
-					h.Class(
-						"inline-flex items-center gap-1 self-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground active:text-foreground hover:underline active:underline",
-					),
-					h.Href(href),
-				],
-				["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
-			),
-		],
-	)
+	const footer = vstack(h, { gap: "3" }, [
+		repositoryList(h, "Repositories with the most issues", topRepositories(analytics, "findings")),
+		h.a(
+			[
+				h.Class(
+					"inline-flex items-center gap-1 self-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground active:text-foreground hover:underline active:underline",
+				),
+				h.Href(href),
+			],
+			["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
+		),
+	])
 	return analyticsPanel(
 		h,
 		{

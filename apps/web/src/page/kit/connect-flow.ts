@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow, eyebrowVariants } from "../../ui/eyebrow"
-import { icon, type IconName } from "../../ui/icon"
-import { spinner } from "../../ui/spinner"
+import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { spinner } from "@maple/views/ui/spinner"
 
 // The parts every source's connect flow is built from: the step card, its status row, the rail
 // beside it and the Go live checklist. `/sources/new` frames them; each source fills them in.

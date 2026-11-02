@@ -85,7 +85,7 @@ describe("scraper telemetry", () => {
 	let restore: (() => void) | undefined
 	afterEach(() => restore?.())
 
-	it("exports a 402 from ingest as an Error client span without an exception event", async () => {
+	it("exports a 402 from ingest as a non-error client span carrying the status", async () => {
 		const collector = captureCollector()
 		restore = collector.restore
 		const ingest = OtlpIngest.layer.pipe(
@@ -124,7 +124,8 @@ describe("scraper telemetry", () => {
 		expect(client?.attributes.find((a) => a.key === "http.response.status_code")?.value.intValue).toBe(
 			402,
 		)
-		expect(client?.status.code).toBe(2 /* Error */)
+		// A 402 is a billing block, not a fault: no Error span, so no error issue.
+		expect(spans.map((span) => span.status.code)).not.toContain(2 /* Error */)
 		expect(spans.flatMap((span) => span.events.map((event) => event.name))).not.toContain("exception")
 		expect(collector.bodies[0]?.resourceSpans[0]?.resource.attributes.map((a) => a.key)).toContain(
 			"vcs.repository.url.full",

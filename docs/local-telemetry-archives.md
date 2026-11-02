@@ -356,7 +356,7 @@ PRAGMA temp_directory='/Volumes/External/duckdb-spill';
 ## Export tuning
 
 Archive export uses one fixed set of values (`DEFAULT_ARCHIVE_TUNING` in
-`apps/cli/src/server/archives/config.ts`): one writer thread, 10 000-row row
+`packages/local-server/src/archives/config.ts`): one writer thread, 10 000-row row
 groups, and shards of at most 500 000 rows or 256 MiB uncompressed. There is no
 per-deployment tuning.
 

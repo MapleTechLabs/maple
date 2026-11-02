@@ -1,12 +1,12 @@
 import { countLabel, formatBytes, formatNumber, formatPercent, formatRate } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../../data/load-failure"
-import { alert, alertAction, alertDescription, alertTitle } from "../../../../ui/alert"
-import { linkButton } from "../../../../ui/button"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { skeleton } from "../../../../ui/skeleton"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { listToolbar, toolbarCount, toolbarStat } from "../../../kit/list-toolbar"
@@ -23,6 +23,8 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { advisorsPanel, issuesPanel } from "./view-bottom"
 import { supabaseTable, supabaseTableLoading } from "./view-table"
+import { hstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // `/infra/supabase`: the organization's projects, their health and what needs a look.
 
@@ -109,13 +111,10 @@ const overview = (
 			...(status.revoked ? [revokedNotice(h)] : []),
 			summaryToolbar(h, views),
 			supabaseTable(h, views, isWaiting),
-			h.div(
-				[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
-				[
-					issuesPanel(h, model, { names, hasLogs: views.some((view) => view.logsEnabled) }),
-					advisorsPanel(h, model, { names, total: status.projects.length }),
-				],
-			),
+			grid(h, { cols: 1, lg: 2, gap: "4" }, [
+				issuesPanel(h, model, { names, hasLogs: views.some((view) => view.logsEnabled) }),
+				advisorsPanel(h, model, { names, total: status.projects.length }),
+			]),
 		],
 	)
 }
@@ -176,22 +175,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			gap: "lg",
 			titleContent: pageHeroParts(h, { title: "Supabase", description: description(model) }).title,
-			actions: h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage projects"]),
-					pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-					}),
-				],
-			),
+			actions: hstack(h, { gap: "2", wrap: true }, [
+				linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage projects"]),
+				pageTime(h, {
+					search: model.search,
+					defaultPreset: DEFAULT_PRESET,
+					window: model.window,
+					picker: model.timePicker,
+					toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+					onReset: Message.ClickedResetTimeRange(),
+					onReload: Message.ClickedReload(),
+					isReloading: model.isReloading,
+				}),
+			]),
 		},
 		[statusView(h, model)],
 	),

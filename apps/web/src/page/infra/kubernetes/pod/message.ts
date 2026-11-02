@@ -1,9 +1,9 @@
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../../charts/chart"
-import { ThemeColors } from "../../../../charts/theme-colors"
-import { LoadFailure } from "../../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
 import { SeriesResult } from "../../kit/series"
 import {

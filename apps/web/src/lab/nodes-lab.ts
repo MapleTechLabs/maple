@@ -7,8 +7,8 @@ import { load } from "foldkit/navigation"
 import { Message as InvestigationMessage } from "../page/investigations/detail/message"
 import { edgeLabel, edgeView, nodeChildren } from "../page/investigations/detail/view-canvas"
 import { dashboardPage } from "../page/kit/dashboard-page"
-import * as Canvas from "../service-map/xyflow/canvas"
-import { edgesLayer, flowCanvas, flowNode, nodesLayer } from "../service-map/xyflow/view"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
+import { edgesLayer, flowCanvas, flowNode, nodesLayer } from "@maple/views/service-map/xyflow/view"
 
 // `/lab/nodes`: every
 // provenance-canvas node and edge state in the investigation page's renderer, at 1:1.

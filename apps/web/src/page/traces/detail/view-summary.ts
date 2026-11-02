@@ -6,28 +6,20 @@ import { shortId } from "@maple/ui/lib/ids"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { traceIdBadge } from "../../../ui/trace-badges"
-import { statFigure } from "../../../ui/stat-figure"
-import { statusDot } from "../../../ui/status-dot"
-import { serviceDot } from "../../../ui/values"
+import { pressable } from "@maple/views/ui/pressable"
+import { traceIdBadge } from "@maple/views/ui/trace-badges"
+import { statFigure } from "@maple/views/ui/stat-figure"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { serviceDot } from "@maple/views/ui/values"
 import { computeServiceShares, type ServiceShare } from "./derive"
 import { Message } from "./message"
 import type { LoadedTrace } from "./select"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The trace anatomy strip, over the @maple/ui strip.
 // TODO(tooltip): spectrum segment tooltips, the commit hover card and the copy badge's feedback.
-
-const stampFormat = (timeZone: string) =>
-	new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		fractionalSecondDigits: 3,
-	})
 
 const httpStatusColor = (code: number): string => {
 	const tone = httpStatusTone(code)
@@ -47,7 +39,10 @@ const startedAt = (
 	return h.time(
 		[h.Attribute("datetime", new Date(epochMs).toISOString()), h.Class("tabular-nums")],
 		[
-			h.span([h.Class("text-foreground")], [stampFormat(timeZone).format(epochMs)]),
+			h.span(
+				[h.Class("text-foreground")],
+				[formatTimestampInTimezone(epochMs, { timeZone, withMilliseconds: true })],
+			),
 			" ",
 			"· ",
 			formatRelativeTime(epochMs, nowMs),
@@ -137,7 +132,10 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 								: h.span(
 										[
 											h.Class(
-												cn("font-mono font-medium", httpStatusColor(httpStatusCode)),
+												cn(
+													typographyClass({ weight: "medium", mono: true }),
+													httpStatusColor(httpStatusCode),
+												),
 											),
 										],
 										["HTTP ", String(httpStatusCode)],
@@ -156,14 +154,13 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 									),
 							commitSha === undefined || commitSha === ""
 								? null
-								: h.button(
-										[
-											h.Class(
+								: pressable(
+										h,
+										{
+											className:
 												"cursor-pointer font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-											),
-											h.DataAttribute("slot", "hover-card-trigger"),
-											h.Type("button"),
-										],
+											attributes: [h.DataAttribute("slot", "hover-card-trigger")],
+										},
 										[shortId(commitSha, "sha")],
 									),
 							traceIdBadge(h, trace.data.traceId, {

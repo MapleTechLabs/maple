@@ -9,13 +9,14 @@ import { cn } from "@maple/ui/lib/utils"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel, panelHeader } from "../../../ui/panel"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import * as Switch from "../../../ui/switch"
-import { searchInput } from "../../../ui/search-input"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import * as Switch from "@maple/views/ui/switch"
+import { searchInput } from "@maple/views/ui/search-input"
+import { typography } from "@maple/views/ui/typography"
 
 // `RepositoryList`, `RepositoryRow` and `RepositoryName`, shared with
 // `/lab/code-review-repos`.
@@ -80,7 +81,7 @@ const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
 	return h.span(
 		[h.Class("truncate")],
 		[
-			h.span([h.Class("font-normal text-muted-foreground")], [fullName.slice(0, slash + 1)]),
+			typography(h, { tone: "muted", weight: "normal" }, [fullName.slice(0, slash + 1)]),
 			fullName.slice(slash + 1),
 		],
 	)
@@ -155,7 +156,7 @@ const searchBox = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html =>
 		id: "code-review-repo-search",
 		size: "sm",
 		className: "min-w-48 flex-1",
-		placeholder: "Search repositories",
+		placeholder: "Search repositories…",
 		value: options.state.search,
 		onInput: options.onSearch,
 		onClear: options.onSearch(""),

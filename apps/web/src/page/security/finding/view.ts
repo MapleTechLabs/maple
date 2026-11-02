@@ -8,17 +8,17 @@ import type { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { BreadcrumbEntry } from "../../../shell"
-import { button } from "../../../ui/button"
-import * as CopyButton from "../../../ui/copy-button"
-import { copyButton } from "../../../ui/copy-button"
-import { detailRailGroup, detailRailRow } from "../../../ui/detail-rail"
-import { badge } from "../../../ui/display"
-import * as Field from "../../../ui/field"
-import { errorState } from "../../../ui/error-state"
-import * as ToggleGroup from "../../../ui/toggle-group"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { copyButton } from "@maple/views/ui/copy-button"
+import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
+import { badge } from "@maple/views/ui/display"
+import * as Field from "@maple/views/ui/field"
+import { errorState } from "@maple/views/ui/error-state"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { textarea } from "@maple/views/ui/textarea"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
@@ -32,14 +32,16 @@ import {
 	refLabel,
 	VERDICT_LABEL,
 } from "../kit/format"
-import { stack } from "../kit/layout"
+import { codeCrumbs, stack } from "../kit/layout"
 import { gateState, metaItem, placeholder, securitySeverityBadge } from "../kit/parts"
 import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } from "./derive"
 import { Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
+import { typography } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
 
-// `/security/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
+// `/security/code/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
 
 type H = HtmlBuilder<Message>
 
@@ -82,14 +84,10 @@ const title = (
 	timeZone: string,
 ): Html =>
 	detailTitle(h, {
-		kind: [
-			h.span(
-				[h.Class("flex flex-wrap items-center gap-1.5 normal-case tracking-normal")],
-				headerBadges(h, finding),
-			),
-		],
+		kind: ["Finding"],
 		title: [finding.record.title],
 		meta: [
+			...headerBadges(h, finding),
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground")],
 				[
@@ -143,14 +141,13 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 	const state = Field.stateOf(model.reason, reasonError !== null)
 	if (!model.isAdmin)
 		return detailRailGroup(h, "Triage", [
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				["Only org admins can change a finding's status."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Only org admins can change a finding's status.",
+			]),
 		])
 	return detailRailGroup(h, "Triage", [
 		h.form(
-			[h.Class("flex flex-col gap-3"), h.OnSubmit(Message.SubmittedTriage())],
+			[h.Class(vstackClass({ gap: "3" })), h.OnSubmit(Message.SubmittedTriage())],
 			[
 				ToggleGroup.view(h, {
 					model: model.triage,
@@ -161,23 +158,22 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 					className: "w-full",
 					itemClassName: "min-w-0 flex-1 px-1",
 				}),
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
-					[
-						finding.status === "fixed"
-							? "A later run no longer finds this. Reopen it, dismiss it or accept the risk."
-							: "Fixed is set by a later run that no longer finds this fingerprint. A fixed finding reopens if it comes back.",
-					],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					finding.status === "fixed"
+						? "A later run no longer finds this. Reopen it, dismiss it or accept the risk."
+						: "Fixed is set by a later run that no longer finds this fingerprint. A fixed finding reopens if it comes back.",
+				]),
 				Field.field(h, { state }, [
 					Field.fieldLabel(h, { ids, state }, "Reason"),
 					textarea(h, {
 						id: ids.control,
 						attributes: [
 							h.Placeholder(
-								picked === "open"
-									? "Why is this being reopened?"
-									: "Why is this being dismissed or accepted?",
+								picked !== "open"
+									? "Why is this being dismissed or accepted?"
+									: finding.status === "open"
+										? "Pick Dismiss or Accept risk, then say why"
+										: "Why is this being reopened?",
 							),
 							h.AriaLabelledBy(ids.label),
 							h.AriaDescribedBy(reasonError === null ? (ids.description ?? "") : ids.error),
@@ -266,7 +262,7 @@ const detailsPanel = (
 			),
 		]),
 		detailRailRow(h, { label: "Fingerprint", title: finding.fingerprint }, [
-			h.span([h.Class("truncate font-mono text-xs")], [finding.fingerprint]),
+			typography(h, { size: "xs", mono: true, truncate: true }, [finding.fingerprint]),
 			copyButton(h, {
 				label: "fingerprint",
 				status: model.copy.status,
@@ -288,14 +284,14 @@ const activityItem = (h: H, text: string, at: number, timeZone: string): Html =>
 		[h.Key(`${at}-${text}`), h.Class("flex flex-col gap-0.5 border-l-2 pl-3")],
 		[
 			h.span([h.Class("text-sm")], [text]),
-			h.span([h.Class("text-xs text-muted-foreground")], [formatTimestampInTimezone(at, { timeZone })]),
+			typography(h, { size: "xs", tone: "muted" }, [formatTimestampInTimezone(at, { timeZone })]),
 		],
 	)
 
 /** What the record says happened to it, newest first. */
 const activity = (h: H, finding: SecurityAuditFinding, timeZone: string): ReadonlyArray<Html> => [
 	h.ol(
-		[h.Class("flex flex-col gap-3")],
+		[h.Class(vstackClass({ gap: "3" }))],
 		[
 			...(finding.statusChangedAt === null
 				? []
@@ -353,7 +349,7 @@ const findingNotFound = (h: H): Html =>
 	resourceNotFound(h, {
 		title: "Finding not found",
 		description: "It may belong to another target or organization, or the link is stale.",
-		back: { href: hrefOf(AppRoute.SecurityFindings({ search: {} })), label: "Back to findings" },
+		back: { href: hrefOf(AppRoute.SecurityCodeFindings({ search: {} })), label: "Back to findings" },
 	})
 
 const failed = (h: H, failure: LoadFailure, title: string): Html => {
@@ -387,7 +383,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 )
 
 export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
-	{ label: "Security", href: hrefOf(AppRoute.Security()) },
-	{ label: "Findings", href: hrefOf(AppRoute.SecurityFindings({ search: {} })) },
+	...codeCrumbs({ label: "Findings", href: hrefOf(AppRoute.SecurityCodeFindings({ search: {} })) }),
 	{ label: findingOf(model)?.record.title ?? "Finding" },
 ]

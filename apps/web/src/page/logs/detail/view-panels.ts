@@ -8,15 +8,17 @@ import { formatCompactTimeInTimezone } from "@maple/web-data/lib/timezone-format
 import { Effect } from "effect"
 import { AsyncData, Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ROW_LINE_CHARS } from "../../../lib/display-text"
-import { separator } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { errorSectionView } from "../../../ui/error-section"
-import { errorState } from "../../../ui/error-state"
-import type { LogRecord } from "../../../ui/logs/log-row-view"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
-import * as ToggleGroup from "../../../ui/toggle-group"
-import { serviceDot } from "../../../ui/values"
+import { ROW_LINE_CHARS } from "@maple/views/lib/display-text"
+import { separator } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorSectionView } from "@maple/views/ui/error-section"
+import { errorState } from "@maple/views/ui/error-state"
+import { heading } from "@maple/views/ui/heading"
+import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
+import { pressable } from "@maple/views/ui/pressable"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { serviceDot } from "@maple/views/ui/values"
 import { severityLabel } from "./derive"
 import { Message, type Model } from "./model"
 import {
@@ -28,6 +30,9 @@ import {
 	TRACE_LOG_LIMIT,
 } from "./panels"
 import { copyStatusOf } from "./update"
+import { hstack } from "@maple/views/ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { borderedBox } from "@maple/views/ui/bordered-box"
 
 // The log's error banner, context panel and trace timeline.
 
@@ -147,7 +152,7 @@ const contextList = (
 					[
 						h.Class(
 							cn(
-								"min-w-0 flex-1 truncate",
+								typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
 								isCurrent
 									? "text-foreground"
 									: QUIET_SEVERITIES.has(row.severityText.toUpperCase())
@@ -169,17 +174,15 @@ const contextList = (
 				[
 					isCurrent
 						? h.div([h.Class(cn(ROW_CLASS, "bg-primary-a1"))], cells)
-						: h.button(
-								[
-									h.Type("button"),
-									h.Class(
-										cn(
-											ROW_CLASS,
-											"cursor-pointer text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:outline-none",
-										),
+						: pressable(
+								h,
+								{
+									onClick: Message.ClickedLog({ log: row }),
+									className: cn(
+										ROW_CLASS,
+										"cursor-pointer text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:outline-none",
 									),
-									h.OnClick(Message.ClickedLog({ log: row })),
-								],
+								},
 								cells,
 							),
 				],
@@ -204,11 +207,11 @@ export const contextPanel = (
 	return h.div(
 		[h.Class("flex h-full min-h-0 flex-col gap-1.5")],
 		[
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-2")],
+			hstack(h, { gap: "2", className: "shrink-0" },
 				[
-					h.h4(
-						[h.Class("text-xs font-medium text-muted-foreground")],
+					heading(
+						h,
+						{ level: 4, variant: "label" },
 						[
 							"Surrounding logs",
 							h.span(
@@ -269,8 +272,9 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 	const spanNames = new Map(
 		spans._tag === "Some" ? spans.value.spanNames.map((span) => [span.spanId, span.spanName]) : [],
 	)
-	return h.div(
-		[h.Class("rounded-md border overflow-hidden")],
+	return borderedBox(
+		h,
+		{ overflow: "hidden" },
 		logs.map((log, index) => {
 			const isCurrent = isCurrentLog(log, current)
 			const relativeMs = new Date(log.timestamp).getTime() - traceStart
@@ -372,8 +376,9 @@ export const traceTimeline = (h: H, model: Model, log: LogRecord): Html | null =
 	return h.div(
 		[h.Class("space-y-1.5")],
 		[
-			h.h4(
-				[h.Class("text-xs font-medium text-muted-foreground")],
+			heading(
+				h,
+				{ level: 4, variant: "label" },
 				[
 					"Trace Timeline",
 					...(count > 1

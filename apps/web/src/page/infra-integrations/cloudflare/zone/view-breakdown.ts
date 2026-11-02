@@ -3,15 +3,17 @@ import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatBytes, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../../ui/icon"
-import { textLink } from "../../../../ui/text-link"
-import { listFooter } from "../../../../ui/list-footer"
-import { panel, panelHeader, panelTitle } from "../../../../ui/panel"
-import { segmentedSelect } from "../../../../ui/segmented-select"
-import { skeleton } from "../../../../ui/skeleton"
+import { compactSearchInput } from "@maple/views/ui/compact-search-input"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { textLink } from "@maple/views/ui/text-link"
+import { listFooter } from "@maple/views/ui/list-footer"
+import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { BreakdownTotal, ZoneBreakdown } from "../data"
@@ -19,14 +21,20 @@ import { DIMENSIONS, type DimensionDef, dimensionOf } from "./derive"
 import { type BreakdownSortKey, Message, type Model } from "./model"
 import { SCOPE_IDS } from "./view-sections"
 import { panelScope, type Trigger } from "./view-scope"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // `CloudflareBreakdownPanel`: one ranked table per dimension, rows filter the page, and a live Cloudflare
 // lookup for the long tail.
 
 type H = HtmlBuilder<Message>
 
-const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
+const ROW_CLASS = hstackClass({
+	gap: "4",
+	className: stripClass("hoverRow"),
+})
 
 const warehouseTimeToMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
 
@@ -48,41 +56,14 @@ const shareBarStyle = (share: number): Readonly<Record<string, string>> | undefi
 
 /** `CompactFilterInput`: the 24px mono filter field. */
 const compactFilterInput = (h: H, value: string, placeholder: string, label: string): Html =>
-	h.label(
-		[
-			h.Class(
-				"flex h-6 items-center gap-1.5 rounded-sm border border-border-subtle bg-background/60 px-2 transition-colors focus-within:border-ring min-w-0 max-w-xs flex-1",
-			),
-		],
-		[
-			icon(h, "MagnifierIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
-			h.input([
-				h.Type("search"),
-				h.Value(value),
-				h.OnInput((next) => Message.ChangedBreakdownSearch({ value: next })),
-				h.Placeholder(placeholder),
-				h.AriaLabel(label),
-				h.Class(
-					"min-w-0 flex-1 bg-transparent font-mono text-2xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden",
-				),
-			]),
-			...(value === ""
-				? []
-				: [
-						h.button(
-							[
-								h.Type("button"),
-								h.AriaLabel("Clear filter"),
-								h.OnClick(Message.ChangedBreakdownSearch({ value: "" })),
-								h.Class(
-									"inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground active:text-foreground [&_svg]:size-3",
-								),
-							],
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-		],
-	)
+	compactSearchInput(h, {
+		value,
+		placeholder,
+		ariaLabel: label,
+		onInput: (next) => Message.ChangedBreakdownSearch({ value: next }),
+		onClear: Message.ChangedBreakdownSearch({ value: "" }),
+		className: "min-w-0 max-w-xs flex-1",
+	})
 
 const toolbar = (h: H, model: Model, dimension: DimensionDef, count: number, meta: Html | null): Html =>
 	h.div(
@@ -128,7 +109,7 @@ const table = (
 			isWaiting: options.isWaiting,
 		},
 		[
-			head(dimension.column, "key", "w-0 flex-1 min-w-56"),
+			head(dimension.column, "key", columnClass({ min: "56" })),
 			head("Requests", "requests", "w-28"),
 			head("Error rate", "errorRate", "w-24"),
 			head("Bandwidth", "bytes", "w-24", "hidden md:flex"),
@@ -158,24 +139,20 @@ const table = (
 												],
 												[label],
 											)
-										: h.button(
-												[
-													h.Type("button"),
-													h.OnClick(
-														Message.ToggledFilter({
-															key: dimension.filterKey,
-															value: row.key,
-														}),
+										: pressable(
+												h,
+												{
+													onClick: Message.ToggledFilter({
+														key: dimension.filterKey,
+														value: row.key,
+													}),
+													isSelected,
+													className: cn(
+														"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline active:underline focus-visible:outline-1 focus-visible:outline-ring",
+														isSelected ? "text-primary" : "text-foreground",
 													),
-													h.AriaPressed(String(isSelected)),
-													h.Title(`Filter this page by ${label}`),
-													h.Class(
-														cn(
-															"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline active:underline focus-visible:outline-1 focus-visible:outline-ring",
-															isSelected ? "text-primary" : "text-foreground",
-														),
-													),
-												],
+													attributes: [h.Title(`Filter this page by ${label}`)],
+												},
 												[label],
 											),
 								],
@@ -283,10 +260,10 @@ const stored = (
 					data.totals.length,
 					// Below 99.5% the fold is actually hiding something; above it, saying so is noise.
 					data.coverage < 0.995 && data.totals.length > 0
-						? h.span(
-								[h.Class("font-mono text-3xs text-muted-foreground")],
-								[formatPercent(data.coverage), " of zone requests"],
-							)
+						? typography(h, { size: "3xs", tone: "muted", mono: true }, [
+								formatPercent(data.coverage),
+								" of zone requests",
+							])
 						: null,
 				),
 				table(h, {
@@ -298,7 +275,7 @@ const stored = (
 							? `No listed ${dimension.noun} match "${model.breakdownSearch.trim()}".`
 							: notCollected
 								? `Not collected for this period. ${dimension.column} data starts once the poller has run.`
-								: "No traffic in the selected window.",
+								: "No traffic in this window",
 					sort: model.breakdownSort,
 					onSort: (key) => Message.ClickedBreakdownSort({ key }),
 					selected: selectedOf(filters, dimension),
@@ -325,10 +302,9 @@ const breakdownError = (h: H, dimension: DimensionDef): Html =>
 
 const live = (h: H, model: Model, dimension: DimensionDef): Html => {
 	const query = model.liveQuery ?? ""
-	const liveMeta = h.span(
-		[h.Class("font-mono text-3xs text-muted-foreground")],
-		["Live from Cloudflare · no history"],
-	)
+	const liveMeta = typography(h, { size: "3xs", tone: "muted", mono: true }, [
+		"Live from Cloudflare · no history",
+	])
 	const note = (text: ReadonlyArray<string>) =>
 		h.p([h.Class("px-3 pb-3 font-mono text-2xs text-muted-foreground")], text)
 	return AsyncData.match(model.liveTraffic.data, {
@@ -405,7 +381,7 @@ const liveBody = (
 				dimension,
 				rows,
 				isWaiting,
-				emptyMessage: `No ${dimension.noun} match "${query}" in this window.`,
+				emptyMessage: `No ${dimension.noun} match "${query}" in this window`,
 				sort: model.liveSort,
 				onSort: (key) => Message.ClickedLiveSort({ key }),
 				selected: null,
@@ -453,37 +429,27 @@ export const breakdownPanel = (
 				onChange: (next) => Message.ClickedDimension({ dimension: next }),
 			}),
 			children: [
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[
-						panelTitle(h, ["Breakdown"]),
-						...(isLive
-							? [
-									h.button(
-										[
-											h.Type("button"),
-											h.OnClick(Message.ClickedLeaveLive()),
-											h.DataAttribute("slot", "badge"),
-											h.Class(
-												cn(
-													badgeVariants({
-														variant: "meta",
-														size: "xs",
-														mono: true,
-														className:
-															"bg-background/60 font-normal hover:text-foreground active:text-foreground",
-													}),
-												),
-											),
-										],
-										["live", icon(h, "XmarkIcon")],
-									),
-								]
-							: scope === undefined
-								? []
-								: [scope]),
-					],
-				),
+				hstack(h, { gap: "2", wrap: true }, [
+					panelTitle(h, ["Breakdown"]),
+					...(isLive
+						? [
+								badge(
+									h,
+									{
+										variant: "meta",
+										size: "xs",
+										mono: true,
+										className:
+											"bg-background/60 font-normal hover:text-foreground active:text-foreground",
+										onClick: Message.ClickedLeaveLive(),
+									},
+									["live", icon(h, "XmarkIcon")],
+								),
+							]
+						: scope === undefined
+							? []
+							: [scope]),
+				]),
 			],
 		}),
 		isLive

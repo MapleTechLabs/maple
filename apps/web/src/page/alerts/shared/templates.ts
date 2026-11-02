@@ -1,5 +1,5 @@
 import type { RuleFormState } from "@maple/web-data/alerts/form-utils"
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 
 // `ALERT_TEMPLATES`; each icon is its generated name.
 

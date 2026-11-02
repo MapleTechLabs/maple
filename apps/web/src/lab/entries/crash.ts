@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { crashView } from "../../crash/view"
-import { button } from "../../ui/button"
+import { button } from "@maple/views/ui/button"
 import { defineLab } from "../define"
 
 // `/lab/crash`: crashes a real Foldkit program, so the crash page renders through the runtime's own path.

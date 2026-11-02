@@ -1,4 +1,4 @@
-import type { Lang } from "../../lib/highlight"
+import type { Lang } from "@maple/views/lib/highlight"
 
 export type FrameworkId = "nextjs" | "nodejs" | "python" | "go" | "effect" | "otel"
 

@@ -19,7 +19,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext, PageOutMessage } from "../contract"
 import { FetchSourcesList, ScrollToTop } from "../sources/new/command"
 import { Message } from "../sources/new/message"

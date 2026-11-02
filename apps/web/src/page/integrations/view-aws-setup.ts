@@ -1,15 +1,16 @@
 import type { V2AwsConnection, V2AwsSetup } from "@maple/domain/http/v2"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../ui/copy-button"
-import { errorState } from "../../ui/error-state"
-import { segmentedSelect } from "../../ui/segmented-select"
-import { skeleton } from "../../ui/skeleton"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { errorState } from "@maple/views/ui/error-state"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { codeBlock } from "../settings/kit/code-block"
 import type { AwsSetupMethod, AwsSetupPart } from "./aws"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The AWS stack's setup, by method: shared by the connected card and the connect flow.
 
@@ -19,7 +20,7 @@ type H = HtmlBuilder<Message>
 export const CLOUDSHELL_URL = "https://us-east-1.console.aws.amazon.com/cloudshell/home?region=us-east-1"
 const CREATE_STACK_URL =
 	"https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create"
-export const SMALL = "text-xs text-muted-foreground"
+export const SMALL = typographyClass({ size: "xs", tone: "muted" })
 
 /** A generated file to copy, its name in the eyebrow; a long one scrolls under its copy button. */
 export const fileBlock = (h: H, model: Model, id: string, name: string, text: string): Html =>

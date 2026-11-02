@@ -2,11 +2,11 @@
 	"$schema": "https://turborepo.com/schema.json",
 	"extends": ["//"],
 	"tasks": {
-		// The Maizzle compile writes checked-in modules under src/generated/
+		// The template compile writes checked-in modules under src/generated/
 		// rather than a dist/ directory, so the root task's outputs don't apply.
 		"build": {
 			"dependsOn": ["^build"],
-			"inputs": ["emails/**", "components/**", "scripts/build.ts", "package.json"],
+			"inputs": ["templates/**", "scripts/build.ts", "scripts/inline-tailwind.ts", "package.json"],
 			"outputs": ["src/generated/**"]
 		}
 	}

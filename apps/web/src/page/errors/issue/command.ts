@@ -13,7 +13,7 @@ import {
 import { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Result, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { writeClipboard } from "../../kit/clipboard"

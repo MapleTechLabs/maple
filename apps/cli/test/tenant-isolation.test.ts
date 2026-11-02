@@ -5,9 +5,9 @@ import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
 import { OrgId } from "@maple/domain"
 import { DateTime, Effect, Schema } from "effect"
-import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
-import { Chdb } from "../src/server/chdb"
-import { decodeJsonEachRow } from "../src/server/chdb-rows"
+import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
+import { Chdb } from "@maple/local-server/chdb"
+import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import { describeWithChdb } from "./libchdb-test-support"
 
 // Two orgs with the same telemetry shape, told apart only by OrgId and a name

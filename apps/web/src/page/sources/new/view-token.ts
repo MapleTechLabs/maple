@@ -1,8 +1,8 @@
 import { isPushSourcePlatform } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../../ui/button"
-import { copyableField } from "../../../ui/copyable-field"
-import { icon } from "../../../ui/icon"
+import { button, linkButton } from "@maple/views/ui/button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { icon } from "@maple/views/ui/icon"
 import { type CheckRow, flowColumns, liveChecklist, savedBanner, stepCard } from "../../kit/connect-flow"
 import * as Setup from "../kit/setup"
 import { sourceHref } from "../kit/shared"
@@ -11,6 +11,7 @@ import type { Created, FlowHost, Model } from "./model"
 import { isReceiving } from "./update"
 import { flowFooter } from "./view-footer"
 import { showsUpRail } from "./view-push-rail"
+import { typography } from "@maple/views/ui/typography"
 
 // `TokenStep`: the Send data step. The one-time token, the setup snippet, then the first-data poll.
 
@@ -94,12 +95,9 @@ export const tokenStep = (h: H, model: Model, created: Created, host: FlowHost):
 				[
 					savedBanner(h, "Saved as a source. Safe to leave."),
 					stepCard(h, { icon: "KeyIcon", title: "Copy the token", note: "Shown once" }, [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Copy it now, it won't be shown again. Use it as the ingest key wherever this source sends from.",
-							],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Copy it now, it won't be shown again. Use it as the ingest key wherever this source sends from.",
+						]),
 						copyableField(h, {
 							id: "source-token",
 							value: created.secret,

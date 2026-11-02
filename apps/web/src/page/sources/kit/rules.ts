@@ -4,7 +4,7 @@ import { SourceAttributeMode, SourceSignal } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SIGNALS } from "./shared"
 
 // The rules draft and its outcome.
@@ -68,6 +68,18 @@ export const init = (existing: V2Source | null): Model => ({
 	expiry: existing !== null && existing.expires_at !== null ? "keep" : "never",
 	nextRowId: 0,
 })
+
+/** The draft differs from the source it was built from (row ids and signal order aside). */
+export const isRulesDirty = (model: Model): boolean => {
+	const comparable = (draft: Model) =>
+		JSON.stringify([
+			[...draft.signals].sort(),
+			draft.rateLimitText.trim(),
+			draft.attributes.map(({ key, value, mode }) => [key, value, mode]),
+			draft.expiry,
+		])
+	return comparable(model) !== comparable(init(model.existing))
+}
 
 const DAY_MS = 86_400_000
 

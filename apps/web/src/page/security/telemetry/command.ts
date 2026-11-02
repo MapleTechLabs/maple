@@ -1,7 +1,7 @@
 import { getSecurityExposure, getSecurityRuntimes } from "@maple/web-data/warehouse/security-telemetry"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../../data/time-range"
 import { Message } from "./model"
 

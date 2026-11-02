@@ -26,7 +26,7 @@ export type WidgetDataState =
 	| ({ readonly _tag: "Error" } & WidgetError)
 
 const LOADING: WidgetDataState = { _tag: "Loading" }
-const NO_DATA = "No query data found in selected time range"
+const NO_DATA = "No data in this window"
 
 export type RequestSlots = Readonly<Record<string, Keyed<unknown, WidgetFailure>>>
 

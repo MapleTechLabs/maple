@@ -2,16 +2,16 @@ import type { V2Source } from "@maple/domain/http/v2"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { BAR_CHART_TOKENS } from "@maple/views/charts/bar-chart"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SourceTab } from "../../../route/search"
 import type { BreadcrumbEntry } from "../../../shell"
-import { alert, alertTitle } from "../../../ui/alert"
-import { copyableField } from "../../../ui/copyable-field"
-import { errorState } from "../../../ui/error-state"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { alert, alertTitle } from "@maple/views/ui/alert"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { errorState } from "@maple/views/ui/error-state"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle } from "../../kit/detail-header"
@@ -27,6 +27,8 @@ import { sourceOf } from "./update"
 import { integrationActions, sourceActions } from "./view-actions"
 import { overviewTab } from "./view-overview"
 import { settingsTab, setupTab } from "./view-tabs"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -46,7 +48,7 @@ const notFound = (h: H): Html =>
 	})
 
 const loading = (h: H): Html =>
-	h.div([h.Class("flex flex-col gap-3")], [skeleton(h, "h-10 w-72"), skeleton(h, "h-40 w-full")])
+	vstack(h, { gap: "3" }, [skeleton(h, "h-10 w-72"), skeleton(h, "h-40 w-full")])
 
 /** `SourceTabs`: links, so the open tab is in the URL; the overview drops `tab`. */
 const tabs = (h: H, source: V2Source, active: SourceTab): Html =>
@@ -139,10 +141,10 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 					...(source.key_prefix === null
 						? []
 						: [
-								h.span(
-									[h.Class("text-muted-foreground font-mono text-xs")],
-									[source.key_prefix, "…"],
-								),
+								typography(h, { size: "xs", tone: "muted", mono: true }, [
+									source.key_prefix,
+									"…",
+								]),
 							]),
 				],
 			}),

@@ -3,8 +3,8 @@ import { health, HEALTH_COLOR } from "../../components/service-map/three/spatial
 import type { Node3D } from "../../components/service-map/three/types"
 import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { input } from "../../ui/input"
-import { statusDot } from "../../ui/status-dot"
+import { input } from "@maple/views/ui/input"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model } from "./update"
 
 // `ServiceInventory` with nothing selected: the searchable list sorted by error rate.

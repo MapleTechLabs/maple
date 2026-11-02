@@ -8,11 +8,11 @@ import { requestKey } from "../../../data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as ContextMenu from "../../../ui/context-menu"
-import * as Menu from "../../../ui/menu"
-import * as Select from "../../../ui/select"
-import * as Tabs from "../../../ui/tabs"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as ContextMenu from "@maple/views/ui/context-menu"
+import * as Menu from "@maple/views/ui/menu"
+import * as Select from "@maple/views/ui/select"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import {
@@ -57,7 +57,7 @@ import {
 } from "./selection"
 import { SOURCES } from "../kit/source"
 import type { IssuePage, Model, PageSlot } from "./model"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 
 export type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>

@@ -61,7 +61,9 @@
 		// alchemy declaration beside it is what the root stack yields.
 		"apps/sandbox": {
 			"entry": ["src/worker.ts", "alchemy.run.ts"],
-			"ignoreDependencies": ["cloudflare"]
+			"ignoreDependencies": ["cloudflare"],
+			// The probe's TLS test makes its certificate with the system openssl, skipping where there is none.
+			"ignoreBinaries": ["openssl"]
 		},
 		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
 		"apps/web": {
@@ -69,12 +71,9 @@
 			// input added by `vite.config.ts`.
 			"entry": ["src/worker-entry.ts", "src/boot.ts", "e2e/e2e.config.ts", "e2e/tests/**/*.e2e.ts"]
 		},
-		// local-ui renders apps/web's source modules (ui, charts), so their runtime packages
-		// must resolve from this app too.
 		// `src/worker-entry.ts` is named by string in `src/worker.ts`.
 		"apps/local-ui": {
-			"entry": ["src/worker.ts", "src/worker-entry.ts"],
-			"ignoreDependencies": ["@floating-ui/dom", "@tanstack/charts", "@tanstack/charts-scales"]
+			"entry": ["src/worker.ts", "src/worker-entry.ts"]
 		},
 		"apps/cli": {
 			"entry": [
@@ -86,6 +85,10 @@
 				"test/native-projector-modules.ts"
 			],
 			"ignoreBinaries": ["duckdb"]
+		},
+		"packages/local-server": {
+			// The session model test spawns this as a process, which knip does not follow.
+			"entry": ["test/fixtures/*.ts"]
 		},
 		"packages/backend": {
 			// The opt-in GitHub e2e test compares the dependency scanner with a locally installed osv-scanner.

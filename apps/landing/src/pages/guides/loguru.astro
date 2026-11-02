@@ -419,17 +419,29 @@ const articleJsonLd = {
             </aside>
 
             <article class="loguru-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        <strong>Loguru</strong> is a third-party logging library for Python. Instead of the handlers and formatters the standard <code>logging</code> module needs, it gives you one ready-made <code>logger</code> and a single <code>add()</code> call for each place your logs should go.
+                    </p>
+                    <p>
+                        This guide covers installing Loguru, setting the level, writing to files, JSON output, adding context to each line, logging exceptions, using Loguru alongside the <code>logging</code> module, and sending Loguru logs to OpenTelemetry.
+                    </p>
+
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li><code>from loguru import logger</code> is the whole setup; <code>logger.add()</code> adds sinks such as files.</li>
+                            <li><code>rotation</code> and <code>retention</code> on a file sink keep log files from filling the disk.</li>
+                            <li><code>serialize=True</code> writes JSON lines that log search tools can filter field by field.</li>
+                            <li>Add production sinks with <code>diagnose=False</code> so tracebacks don't print passwords and tokens.</li>
+                            <li>In a package other people install, log with the standard <code>logging</code> module; use Loguru in your own apps.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="get-started" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · Basics</p>
                     <h2>Get started with Loguru</h2>
-
-                    <div class="guide-answer">
-                        <p><strong>Loguru</strong> is a popular logging library for Python that takes almost no setup. You import one ready-made <code>logger</code> and call it.</p>
-                    </div>
-
-                    <p>
-                        This guide starts with your first log line and then adds what most apps need: a log level, log files, JSON output and extra context on each line. The last section sends your Loguru logs to an observability tool, where you can search them and see which request wrote each line.
-                    </p>
 
                     <p>Install Loguru with pip, then import <code>logger</code> and start logging. Loguru prints colored lines to your terminal out of the box:</p>
                     <pre><code>{installCommand}</code></pre>
@@ -750,7 +762,7 @@ const articleJsonLd = {
     .loguru-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .loguru-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .loguru-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .loguru-guide > section > p:not(.guide-eyebrow, .guide-kicker), .loguru-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .loguru-guide > section > p:not(.guide-eyebrow, .guide-kicker) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .loguru-guide strong { font-weight: 600; color: var(--foreground); }
     .loguru-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); overflow-wrap: anywhere; }
     .loguru-guide pre { position: relative; margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
@@ -761,9 +773,10 @@ const articleJsonLd = {
     .loguru-guide pre + .pre-output { margin-top: -1rem; border-top-left-radius: 0; border-top-right-radius: 0; background: color-mix(in oklab, var(--background) 70%, var(--bg-deep)); }
     .loguru-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .loguru-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .loguru-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .loguru-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .loguru-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .loguru-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .loguru-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .loguru-guide .guide-takeaways li::marker { color: var(--primary); }
 
     /* One color per system: set --sys on the element. */
     .loguru-guide .sys-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--sys) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--sys) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; text-transform: none; color: color-mix(in oklab, var(--sys) 70%, var(--foreground)); white-space: nowrap; }

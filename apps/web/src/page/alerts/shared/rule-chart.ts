@@ -27,16 +27,19 @@ import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
-import type * as Chart from "../../../charts/chart"
-import { ChartSpec } from "../../../charts/chart-spec"
-import { plotFrame } from "../../../charts/plot-frame"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import { badge } from "../../../ui/display"
-import { eyebrow } from "../../../ui/eyebrow"
-import { chartEmpty, chartError, chartLoading } from "../../../ui/chart-state"
+import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import type * as Chart from "@maple/views/charts/chart"
+import { ChartSpec } from "@maple/views/charts/chart-spec"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { badge } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { pressable } from "@maple/views/ui/pressable"
+import { chartEmpty, chartError, chartLoading } from "@maple/views/ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
 import { isoMs } from "./time"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The view half of the alert rule chart; the
 // definition is `charts/definitions/alert-rule.ts`, built by the chart Mount from the spec here.
@@ -273,80 +276,76 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						h.div(
 							[h.Class("max-w-sm space-y-2")],
 							[
-								h.p([h.Class("font-medium text-sm")], ["Preview query failed"]),
+								typography(h, { size: "sm", weight: "medium", as: "p" }, [
+									"Preview query failed",
+								]),
 								h.p([h.Class("line-clamp-3 text-muted-foreground")], [inputs.error]),
 							],
 						),
 					])
-				: chartEmpty(h, { height: CHART_HEIGHT, hint: "Try widening the range." }, [
-						"No data in this window.",
+				: chartEmpty(h, { height: CHART_HEIGHT, hint: "Try widening the range" }, [
+						"No data in this window",
 					])
 
 	const thresholdCaption = h.div(
 		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-muted-foreground")],
 		[
-			h.span(
-				[h.Class("flex items-center gap-2")],
-				[
-					h.span([
-						h.AriaHidden(true),
-						h.Class(
-							cn(
-								"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed",
-								criticalThreshold != null ? "border-severity-warn" : "border-severity-error",
-							),
+			hstack(h, { gap: "2", as: "span" }, [
+				h.span([
+					h.AriaHidden(true),
+					h.Class(
+						cn(
+							"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed",
+							criticalThreshold != null ? "border-severity-warn" : "border-severity-error",
 						),
-					]),
-					h.span(
-						[],
-						[
-							...(criticalThreshold != null ? ["Warning "] : []),
-							thresholdUpper != null
-								? "Threshold range "
-								: breachBelow
-									? criticalThreshold != null
-										? "below "
-										: "Breach below "
-									: criticalThreshold != null
-										? "above "
-										: "Breach above ",
-							h.span(
-								[h.Class("font-mono font-medium text-foreground")],
-								[
-									formatSignalValue(signalType, threshold),
-									...(thresholdUpper != null
-										? [` – ${formatSignalValue(signalType, thresholdUpper)}`]
-										: []),
-								],
-							),
-						],
 					),
-				],
-			),
-			...(criticalThreshold != null
-				? [
+				]),
+				h.span(
+					[],
+					[
+						...(criticalThreshold != null ? ["Warning "] : []),
+						thresholdUpper != null
+							? "Threshold range "
+							: breachBelow
+								? criticalThreshold != null
+									? "below "
+									: "Breach below "
+								: criticalThreshold != null
+									? "above "
+									: "Breach above ",
 						h.span(
-							[h.Class("flex items-center gap-2")],
+							[h.Class("font-mono font-medium text-foreground")],
 							[
-								h.span([
-									h.AriaHidden(true),
-									h.Class(
-										"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-severity-error",
-									),
-								]),
-								h.span(
-									[],
-									[
-										"Critical ",
-										breachBelow ? "below " : "above ",
-										h.span(
-											[h.Class("font-mono font-medium text-foreground")],
-											[formatSignalValue(signalType, criticalThreshold)],
-										),
-									],
-								),
+								formatSignalValue(signalType, threshold),
+								...(thresholdUpper != null
+									? [` – ${formatSignalValue(signalType, thresholdUpper)}`]
+									: []),
 							],
 						),
+					],
+				),
+			]),
+			...(criticalThreshold != null
+				? [
+						hstack(h, { gap: "2", as: "span" }, [
+							h.span([
+								h.AriaHidden(true),
+								h.Class(
+									"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-severity-error",
+								),
+							]),
+							h.span(
+								[],
+								[
+									"Critical ",
+									breachBelow ? "below " : "above ",
+									h.span(
+										[h.Class("font-mono font-medium text-foreground")],
+										[formatSignalValue(signalType, criticalThreshold)],
+									),
+								],
+							),
+						]),
 					]
 				: []),
 		],
@@ -358,21 +357,18 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			h.div(
 				[h.Class("space-y-0.5")],
 				[
-					h.p(
-						[h.Class("text-foreground text-xs")],
-						[
-							"Showing",
-							" ",
-							h.span(
-								[h.Class("font-medium")],
-								[source === "none" ? "" : SIGNAL_SOURCE_LABEL[source]],
-							),
-							" ",
-							"— ",
-							SIGNAL_SOURCE_LABEL[otherSource].toLowerCase(),
-							" has no points in this window.",
-						],
-					),
+					typography(h, { size: "xs", tone: "foreground", as: "p" }, [
+						"Showing",
+						" ",
+						h.span(
+							[h.Class("font-medium")],
+							[source === "none" ? "" : SIGNAL_SOURCE_LABEL[source]],
+						),
+						" ",
+						"— ",
+						SIGNAL_SOURCE_LABEL[otherSource].toLowerCase(),
+						" has no points in this window.",
+					]),
 					...(inputs.error != null
 						? [h.p([h.Class("line-clamp-2 text-2xs text-muted-foreground")], [inputs.error])]
 						: []),
@@ -384,18 +380,15 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 	const ghostNote = h.div(
 		[h.Class("flex items-center gap-3 text-2xs text-muted-foreground")],
 		[
-			h.span(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					h.span([
-						h.AriaHidden(true),
-						h.Class(
-							"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-muted-foreground",
-						),
-					]),
-					SIGNAL_SOURCE_LABEL[otherSource],
-				],
-			),
+			hstack(h, { gap: "1.5", as: "span" }, [
+				h.span([
+					h.AriaHidden(true),
+					h.Class(
+						"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-muted-foreground",
+					),
+				]),
+				SIGNAL_SOURCE_LABEL[otherSource],
+			]),
 			...(merged.divergence != null && merged.divergence > Math.abs(threshold) * 0.05
 				? [
 						badge(h, { variant: "warn", size: "xs" }, [
@@ -418,40 +411,32 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			...(hasSignal && hasGhost ? [ghostNote] : []),
 			...(inputs.showWouldFire === true && wouldFireBands.length > 0
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							[
-								"Shaded: rule would have fired (approximate: the live scheduler checks a sliding window).",
-							],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							"Shaded: rule would have fired (approximate: the live scheduler checks a sliding window).",
+						]),
 					]
 				: []),
 			...(hasSignal && heldBands.length > 0
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							["Grey tail: incident held, waiting on data."],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							"Grey tail: incident held, waiting on data.",
+						]),
 					]
 				: []),
 			...(hasSignal && source === "preview" && noDataBands.length > 0
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							["Hatched: no data received in these windows."],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							"Hatched: no data received in these windows.",
+						]),
 					]
 				: []),
 			...(truncatedTo !== null
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							[
-								clampedToPreview ? "Axis starts at " : "Query series starts at ",
-								formatTime(isoMs(truncatedTo), "tooltip"),
-								". The range needs more windows than one preview replays: widen the rule's window or shorten the range.",
-							],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							clampedToPreview ? "Axis starts at " : "Query series starts at ",
+							formatTime(isoMs(truncatedTo), "tooltip"),
+							". The range needs more windows than one preview replays: widen the rule's window or shorten the range.",
+						]),
 					]
 				: []),
 			...(checks.length > 0 ? [rail(h, inputs, checks, domain, incidentBands, formatTime)] : []),
@@ -599,25 +584,23 @@ const rail = <M>(
 						[h.Class("flex h-3.5 flex-1 gap-px")],
 						cells.map((cell, i) => {
 							const isSelected = selected === i
-							return h.button(
-								[
-									h.Type("button"),
-									h.Title(cell.title),
-									h.AriaLabel(cell.title),
-									h.AriaPressed(isSelected ? "true" : "false"),
-									...(onSelect === undefined
-										? [h.Disabled(true)]
-										: [h.OnClick(onSelect(isSelected ? null : i))]),
-									h.Class(
-										cn(
-											"h-full flex-1 rounded-2xs p-0",
-											RAIL_COLOR.get(cell.status),
-											onSelect !== undefined && "cursor-pointer",
-											cell.opened && "ring-1 ring-inset ring-severity-error",
-											isSelected && "ring-2 ring-foreground ring-offset-0",
-										),
+							return pressable(
+								h,
+								{
+									label: cell.title,
+									isSelected,
+									isDisabled: onSelect === undefined,
+									onClick:
+										onSelect === undefined ? undefined : onSelect(isSelected ? null : i),
+									// A read-only rail keeps its colours: no dimming, no pointer.
+									className: cn(
+										"h-full flex-1 rounded-2xs p-0 disabled:cursor-default disabled:opacity-100",
+										RAIL_COLOR.get(cell.status),
+										cell.opened && "ring-1 ring-inset ring-severity-error",
+										isSelected && "ring-2 ring-foreground ring-offset-0",
 									),
-								],
+									attributes: [h.Title(cell.title)],
+								},
 								[],
 							)
 						}),

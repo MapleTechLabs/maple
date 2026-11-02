@@ -8,8 +8,8 @@ import { listBody } from "../../page/errors/hub/view-list"
 import { toolbar } from "../../page/errors/hub/view-toolbar"
 import type { Message as HubMessage } from "../../page/errors/hub/message"
 import type { Model as HubModel } from "../../page/errors/hub/model"
-import { eyebrow } from "../../ui/eyebrow"
-import { isMounted } from "../../ui/overlay/transition"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { isMounted } from "@maple/views/ui/overlay/transition"
 import { labSignals } from "./hub-step"
 import { LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
 
@@ -82,14 +82,10 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 	const signals = labSignals(hub, inputs.state)
 	const status = inputs.state === "ready" || inputs.state === "empty" ? "ready" : inputs.state
 	const isSelecting = hub.selectedIds.length > 0
-	// Split where the JSX interpolates, so the text runs match.
-	const count =
-		status === "ready" ? [String(signals.length), " ", signals.length === 1 ? "issue" : "issues"] : null
 	return h.div(
 		[],
 		[
 			labStatStrip(h, fixture.summary),
-			toolbar(h, hub, count),
 			...listBody(h, hub, {
 				status,
 				signals,
@@ -112,6 +108,26 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 	)
 })
 
+/** The hub's toolbar, pinned in the sticky slot as on the page. */
+const toolbarView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, inputs, h) => {
+	const signals = labSignals(hub, inputs.state)
+	const status = inputs.state === "ready" || inputs.state === "empty" ? "ready" : inputs.state
+	// Split where the JSX interpolates, so the text runs match.
+	const count =
+		status === "ready" ? [String(signals.length), " ", signals.length === 1 ? "issue" : "issues"] : null
+	return toolbar(h, hub, count, "pb-0")
+})
+
+/** The lab's width cap, shared by the pinned toolbar and the hub column. */
+const widthCapped = (h: HtmlBuilder<Message>, width: number | null, child: Html): Html =>
+	h.div(
+		[
+			h.Class("@container/page mx-auto w-full min-w-0"),
+			...(width === null ? [] : [h.Style({ maxWidth: `${width}px` })]),
+		],
+		[child],
+	)
+
 /** `DashboardLayout.Body` of the lab: the controls in the header, the hub in a width-capped column. */
 export const view = Submodel.defineView<Model, Message>((model, h) =>
 	dashboardPage(
@@ -132,22 +148,29 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 					),
 				],
 			),
+			sticky: widthCapped(
+				h,
+				model.width,
+				h.submodel({
+					slotId: "errors-lab-toolbar",
+					model: model.hub,
+					view: toolbarView,
+					viewInputs: { state: model.state, timeZone: model.timeZone },
+					toParentMessage: (message) => Message.GotHubMessage({ message }),
+				}),
+			),
 		},
 		[
-			h.div(
-				[
-					h.Class("@container/page mx-auto w-full min-w-0"),
-					...(model.width === null ? [] : [h.Style({ maxWidth: `${model.width}px` })]),
-				],
-				[
-					h.submodel({
-						slotId: "errors-lab-hub",
-						model: model.hub,
-						view: hubView,
-						viewInputs: { state: model.state, timeZone: model.timeZone },
-						toParentMessage: (message) => Message.GotHubMessage({ message }),
-					}),
-				],
+			widthCapped(
+				h,
+				model.width,
+				h.submodel({
+					slotId: "errors-lab-hub",
+					model: model.hub,
+					view: hubView,
+					viewInputs: { state: model.state, timeZone: model.timeZone },
+					toParentMessage: (message) => Message.GotHubMessage({ message }),
+				}),
 			),
 		],
 	),

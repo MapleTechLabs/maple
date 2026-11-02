@@ -1,12 +1,12 @@
 import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
 import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Combobox from "../../../ui/combobox"
-import { chipsView } from "../../../ui/combobox-view"
-import { filterChip } from "../../../ui/filter-chip"
-import { input } from "../../../ui/input"
-import * as Select from "../../../ui/select"
-import { view as selectView, type SelectOption } from "../../../ui/select-view"
+import * as Combobox from "@maple/views/ui/combobox"
+import { chipsView } from "@maple/views/ui/combobox-view"
+import { filterChip } from "@maple/views/ui/filter-chip"
+import { input } from "@maple/views/ui/input"
+import * as Select from "@maple/views/ui/select"
+import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import type { AddOnKey } from "./change"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
@@ -148,7 +148,7 @@ const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 				.filter((option) => option.value !== "none")
 				.map((option) => option.value),
 			placeholder: query.groupBy.length === 0 ? "service.name" : "",
-			emptyText: "No fields found.",
+			emptyText: "No fields found",
 			className: "text-xs font-mono",
 			toView: (parts) => h.div([h.Class("flex-1 min-w-[140px]")], parts),
 		},

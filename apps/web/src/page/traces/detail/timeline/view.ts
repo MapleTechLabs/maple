@@ -2,7 +2,7 @@ import { SIDEBAR_WIDTH_NARROW_MIN } from "@maple/ui/components/traces/trace-time
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../../../ui/empty"
+import { emptyMessage } from "@maple/views/ui/empty"
 import { MountAltToggle, MeasureTimelineBody } from "./command"
 import { type Bar, computeSearchMatches, computeTimeAxisTicks, ROW_PITCH, virtualRange } from "./layout"
 import { Message } from "./message"

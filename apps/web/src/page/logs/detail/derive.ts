@@ -1,7 +1,5 @@
-import { warehouseDateTimeToIso } from "@maple/query-engine"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { getActiveInfraCorrelations } from "../../../components/infra/infra-correlations"
-import type { LogRecord } from "../../../ui/logs/log-row-view"
+import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 
 // Pure readings of a log for the sheet: its severity label, JSON payload, tabs and timestamp.
 
@@ -53,17 +51,3 @@ export const TAB_LABELS = new Map([
 	["infrastructure", "Infrastructure"],
 ])
 
-/** `formatTimestampInTimezone(ts, { timeZone, withMilliseconds: true })`: `Oct 1, 11:59:59.023 AM`. */
-export const formatLogTimestamp = (timestamp: string, timeZone: string): string => {
-	const date = new Date(warehouseDateTimeToIso(timestamp))
-	if (Number.isNaN(date.getTime())) return EMPTY_VALUE
-	return new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		fractionalSecondDigits: 3,
-	}).format(date)
-}

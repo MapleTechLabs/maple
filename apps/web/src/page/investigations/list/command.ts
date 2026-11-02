@@ -1,7 +1,7 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { readIsAdmin } from "../../alerts/shared/commands"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { clickStream, factsOf, rowClickId } from "../clicks"

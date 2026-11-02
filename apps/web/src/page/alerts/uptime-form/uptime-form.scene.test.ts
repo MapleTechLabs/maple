@@ -13,7 +13,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { ORG } from "../shared/test-rows"
 import { LIMIT_REACHED_CODE, monitorHref } from "../shared/uptime-commands"

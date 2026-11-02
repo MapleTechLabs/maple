@@ -3,17 +3,19 @@ import { callMetaLine, type SpanMessage, type SpanMessagePart } from "@maple/age
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { tryParseJson } from "../../../lib/display-text"
-import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { tryParseJson } from "@maple/views/lib/display-text"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
 import { firstLine, previewOf } from "./clamped-text"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, jsonPayload, messageBody, viewSwitch } from "./payload-view"
 import { clampedBody, payloadCopyButton } from "./transcript-kit"
 import { shownMarkdown } from "./transcript-rows"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The span expansion's Messages tab. Its local state (open,
 // raw) lives in the page's `openRows` under the popover's key prefix, reset when the span changes.
@@ -190,33 +192,28 @@ const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionS
 	)
 		? "md"
 		: "json"
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-1.5")],
-		[
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
-				[
-					eyebrow(h, { variant: "mono", className: cn("shrink-0", roleColor(message.role)) }, [
-						message.role,
-					]),
-					...(message.origin === "output"
-						? [
-								h.span(
-									[h.Class("min-w-0 truncate font-mono text-2xs text-foreground-subtle")],
-									[callMetaLine(span)],
-								),
-							]
-						: []),
-					h.span([h.AriaHidden(true), h.Class("h-px min-w-4 flex-1 bg-border-subtle")], []),
-					...(hasText ? [viewSwitch(h, { rendered, isRaw, rawKey: `${key}:raw` })] : []),
-				],
-			),
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-2")],
-				message.parts.map((part, index) => messagePart(h, model, part, isRaw, `${key}:${index}`)),
-			),
-		],
-	)
+	return vstack(h, { gap: "1.5", shrink: true }, [
+		hstack(h, { gap: "2.5" }, [
+			eyebrow(h, { variant: "mono", className: cn("shrink-0", roleColor(message.role)) }, [
+				message.role,
+			]),
+			...(message.origin === "output"
+				? [
+						h.span(
+							[h.Class("min-w-0 truncate font-mono text-2xs text-foreground-subtle")],
+							[callMetaLine(span)],
+						),
+					]
+				: []),
+			h.span([h.AriaHidden(true), h.Class("h-px min-w-4 flex-1 bg-border-subtle")], []),
+			...(hasText ? [viewSwitch(h, { rendered, isRaw, rawKey: `${key}:raw` })] : []),
+		]),
+		vstack(
+			h,
+			{ gap: "2", shrink: true },
+			message.parts.map((part, index) => messagePart(h, model, part, isRaw, `${key}:${index}`)),
+		),
+	])
 }
 
 /** The markdown bodies the Messages tab lays out, for the parse `update` asks for. */
@@ -266,13 +263,13 @@ const systemMessageRow = (h: H, model: Model, message: SpanMessage, key: string)
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
 	const text = collapsedText(message.parts)
 	return panel(h, { tone: "muted", className: "border-border-subtle" }, [
-		h.button(
-			[
-				h.AriaExpanded(isOpen),
-				h.Class("flex w-full cursor-pointer items-center gap-2 px-2.5 py-2 text-left"),
-				h.Type("button"),
-				h.OnClick(Message.ToggledRow({ key })),
-			],
+		pressable(
+			h,
+			{
+				onClick: Message.ToggledRow({ key }),
+				className: "flex w-full items-center gap-2 px-2.5 py-2 text-left",
+				attributes: [h.AriaExpanded(isOpen)],
+			},
 			[
 				icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
 					size: 12,

@@ -14,11 +14,11 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { findingsOf, TARGET_IDS, targetsOf } from "../../../lab/security-fixture"
 import { AppRoute } from "../../../route"
-import * as Field from "../../../ui/field"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as Field from "@maple/views/ui/field"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../../contract"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
@@ -167,7 +167,10 @@ describe("security finding", () => {
 			{ update: pageUpdate, view },
 			given(missing),
 			expectView(text("Finding not found")).toExist(),
-			expectView(role("link", { name: "Back to findings" })).toHaveAttr("href", "/security/findings"),
+			expectView(role("link", { name: "Back to findings" })).toHaveAttr(
+				"href",
+				"/security/code/findings",
+			),
 			expectView(text(/^Couldn't load/)).not.toExist(),
 		)
 	})

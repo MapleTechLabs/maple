@@ -2,12 +2,12 @@ import type { AlertRuleDocument } from "@maple/domain/http"
 import { comparatorLabels, formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
-import { linkButton } from "../../../ui/button"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { pageTitle } from "../../../ui/page-layout"
-import { skeleton } from "../../../ui/skeleton"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { linkButton } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
@@ -22,6 +22,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { historyTab } from "./view-history"
 import { overviewTab } from "./view-overview"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The rule detail page through `ResultPage` and `DetailHeader`.
 
@@ -56,52 +58,46 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 					h.span([h.Class("truncate")], ["Alert rule"]),
 				]),
 				pageTitle(h, { title: rule.name }, [rule.name]),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[
-						...rule.thresholds.map((tier) => severityBadge(h, tier.severity)),
-						isFiring
-							? alertStatusBadge(
-									h,
-									openIncidents.every((i) => i.holdReason != null) ? "held" : "firing",
-								)
-							: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
-						h.span([h.Class("text-muted-foreground text-sm")], [ruleSubtitle(rule)]),
-					],
-				),
-			],
-		),
-		actions: h.div(
-			[h.Class("flex items-center gap-2")],
-			[
-				timeControls(h, {
-					search: model.search,
-					defaultPreset: DEFAULT_PRESET,
-					window: model.window,
-					onReset: Message.ClickedResetTimeRange(),
-					onReload: Message.ClickedReload(),
-					isReloading: model.isReloading,
-					trigger: (label) =>
-						h.submodel({
-							slotId: "alert-rule-time-picker",
-							model: model.timePicker,
-							view: TimeRangePicker.view,
-							toParentMessage: toTimePicker,
-							viewInputs: {
-								label,
-								selectedPreset:
-									model.search.timePreset ??
-									(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
-								presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
-							},
-						}),
-				}),
-				linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
-					icon(h, "PencilIcon"),
-					"Edit rule",
+				hstack(h, { gap: "2", wrap: true }, [
+					...rule.thresholds.map((tier) => severityBadge(h, tier.severity)),
+					isFiring
+						? alertStatusBadge(
+								h,
+								openIncidents.every((i) => i.holdReason != null) ? "held" : "firing",
+							)
+						: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
+					typography(h, { size: "sm", tone: "muted" }, [ruleSubtitle(rule)]),
 				]),
 			],
 		),
+		actions: hstack(h, { gap: "2" }, [
+			timeControls(h, {
+				search: model.search,
+				defaultPreset: DEFAULT_PRESET,
+				window: model.window,
+				onReset: Message.ClickedResetTimeRange(),
+				onReload: Message.ClickedReload(),
+				isReloading: model.isReloading,
+				trigger: (label) =>
+					h.submodel({
+						slotId: "alert-rule-time-picker",
+						model: model.timePicker,
+						view: TimeRangePicker.view,
+						toParentMessage: toTimePicker,
+						viewInputs: {
+							label,
+							selectedPreset:
+								model.search.timePreset ??
+								(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
+							presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+						},
+					}),
+			}),
+			linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
+				icon(h, "PencilIcon"),
+				"Edit rule",
+			]),
+		]),
 	}
 }
 

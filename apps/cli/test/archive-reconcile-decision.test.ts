@@ -6,8 +6,8 @@ import {
 	digestOfIntent,
 	type ReconciliationInspection,
 	type ReconciliationSnapshot,
-} from "../src/server/archives/reconcile"
-import type { CreateOperationIntent, GcOperationIntent } from "../src/server/archives/journal"
+} from "@maple/local-server/archives/reconcile"
+import type { CreateOperationIntent, GcOperationIntent } from "@maple/local-server/archives/journal"
 
 // Exhaustive transition-table tests for the pure decision function (Gate 3b r5).
 // These test the SOLE branch logic with NO I/O: every (kind, phase, topology)

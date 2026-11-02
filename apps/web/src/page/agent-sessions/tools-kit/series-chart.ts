@@ -6,22 +6,24 @@ import { makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import { ChartSpec } from "../../../charts/chart-spec"
-import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
-import { plotFrame } from "../../../charts/plot-frame"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import type { LoadFailure } from "../../../data/load-failure"
-import { chartEmpty, chartLoading } from "../../../ui/chart-state"
-import { errorState } from "../../../ui/error-state"
-import { panelHeader } from "../../../ui/panel"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartSpec } from "@maple/views/charts/chart-spec"
+import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { chartEmpty, chartLoading } from "@maple/views/ui/chart-state"
+import { errorState } from "@maple/views/ui/error-state"
+import { panelHeader } from "@maple/views/ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
 import type { ToolMetric, ToolPercentile, ToolSeriesPoint } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // A tool series chart in a bare `ChartCard`.
 
 const PLOT_HEIGHT = 220
-const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 /** The tokens the chart reads off the theme. */
 export const TOOL_CHART_TOKENS = [
@@ -153,7 +155,7 @@ export const seriesChart = <M>(
 			...(inputs.isWaiting ? [h.AriaBusy(true)] : []),
 			h.Class(
 				cn(
-					"flex min-w-0 flex-col",
+					vstackClass({ shrink: true }),
 					"gap-4 border-b border-border px-6 py-5",
 					refreshingClass(inputs.isWaiting),
 				),
@@ -171,11 +173,13 @@ export const seriesChart = <M>(
 									h.span(
 										[h.Key(part), h.Class("contents font-mono text-xs")],
 										[
-											h.span(
-												[
-													h.AriaHidden(true),
-													h.Class("text-xs text-foreground-subtle"),
-												],
+											typography(
+												h,
+												{
+													size: "xs",
+													tone: "subtle",
+													attributes: [h.AriaHidden(true)],
+												},
 												["·"],
 											),
 											h.span([h.Class("text-primary")], [part]),
@@ -197,8 +201,9 @@ export const seriesChart = <M>(
 									}),
 								]
 							: []),
-						h.span(
-							[h.Class("font-mono text-2xs text-foreground-subtle")],
+						typography(
+							h,
+							{ size: "2xs", tone: "subtle", mono: true },
 							bucketMs === null ? [] : [`${bucketLabel(bucketMs)} buckets`],
 						),
 					],

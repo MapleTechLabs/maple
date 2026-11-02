@@ -12,7 +12,7 @@ import { Cause, Effect, Fiber, Option, Result, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	findingsOf,
 	githubStatusOf,
@@ -24,9 +24,9 @@ import {
 	targetsOf,
 } from "../../../lab/security-fixture"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Select from "../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 import type { PageContext } from "../../contract"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"
@@ -56,7 +56,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
-const overview = AppRoute.Security()
+const overview = AppRoute.SecurityCode()
 
 /** Targets, runs and GitHub status answered, the clock read. */
 const withTargets = (route: Parameters<typeof init>[0] = overview) => {
@@ -122,7 +122,7 @@ describe("security tabs", () => {
 	})
 
 	test("a tab change keeps the instance and reads nothing again", () => {
-		const moved = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context)
+		const moved = routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search: {} }), context)
 		expect(moved.model.tab).toBe("findings")
 		expect(names(moved.commands)).toEqual([])
 	})
@@ -338,7 +338,7 @@ describe("security tabs", () => {
 	})
 
 	test("targets that fail to load show the error with a retry on the Findings tab, not a skeleton", () => {
-		const entered = init(AppRoute.SecurityFindings({ search: {} }), context).model
+		const entered = init(AppRoute.SecurityCodeFindings({ search: {} }), context).model
 		const failed = pageUpdate(
 			entered,
 			Message.CompletedFetchTargets({
@@ -398,7 +398,7 @@ describe("security tabs", () => {
 	})
 
 	test("with no target, Findings hides its filters and Runs offers Add target", () => {
-		const entered = init(AppRoute.SecurityFindings({ search: {} }), context).model
+		const entered = init(AppRoute.SecurityCodeFindings({ search: {} }), context).model
 		const noTargets = [
 			Message.ReadClock({ nowMs: NOW }),
 			Message.CompletedFetchTargets({
@@ -414,7 +414,7 @@ describe("security tabs", () => {
 			expectView(role("textbox", { name: /Search/ })).not.toExist(),
 			expectView(role("link", { name: /^Open/ })).not.toExist(),
 		)
-		const runsTab = routeChanged(noTargets, AppRoute.SecurityRuns({ search: {} }), context).model
+		const runsTab = routeChanged(noTargets, AppRoute.SecurityCodeRuns({ search: {} }), context).model
 		scene(
 			{ update: pageUpdate, view },
 			given(runsTab),
@@ -429,8 +429,8 @@ describe("security tabs", () => {
 		const model = loaded()
 		for (const route of [
 			overview,
-			AppRoute.SecurityFindings({ search: {} }),
-			AppRoute.SecurityRuns({ search: {} }),
+			AppRoute.SecurityCodeFindings({ search: {} }),
+			AppRoute.SecurityCodeRuns({ search: {} }),
 		]) {
 			scene(
 				{ update: pageUpdate, view },
@@ -449,7 +449,7 @@ describe("security tabs", () => {
 		)
 		const runsTab = routeChanged(
 			member,
-			AppRoute.SecurityRuns({ search: { target: TARGET_IDS.gateway } }),
+			AppRoute.SecurityCodeRuns({ search: { target: TARGET_IDS.gateway } }),
 			context,
 		).model
 		scene(
@@ -461,21 +461,21 @@ describe("security tabs", () => {
 	})
 
 	test("rejected findings show unfolded whether the URL or the switch asked for them", () => {
-		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const findings = routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search: {} }), context).model
 		expect(pageUpdate(findings, Message.ToggledShowRejected()).outMessage).toMatchObject({
 			url: expect.stringContaining("rejected=true"),
 		})
 		const shown = routeChanged(
 			findings,
-			AppRoute.SecurityFindings({ search: { rejected: true } }),
+			AppRoute.SecurityCodeFindings({ search: { rejected: true } }),
 			context,
 		).model
-		const entered = init(AppRoute.SecurityFindings({ search: { rejected: true } }), context).model
+		const entered = init(AppRoute.SecurityCodeFindings({ search: { rejected: true } }), context).model
 		expect([findings.collapsed, shown.collapsed, entered.collapsed]).toEqual([["rejected"], [], []])
 	})
 
 	test("a severity tab picked within the search debounce keeps what was typed", () => {
-		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const findings = routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search: {} }), context).model
 		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
 		const picked = pageUpdate(typed, Message.PickedSeverity({ bucket: "critical" }))
 		expect(picked.outMessage).toMatchObject({
@@ -486,7 +486,7 @@ describe("security tabs", () => {
 	})
 
 	test("the search box commits to the URL after the debounce, and only the last keystroke does", () => {
-		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const findings = routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search: {} }), context).model
 		const first = pageUpdate(findings, Message.ChangedSearchDraft({ value: "expo" }))
 		const second = pageUpdate(first.model, Message.ChangedSearchDraft({ value: "exports" }))
 		expect(names(second.commands)).toEqual(["WaitSecuritySearchDebounce"])
@@ -502,9 +502,9 @@ describe("security tabs", () => {
 	})
 
 	test("a search typed just before leaving Findings does not navigate back to it", () => {
-		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const findings = routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search: {} }), context).model
 		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
-		const left = routeChanged(typed, AppRoute.SecurityRuns({ search: {} }), context).model
+		const left = routeChanged(typed, AppRoute.SecurityCodeRuns({ search: {} }), context).model
 		expect(
 			pageUpdate(left, Message.ElapsedSearchDebounce({ generation: typed.searchGeneration }))
 				.outMessage,
@@ -512,7 +512,7 @@ describe("security tabs", () => {
 	})
 
 	test("a status picked within the search debounce keeps what was typed", () => {
-		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const findings = routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search: {} }), context).model
 		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
 		const picked = pageUpdate(
 			typed,
@@ -521,22 +521,23 @@ describe("security tabs", () => {
 			}),
 		)
 		expect(picked.outMessage).toMatchObject({
-			url: hrefOf(AppRoute.SecurityFindings({ search: { q: "exports", status: "fixed" } })),
+			url: hrefOf(AppRoute.SecurityCodeFindings({ search: { q: "exports", status: "fixed" } })),
 		})
 	})
 
-	test("an empty status tab offers Clear filters only when a filter besides the status is set", () => {
+	test("an empty status tab reads as filtered, with Clear filters, only when a filter besides the status is set", () => {
 		const atStatus = (search: { q?: string; status: "accepted_risk" }) =>
-			routeChanged(loaded(), AppRoute.SecurityFindings({ search }), context).model
+			routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search }), context).model
 		scene(
 			{ update: pageUpdate, view },
 			given(atStatus({ status: "accepted_risk" })),
-			expectView(text("No findings match")).toExist(),
+			expectView(text("No findings in this status")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toBeAbsent(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(atStatus({ q: "exports", status: "accepted_risk" })),
+			expectView(text("No findings match these filters")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toExist(),
 		)
 	})
@@ -568,7 +569,7 @@ describe("security tabs", () => {
 			given(
 				routeChanged(
 					withOwn,
-					AppRoute.SecurityRuns({ search: { target: TARGET_IDS.dashboard } }),
+					AppRoute.SecurityCodeRuns({ search: { target: TARGET_IDS.dashboard } }),
 					context,
 				).model,
 			),
@@ -675,7 +676,7 @@ describe("spend and models", () => {
 	})
 
 	test("each run keeps what it reported, even when a later run saw the same finding again", () => {
-		const model = loaded(AppRoute.SecurityRuns({ search: {} }))
+		const model = loaded(AppRoute.SecurityCodeRuns({ search: {} }))
 		const criticalOf = (id: string) => runCountsOf(model, id)?.buckets.critical
 		expect([
 			criticalOf(RUN_IDS.billing),

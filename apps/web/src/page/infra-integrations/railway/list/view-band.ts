@@ -2,17 +2,20 @@ import type { RailwayEnvironmentStatus } from "@maple/domain/http"
 import { formatBytes, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { segmentedBar } from "../../../../ui/meter"
-import { skeleton } from "../../../../ui/skeleton"
+import { segmentedBar } from "@maple/views/ui/meter"
+import { skeleton, skeletonMeter } from "@maple/views/ui/skeleton"
 import { relativeTime } from "../../../kit/relative-time"
 import { statRailItem } from "../../../kit/stat-rail"
 import type { RailwayServiceRow } from "../model"
 import { fleetSync } from "./derive"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { borderedBoxClass } from "@maple/views/ui/bordered-box"
 
 // `RailwayFleetBand` and `RailwayFleetBandLoading`.
 
 /** `FLEET_BAND_BOXED`: a band standing alone on a page body. */
-export const FLEET_BAND_BOXED = "overflow-hidden rounded-md border"
+export const FLEET_BAND_BOXED = borderedBoxClass({ overflow: "hidden" })
 
 const STRIP_SLICES = 6
 const STRIP_FILLS = [
@@ -77,15 +80,13 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-[26rem] md:shrink-0")],
 				[
-					h.span(
-						[h.Class("flex items-baseline gap-1.5")],
+					hstack(h, { gap: "1.5", align: "baseline", as: "span" },
 						[
 							h.span(
 								[h.Class("font-mono text-base font-semibold tabular-nums")],
 								[formatBytes(total)],
 							),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
+							typography(h, { size: "2xs", tone: "muted" },
 								[
 									"summed average memory across ",
 									String(count),
@@ -109,8 +110,7 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 							...ranked
 								.slice(0, LEGEND_NAMES)
 								.map((row) =>
-									h.span(
-										[h.Class("truncate font-mono")],
+									typography(h, { mono: true, truncate: true },
 										[nameOf(row), " ", formatBytes(row.memoryAvg)],
 									),
 								),
@@ -146,7 +146,7 @@ export const railwayFleetBandLoading = <M>(h: HtmlBuilder<M>): Html =>
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-[26rem] md:shrink-0")],
 				[
 					skeleton(h, "h-4 w-48"),
-					skeleton(h, "h-1.5 w-full rounded-full"),
+					skeletonMeter(h),
 					skeleton(h, "h-2.5 w-56"),
 				],
 			),

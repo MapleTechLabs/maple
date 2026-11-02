@@ -6,11 +6,11 @@ import {
 	describeCloudflareIngestPhase,
 	FIRST_DATA_MINUTES,
 } from "../../components/infra/cloudflare/ingest-phase"
-import { alert, alertAction, alertDescription, alertTitle } from "../../ui/alert"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { meter } from "../../ui/meter"
-import { truncatedText } from "../../ui/truncated-text"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { meter } from "@maple/views/ui/meter"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import {
 	type CheckRow,
 	flowColumns,
@@ -31,6 +31,8 @@ import type { FlowStage } from "./flow"
 import { cloudflarePhaseOf, cloudflareReach, cloudflareStatusOf, cloudflareUsageOf } from "./flow-cloudflare"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // Cloudflare in the connect flow: approve Maple on Cloudflare's consent screen, then watch the
 // poller find zones and Workers and fill in the first data.
@@ -106,15 +108,13 @@ const accountList = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Html
 						size: 14,
 						className: account.revoked ? "shrink-0 text-severity-error" : "shrink-0 text-severity-info",
 					}),
-					h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col")],
+					vstack(h, { shrink: true, grow: true },
 						[
 							truncatedText(h, {
 								text: account.accountName ?? account.accountId,
 								className: "text-sm",
 							}),
-							h.span(
-								[h.Class("text-xs text-muted-foreground")],
+							typography(h, { size: "xs", tone: "muted" },
 								[
 									account.revoked
 										? "Access revoked"
@@ -165,25 +165,21 @@ const connectStep = (h: H, model: Model): Html => {
 				},
 				isConnected
 					? [
-							h.p(
-								[h.Class("text-sm text-muted-foreground")],
+							typography(h, { size: "sm", tone: "muted", as: "p" },
 								["Maple can read these accounts. Zones and Workers are found on their own."],
 							),
 							accountList(h, connectedAccountsOf(status)),
-							h.div(
-								[h.Class("flex flex-wrap items-center gap-3")],
+							hstack(h, { gap: "3", wrap: true },
 								[
 									connectButton(h, model, "Authorize again", "outline"),
-									h.span(
-										[h.Class("text-xs text-muted-foreground")],
+									typography(h, { size: "xs", tone: "muted" },
 										["Missing an account? Authorize again and tick it in Cloudflare."],
 									),
 								],
 							),
 						]
 					: [
-							h.p(
-								[h.Class("text-sm text-muted-foreground")],
+							typography(h, { size: "sm", tone: "muted", as: "p" },
 								[
 									"Cloudflare opens in a new window. Sign in, pick the accounts Maple may read and approve.",
 								],

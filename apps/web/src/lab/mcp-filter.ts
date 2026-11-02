@@ -86,7 +86,15 @@ export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 					]
 		})
 		.toSorted((a, b) => b.calls - a.calls)
+	// A quiet client (connects, no tool call) stays under a client or kind filter, as the API keeps it.
+	const keepsQuiet = needle === "" && !filters.isFailingOnly
 	const clients = MCP_OVERVIEW.clients.flatMap((client) => {
+		if (client.calls === 0)
+			return keepsQuiet &&
+				(filters.client === undefined || client.name === filters.client) &&
+				(filters.kind === undefined || client.kind === filters.kind)
+				? [client]
+				: []
 		const mine = pairs.filter((pair) => pair.client === client.name)
 		const calls = sum(mine, (pair) => pair.calls)
 		return calls === 0 ? [] : [{ ...client, calls, errors: sum(mine, (pair) => pair.errors) }]

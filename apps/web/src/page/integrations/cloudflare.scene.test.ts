@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../contract"
 import { describeCloudflareError, zoneStatus } from "./cloudflare-derive"
 import { Message } from "./message"

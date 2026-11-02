@@ -2,20 +2,22 @@ import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { getOnboardingSetupHint } from "../../lib/onboarding-intent"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
-import { button } from "../../ui/button"
-import { card, cardPanel } from "../../ui/card"
-import { copyableField } from "../../ui/copyable-field"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import { iconButton } from "../../ui/icon-button"
-import { listRow } from "../../ui/list-row"
-import { skeleton } from "../../ui/skeleton"
-import { statusDot } from "../../ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { card, cardPanel } from "@maple/views/ui/card"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { listRow } from "@maple/views/ui/list-row"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import * as GuidedSetup from "../kit/guided-setup"
 import { Message, type Model } from "./setup-checklist"
 import { frameworkOf, isMounted, realServices } from "./setup-checklist-update"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -61,7 +63,7 @@ const credentials = (h: H, model: Model): Html =>
 					? h.div(
 							[h.Class("space-y-1")],
 							[
-								h.span([h.Class("text-xs text-muted-foreground")], ["Private ingest key"]),
+								typography(h, { size: "xs", tone: "muted" }, ["Private ingest key"]),
 								skeleton(h, "h-8 w-full"),
 							],
 						)
@@ -118,7 +120,7 @@ const watchingStrip = (h: H): Html =>
 		[h.Class("flex items-center gap-2.5 rounded-md border border-dashed border-border px-4 py-3")],
 		[
 			statusDot(h, { tone: "ok" }),
-			h.span([h.Class("text-xs text-muted-foreground")], ["Listening for your first trace"]),
+			typography(h, { size: "xs", tone: "muted" }, ["Listening for your first trace"]),
 		],
 	)
 
@@ -142,14 +144,11 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 						[h.Class("min-w-0 flex-1 basis-40")],
 						[
 							h.p([h.Class("text-sm font-semibold tracking-tight")], ["First trace received"]),
-							h.p(
-								[h.Class("mt-0.5 text-xs text-muted-foreground")],
-								[
-									serviceName === undefined
-										? "Your telemetry is arriving."
-										: `${serviceName} is sending telemetry.`,
-								],
-							),
+							typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-0.5" }, [
+								serviceName === undefined
+									? "Your telemetry is arriving."
+									: `${serviceName} is sending telemetry.`,
+							]),
 						],
 					),
 					button(
@@ -209,29 +208,26 @@ const waitingCard = (
 						title: "Connect your app to see real data",
 						meta: getOnboardingSetupHint(intents),
 					}),
-					h.div(
-						[h.Class("flex items-center gap-1 shrink-0")],
-						[
-							iconButton(
-								h,
-								{
-									size: "icon",
-									label: isExpanded ? "Collapse" : "Expand",
-									attributes: [h.OnClick(Message.ClickedToggleExpanded())],
-								},
-								[icon(h, isExpanded ? "ChevronUpIcon" : "ChevronDownIcon", {})],
-							),
-							iconButton(
-								h,
-								{
-									size: "icon",
-									label: "Dismiss setup checklist",
-									attributes: [h.OnClick(Message.ClickedDismiss())],
-								},
-								[icon(h, "XmarkIcon", {})],
-							),
-						],
-					),
+					hstack(h, { gap: "1", className: "shrink-0" }, [
+						iconButton(
+							h,
+							{
+								size: "icon",
+								label: isExpanded ? "Collapse" : "Expand",
+								attributes: [h.OnClick(Message.ClickedToggleExpanded())],
+							},
+							[icon(h, isExpanded ? "ChevronUpIcon" : "ChevronDownIcon", {})],
+						),
+						iconButton(
+							h,
+							{
+								size: "icon",
+								label: "Dismiss setup checklist",
+								attributes: [h.OnClick(Message.ClickedDismiss())],
+							},
+							[icon(h, "XmarkIcon", {})],
+						),
+					]),
 				],
 			),
 			h.div(

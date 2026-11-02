@@ -4,11 +4,11 @@ import { countSkippedWindows, draftThresholds, focusPreviewOnClosestGroups } fro
 import { cn } from "@maple/ui/lib/utils"
 import { Struct } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { button } from "../../../ui/button"
-import { card } from "../../../ui/card"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { button } from "@maple/views/ui/button"
+import { card } from "@maple/views/ui/card"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { stableSlice } from "../../kit/stable-slice"
 import { presetLabel } from "../../kit/time-controls"
@@ -21,6 +21,8 @@ import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { DryRun, Model } from "./model"
 import { editImpact, type ImpactView } from "./view-impact"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `RuleLiveChartHero`: the evaluator's replay of the
 // draft with the threshold, would-fire bands and the dry-run verdict.
@@ -60,15 +62,14 @@ const breachPill = (h: H, stats: BreachStats): ReadonlyArray<Html> => {
 /** `PreviewBadge`: the dry run's value and verdict. */
 const dryRunBadge = (h: H, dryRun: DryRun, form: RuleForm): Html => {
 	if (dryRun.status === "skipped")
-		return h.span([h.Class("text-muted-foreground text-xs")], ["Skipped · insufficient samples"])
+		return typography(h, { size: "xs", tone: "muted" }, ["Skipped · insufficient samples"])
 	const isBreached = dryRun.status === "breached"
-	return h.div(
-		[h.Class("flex items-center gap-2")],
+	return hstack(h, { gap: "2" },
 		[
 			h.span(
 				[
 					h.Class(
-						cn("font-mono text-sm font-semibold tabular-nums", isBreached ? "text-severity-error" : "text-severity-info"),
+						cn(typographyClass({ size: "sm", weight: "semibold", mono: true, numeric: true }), isBreached ? "text-severity-error" : "text-severity-info"),
 					),
 				],
 				[formatSignalValue(displaySignalType(form), dryRun.value)],
@@ -88,10 +89,9 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 	return h.div(
 		[h.Class("flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2")],
 		[
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-2")],
+			hstack(h, { gap: "2", shrink: true },
 				[
-					badge(h, { variant: "outline", className: "font-mono text-xs" }, [conditionSubject(form)]),
+					badge(h, { variant: "outline", className: typographyClass({ size: "xs", mono: true }) }, [conditionSubject(form)]),
 					...(summary === null
 						? []
 						: [
@@ -103,8 +103,7 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 					...breachPill(h, stats),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-2")],
+			hstack(h, { gap: "2", className: "shrink-0" },
 				[
 					...(dryRun === null ? [] : [dryRunBadge(h, dryRun, form)]),
 					h.submodel({
@@ -167,8 +166,7 @@ const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Ht
 			}),
 			...(focused.hiddenGroupCount > 0
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
+						typography(h, { size: "2xs", tone: "muted", as: "p" },
 							[
 								"Showing the ",
 								String(focused.shownGroups.length),

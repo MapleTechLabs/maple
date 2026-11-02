@@ -4,10 +4,10 @@ import {
 	describeCloudflareIngestPhase,
 } from "../../../components/infra/cloudflare/ingest-phase"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { spinner } from "../../../ui/spinner"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { spinner } from "@maple/views/ui/spinner"
 import { integrationLinkActions, integrationNotConnected } from "../kit/empty-states"
 import type { Status, Usage } from "./data"
 

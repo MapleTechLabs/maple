@@ -13,9 +13,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
-import * as Menu from "../../../ui/menu"
-import { MountMenu } from "../../../ui/menu"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Menu from "@maple/views/ui/menu"
+import { MountMenu } from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { incidentRow, NOW, ORG } from "../shared/test-rows"
 import { monitorHref } from "../shared/uptime-commands"

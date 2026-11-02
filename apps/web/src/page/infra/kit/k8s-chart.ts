@@ -1,17 +1,17 @@
 import { cn } from "@maple/ui/lib/utils"
-import { formatValueWithUnit } from "../../../components/infra/chart-units"
+import { formatValueWithUnit } from "@maple/views/lib/infra-chart-units"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import type { ChartRuntime } from "../../../charts/chart-runtime"
-import type { ThemeColors } from "../../../charts/theme-colors"
-import { panel } from "../../../ui/panel"
+import * as Chart from "@maple/views/charts/chart"
+import type { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { panel } from "@maple/views/ui/panel"
 import {
 	type InfraSeriesInfo,
 	metricView as metricChartView,
 	titledHeader,
-} from "../../../charts/infra-metric-chart"
-import { chartError, chartLoading } from "../../../ui/chart-state"
+} from "@maple/views/charts/infra-metric-chart"
+import { chartError, chartLoading } from "@maple/views/ui/chart-state"
 import type { SeriesSlot } from "./series"
 import { seriesLegend } from "../../kit/series-legend"
 

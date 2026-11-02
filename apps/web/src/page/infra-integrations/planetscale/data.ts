@@ -7,7 +7,7 @@ import { getPlanetScaleBranchStats, getServiceMapPlanetScale } from "@maple/web-
 import { V2PlanetScaleDatabaseList, V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 

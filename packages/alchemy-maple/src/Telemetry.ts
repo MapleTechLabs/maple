@@ -25,13 +25,16 @@
  * when `endpoint` is a local `maple start` or your own collector.
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
+import { AlchemyContext } from "alchemy/AlchemyContext"
 import * as Output from "alchemy/Output"
 import { CurrentRuntimeContext, unpackEnvValue } from "alchemy/RuntimeContext"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import type { IngestKeys } from "./IngestKeys"
+import type { Local } from "./Local"
 
 // Alchemy's bundler folds this to `true` in a deployed bundle. Alchemy declares
 // it in a module this file does not import, so the declaration is repeated
@@ -50,6 +53,8 @@ export type ResourceInput<T> = T | Effect.Effect<T, never, unknown>
 export type TelemetrySdkOptions = Omit<MapleCloudflareSDK.Config, "ingestKey" | "endpoint" | "environment">
 
 export interface TelemetryProps extends TelemetrySdkOptions {
+	/** Shared Maple Local resource used only during `alchemy dev`; hosted settings remain deploy-only. */
+	readonly local?: ResourceInput<Local> | undefined
 	/**
 	 * Bound onto the host as the `MAPLE_INGEST_KEY` secret: the org's
 	 * {@link IngestKeys} resource (its private key is used), or a key in hand.
@@ -110,7 +115,7 @@ const sdkRequestLayer = (telemetry: MapleCloudflareSDK.Telemetry) =>
 	)
 
 export const Telemetry = (props: TelemetryProps): Layer.Layer<never> => {
-	const { ingestKey, endpoint, environment, ...config } = props
+	const { local, ingestKey, endpoint, environment, ...config } = props
 	const telemetry = MapleCloudflareSDK.make(config)
 	const bind = Layer.effectDiscard(
 		Effect.gen(function* () {
@@ -118,8 +123,16 @@ export const Telemetry = (props: TelemetryProps): Layer.Layer<never> => {
 			// Plan-time only: in the deployed bundle the bound values are already
 			// in the env, and the SDK reads them from there.
 			if (rc === undefined || globalThis.__ALCHEMY_RUNTIME__) return
-			if (ingestKey !== undefined) yield* rc.set("MAPLE_INGEST_KEY", yield* ingestKeyOutput(ingestKey))
-			if (endpoint !== undefined) yield* rc.set("MAPLE_ENDPOINT", Output.asOutput(endpoint))
+			const context = yield* Effect.serviceOption(AlchemyContext)
+			if (local !== undefined && Option.isSome(context) && context.value.dev) {
+				// Local dev exports keylessly to the shared Maple Local server.
+				const server = Effect.isEffect(local) ? yield* local : local
+				yield* rc.set("MAPLE_ENDPOINT", Output.asOutput(server.endpoint))
+			} else {
+				if (ingestKey !== undefined)
+					yield* rc.set("MAPLE_INGEST_KEY", yield* ingestKeyOutput(ingestKey))
+				if (endpoint !== undefined) yield* rc.set("MAPLE_ENDPOINT", Output.asOutput(endpoint))
+			}
 			if (environment !== undefined) yield* rc.set("MAPLE_ENVIRONMENT", Output.asOutput(environment))
 		}),
 	)

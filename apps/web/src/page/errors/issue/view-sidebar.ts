@@ -10,11 +10,11 @@ import {
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as CopyButton from "../../../ui/copy-button"
-import { detailRailField, detailRailGroup, detailRailRow } from "../../../ui/detail-rail"
-import * as SelectView from "../../../ui/select-view"
-import { serviceDot } from "../../../ui/values"
+import { button } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { detailRailField, detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
+import * as SelectView from "@maple/views/ui/select-view"
+import { serviceDot } from "@maple/views/ui/values"
 import { actorChip } from "../kit/actor"
 import { clampPriority, PRIORITY_LABEL, priorityBarsIcon } from "../kit/priority"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
@@ -23,6 +23,8 @@ import { Message } from "./message"
 import { leaseHud } from "./view-lease"
 import type { Model } from "./model"
 import { sidebarBusy } from "./writes"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The issue sidebar with its state and severity selects.
 // TODO(lease): a held lease should render the lease HUD with Extend and Release; Claim is inert here.
@@ -69,7 +71,7 @@ const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 ]
 
 const withIcon = (h: H, mark: Html, label: string): ReadonlyArray<Html> => [
-	h.span([h.Class("flex items-center gap-2")], [mark, label]),
+	hstack(h, { gap: "2", as: "span" }, [mark, label]),
 ]
 
 const stateSelect = (h: H, model: Model, current: WorkflowState): Html =>
@@ -88,14 +90,11 @@ const stateSelect = (h: H, model: Model, current: WorkflowState): Html =>
 			renderItem: (option) =>
 				isWorkflowState(option.value)
 					? [
-							h.span(
-								[h.Class("flex items-center gap-2")],
-								[
-									workflowRingIcon(h, option.value),
-									option.label,
-									...(option.value === current ? [" (current)"] : []),
-								],
-							),
+							hstack(h, { gap: "2", as: "span" }, [
+								workflowRingIcon(h, option.value),
+								option.label,
+								...(option.value === current ? [" (current)"] : []),
+							]),
 						]
 					: [option.label],
 			toView: (parts) => h.div([h.Class("contents")], parts),
@@ -130,7 +129,7 @@ const severitySelect = (h: H, model: Model): Html =>
 const ENVIRONMENT_ROWS_SHOWN = 4
 
 const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironment>): Html => {
-	if (environments.length === 0) return h.span([h.Class("text-xs text-muted-foreground")], [EMPTY_VALUE])
+	if (environments.length === 0) return typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
 	const shown = environments.slice(0, ENVIRONMENT_ROWS_SHOWN)
 	const hidden = environments.length - shown.length
 	return h.ul(
@@ -140,9 +139,10 @@ const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironmen
 				h.li(
 					[h.Class("flex min-w-0 items-baseline justify-between gap-3")],
 					[
-						h.span([h.Class("truncate text-sm text-foreground")], [env.name]),
-						h.span(
-							[h.Class("shrink-0 font-mono text-2xs tabular-nums text-muted-foreground")],
+						typography(h, { size: "sm", tone: "foreground", truncate: true }, [env.name]),
+						typography(
+							h,
+							{ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
 							[formatNumber(env.count)],
 						),
 					],
@@ -201,37 +201,34 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 				)
 			: undefined
 	if (hud !== undefined)
-		return h.div(
-			[h.Class("flex flex-col gap-2")],
-			[
-				...(hud === null ? [] : [hud]),
-				h.div(
-					[h.Class("flex justify-end gap-1")],
-					[
-						button(
-							h,
-							{
-								size: "xs",
-								variant: "ghost",
-								isLoading: sidebarBusy(model) === "heartbeat",
-								attributes: [h.OnClick(Message.ClickedExtendLease())],
-							},
-							["Extend"],
-						),
-						button(
-							h,
-							{
-								size: "xs",
-								variant: "ghost",
-								isLoading: sidebarBusy(model) === "release",
-								attributes: [h.OnClick(Message.ClickedReleaseLease())],
-							},
-							["Release"],
-						),
-					],
-				),
-			],
-		)
+		return vstack(h, { gap: "2" }, [
+			...(hud === null ? [] : [hud]),
+			h.div(
+				[h.Class("flex justify-end gap-1")],
+				[
+					button(
+						h,
+						{
+							size: "xs",
+							variant: "ghost",
+							isLoading: sidebarBusy(model) === "heartbeat",
+							attributes: [h.OnClick(Message.ClickedExtendLease())],
+						},
+						["Extend"],
+					),
+					button(
+						h,
+						{
+							size: "xs",
+							variant: "ghost",
+							isLoading: sidebarBusy(model) === "release",
+							attributes: [h.OnClick(Message.ClickedReleaseLease())],
+						},
+						["Release"],
+					),
+				],
+			),
+		])
 	return detailRailRow(h, { label: canClaim ? "Unclaimed" : "Closed" }, [
 		canClaim
 			? button(
@@ -245,7 +242,7 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 					},
 					["Claim"],
 				)
-			: h.span([h.Class("text-xs text-muted-foreground")], ["No lease needed"]),
+			: typography(h, { size: "xs", tone: "muted" }, ["No lease needed"]),
 	])
 }
 
@@ -272,25 +269,21 @@ export const issueSidebar = (
 					[severitySelect(h, model)],
 				),
 				detailRailRow(h, { label: "Priority" }, [
-					h.span(
-						[h.Class("flex items-center gap-2")],
-						[
-							priorityBarsIcon(h, priority, 12),
-							h.span([h.Class("text-sm text-foreground")], [PRIORITY_LABEL[priority]]),
-						],
-					),
+					hstack(h, { gap: "2", as: "span" }, [
+						priorityBarsIcon(h, priority, 12),
+						typography(h, { size: "sm", tone: "foreground" }, [PRIORITY_LABEL[priority]]),
+					]),
 				]),
 				detailRailRow(h, { label: "Assignee" }, [actorChip(h, issue.assignedActor)]),
 			]),
 			detailRailGroup(h, "Scope", [
 				detailRailField(h, { label: "Service", title: issue.serviceName }, [
-					h.span(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
-							h.span([h.Class("truncate text-sm text-foreground")], [issue.serviceName]),
-						],
-					),
+					hstack(h, { gap: "2", shrink: true, as: "span" }, [
+						serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
+						typography(h, { size: "sm", tone: "foreground", truncate: true }, [
+							issue.serviceName,
+						]),
+					]),
 				]),
 				detailRailField(
 					h,
@@ -309,8 +302,9 @@ export const issueSidebar = (
 								h,
 								{ label: "Resolved in", title: issue.resolvedVersions.join(", ") },
 								[
-									h.span(
-										[h.Class("truncate font-mono text-xs text-foreground")],
+									typography(
+										h,
+										{ size: "xs", tone: "foreground", mono: true, truncate: true },
 										[issue.resolvedVersions.join(", ")],
 									),
 								],

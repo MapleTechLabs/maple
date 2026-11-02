@@ -10,14 +10,10 @@ import {
 	ingestedSince,
 	storeChangedSince,
 	mapleCommand,
-	parseElapsedSeconds,
-	parseProcStartedAtMs,
 	prettyPath,
 	shellWord,
-	startedBeforeWrite,
 	hostedDashboardUrl,
 	hostedUiOrigin,
-	isProcessAlive,
 	type DirtyStorePolicy,
 	resolveAdvertiseHost,
 	resolveBindHost,
@@ -25,6 +21,12 @@ import {
 	serverUrl,
 	validateHost,
 } from "../src/commands/server-args"
+import {
+	isProcessAlive,
+	parseElapsedSeconds,
+	parseProcStartedAtMs,
+	startedBeforeWrite,
+} from "@maple/local-server/store-claim"
 
 describe("local server bind host", () => {
 	it("defaults to loopback and accepts a trimmed environment override", () => {

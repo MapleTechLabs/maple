@@ -1,10 +1,10 @@
 import { BillingProfile, BillingTaxId } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../../data/load-failure"
-import * as Combobox from "../../../../ui/combobox"
-import * as Dialog from "../../../../ui/dialog"
-import * as Select from "../../../../ui/select"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Select from "@maple/views/ui/select"
 
 // `BillingDetailsDialog` and `BillingTaxIdsEditor` (apps/web/src/components/settings/): company
 // name and address saved together, tax IDs saved one by one as they are added or removed.

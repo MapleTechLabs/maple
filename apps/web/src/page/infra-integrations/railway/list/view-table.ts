@@ -2,7 +2,7 @@ import type { RailwayEnvironmentStatus } from "@maple/domain/http"
 import { formatBytes, pluralize } from "@maple/ui/lib/format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { skeleton } from "../../../../ui/skeleton"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, skeletonRows, ROW_LINK_CLASS } from "../../../infra/kit/data-table"
 import { meterRows } from "../../../infra/kit/meter-rows"
 import { avgPeak } from "../../../infra/kit/avg-peak"
@@ -12,6 +12,7 @@ import type { RailwayServiceRow } from "../model"
 import { formatVcpu, groupedRows, type RailwayRowView, type RailwaySync, rowKey } from "./derive"
 import { Message } from "./message"
 import type { SortKey } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `RailwayServiceTable` and `RailwayServiceTableLoading`.
 
@@ -123,13 +124,18 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 			h.div(
 				[h.Class("w-0 min-w-60 flex-1")],
 				[
-					h.div(
-						[
-							h.Class(
-								"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-							),
-							h.Title(view.displayName),
-						],
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							weight: "medium",
+							mono: true,
+							truncate: true,
+							as: "div",
+							className: "transition-colors group-hover:text-primary",
+							attributes: [h.Title(view.displayName)],
+						},
 						[view.displayName],
 					),
 				],
@@ -178,7 +184,11 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 						value: view.lastSeen,
 						...clock,
 						mono: true,
-						className: "cursor-default text-2xs text-muted-foreground",
+						className: typographyClass({
+							size: "2xs",
+							tone: "muted",
+							className: "cursor-default",
+						}),
 						trigger: trigger(ids.seen),
 					}),
 				],
@@ -210,7 +220,7 @@ export const railwayTable = (h: H, inputs: RailwayTableInputs): Html =>
 					),
 				],
 				[
-					h.span([h.Class("font-medium text-foreground")], [group.projectName]),
+					typography(h, { tone: "foreground", weight: "medium" }, [group.projectName]),
 					h.span([h.Class("text-muted-foreground")], ["/ ", group.environmentName]),
 					h.span(
 						[h.Class("ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground")],

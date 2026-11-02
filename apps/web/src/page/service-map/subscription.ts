@@ -1,6 +1,6 @@
 import { Option, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
-import * as ServiceMap from "../../service-map/map/service-map"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import type { PageSubscriptionInput } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"

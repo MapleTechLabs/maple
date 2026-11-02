@@ -2,17 +2,17 @@ import { shortId } from "@maple/ui/lib/ids"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import { view as traceFlowView } from "../../../service-map/trace-flow/view"
-import type * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
-import { errorState } from "../../../ui/error-state"
-import { icon, type IconName } from "../../../ui/icon"
-import { pageTitle } from "../../../ui/page-layout"
-import { traceIdBadge } from "../../../ui/trace-badges"
-import type * as Dialog from "../../../ui/dialog"
-import * as DialogView from "../../../ui/dialog-view"
-import * as Resizable from "../../../ui/resizable"
-import type * as Tabs from "../../../ui/tabs"
-import * as TabsView from "../../../ui/tabs-view"
+import { view as traceFlowView } from "@maple/views/service-map/trace-flow/view"
+import type * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { traceIdBadge } from "@maple/views/ui/trace-badges"
+import type * as Dialog from "@maple/views/ui/dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import * as Resizable from "@maple/views/ui/resizable"
+import type * as Tabs from "@maple/views/ui/tabs"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import type { PageViewInputs } from "../../contract"
 import type { BreadcrumbEntry } from "../../../shell"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -31,6 +31,7 @@ import { errorCallout, productEvents, traceErrors } from "./view-findings"
 import { detailLoading, traceNotFound } from "./view-states"
 import { anatomyStrip } from "./view-summary"
 import * as Waterfall from "./waterfall"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // The trace detail page on `ResultPage`.
 
@@ -91,7 +92,7 @@ export const traceViewTabs = (h: HtmlBuilder<Message>, model: Model): Html =>
 		viewInputs: {
 			variant: "underline",
 			labels: ["Waterfall", "Timeline", "Flow"],
-			className: "flex flex-col h-full",
+			className: vstackClass({ className: "h-full" }),
 			listClassName: "shrink-0",
 			panelClassName: "flex-1 min-h-0",
 			tabContent: (value: string, label: string) => [

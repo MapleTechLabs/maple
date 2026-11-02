@@ -2,7 +2,7 @@ import { formatPercent } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
+import { badge } from "@maple/views/ui/display"
 import type { SupabaseProjectRow } from "./model"
 
 // One verdict per project, shared by the overview, the project page and the integration card.

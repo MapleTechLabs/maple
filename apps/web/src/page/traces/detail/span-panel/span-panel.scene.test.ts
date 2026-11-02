@@ -2,8 +2,8 @@ import { SpanId, TraceId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../../data/load-failure"
-import * as Tabs from "../../../../ui/tabs"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Tabs from "@maple/views/ui/tabs"
 import type { SpanNodeData } from "../trace-data"
 import { FetchSpanDetail, FetchSpanLogs } from "./command"
 import { Message, OutMessage } from "./message"
@@ -50,13 +50,12 @@ const loaded = (): Model => {
 	].reduce((model, message) => update(model, message).model, entered)
 }
 
+// The tab strip is a Tabs Submodel, so its mount resolves with the Submodel's own Message.
 const indicatorMeasured = () =>
-	Mount.resolve<string, Message>(
+	Mount.resolve(
 		Tabs.MeasureTabIndicator,
-		Message.GotTabsMessage({
-			message: Tabs.Message.MeasuredIndicator({
-				rect: { left: 16, right: 300, top: 4, bottom: 5, width: 96, height: 32 },
-			}),
+		Tabs.Message.MeasuredIndicator({
+			rect: { left: 16, right: 300, top: 4, bottom: 5, width: 96, height: 32 },
 		}),
 	)
 

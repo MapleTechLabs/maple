@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../ui/icon"
-import { manifestGlyph } from "../../ui/manifest-glyph"
+import { icon } from "@maple/views/ui/icon"
+import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { type IntegrationBrand, integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import type { CatalogEntry } from "./catalog"
 

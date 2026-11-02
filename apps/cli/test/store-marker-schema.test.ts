@@ -7,8 +7,8 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { makeStoreMarker, readMarkerState, storeMarkerPath } from "../src/server/store-version"
-import { CHDB_VERSION } from "../src/version"
+import { makeStoreMarker, readMarkerState, storeMarkerPath } from "@maple/local-server/store-version"
+import { CHDB_VERSION } from "@maple/local-server/version"
 
 const goldenV1 = {
 	chdb: "1.4.0",

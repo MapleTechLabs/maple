@@ -6,22 +6,22 @@ import {
 	findMetric,
 	isMetricAvailable,
 	metricDelta,
-} from "../../components/analytics/metrics"
+} from "@maple/views/lib/analytics-metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { chartLoading } from "../../ui/chart-state"
-import { isSameFailure } from "../../data/load-failure"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { delta } from "../../ui/delta"
-import { listRow } from "../../ui/list-row"
-import { panel, panelHeader } from "../../ui/panel"
-import { skeleton } from "../../ui/skeleton"
-import { truncatedId } from "../../ui/truncated-id"
+import { chartLoading } from "@maple/views/ui/chart-state"
+import { isSameFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { delta } from "@maple/views/ui/delta"
+import { listRow } from "@maple/views/ui/list-row"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { truncatedId } from "@maple/views/ui/truncated-id"
 import { sectionHeading } from "../kit/section-heading"
 import { docsLink } from "../kit/signal-empty-state"
 import { statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
@@ -31,6 +31,7 @@ import { filtersOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
+import { hstack } from "@maple/views/ui/stack"
 
 // `AnalyticsContent`: bot notice, metric strip, traffic chart, the
 // breakdown cards and the traces behind a filtered event.
@@ -244,8 +245,10 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 								favicon(h, model, row.secondary ?? "")
 						: undefined,
 					emptyMessage: (h: H) => [
-						"No page views in the selected window.",
-						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "webAnalytics")]),
+						"No page views in this window",
+						hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+							docsLink(h, "webAnalytics"),
+						]),
 					],
 				},
 				{
@@ -337,8 +340,10 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 					nounPlural: "events",
 					viewsLabel: "Events",
 					emptyMessage: (h: H) => [
-						'No custom events in the selected window. Send one with track("name", props) from the browser SDK.',
-						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "productEventsApi")]),
+						'No custom events in this window. Send one with track("name", props) from the browser SDK.',
+						hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+							docsLink(h, "productEventsApi"),
+						]),
 					],
 				},
 			],

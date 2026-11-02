@@ -1,11 +1,11 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../charts/chart"
-import { ThemeColors } from "../../charts/theme-colors"
-import { LoadFailure } from "../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
-import * as Dialog from "../../ui/dialog"
-import * as FilterSections from "../../ui/filters/filter-sections"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresences } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 
@@ -67,6 +67,8 @@ export const Message = defineMessageUnion({
 	ClickedRetryBreakdowns: {},
 	/** The one page block shown when summary and breakdowns fail the same way: retries both. */
 	ClickedRetrySummaryAndBreakdowns: {},
+	ClickedRetryAiReferrals: {},
+	ClickedRetryAiCrawlers: {},
 	/** A sidebar option or a breakdown row: the value toggles in or out of the URL. */
 	ToggledFilter: { key: FilterKey, value: Schema.String },
 	/** A sidebar section picked a single value (or cleared it). */
