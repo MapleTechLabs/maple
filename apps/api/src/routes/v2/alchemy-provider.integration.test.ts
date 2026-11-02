@@ -18,7 +18,7 @@ import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
-import type { ScopedPlanStatusSession } from "alchemy/Cli/Cli"
+import { noopSession } from "alchemy/Report"
 import { Stack } from "alchemy/Stack"
 import { Stage } from "alchemy/Stage"
 import {
@@ -93,11 +93,7 @@ const warehouseStub = makeWarehouseServiceStub({
 	ingest: () => Effect.void,
 })
 
-const session: ScopedPlanStatusSession = {
-	emit: () => Effect.void,
-	done: () => Effect.void,
-	note: () => Effect.void,
-}
+const session = noopSession
 
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
