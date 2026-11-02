@@ -383,3 +383,91 @@ export function mcpCallListQuery(order: McpCallOrder, filter: McpCallFilter, lim
 		.limit(limit)
 		.format("JSON")
 }
+
+// Sessions: one server's requests grouped by `mcp.session.id`, which only a stateful transport
+// issues. A session's client is read off its requests, which all carry the same one.
+
+const sessionId = ($: TracesRow) => $.SpanAttributes.get("mcp.session.id")
+const failedCall = ($: TracesRow) => method($).eq("tools/call").and(failed($))
+
+/** The sessions toolbar's selection. */
+export interface McpSessionFilter {
+	readonly client?: string
+	readonly kind?: McpClientKind
+	/** Case-insensitive session-id substring. */
+	readonly search?: string
+	/** Sessions with at least one failed tool call. */
+	readonly failingOnly?: boolean
+}
+
+const sessionRequests = ($: TracesRow, filter: McpSessionFilter) => [
+	...serverSpans($),
+	sessionId($).neq(""),
+	CH.when(filter.client, (client) => mcpClientName($).eq(client)),
+	CH.when(filter.kind, (kind) => mcpClientKind($).eq(kind)),
+	CH.when(filter.search, (search) => sessionId($).ilike(`%${likeLiteral(search)}%`)),
+]
+
+/** One row per session under the selection, the latest first. */
+export function mcpSessionListQuery(filter: McpSessionFilter = {}, limit = 200) {
+	return from(Traces)
+		.select(($) => ({
+			sessionId: sessionId($),
+			client: CH.anyIf(mcpClientName($), userAgent($).neq("")),
+			kind: CH.anyIf(mcpClientKind($), userAgent($).neq("")),
+			requests: CH.count(),
+			calls: CH.countIf(method($).eq("tools/call")),
+			errors: CH.countIf(failedCall($)),
+			tools: CH.uniqExact(CH.nullIf(toolName($), "")),
+			firstSeen: CH.min_($.Timestamp),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => sessionRequests($, filter))
+		.groupBy("sessionId")
+		.having(($) => [
+			CH.when(filter.failingOnly === true ? true : undefined, () => CH.countIf(failedCall($)).gt(0)),
+		])
+		.orderBy(["lastSeen", "desc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+/** The selection's session count and the tool calls they made; failing-only does not narrow it. */
+export function mcpSessionTotalsQuery(filter: McpSessionFilter = {}) {
+	return from(Traces)
+		.select(($) => ({
+			sessions: CH.uniqExact(sessionId($)),
+			failingSessions: CH.uniqExact(CH.nullIf(CH.if_(failedCall($), sessionId($), CH.lit("")), "")),
+			calls: CH.countIf(method($).eq("tools/call")),
+			errors: CH.countIf(failedCall($)),
+		}))
+		.where(($) => sessionRequests($, filter))
+		.format("JSON")
+}
+
+/**
+ * One session's requests in order, every method. A caller that sent `params._meta` is the span's
+ * own trace; the first link is the HTTP request's span, or the caller's on a server that only links.
+ */
+export function mcpSessionRequestsQuery(limit = 1_000) {
+	return from(Traces)
+		.select(($) => ({
+			timestamp: $.Timestamp,
+			method: method($),
+			tool: toolName($),
+			client: mcpClientName($),
+			kind: mcpClientKind($),
+			requestId: $.SpanAttributes.get("jsonrpc.request.id"),
+			protocolVersion: $.SpanAttributes.get("mcp.protocol.version"),
+			duration: $.Duration,
+			errorType: errorType($),
+			message: $.StatusMessage,
+			traceId: $.TraceId,
+			spanId: $.SpanId,
+			linkTraceId: CH.arrayElement($.LinksTraceId, 1),
+		}))
+		.where(($) => [...serverSpans($), sessionId($).eq(param.string("sessionId"))])
+		.orderBy(["timestamp", "asc"])
+		.limit(limit)
+		.format("JSON")
+}

@@ -694,11 +694,15 @@ export {
 	mcpServerSparkQuery,
 	mcpServerStatsQuery,
 	mcpServicesQuery,
+	mcpSessionListQuery,
+	mcpSessionRequestsQuery,
+	mcpSessionTotalsQuery,
 	mcpSpanSummaryQuery,
 	mcpToolErrorsQuery,
 	mcpToolStatsQuery,
 	type McpCallFilter,
 	type McpCallOrder,
+	type McpSessionFilter,
 } from "./queries/mcp"
 
 // Queries — Infrastructure (host-centric aggregations over hostmetrics)

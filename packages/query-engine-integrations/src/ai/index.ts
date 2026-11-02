@@ -27,6 +27,7 @@ export {
 	aiTraceSummaryQuery,
 	aiTraceTotalsQuery,
 	aiTraceWindowQuery,
+	aiSessionsOfTracesQuery,
 	idSearchPattern,
 	type AiSessionDistributionMeasure,
 	type AiSessionDistributionsOutput,

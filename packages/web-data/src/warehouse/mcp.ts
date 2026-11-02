@@ -1,8 +1,15 @@
-// The warehouse reads behind the MCP hub (`/mcp-servers`, a server's overview, its tool page).
+// The warehouse reads behind the MCP hub (`/mcp-servers`, a server's overview, its tool page, its sessions).
 // The API already returns epoch-ms times and nanosecond durations, so these pass through.
 
 import { Effect, Schema } from "effect"
-import { McpClientKind, McpOverviewRequest, McpServersRequest, McpToolRequest } from "@maple/domain/http"
+import {
+	McpClientKind,
+	McpOverviewRequest,
+	McpServersRequest,
+	McpSessionRequest,
+	McpSessionsRequest,
+	McpToolRequest,
+} from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
@@ -33,6 +40,23 @@ const McpToolInput = Schema.Struct({
 	failingOnly: Schema.optional(Schema.Boolean),
 })
 export type McpToolInput = typeof McpToolInput.Type
+
+const McpSessionsInput = Schema.Struct({
+	...McpWindowInput.fields,
+	service: text,
+	client: Schema.optional(text),
+	kind: Schema.optional(McpClientKind),
+	search: Schema.optional(text),
+	failingOnly: Schema.optional(Schema.Boolean),
+})
+export type McpSessionsInput = typeof McpSessionsInput.Type
+
+const McpSessionInput = Schema.Struct({
+	...McpWindowInput.fields,
+	service: text,
+	sessionId: text,
+})
+export type McpSessionInput = typeof McpSessionInput.Type
 
 /** Absent optionals stay absent on the wire. */
 const selection = (input: { client?: string; kind?: McpClientKind }) => ({
@@ -90,6 +114,36 @@ export const getMcpTool = Effect.fn("Mcp.tool")(function* ({ data }: { data: Mcp
 					...(input.failingOnly === true && { failingOnly: true }),
 				}),
 			})
+		}),
+	)
+})
+
+export const getMcpSessions = Effect.fn("Mcp.sessions")(function* ({ data }: { data: McpSessionsInput }) {
+	const input = yield* decodeInput(McpSessionsInput, data, "mcpSessions")
+	return yield* runWarehouseQuery("mcpSessions", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.mcpInternal.sessions({
+				payload: new McpSessionsRequest({
+					service: input.service,
+					startTime: input.startTime,
+					endTime: input.endTime,
+					bucketSeconds: input.bucketSeconds,
+					...selection(input),
+					...(input.search !== undefined && { search: input.search }),
+					...(input.failingOnly === true && { failingOnly: true }),
+				}),
+			})
+		}),
+	)
+})
+
+export const getMcpSession = Effect.fn("Mcp.session")(function* ({ data }: { data: McpSessionInput }) {
+	const input = yield* decodeInput(McpSessionInput, data, "mcpSession")
+	return yield* runWarehouseQuery("mcpSession", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.mcpInternal.session({ payload: new McpSessionRequest(input) })
 		}),
 	)
 })

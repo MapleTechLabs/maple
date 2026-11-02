@@ -485,6 +485,12 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 	},
 	{
 		module: "ai-sessions",
+		name: "aiSessionsOfTracesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiSessionsOfTracesQuery([AI_TRACE_ID]), window),
+	},
+	{
+		module: "ai-sessions",
 		name: "aiTraceSpansQuery",
 		label: "default",
 		compile: () =>

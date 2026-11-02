@@ -1,12 +1,10 @@
 import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
-import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../ui/empty"
 import { filteredEmpty } from "../kit/signal-empty-state"
 import { icon } from "../../ui/icon"
-import { meter } from "../../ui/meter"
 import { miniBars } from "../../ui/mini-bars"
 import {
 	shareCell,
@@ -23,6 +21,7 @@ import {
 	attr,
 	clientIcon,
 	clientPlot,
+	durationMeterCell,
 	durationSeries,
 	errorTypeChip,
 	formatClock,
@@ -33,6 +32,7 @@ import {
 	mcpPlot,
 	mcpScopeRow,
 	numberCell,
+	resultCell,
 	sectionTitle,
 	seriesRows,
 } from "./view-kit"
@@ -260,30 +260,8 @@ const callRow = <M>(h: HtmlBuilder<M>, call: McpCallRow, max: number, options: T
 				`#${call.requestId}`,
 				"hidden w-16 text-foreground-subtle @min-[640px]/panel:block",
 			),
-			h.span(
-				[h.Class("flex w-52 shrink-0 items-center justify-end gap-2.5")],
-				[
-					meter(h, {
-						value: call.durationNs,
-						max,
-						minVisible: 3,
-						fillClassName: call.errorType === null ? "bg-primary" : "bg-severity-error",
-						className: "hidden w-28 shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
-					}),
-					h.span(
-						[h.Class("w-14 text-right font-mono text-xs tabular-nums")],
-						[formatDurationNs(call.durationNs)],
-					),
-				],
-			),
-			h.span(
-				[h.Class("w-28 shrink-0 pl-4")],
-				[
-					call.errorType === null
-						? h.span([h.Class("font-mono text-xs text-foreground-subtle")], ["ok"])
-						: errorTypeChip(h, call.errorType),
-				],
-			),
+			durationMeterCell(h, { durationNs: call.durationNs, max, isFailed: call.errorType !== null }),
+			resultCell(h, call.errorType),
 			numberCell(
 				h,
 				call.traceId.slice(0, 8),

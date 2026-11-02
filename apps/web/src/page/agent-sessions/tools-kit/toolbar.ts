@@ -68,8 +68,14 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 }
 
 export type ToolbarConfig<M> = Readonly<{
-	/** The tool-name search (overview only): what is typed, and its Messages. */
-	nameSearch?: Readonly<{ value: string; inputId: string; onInput: (value: string) => M; onClear: M }>
+	/** The name search (overview only): what is typed, and its Messages. Searches tools unless `placeholder` says. */
+	nameSearch?: Readonly<{
+		value: string
+		inputId: string
+		placeholder?: string
+		onInput: (value: string) => M
+		onClear: M
+	}>
 	selects: ReadonlyArray<Html>
 	isFailingOnly: boolean
 	onToggleFailingOnly: M
@@ -81,7 +87,7 @@ const nameSearchInput = <M>(h: HtmlBuilder<M>, search: NonNullable<ToolbarConfig
 		id: search.inputId,
 		size: "sm",
 		className: "w-full max-w-sm font-mono",
-		placeholder: "Tool name…",
+		placeholder: search.placeholder ?? "Tool name…",
 		value: search.value,
 		onInput: search.onInput,
 		onClear: search.onClear,

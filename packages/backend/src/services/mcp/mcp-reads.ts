@@ -1,17 +1,23 @@
 import {
 	McpOverviewResponse,
 	McpServersResponse,
+	McpSessionResponse,
+	McpSessionsResponse,
 	McpToolResponse,
 	type McpCallItem,
 	type McpClientItem,
 	type McpOverviewRequest,
 	type McpSeriesPoint,
 	type McpServersRequest,
+	type McpSessionRequest,
+	type McpSessionRequestItem,
+	type McpSessionsRequest,
 	type McpToolRequest,
 } from "@maple/domain/http"
-import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
+import { MCP_CLIENT_KINDS, UNKNOWN_MCP_CLIENT } from "@maple/domain/mcp-clients"
 import { Array as Arr, DateTime, Effect } from "effect"
-import { CH, parseWarehouseDateTime } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import * as Integrations from "@maple/query-engine-integrations"
 import { timestampMs } from "@maple/backend/platform/time"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -521,5 +527,163 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 		slowest: slowest.map(callItem),
 		failed: failed.map(callItem),
 		recent: recent.map(callItem),
+	})
+})
+
+/** Sessions the list reads at most. */
+const SESSION_LIST_LIMIT = 200
+/** Requests the session page reads at most; one more tells it the session was cut. */
+const SESSION_REQUEST_LIMIT = 1_000
+/** An agent turn can start this long before its first MCP call, and only its first spans may name the session. */
+const AGENT_TURN_LEAD_MS = 3_600_000
+
+export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
+	tenant: TenantContext,
+	payload: McpSessionsRequest,
+) {
+	const warehouse = yield* WarehouseQueryService
+	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.mcp.service": payload.service })
+	const window = windowOf(payload)
+	const params = { orgId: tenant.orgId, serviceName: payload.service, ...window }
+	const selection: CH.McpSessionFilter = {
+		client: payload.client,
+		kind: payload.kind,
+		search: payload.search,
+	}
+	const aggregate = { profile: "aggregation" } as const
+	const [summary, allClients, totals, sessions] = yield* Effect.all(
+		[
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSpanSummaryQuery(), params), {
+				...aggregate,
+				context: "mcpSessionCoverage",
+			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientsQuery(), params), {
+				...aggregate,
+				context: "mcpSessionClients",
+			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSessionTotalsQuery(selection), params), {
+				...aggregate,
+				context: "mcpSessionTotals",
+			}),
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.mcpSessionListQuery(
+						{ ...selection, failingOnly: payload.failingOnly },
+						SESSION_LIST_LIMIT,
+					),
+					params,
+				),
+				{ ...aggregate, context: "mcpSessionList" },
+			),
+		],
+		{ concurrency: MCP_READ_CONCURRENCY },
+	)
+	const calls = summary.filter((row) => row.method === TOOLS_CALL)
+	const total = totals[0]
+	yield* Effect.annotateCurrentSpan({ "maple.mcp.sessions": total?.sessions ?? 0 })
+	return new McpSessionsResponse({
+		service: payload.service,
+		totals: {
+			sessions: total?.sessions ?? 0,
+			failingSessions: total?.failingSessions ?? 0,
+			calls: total?.calls ?? 0,
+			errors: total?.errors ?? 0,
+		},
+		toolCalls: sumBy(calls, (row) => row.spans),
+		withSession: sumBy(calls, (row) => row.withSession),
+		sessions: sessions.map((row) => ({
+			sessionId: row.sessionId,
+			client: row.client === "" ? UNKNOWN_MCP_CLIENT : row.client,
+			kind: kindOf(row.kind),
+			requests: row.requests,
+			calls: row.calls,
+			errors: row.errors,
+			tools: row.tools,
+			firstSeenMs: toMs(row.firstSeen),
+			lastSeenMs: toMs(row.lastSeen),
+		})),
+		allClients: clientItems(allClients),
+	})
+})
+
+type SessionRow = Readonly<{ traceId: string; linkTraceId: string }>
+
+/** Each request's caller traces, its own first: `params._meta` parents the span, a link is the fallback. */
+const callerTraces = (row: SessionRow): ReadonlyArray<string> =>
+	[row.traceId, row.linkTraceId].filter((id) => id !== "")
+
+/** The Agent Session of each request: the first of its caller traces that one is filed under. */
+export const agentSessionsOf = (
+	rows: ReadonlyArray<SessionRow>,
+	filed: ReadonlyArray<Readonly<{ traceId: string; sessionId: string }>>,
+): ReadonlyArray<string | null> => {
+	const sessionOf = new Map(filed.map((row) => [row.traceId, row.sessionId]))
+	return rows.map((row) => callerTraces(row).flatMap((id) => sessionOf.get(id) ?? [])[0] ?? null)
+}
+
+export const readMcpSession = Effect.fn("McpReads.session")(function* (
+	tenant: TenantContext,
+	payload: McpSessionRequest,
+) {
+	const warehouse = yield* WarehouseQueryService
+	yield* Effect.annotateCurrentSpan({
+		orgId: tenant.orgId,
+		"maple.mcp.service": payload.service,
+		"maple.mcp.session.id": payload.sessionId,
+	})
+	const window = windowOf(payload)
+	const params = {
+		orgId: tenant.orgId,
+		serviceName: payload.service,
+		sessionId: payload.sessionId,
+		...window,
+	}
+	const read = yield* warehouse.compiledQuery(
+		tenant,
+		CH.compile(CH.mcpSessionRequestsQuery(SESSION_REQUEST_LIMIT + 1), params),
+		{ profile: "list", context: "mcpSessionRequests" },
+	)
+	const rows = read.slice(0, SESSION_REQUEST_LIMIT)
+	const traceIds = [...new Set(rows.flatMap(callerTraces))]
+	const filed =
+		traceIds.length === 0
+			? []
+			: yield* warehouse.compiledQuery(
+					tenant,
+					CH.compile(Integrations.aiSessionsOfTracesQuery(traceIds), {
+						orgId: tenant.orgId,
+						startTime: formatWarehouseDateTime(
+							parseWarehouseDateTime(window.startTime) - AGENT_TURN_LEAD_MS,
+						),
+						endTime: window.endTime,
+					}),
+					{ profile: "list", context: "mcpSessionAgentSessions" },
+				)
+	const agentSessions = agentSessionsOf(rows, filed)
+	const named = rows.find((row) => row.client !== UNKNOWN_MCP_CLIENT)
+	yield* Effect.annotateCurrentSpan({
+		"maple.mcp.session.requests": rows.length,
+		"maple.mcp.session.agent_sessions": new Set(agentSessions.filter((id) => id !== null)).size,
+	})
+	return new McpSessionResponse({
+		service: payload.service,
+		sessionId: payload.sessionId,
+		client: named?.client ?? UNKNOWN_MCP_CLIENT,
+		kind: kindOf(named?.kind ?? "unknown"),
+		protocolVersion: rows.find((row) => row.protocolVersion !== "")?.protocolVersion ?? "",
+		requests: rows.map((row, index): McpSessionRequestItem => ({
+			timeMs: toMs(row.timestamp),
+			method: row.method,
+			tool: row.tool === "" ? null : row.tool,
+			requestId: row.requestId,
+			durationNs: row.duration,
+			errorType: row.errorType === "" ? null : row.errorType,
+			message: row.message === "" ? null : row.message,
+			traceId: row.traceId,
+			spanId: row.spanId,
+			agentSessionId: agentSessions[index] ?? null,
+		})),
+		isTruncated: read.length > SESSION_REQUEST_LIMIT,
 	})
 })

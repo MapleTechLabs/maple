@@ -732,7 +732,7 @@ export const InfraSupabaseProjectSearch = Schema.Struct({
 // Nested list routes
 
 // sessionTimeRangeSearchMiddleware()
-/** `/mcp-servers`, a server and its tool page share one search: the time range and the toolbar. */
+/** `/mcp-servers`, a server, its tool page and its sessions share one search: the time range and the toolbar. */
 export const McpServersSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 	client: Schema.optional(Schema.String),

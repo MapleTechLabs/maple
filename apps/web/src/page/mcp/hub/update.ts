@@ -21,6 +21,8 @@ import {
 	DebounceSearch,
 	FetchOverview,
 	FetchServers,
+	FetchSession,
+	FetchSessions,
 	FetchTool,
 	OpenMcpConventions,
 	ResolveWindow,
@@ -31,23 +33,59 @@ import { DEFAULT_MCP_PRESET, type McpView, type Model } from "./model"
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 export type Search = typeof McpServersSearch.Type
-export type McpRoute = Extract<AppRoute, { readonly _tag: "McpServers" | "McpServer" | "McpServerTool" }>
+export type McpRoute = Extract<
+	AppRoute,
+	{
+		readonly _tag: "McpServers" | "McpServer" | "McpServerTool" | "McpServerSessions" | "McpServerSession"
+	}
+>
 
-export const viewOfRoute = (route: McpRoute): McpView =>
-	route._tag === "McpServers"
-		? { _tag: "Servers" }
-		: route._tag === "McpServer"
-			? { _tag: "Server", service: route.serviceName }
-			: { _tag: "Tool", service: route.serviceName, tool: route.toolName }
+export const viewOfRoute = (route: McpRoute): McpView => {
+	switch (route._tag) {
+		case "McpServers":
+			return { _tag: "Servers" }
+		case "McpServer":
+			return { _tag: "Server", service: route.serviceName }
+		case "McpServerTool":
+			return { _tag: "Tool", service: route.serviceName, tool: route.toolName }
+		case "McpServerSessions":
+			return { _tag: "Sessions", service: route.serviceName }
+		case "McpServerSession":
+			return { _tag: "Session", service: route.serviceName, sessionId: route.sessionId }
+	}
+}
 
-export const hrefOfView = (view: McpView, search: Search): string =>
-	hrefOf(
-		view._tag === "Servers"
-			? AppRoute.McpServers({ search })
-			: view._tag === "Server"
-				? AppRoute.McpServer({ serviceName: view.service, search })
-				: AppRoute.McpServerTool({ serviceName: view.service, toolName: view.tool, search }),
-	)
+const routeOfView = (view: McpView, search: Search): AppRoute => {
+	switch (view._tag) {
+		case "Servers":
+			return AppRoute.McpServers({ search })
+		case "Server":
+			return AppRoute.McpServer({ serviceName: view.service, search })
+		case "Tool":
+			return AppRoute.McpServerTool({ serviceName: view.service, toolName: view.tool, search })
+		case "Sessions":
+			return AppRoute.McpServerSessions({ serviceName: view.service, search })
+		case "Session":
+			return AppRoute.McpServerSession({ serviceName: view.service, sessionId: view.sessionId, search })
+	}
+}
+
+export const hrefOfView = (view: McpView, search: Search): string => hrefOf(routeOfView(view, search))
+
+/** Only the window: what a link into another server, session or page carries. */
+const windowSearch = (search: Search): Search => ({
+	startTime: search.startTime,
+	endTime: search.endTime,
+	timePreset: search.timePreset,
+})
+
+/** What travels between a server's tabs: the window, the client selection and failing-only, not the search box. */
+export const tabSearch = (search: Search): Search => ({
+	...windowSearch(search),
+	client: search.client,
+	kind: search.kind,
+	failing: search.failing,
+})
 
 export const bucketSecondsOf = (window: TimeWindow): number =>
 	chartBucketSeconds(toEpochMs(window.startTime), toEpochMs(window.endTime))
@@ -121,6 +159,32 @@ const requestView = (model: Model, context: PageContext, mode: RequestMode): Ret
 			)
 			return { model: { ...model, tool }, commands }
 		}
+		case "Sessions": {
+			const data = {
+				...base,
+				...selection,
+				service: view.service,
+				search: blankToUndefined(search.q),
+				failingOnly: search.failing === true,
+			}
+			const [sessions, commands] = keyed(
+				model.sessions,
+				requestKey(context.orgId, "getMcpSessions", data),
+				mode,
+				(key) => FetchSessions({ key, ...data }),
+			)
+			return { model: { ...model, sessions }, commands }
+		}
+		case "Session": {
+			const data = { ...base, service: view.service, sessionId: view.sessionId }
+			const [session, commands] = keyed(
+				model.session,
+				requestKey(context.orgId, "getMcpSession", data),
+				mode,
+				(key) => FetchSession({ key, ...data }),
+			)
+			return { model: { ...model, session }, commands }
+		}
 	}
 }
 
@@ -175,6 +239,8 @@ export const init = (route: McpRoute, context: PageContext): Return => {
 		servers: Keyed.idle(),
 		overview: Keyed.idle(),
 		tool: Keyed.idle(),
+		sessions: Keyed.idle(),
+		session: Keyed.idle(),
 		percentileToggle: ToggleGroup.init({ label: "Percentile", values: [search.percentile ?? "p90"] }),
 		clientToggle: ToggleGroup.init({ label: "Client identity", values: [search.identity ?? "ua"] }),
 		callsToggle: ToggleGroup.init({ label: "Calls", values: [search.calls ?? "slowest"] }),
@@ -208,10 +274,15 @@ const isSameTime = (a: Search, b: Search): boolean =>
 export const routeChanged = (model: Model, route: McpRoute, context: PageContext): Return => {
 	const view = viewOfRoute(route)
 	if (hrefOfView(model.view, model.search) === hrefOfView(view, route.search)) return { model }
+	// The box searches tools on one view and session ids on another: a new view drops what was typed
+	// and the debounce still pending for it.
+	const keepsTyping =
+		hrefOfView(view, {}) === hrefOfView(model.view, {}) &&
+		(route.search.q ?? "") === (model.search.q ?? "")
 	const next: Model = {
 		...synced({ ...model, view }, route.search),
-		searchInput:
-			(route.search.q ?? "") === (model.search.q ?? "") ? model.searchInput : (route.search.q ?? ""),
+		searchInput: keepsTyping ? model.searchInput : (route.search.q ?? ""),
+		searchVersion: keepsTyping ? model.searchVersion : model.searchVersion + 1,
 	}
 	return isSameTime(model.search, route.search)
 		? requestView(next, context, "Load")
@@ -274,6 +345,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchTool: ({ key, result }) => ({
 			model: { ...model, tool: Keyed.accept(model.tool, key, result) },
 		}),
+		CompletedFetchSessions: ({ key, result }) => ({
+			model: { ...model, sessions: Keyed.accept(model.sessions, key, result) },
+		}),
+		CompletedFetchSession: ({ key, result }) => ({
+			model: { ...model, session: Keyed.accept(model.session, key, result) },
+		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
@@ -310,15 +387,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					})
 		},
 		ClickedOpenServer: ({ service }) =>
-			navigateTo(
-				model,
-				{ _tag: "Server", service },
-				{
-					startTime: model.search.startTime,
-					endTime: model.search.endTime,
-					timePreset: model.search.timePreset,
-				},
-			),
+			navigateTo(model, { _tag: "Server", service }, windowSearch(model.search)),
 		ClickedOpenTool: ({ tool }) =>
 			model.view._tag === "Servers"
 				? { model }
@@ -332,6 +401,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							identity: undefined,
 						},
 					),
+		ClickedOpenSession: ({ sessionId }) =>
+			model.view._tag === "Servers"
+				? { model }
+				: navigateTo(
+						model,
+						{ _tag: "Session", service: model.view.service, sessionId },
+						windowSearch(model.search),
+					),
+		ClickedOpenAgentSession: ({ sessionId }) => ({
+			model,
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.AgentSession({ sessionId, search: {} })),
+				isReplace: false,
+			}),
+		}),
 		ClickedInstrument: () => ({ model, commands: [OpenMcpConventions({})] }),
 		ClickedOpenTrace: ({ traceId }) => ({
 			model,
@@ -350,7 +434,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		ElapsedSearchDebounce: ({ version }) =>
-			version !== model.searchVersion || model.view._tag !== "Server"
+			version !== model.searchVersion ||
+			(model.view._tag !== "Server" && model.view._tag !== "Sessions")
 				? { model }
 				: navigate(model, { ...model.search, q: blankToUndefined(model.searchInput) }),
 		ToggledFailingOnly: () =>
