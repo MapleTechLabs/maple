@@ -47,6 +47,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { truncate } from "../lib/format"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -216,12 +217,12 @@ const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<str
 		Object.entries(a).flatMap(([key, value]) => {
 			const next = b[key]
 			if (next === undefined) return [`${scope}${key}: removed`]
-			return JSON.stringify(next) === JSON.stringify(value)
+			return stringifyJson(next) === stringifyJson(value)
 				? []
 				: [`${scope}${key} -> ${truncate(String(next), 60)}`]
 		})
 	const body =
-		before.body !== undefined && JSON.stringify(before.body) !== JSON.stringify(after.body)
+		before.body !== undefined && stringifyJson(before.body) !== stringifyJson(after.body)
 			? [`body: ${truncate(String(after.body), 120)}`]
 			: []
 	return [

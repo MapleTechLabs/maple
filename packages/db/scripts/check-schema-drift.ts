@@ -40,7 +40,8 @@ const isLedger = (table: string) => LEDGER.has(table) || table.startsWith("__")
 
 /** Every object of `public`, one line each, keyed so the two sides line up. */
 const catalog = Effect.gen(function* () {
-	const orm = Orm.fromSqlClient(yield* SqlClient.SqlClient, { dialect: PG.postgresDialect })
+	const sql = yield* SqlClient.SqlClient
+	const orm = Orm.fromSqlClient(sql, { dialect: PG.postgresDialect })
 	const columns = yield* orm.query(
 		Orm.sql`SELECT table_name AS "table", column_name AS "column", udt_name AS "type", is_nullable AS nullable,
 			column_default AS "default", identity_generation AS identity

@@ -6,6 +6,7 @@ import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -159,13 +160,13 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 								suggested.length > 0
 									? doc.next(
 											"query_funnel",
-											{ steps_json: JSON.stringify(suggested) },
+											{ steps_json: stringifyJson(suggested) },
 											"measure conversion between them",
 										)
 									: doc.next(
 											"query_funnel",
 											{
-												steps_json: JSON.stringify([
+												steps_json: stringifyJson([
 													{ kind: "page", pagePath: "/" },
 													{ kind: "page", pagePath: "/pricing" },
 												]),

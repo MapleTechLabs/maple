@@ -119,12 +119,14 @@ const toRow = (trace: Trace): TraceRow => ({
 
 const fetchPage = (search: Search, window: TimeWindow, pinnedNamespace: string | null, offset: number) =>
 	listTraces({ data: listInput(search, window, pinnedNamespace, offset) }).pipe(
-		Effect.map((response): TracesPage => ({
-			rows: response.data.map(toRow),
-			scannedCount: response.meta.scannedCount,
-			hiddenCount: response.meta.hiddenCount,
-		})),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): TracesPage => ({
+				rows: response.data.map(toRow),
+				scannedCount: response.meta.scannedCount,
+				hiddenCount: response.meta.hiddenCount,
+			}),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -245,13 +247,15 @@ export const PlaceAdvancedCursor = Command.define("PlaceTracesAdvancedCursor", {
 		}),
 })
 
-type EditorMessage =
-	| typeof Message.EditedAdvanced.Type
-	| typeof Message.FocusedAdvanced.Type
-	| typeof Message.BlurredAdvanced.Type
-	| typeof Message.MovedAdvancedCursor.Type
-	| typeof Message.PressedAdvancedKey.Type
-	| typeof Message.SubmittedAdvanced.Type
+const EditorMessage = Schema.Union([
+	Message.EditedAdvanced,
+	Message.FocusedAdvanced,
+	Message.BlurredAdvanced,
+	Message.MovedAdvancedCursor,
+	Message.PressedAdvancedKey,
+	Message.SubmittedAdvanced,
+])
+type EditorMessage = typeof EditorMessage.Type
 
 /**
  * The `WhereClauseEditor` textarea's events with what Foldkit's handlers do not carry: the caret,

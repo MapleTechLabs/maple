@@ -108,7 +108,9 @@ const textUpdate = (previous: string | undefined, next: string): LiveAction | nu
 }
 
 /** Only ever compared with the previous write's; nothing decodes it. */
-const fingerprint = (embeds: ReadonlyArray<HazelEmbed>): string => JSON.stringify(embeds)
+const fingerprint = (embeds: ReadonlyArray<HazelEmbed>): string => encodeJson(embeds)
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** A live message's embeds while it streams: the live state first, then its cards. */
 const streamingEmbeds = (body: HazelLiveBody): ReadonlyArray<HazelEmbed> => [
@@ -201,7 +203,8 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		// Per call, not here: acquiring the transport must not cost the host its credential read.
-		const token = Effect.map(yield* ConnectorCredentials, botToken)
+		const credentials = yield* ConnectorCredentials
+		const token = Effect.map(credentials, botToken)
 
 		const attempt = Effect.fn("Hazel.request", { kind: "client" })(function* (
 			bearer: Redacted.Redacted<string>,

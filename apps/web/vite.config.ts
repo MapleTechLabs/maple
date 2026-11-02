@@ -1,10 +1,13 @@
 import path from "node:path"
 import { foldkit } from "@foldkit/vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
+import { Schema } from "effect"
 import { defineConfig, loadEnv, type Plugin } from "vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
 import { clerkJsUrl } from "./src/platform/clerk-js-url.ts"
 import { versionManifest } from "./vite-plugin-version-manifest.ts"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 const envDir = path.resolve(import.meta.dirname, "../..")
 
@@ -122,7 +125,7 @@ export default defineConfig(({ mode, command }) => {
 	const define: Record<string, string> = {}
 	for (const key of overrideKeys) {
 		const value = process.env[key]?.trim()
-		if (value) define[`import.meta.env.${key}`] = JSON.stringify(value)
+		if (value) define[`import.meta.env.${key}`] = encodeJson(value)
 	}
 
 	return {

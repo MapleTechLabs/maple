@@ -133,7 +133,8 @@ export const tailEvents = (
 							return yield* new ChatRequestError({
 								message: `Chat stream request failed: ${response.status}`,
 							})
-						yield* Ref.set(openedAt, yield* Clock.currentTimeMillis)
+						const nowMs = yield* Clock.currentTimeMillis
+						yield* Ref.set(openedAt, nowMs)
 						return response.stream.pipe(
 							Stream.decodeText(),
 							Stream.mapAccum(

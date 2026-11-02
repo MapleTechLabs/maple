@@ -821,10 +821,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 					cause,
 				}),
 		})
-		const thresholds = yield* decodeStoredAlertRuleThresholds(
-			row,
-			yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson),
-		)
+		const destinationIds = yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson)
+		const thresholds = yield* decodeStoredAlertRuleThresholds(row, destinationIds)
 		const legacy = alertThresholdLegacyFields(thresholds)
 		return {
 			id: decoded.id,

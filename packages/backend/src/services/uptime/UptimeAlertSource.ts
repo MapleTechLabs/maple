@@ -207,7 +207,8 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				})
 				if (marked.length > 0) return Option.some({ groupKey, down: true, detail: error })
 				// A ping or failure landed between the read and the write: report what it left.
-				return Option.map(yield* readMonitor(orgId, ruleId), asStored)
+				const monitor = yield* readMonitor(orgId, ruleId)
+				return Option.map(monitor, asStored)
 			})
 
 			// Monitors only lose the race to a rule at creation before this shipped: once none are

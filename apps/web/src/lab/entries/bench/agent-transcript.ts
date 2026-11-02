@@ -14,6 +14,8 @@ import { defineLabWithFlags } from "../../define"
 import { enterSession, type SessionStep, sessionViews, stepSession, toWire } from "../../session-lab"
 import { foldLabToasts, initLabToasts, labRoot } from "../../toasts"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 // `/lab/bench/agent-transcript`: the transcript
 // over a session big enough to hurt, `?turns=` turns of it, with the perf spec's harness.
 
@@ -44,9 +46,9 @@ type Message = typeof Message.Type
 const InstallTranscriptBench = Mount.define("InstallTranscriptBench", {
 	messages: [Message.CompletedBenchInstall],
 	execute: () =>
-		Effect.acquireRelease(Effect.sync(installTranscriptBench), (uninstall) => Effect.sync(uninstall)).pipe(
-			Effect.as(Message.CompletedBenchInstall()),
-		),
+		Effect.acquireRelease(Effect.sync(installTranscriptBench), (uninstall) =>
+			Effect.sync(uninstall),
+		).pipe(Effect.as(Message.CompletedBenchInstall())),
 })
 
 type Return = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>
@@ -75,7 +77,7 @@ const init = (flags: Flags): Return => {
 			session: entered.session,
 			turns: flags.turns,
 			spanCount: summary.spanCount,
-			megabytes: (JSON.stringify(spans).length / 1_048_576).toFixed(1),
+			megabytes: (encodeJson(spans).length / 1_048_576).toFixed(1),
 			timeZone: flags.timeZone,
 			toasts: initLabToasts(),
 		},

@@ -90,7 +90,8 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 					// Maple's own org is never metered, as with AI usage, nor is a deployment without
 					// billing (self-hosted, local dev). Unmetered is decided here, never from an error.
 					if (orgId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)) return
-					const ownKey = Option.isSome(yield* orgKeys.resolveForRun(orgId))
+					const resolvedKey = yield* orgKeys.resolveForRun(orgId)
+					const ownKey = Option.isSome(resolvedKey)
 					yield* Effect.annotateCurrentSpan("maple.llm.byok", ownKey)
 					if (ownKey) return
 					const nowMs = yield* Clock.currentTimeMillis

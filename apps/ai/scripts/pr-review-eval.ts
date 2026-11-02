@@ -24,6 +24,10 @@ const REPOSITORY = "MapleTechLabs/maple"
 const LINE_TOLERANCE = 3
 const FIX_SUBJECT = /^(fix|hotfix)(\([^)]*\))?!?:/i
 const SQUASH_PR = /\(#(\d+)\)\s*$/
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeTabbedJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+// Files this script wrote itself, read back with their declared shape trusted.
+const decodeTrustedJson = Schema.decodeSync(Schema.fromJsonString(Schema.Any))
 
 interface Location {
 	readonly path: string
@@ -231,7 +235,7 @@ const mine = (argv: ReadonlyArray<string>) => {
 		})
 		console.error(`#${number} (${files} files) <- ${sha.slice(0, 10)} ${subject}`)
 	}
-	console.log(JSON.stringify({ cases: candidates }, null, "\t"))
+	console.log(encodeTabbedJson({ cases: candidates }))
 }
 
 // Running
@@ -245,7 +249,7 @@ const hash = (text: string) => createHash("sha256").update(text).digest("hex")
 
 const runEval = async (argv: ReadonlyArray<string>) => {
 	const opts = flags(argv)
-	const corpus: { cases: ReadonlyArray<EvalCase> } = JSON.parse(readFileSync(CORPUS, "utf8"))
+	const corpus: { cases: ReadonlyArray<EvalCase> } = decodeTrustedJson(readFileSync(CORPUS, "utf8"))
 	const wanted = opts.get("cases")?.split(",")
 	const cases = corpus.cases.filter(
 		(c) =>
@@ -300,27 +304,23 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	if (opts.has("dry-run")) return
 	const out = join(SCRIPT_DIR, ".pr-review-evals", new Date().toISOString().replace(/[:.]/g, "-"))
 	mkdirSync(out, { recursive: true })
-	writeFileSync(join(out, "corpus.json"), JSON.stringify({ cases }, null, "\t"))
+	writeFileSync(join(out, "corpus.json"), encodeTabbedJson({ cases }))
 	writeFileSync(join(out, "worker-prompt.txt"), PR_REVIEW_WORKER_PROMPT)
 	writeFileSync(
 		join(out, "manifest.json"),
-		JSON.stringify(
-			{
-				revision: git(["rev-parse", "HEAD"]).trim(),
-				dirty: git(["status", "--porcelain"]),
-				models,
-				prompts,
-				codeModes,
-				repeats,
-				historical: true,
-				budget: PR_REVIEW_BUDGET,
-				workerPromptHash: hash(PR_REVIEW_WORKER_PROMPT),
-				promptHashes: promptTexts.map(hash),
-				corpusHash: hash(JSON.stringify(cases)),
-			},
-			null,
-			"\t",
-		),
+		encodeTabbedJson({
+			revision: git(["rev-parse", "HEAD"]).trim(),
+			dirty: git(["status", "--porcelain"]),
+			models,
+			prompts,
+			codeModes,
+			repeats,
+			historical: true,
+			budget: PR_REVIEW_BUDGET,
+			workerPromptHash: hash(PR_REVIEW_WORKER_PROMPT),
+			promptHashes: promptTexts.map(hash),
+			corpusHash: hash(encodeJson(cases)),
+		}),
 	)
 	const results: Array<Record<string, unknown>> = []
 	const grades: Array<Grade & { runId: string }> = []
@@ -370,7 +370,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 					? ["--code-only"]
 					: []),
 		])
-		const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"))
+		const report = decodeTrustedJson(readFileSync(join(dir, "report.json"), "utf8"))
 		const findings: ReadonlyArray<Finding> = report?.report?.findings ?? []
 		results.push({
 			order,
@@ -417,8 +417,8 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	// After every replay, including failures, in job order whatever finished first.
 	const checkpoint = () => {
 		results.sort((a, b) => Number(a.order) - Number(b.order))
-		writeFileSync(join(out, "results.json"), JSON.stringify(results, null, "\t"))
-		writeFileSync(join(out, "grades.json"), JSON.stringify(grades, null, "\t"))
+		writeFileSync(join(out, "results.json"), encodeTabbedJson(results))
+		writeFileSync(join(out, "grades.json"), encodeTabbedJson(grades))
 	}
 	// Each review runs a parent and up to four children against one provider; past about three at
 	// once, rate limits fail reviews outright. Their streamed output interleaves on stdout.
@@ -458,25 +458,27 @@ const score = (argv: ReadonlyArray<string>) => {
 		process.exit(2)
 	}
 	const dir = resolve(opts.get("dir")!)
-	const cases: { cases: ReadonlyArray<EvalCase> } = JSON.parse(
+	const cases: { cases: ReadonlyArray<EvalCase> } = decodeTrustedJson(
 		readFileSync(join(dir, "corpus.json"), "utf8"),
 	)
 	const grades = Schema.decodeUnknownSync(
-		Schema.Array(Schema.Struct({ ...Grade.fields, runId: Schema.String })),
-	)(JSON.parse(readFileSync(join(dir, "grades.json"), "utf8")))
+		Schema.fromJsonString(Schema.Array(Schema.Struct({ ...Grade.fields, runId: Schema.String }))),
+	)(readFileSync(join(dir, "grades.json"), "utf8"))
 	const results = Schema.decodeUnknownSync(
-		Schema.Array(
-			Schema.Struct({
-				runId: Schema.String,
-				submitted: Schema.Boolean,
-				cases: Schema.Array(Schema.String),
-				findings: Schema.Array(Schema.Unknown),
-				model: Schema.String,
-				prompt: Schema.Int,
-				codeMode: Schema.optionalKey(Schema.Literals(["off", "on", "only"])),
-			}),
+		Schema.fromJsonString(
+			Schema.Array(
+				Schema.Struct({
+					runId: Schema.String,
+					submitted: Schema.Boolean,
+					cases: Schema.Array(Schema.String),
+					findings: Schema.Array(Schema.Unknown),
+					model: Schema.String,
+					prompt: Schema.Int,
+					codeMode: Schema.optionalKey(Schema.Literals(["off", "on", "only"])),
+				}),
+			),
 		),
-	)(JSON.parse(readFileSync(join(dir, "results.json"), "utf8")))
+	)(readFileSync(join(dir, "results.json"), "utf8"))
 	const rows = results.flatMap((run) =>
 		run.cases.map((caseId) => {
 			const c = cases.cases.find((c) => c.id === caseId)!
@@ -497,7 +499,7 @@ const score = (argv: ReadonlyArray<string>) => {
 			}
 		}),
 	)
-	writeFileSync(join(dir, "scores.json"), JSON.stringify(rows, null, "\t"))
+	writeFileSync(join(dir, "scores.json"), encodeTabbedJson(rows))
 	console.table(rows)
 	const label = (r: (typeof rows)[number]) => `${r.model} / prompt ${r.prompt} / run_code ${r.codeMode}`
 	const variants = [...new Set(rows.map(label))]
@@ -519,7 +521,7 @@ const score = (argv: ReadonlyArray<string>) => {
 				: null,
 		}
 	})
-	writeFileSync(join(dir, "summary.json"), JSON.stringify(summary, null, "\t"))
+	writeFileSync(join(dir, "summary.json"), encodeTabbedJson(summary))
 	console.table(summary)
 	console.log(
 		"Pending grades are not misses or clean reviews. Shared replays appear once per target; do not sum their findings/tokens twice.",

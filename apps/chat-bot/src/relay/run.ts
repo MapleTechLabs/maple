@@ -304,15 +304,12 @@ const inRuntime =
 	({ env, chatSessions }: Pick<RelayHost, "env" | "chatSessions">) =>
 	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient>) =>
 		program.pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(
-				Layer.mergeAll(
-					FetchHttpClient.layer,
-					envPorts(env),
-					chatSessionsLayerIfBound(chatSessions, env),
-					telemetry.layer,
-				),
-			),
+			Effect.provide([
+				FetchHttpClient.layer,
+				envPorts(env),
+				chatSessionsLayerIfBound(chatSessions, env),
+				telemetry.layer,
+			]),
 			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
 			// so it belongs to the same interruption and failure handling they do.
 			Effect.ensuring(Effect.promise(() => telemetry.flush(env).catch(() => undefined))),

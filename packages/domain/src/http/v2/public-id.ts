@@ -165,9 +165,7 @@ export const decodePublicId = (prefix: PublicIdPrefix, publicId: string): string
 		// silently emitting U+FFFD, which would turn a corrupt ID into a
 		// plausible-looking one.
 		return Option.getOrNull(
-			Effect.runSync(
-				Effect.option(Effect.try(() => new TextDecoder("utf-8", { fatal: true }).decode(idBytes))),
-			),
+			Option.liftThrowable(() => new TextDecoder("utf-8", { fatal: true }).decode(idBytes))(),
 		)
 	}
 	return null

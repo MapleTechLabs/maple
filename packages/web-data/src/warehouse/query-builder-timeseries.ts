@@ -118,7 +118,8 @@ const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTi
 	const input = yield* decodeInput(QueryBuilderTimeseriesInputSchema, data, "getQueryBuilderTimeseries")
 	const strategy = resolveStrategy(input)
 
-	const outcome = yield* runTimeseriesQuerySet(yield* executor, {
+	const queryExecutor = yield* executor
+	const outcome = yield* runTimeseriesQuerySet(queryExecutor, {
 		querySet: {
 			queries: input.queries,
 			...(!(input.formulas === undefined) ? { formulas: input.formulas } : undefined),

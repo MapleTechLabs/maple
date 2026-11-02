@@ -85,14 +85,16 @@ const FetchMembers = Command.define("FetchClerkMemberships", {
 	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => membershipsPage(organization, page)),
-			Effect.map((result) => {
-				const userId = window.Clerk?.user?.id ?? null
-				return {
-					rows: result.data.map((member) => memberRow(member, userId)),
-					total: result.total_count,
-				}
+			Effect.mapBoth({
+				onSuccess: (result) => {
+					const userId = window.Clerk?.user?.id ?? null
+					return {
+						rows: result.data.map((member) => memberRow(member, userId)),
+						total: result.total_count,
+					}
+				},
+				onFailure: toLoadFailure,
 			}),
-			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMembers({ page, generation, result })),
 		),
@@ -104,8 +106,10 @@ const FetchInvitations = Command.define("FetchClerkInvitations", {
 	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => invitationsPage(organization, page)),
-			Effect.map((result) => ({ rows: result.data.map(invitationRow), total: result.total_count })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (result) => ({ rows: result.data.map(invitationRow), total: result.total_count }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchInvitations({ page, generation, result })),
 		),
@@ -183,9 +187,9 @@ const RemoveMember = Command.define("RemoveClerkMember", {
 	args: { memberId: Schema.String, name: Schema.String },
 	messages: [Message.CompletedRemove],
 	execute: ({ memberId, name }) =>
-		withMembership(memberId, (member) =>
-			clerkTry("Couldn't remove member", () => member.destroy()),
-		).pipe(settleClerk((result) => Message.CompletedRemove({ name, result }))),
+		withMembership(memberId, (member) => clerkTry("Couldn't remove member", () => member.destroy())).pipe(
+			settleClerk((result) => Message.CompletedRemove({ name, result })),
+		),
 })
 
 const RevokeInvitation = Command.define("RevokeClerkInvitation", {

@@ -65,7 +65,8 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 				)
 			// Scoped, so an unread body is cancelled when the check ends. A cross-origin redirect
 			// drops the configured headers and the body, keeping only the headers the probe owns.
-			const client = guardPinned(HttpClient.withScope(yield* HttpClient.HttpClient), resolve, {
+			const httpClient = yield* HttpClient.HttpClient
+			const client = guardPinned(HttpClient.withScope(httpClient), resolve, {
 				strictRedirects: true,
 				ownHeaders: ["traceparent", "user-agent"],
 			})

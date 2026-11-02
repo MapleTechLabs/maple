@@ -478,7 +478,7 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 		commands: [
 			ReadSettingsClock(),
 			FetchSettingsSession(),
-			FetchSettingsCustomer({ refresh: false }),
+			FetchSettingsCustomer({ orgId: context.orgId, refresh: false }),
 			...(entered.commands ?? []),
 		],
 	}
@@ -564,7 +564,7 @@ const liftBilling = (model: Model, { step, isCustomerStale, checkout }: Billing.
 			...Command.mapMessages(step.commands ?? [], (child) =>
 				Message.GotBillingMessage({ message: child }),
 			),
-			...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
+			...(isCustomerStale ? [FetchSettingsCustomer({ orgId: null, refresh: true })] : []),
 		],
 		// A checkout poll re-reads only this page's copy; the app's waits for the confirmed plan.
 		outMessage:

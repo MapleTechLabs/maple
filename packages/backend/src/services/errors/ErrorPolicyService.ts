@@ -283,7 +283,8 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		"ErrorPolicyService.getEscalationPolicy",
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		return escalationRowToDocument(yield* loadEscalationPolicyRow(orgId))
+		const row = yield* loadEscalationPolicyRow(orgId)
+		return escalationRowToDocument(row)
 	})
 
 	const upsertEscalationPolicy: ErrorPolicyServiceApi["upsertEscalationPolicy"] = Effect.fn(

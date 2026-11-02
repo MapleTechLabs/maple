@@ -21,6 +21,12 @@ import {
 	validateRangeDate,
 	validateSealedRangeDate,
 } from "./paths"
+import { Schema } from "effect"
+import { decodeJsonSync, encodeJson } from "../json"
+
+const decodeJsonRecord = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
 
 const LEDGER_FORMAT_VERSION = 1
 const EXPIRATION_FORMAT_VERSION = 3
@@ -148,7 +154,7 @@ export const maintenanceTokenPath = (dataDir: string): string => `${resolve(data
 export const readRetiredDayLedger = (dataDir: string): RetiredDayLedger => {
 	const path = retiredDayLedgerPath(dataDir)
 	if (!existsSync(path)) return { formatVersion: LEDGER_FORMAT_VERSION, retiredDays: [] }
-	return parseRetiredDayLedger(JSON.parse(readRealFile(path, "retired-day ledger")) as unknown)
+	return parseRetiredDayLedger(decodeJsonSync(readRealFile(path, "retired-day ledger")))
 }
 
 export const ensureMaintenanceToken = (dataDir: string): Promise<string> =>
@@ -203,7 +209,7 @@ export class RetiredDayAuthority {
 		let rejected = 0
 		for (const line of ndjson.split("\n")) {
 			if (line.length === 0) continue
-			const row = JSON.parse(line) as Record<string, unknown>
+			const row = decodeJsonRecord(line)
 			const timestamp = row[key]
 			if (typeof timestamp !== "string" || !/^\d{4}-\d{2}-\d{2} /.test(timestamp))
 				throw new Error(`encoded ${datasource} row has no canonical UTC timestamp`)
@@ -218,7 +224,7 @@ export class RetiredDayAuthority {
 		const parsed = parseDayRecord(record)
 		const existing = this.record(parsed.rangeDate)
 		if (existing) {
-			if (JSON.stringify(existing) !== JSON.stringify(parsed))
+			if (encodeJson(existing) !== encodeJson(parsed))
 				throw new Error(`retired-day evidence changed for ${parsed.rangeDate}`)
 			return
 		}
@@ -243,7 +249,7 @@ export class RetiredDayAuthority {
 
 const parseCount = (text: string, label: string): number => {
 	const line = text.split("\n").find((candidate) => candidate.trim().length > 0)
-	const row = line ? (JSON.parse(line) as Record<string, unknown>) : {}
+	const row: { readonly [key: string]: unknown } = line ? decodeJsonRecord(line) : {}
 	const count = Number(row.count ?? row["count()"] ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid ${label} count`)
 	return count
@@ -282,7 +288,7 @@ const removeRetiredDays = (db: Db, dates: readonly string[]): void => {
 		const present = rows
 			.split("\n")
 			.filter((line) => line.trim().length > 0)
-			.map((line) => (JSON.parse(line) as { rangeDate?: unknown }).rangeDate)
+			.map((line) => decodeJsonRecord(line).rangeDate)
 			.filter((date): date is string => typeof date === "string" && dates.includes(date))
 		if (present.length === 0) continue
 		db.exec(
@@ -503,7 +509,7 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 
 const readExpireOperation = (path: string): ExpireOperation | null => {
 	if (!existsSync(path)) return null
-	return parseExpireOperation(JSON.parse(readRealFile(path, "archive expiration journal")) as unknown)
+	return parseExpireOperation(decodeJsonSync(readRealFile(path, "archive expiration journal")))
 }
 
 /** Expire one already-retired archived UTC day. Resumes safely after interruption. */
@@ -622,7 +628,7 @@ export const retireLiveDay = async (options: {
 		const response = await request(`http://127.0.0.1:${options.port}/local/retention/retire`, {
 			method: "POST",
 			headers: { "content-type": "application/json", "x-maple-maintenance-token": token },
-			body: JSON.stringify({
+			body: encodeJson({
 				archiveDir: resolve(options.archiveDir),
 				rangeDate,
 				sealingLagHours: options.sealingLagHours ?? 24,

@@ -255,6 +255,33 @@ sandbox Worker's hourly cron runs it once per probe version on prd and logs one 
 both limits enforced, tmpfs and read-only binds mount). Only the Cloudflare run answers the
 intercepts, the CA and the instance limits.
 
+**Probe v1 on prd (2026-10-27, US and EU identical).** The container starts with internet off; the
+plain-HTTP gateway answers; an intercepted HTTPS host presents a certificate the container does not
+trust (so the plain-HTTP design stands); uid drop and every `prlimit` hold; tmpfs and read-only
+binds mount; cgroup2 is writable; root holds every capability and `unshare -n` works, so
+`CAP_SYS_ADMIN` is available. `snapshotContainer()` is unsupported, so the dependency cache is
+`DirectoryBackup`. The instance (`standard-2`) is 1 vCPU, 6 GB, 11 GB disk. Two surprises: public
+DNS hangs rather than failing (still no answer), and **a raw TCP connect to `1.1.1.1:443` is
+accepted with internet off**, so "internet off" cannot be the only egress control until it is
+known whether bytes flow.
+
+**Probe v2.** Egress detectors that only call a leak an answer no proxy could forge: plain HTTP to
+a public IP whose redirect echoes a made-up path, a TLS handshake against a trusted certificate for
+`one.one.one.one`, a DNS query sent straight to `1.1.1.1:53`, and plain HTTP over IPv6. An accepted
+then dropped connection, a hung one or an error page from the runtime is `blocked`. Every detector
+runs twice: in the container's namespace, and inside Execute's isolation (`isolated()`: a fresh
+`unshare --net` with only loopback, entered as nobody with no capabilities and `no_new_privs`).
+Also: nobody cannot `nsenter` the container's namespace, a bounded tmpfs scratch stops a write past
+its size, and cgroup `memory.max` / `pids.max` kill and stop. Execute uses the namespace whatever
+the platform answers, which settles open decision 2.
+
+`verify:executor-probe` runs the script twice in Docker: `--network none` (every check but the
+gateway must hold), then a **positive control** on a network with internet and a stand-in gateway,
+where every egress detector must catch the leak, the gateway must answer, and every `isolated-*`
+check must still hold. The unit tests run each detector against local fakes of what the runtime
+might do (accept and close, accept and hang, a 502 page, an untrusted certificate, a silent or
+empty resolver).
+
 ### Production reachability (our addition)
 
 Cloudflare's validation system has a "Judgment" stage that asks whether a finding is reachable in
@@ -440,9 +467,9 @@ resource attributes, infrastructure posture through the connected integrations.
 
 1. Phase 0 model and spend ceiling: a scoped deep slice of Maple on Opus 5.5 could run to hundreds
    of dollars. Which slices, and what cap?
-2. Execution in the sandbox is what makes this very deep. If `CAP_SYS_ADMIN` is not available on
-   Cloudflare Containers, do we accept platform egress controls as the "no external network"
-   control, or move audit execution to a runtime we control?
+2. ~~If `CAP_SYS_ADMIN` is not available on Cloudflare Containers, do we accept platform egress
+   controls?~~ Settled by probe v1: it is available, and Execute runs in its own network
+   namespace on top of `enableInternet: false`.
 3. Trusted dependency install in prepare (lockfile, scripts off) so hunters can run tests: accept
    the install-time exposure, or source-only for repos without a vendored toolchain?
 4. Customer product from phase 2.5 behind a flag, or internal-only until the cycle and UI exist.

@@ -67,10 +67,26 @@ export const dataStateOf = (
 	}
 }
 
-const ready = (raw: unknown, widget: Widget): WidgetDataState =>
+const readyOf = (raw: unknown, widget: Widget): WidgetDataState =>
 	isEmptyEnvelope(raw)
 		? { _tag: "Error", title: null, message: NO_DATA, kind: "empty" }
 		: { _tag: "Ready", data: toReadyData(raw, dataSourceTransform(widget.dataSource)) }
+
+/** States by answer and data source, so a re-render over the same answer reuses its rows. */
+const readyCache = new WeakMap<object, WeakMap<object, WidgetDataState>>()
+
+const ready = (raw: unknown, widget: Widget): WidgetDataState => {
+	const source: unknown = widget.dataSource
+	if (typeof raw !== "object" || raw === null || typeof source !== "object" || source === null)
+		return readyOf(raw, widget)
+	const bySource = readyCache.get(raw) ?? new WeakMap<object, WidgetDataState>()
+	const cached = bySource.get(source)
+	if (cached !== undefined) return cached
+	const state = readyOf(raw, widget)
+	bySource.set(source, state)
+	readyCache.set(raw, bySource)
+	return state
+}
 
 /** `dataState.status === "error"` drawn as the muted empty frame. */
 export const isEmptyError = (state: WidgetDataState): boolean =>

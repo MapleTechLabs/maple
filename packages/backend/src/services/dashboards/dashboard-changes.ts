@@ -1,4 +1,5 @@
 import type { DashboardDocument, DashboardVersionChangeKind } from "@maple/domain/http"
+import { Option, Schema } from "effect"
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -10,7 +11,11 @@ interface ChangeSummary {
 const widgetTitle = (widget: Widget): string =>
 	widget.display.title?.trim() || widget.visualization || "widget"
 
-const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
+// `undefined` encodes to none, so two absent values still compare equal.
+const sameJson = (a: unknown, b: unknown): boolean =>
+	Option.getOrUndefined(encodeJsonOption(a)) === Option.getOrUndefined(encodeJsonOption(b))
 
 // Section membership counts as layout: `layout.x/y` are relative to whichever
 // container the widget names, so moving a tile between groups genuinely is a
