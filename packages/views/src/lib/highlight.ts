@@ -77,6 +77,9 @@ export const awaitHighlighter: Effect.Effect<void> = Effect.promise(load).pipe(
 	Effect.orElseSucceed(() => undefined),
 )
 
+/** Whether the highlighter has loaded; tokens taken before then are plain and not worth keeping. */
+export const isHighlighterReady = (): boolean => highlights !== null
+
 /** The supported language `label` names: itself, else a file name's extension, else plain text. */
 const resolveLang = (module: Highlights, label: Lang): Supported => {
 	const name = label.trim().toLowerCase()
