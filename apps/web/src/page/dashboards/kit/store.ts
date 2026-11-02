@@ -144,7 +144,7 @@ export const mutateDashboard = (
 			draft.name = updated.name
 			draft.updated_at = updated.updatedAt
 		})
-		return yield* settled(() => transaction.isPersisted.promise)
+		return yield* settled(() => transaction.when("settled"))
 	})
 
 /** `deleteDashboard`: the collection's optimistic delete. */
@@ -153,7 +153,7 @@ export const deleteDashboard = (orgId: string, id: string) =>
 		const collection = yield* dashboardsOf(orgId)
 		if (collection.get(id) === undefined) return "Synced" satisfies WriteSync
 		const transaction = collection.delete(id)
-		return yield* settled(() => transaction.isPersisted.promise)
+		return yield* settled(() => transaction.when("settled"))
 	})
 
 /** `collection.utils.awaitTxId(txid).catch(() => undefined)` after a create. */
