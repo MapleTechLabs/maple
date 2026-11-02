@@ -202,7 +202,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		Effect.promise(() => runtime.runPromiseExit(program)).pipe(
 			Effect.ensuring(Effect.tryPromise(() => runtime.dispose()).pipe(Effect.ignore)),
 			Effect.ensuring(Effect.tryPromise(() => telemetry.flush(input.env)).pipe(Effect.ignore)),
-			Effect.flatMap((exit) => exit),
+			Effect.flatten,
 		),
 	)
 }

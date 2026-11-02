@@ -19,19 +19,24 @@
 		"effecttsgo/effect-do-notation": "warn",
 		"effecttsgo/effect-in-failure": "error",
 		"effecttsgo/effect-in-void-success": "error",
+		"effecttsgo/effect-try-without-catch": "error",
 		"effecttsgo/extends-native-error": "error",
 		"effecttsgo/generic-effect-services": "error",
 		"effecttsgo/global-console-in-effect": "error",
 		"effecttsgo/global-error-in-effect-failure": "error",
 		"effecttsgo/global-fetch-in-effect": "error",
+		"effecttsgo/global-json": "error",
+		"effecttsgo/global-json-in-effect": "error",
 		"effecttsgo/global-random-in-effect": "error",
 		"effecttsgo/lazy-promise-in-effect-sync": "error",
 		"effecttsgo/leaking-requirements": "error",
+		"effecttsgo/map-map-error-to-map-both": "error",
 		"effecttsgo/multiple-catch-tag": "error",
 		"effecttsgo/multiple-effect-provide": "error",
 		"effecttsgo/nested-effect-gen-yield": "warn",
 		"effecttsgo/outdated-api": "error",
 		"effecttsgo/promise-in-effect-success": "error",
+		"effecttsgo/provide-merge-all-to-array": "error",
 		"effecttsgo/redundant-map-error": "error",
 		"effecttsgo/return-effect-in-gen": "error",
 		"effecttsgo/run-effect-inside-effect": "error",
@@ -41,9 +46,11 @@
 		"effecttsgo/schema-sync": "off",
 		"effecttsgo/strict-effect-provide": "error",
 		"effecttsgo/sync-to-succeed": "error",
+		"effecttsgo/type-union-to-schema-union": "error",
 		"effecttsgo/unnecessary-effect-gen": "error",
 		"effecttsgo/unnecessary-pipe-chain": "error",
-		"effecttsgo/unnecessary-typeof-type": "error"
+		"effecttsgo/unnecessary-typeof-type": "error",
+		"effecttsgo/yield-in-call-argument": "error"
 	},
 	"overrides": [
 		// Framework composition roots, standalone libraries, generated-client CLI dispatch, and operational probes expose generic Effect channels.
@@ -79,12 +86,16 @@
 				"effecttsgo/global-console": "off",
 				"effecttsgo/global-date": "off",
 				"effecttsgo/global-fetch": "off",
+				// Tests build JSON fixtures and assert on `yield*` results inline.
+				"effecttsgo/global-json": "off",
+				"effecttsgo/global-json-in-effect": "off",
 				"effecttsgo/global-random": "off",
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",
 				"effecttsgo/node-builtin-import": "off",
 				"effecttsgo/process-env": "off",
-				"effecttsgo/strict-effect-provide": "off"
+				"effecttsgo/strict-effect-provide": "off",
+				"effecttsgo/yield-in-call-argument": "off"
 			}
 		}
 	],

@@ -77,7 +77,6 @@ const compare = (path: string) =>
 	})
 
 const results = await Effect.runPromise(
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.forEach(process.argv.slice(2), compare).pipe(Effect.provide(layer)),
 )
 process.exit(results.every(Boolean) ? 0 : 1)

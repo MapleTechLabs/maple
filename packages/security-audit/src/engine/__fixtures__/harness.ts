@@ -246,8 +246,6 @@ export const runScripted = (
 		saveReports: (_, reports) => Effect.sync(() => void (recorded.reports = reports)),
 		recordEvent: (_, event) => Effect.sync(() => void recorded.events.push(event)),
 	})
-	// The test is the entry point that composes the engine with its host.
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	return Effect.runPromise(runAudit(input).pipe(Effect.provide(Layer.mergeAll(agents, store)))).then(
 		(result) => ({
 			result,

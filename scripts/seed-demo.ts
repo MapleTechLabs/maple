@@ -461,7 +461,6 @@ const seed = Command.make(
 ).pipe(Command.withDescription("Seed the local stack with the Acme Shop demo world"))
 
 Command.run(seed, { version: "1.0.0" }).pipe(
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.provide(Layer.mergeAll(FetchHttpClient.layer, NodeServices.layer)),
 	NodeRuntime.runMain,
 )

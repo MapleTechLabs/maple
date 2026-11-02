@@ -1805,5 +1805,4 @@ const Driver = Layer.unwrap(
 	),
 )
 
-// oxlint-disable-next-line effecttsgo/strict-effect-provide
 program.pipe(Effect.provide(Driver), NodeRuntime.runMain)

@@ -485,8 +485,6 @@ const BenchLive = Layer.mergeAll(BenchServicesLive, BunServices.layer)
 
 if (["catalog", "fetch"].includes(process.argv[2] ?? "")) {
 	Command.run(rootCommand, { version: "0.2.0" }).pipe(
-		// Application root: this is the one runtime boundary that owns the complete layer graph.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(BenchLive),
 		BunRuntime.runMain,
 	)
