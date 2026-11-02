@@ -1,18 +1,32 @@
-import { describe, expect, it } from "vitest"
+import { Effect } from "effect"
+import { beforeAll, describe, expect, it } from "vitest"
 import { DISPLAY_MAX_CHARS } from "./display-text"
-import { highlightCode, highlightTokens, resolveLang } from "./highlight"
+import { awaitHighlighter, highlightCode, highlightTokens } from "./highlight"
 
-describe("resolveLang", () => {
-	it("takes a language name or alias, a file name's extension, else plain text", () => {
-		expect(resolveLang(" Shell ")).toBe("shell")
-		expect(resolveLang("maple-aws.tf")).toBe("tf")
-		expect(resolveLang("config.yaml")).toBe("yaml")
-		expect(resolveLang("docker run")).toBe("text")
-		expect(resolveLang("")).toBe("text")
+describe("before the highlighter loads", () => {
+	it("renders the code as escaped plain text, coloured once loaded", async () => {
+		const plain = highlightCode('{"a": "<b>"}', "json")
+		expect(plain).toContain('{"a": "&lt;b&gt;"}')
+		expect(plain).not.toContain("var(--sh-")
+		await Effect.runPromise(awaitHighlighter)
+		expect(highlightCode('{"a": "<b>"}', "json")).toContain(
+			'<span style="color:var(--sh-property)">"a"</span>',
+		)
+	})
+})
+
+describe("language labels", () => {
+	it("takes a language name or alias, a file name's extension, else plain text", async () => {
+		await Effect.runPromise(awaitHighlighter)
+		expect(highlightCode("# a", " Shell ")).toBe(highlightCode("# a", "shell"))
+		expect(highlightCode("a: 1", "config.yaml")).toBe(highlightCode("a: 1", "yaml"))
+		expect(highlightCode("docker run", "docker run")).toBe("docker run")
 	})
 })
 
 describe("highlightCode", () => {
+	beforeAll(() => Effect.runPromise(awaitHighlighter))
+
 	it("comes back as escaped plain text past the display cap instead of a span per token", () => {
 		const html = highlightCode(`{"a": "<b>&"}${" ".repeat(DISPLAY_MAX_CHARS)}`, "json")
 		expect([html.includes("<span"), html.startsWith('{"a": "&lt;b&gt;&amp;"}')]).toEqual([false, true])
@@ -41,6 +55,8 @@ describe("highlightCode", () => {
 })
 
 describe("highlightTokens", () => {
+	beforeAll(() => Effect.runPromise(awaitHighlighter))
+
 	it("splits lines and names each token's slot", () => {
 		expect(highlightTokens("let x\n\n// hi", "js")).toEqual([
 			[

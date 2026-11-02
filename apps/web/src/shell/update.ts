@@ -16,17 +16,7 @@ import {
 	SaveSidebarState,
 	SaveTheme,
 } from "./command"
-import {
-	LoadCloudflareStatus,
-	LoadAwsStatus,
-	LoadGcpStatus,
-	LoadInfraPresence,
-	LoadNamespaces,
-	LoadPlanetscaleStatus,
-	LoadRailwayStatus,
-	LoadSources,
-	LoadSupabaseStatus,
-} from "./data"
+import { LoadInfraSurfaces, LoadNamespaces, LoadSources } from "./data"
 import { DismissQuotaBanner, OpenCustomerPortal } from "./billing-banners"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
@@ -103,7 +93,10 @@ const requestSidebarData = (model: Model): UpdateReturn => {
 	}
 }
 
-/** `useInfraSurfaces`: the last hour's presence probe and the four integration statuses, once. */
+/** Every integration settled as not connected, as when the combined read failed. */
+const NOT_CONNECTED = Record.map(PENDING_INTEGRATIONS, () => false)
+
+/** `useInfraSurfaces`: the last hour's presence probe and every integration status, once. */
 const requestInfraSurfaces = (model: Model): UpdateReturn =>
 	Option.match(model.maybeOrgId, {
 		onNone: () => ({ model }),
@@ -112,15 +105,7 @@ const requestInfraSurfaces = (model: Model): UpdateReturn =>
 				? { model }
 				: {
 						model: modifyFields(model, { infraPresence: () => InfraPresenceData.Loading() }),
-						commands: [
-							LoadInfraPresence({ orgId }),
-							LoadCloudflareStatus({ orgId }),
-							LoadPlanetscaleStatus({ orgId }),
-							LoadRailwayStatus({ orgId }),
-							LoadGcpStatus({ orgId }),
-							LoadSupabaseStatus({ orgId }),
-							LoadAwsStatus({ orgId }),
-						],
+						commands: [LoadInfraSurfaces({ orgId })],
 					},
 	})
 
@@ -426,14 +411,23 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 		ClickedReload: () => ({ model, commands: [ReloadPage()] }),
 		CompletedReloadPage: () => ({ model }),
 		// Org-stamped answers: one for an org the shell has left is dropped.
-		SucceededLoadInfraPresence: ({ orgId, surfaces }) =>
+		// A failed probe lays out every surface; a failed status counts as not connected.
+		SucceededLoadInfraSurfaces: ({ orgId, maybeSurfaces, integrations }) =>
 			surfacesAnswered(model, orgId, (current) =>
-				modifyFields(current, { infraPresence: () => InfraPresenceData.Success({ data: surfaces }) }),
+				modifyFields(current, {
+					infraPresence: () =>
+						Option.match(maybeSurfaces, {
+							onNone: () => InfraPresenceData.Failure({ error: "Failed" }),
+							onSome: (surfaces) => InfraPresenceData.Success({ data: surfaces }),
+						}),
+					integrations: () => integrations,
+				}),
 			),
-		FailedLoadInfraPresence: ({ orgId }) =>
+		FailedLoadInfraSurfaces: ({ orgId }) =>
 			surfacesAnswered(model, orgId, (current) =>
 				modifyFields(current, {
 					infraPresence: () => InfraPresenceData.Failure({ error: "Failed" }),
+					integrations: () => NOT_CONNECTED,
 				}),
 			),
 		SucceededLoadSources: ({ orgId, sources }) =>
@@ -443,16 +437,6 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 		FailedLoadSources: ({ orgId }) =>
 			forOrg(model, orgId, (current) =>
 				modifyFields(current, { sources: () => SourcesData.Failure({ error: "Failed" }) }),
-			),
-		SucceededLoadIntegration: ({ orgId, integration, isConnected }) =>
-			surfacesAnswered(model, orgId, (current) =>
-				modifyFields(current, {
-					integrations: (known) => ({ ...known, [integration]: isConnected }),
-				}),
-			),
-		FailedLoadIntegration: ({ orgId, integration }) =>
-			surfacesAnswered(model, orgId, (current) =>
-				modifyFields(current, { integrations: (known) => ({ ...known, [integration]: false }) }),
 			),
 		// A result for an org the shell has left is dropped.
 		SucceededLoadDashboards: ({ orgId, dashboards }) =>
