@@ -27,10 +27,14 @@ export type Status = typeof Status.Type
 /** One tile: lazily revealed (`useInViewportSticky`), measured, and what it asked for. */
 export const WidgetSlot = Schema.Struct({
 	isRevealed: Schema.Boolean,
+	/** Revealed once but scrolled out of view since: refreshes skip it. */
+	isOffscreen: Schema.optionalKey(Schema.Boolean),
+	/** An off-screen tile missed a refresh or re-plan; it asks again when it is back in view. */
+	isStale: Schema.optionalKey(Schema.Boolean),
 	/** `useWidgetMaxDataPoints`' quantized width; `null` before the first measurement. */
 	widthPx: Schema.NullOr(Schema.Number),
 	gate: Schema.NullOr(WidgetGate),
-	/** A stat's sparkline series (`StatSparklineLoader`), planned once the stat itself has data. */
+	/** A stat's sparkline series (`StatSparklineLoader`), planned with the stat. */
 	sparkGate: Schema.optionalKey(Schema.NullOr(WidgetGate)),
 	/** `narrowedToCap`: the viewer pulled this list back to the list cap. */
 	isNarrowed: Schema.optionalKey(Schema.Boolean),
@@ -150,7 +154,11 @@ export const Model = Schema.Struct({
 	sectionMenu: Menu.Model,
 	/** `InlineEditableText`: the group (or tab) title being renamed, and its draft. */
 	rename: Schema.NullOr(
-		Schema.Struct({ sectionId: Schema.String, tabId: Schema.NullOr(Schema.String), draft: Schema.String }),
+		Schema.Struct({
+			sectionId: Schema.String,
+			tabId: Schema.NullOr(Schema.String),
+			draft: Schema.String,
+		}),
 	),
 	/** `DeleteSectionDialog` and `DeleteTabDialog`, and what they would delete. */
 	sectionDialog: Dialog.Model,

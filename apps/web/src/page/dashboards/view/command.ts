@@ -78,11 +78,17 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
 			const shares = yield* client.dashboards.listShares({ params: { id } })
-			return shares.map((share) => ({ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }))
+			return shares.map((share) => ({
+				widgetId: share.widgetId ?? null,
+				mode: share.mode,
+				token: share.token,
+			}))
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) })),
+			Effect.map((result) =>
+				Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) }),
+			),
 		),
 })
 
@@ -334,13 +340,17 @@ const quantizeWidthPx = (widthPx: number): number | undefined =>
 
 /**
  * `useInViewportSticky` + `useMeasuredWidthPx` on a tile's root: its quantized width now and on
- * every resize, and (once) that it came within 200 px of the viewport for 200 ms.
+ * every resize, that it came within 200 px of the viewport for 200 ms, and that it left again.
  */
 export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 	args: { widgetId: Schema.String },
-	messages: [Message.MeasuredWidget, Message.RevealedWidget],
+	messages: [Message.MeasuredWidget, Message.RevealedWidget, Message.HidWidget],
 	execute: ({ element, widgetId }) =>
-		Stream.callback<typeof Message.MeasuredWidget.Type | typeof Message.RevealedWidget.Type>((queue) =>
+		Stream.callback<
+			| typeof Message.MeasuredWidget.Type
+			| typeof Message.RevealedWidget.Type
+			| typeof Message.HidWidget.Type
+		>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					const measure = (width: number) => {
@@ -353,20 +363,21 @@ export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 						entries.forEach((entry) => measure(entry.contentRect.width)),
 					)
 					resizes.observe(element)
-					const reveal = { timer: 0, isDone: false }
+					const reveal = { timer: 0, isShown: false }
 					const intersections = new IntersectionObserver(
 						(entries) => {
-							if (reveal.isDone) return
 							const isIntersecting = entries.some((entry) => entry.isIntersecting)
-							if (isIntersecting && reveal.timer === 0) {
+							if (isIntersecting && !reveal.isShown && reveal.timer === 0) {
 								reveal.timer = window.setTimeout(() => {
-									reveal.isDone = true
-									intersections.disconnect()
+									reveal.timer = 0
+									reveal.isShown = true
 									Queue.offerUnsafe(queue, Message.RevealedWidget({ widgetId }))
 								}, 200)
-							} else if (!isIntersecting && reveal.timer !== 0) {
+							} else if (!isIntersecting) {
 								window.clearTimeout(reveal.timer)
 								reveal.timer = 0
+								if (reveal.isShown) Queue.offerUnsafe(queue, Message.HidWidget({ widgetId }))
+								reveal.isShown = false
 							}
 						},
 						{ rootMargin: "200px" },
@@ -431,7 +442,8 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 	execute: ({ orgId, dashboardId, presetId, chartId, target }) =>
 		Effect.gen(function* () {
 			const picked = pickedWidget({ presetId, chartId })
-			if (picked === null) return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
+			if (picked === null)
+				return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
 			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
@@ -484,7 +496,11 @@ export const SaveVariables = Command.define("SaveDashboardVariables", {
 	messages: [Message.CompletedWrite],
 	execute: ({ orgId, dashboardId, variables }) =>
 		toWriteMessage(
-			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({ ...document, variables, updatedAt: nowIso })),
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
+				...document,
+				variables,
+				updatedAt: nowIso,
+			})),
 		),
 })
 

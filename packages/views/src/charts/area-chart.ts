@@ -4,15 +4,11 @@ import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { Message, type Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
-import { ChartSpec, ChartTooltip, type TimeseriesAxisSpec } from "./chart-spec"
+import { ChartSpec, ChartTooltip, specCache, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import {
-	SERIES_FALLBACK_COLOR,
-	seriesColorTokens,
-	seriesDefinitionsOf,
-} from "./timeseries"
+import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
 import { timeseriesLegend } from "./timeseries-legend"
 
 // Port of `QueryBuilderAreaChart` + `Timeseries.Frame` (packages/ui/src/components/charts/area/,
@@ -69,6 +65,11 @@ const tooltipBody = (
 		HeatmapSlot: () => Option.none(),
 	})
 
+const areaSpec = specCache(
+	(data: AreaChartInputs["data"], rest: Omit<Parameters<typeof ChartSpec.QueryBuilderArea>[0], "data">) =>
+		ChartSpec.QueryBuilderArea({ data, ...rest }),
+)
+
 export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model, inputs, h) => {
 	const { definitions } = seriesDefinitionsOf(inputs.data)
 	const tokens = seriesColorTokens(definitions)
@@ -103,8 +104,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 				chartId: inputs.chartId,
 				className: "h-full w-full",
 				ariaLabel: "Time series",
-				spec: ChartSpec.QueryBuilderArea({
-					data: inputs.data,
+				spec: areaSpec(inputs.data, {
 					colors,
 					hidden: model.hiddenKeys,
 					fallbackColor: SERIES_FALLBACK_COLOR,
