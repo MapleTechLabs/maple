@@ -20,7 +20,13 @@ const COLUMNS_CLASS = new Map<StatRailColumns, string>([
 
 export const statRail = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ columns?: StatRailColumns; className?: string; isBusy?: boolean }>,
+	options: Readonly<{
+		columns?: StatRailColumns
+		className?: string
+		isBusy?: boolean
+		/** Edge to edge under a page header: square, ruled below only, like the hub's metric strip. */
+		isFlush?: boolean
+	}>,
 	children: ReadonlyArray<Html>,
 ): Html =>
 	h.div(
@@ -28,7 +34,8 @@ export const statRail = <M>(
 			...(options.isBusy === true ? [h.AriaBusy(true)] : []),
 			h.Class(
 				cn(
-					"grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card md:divide-y-0",
+					"grid grid-cols-2 divide-x divide-y divide-border md:divide-y-0",
+					options.isFlush === true ? "border-b border-border" : "rounded-md border bg-card",
 					COLUMNS_CLASS.get(options.columns ?? 4),
 					options.className,
 				),
@@ -144,7 +151,9 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					shell,
 					"w-full text-left",
 					rowSelectedClass(isSelected),
-					isDisabled ? "cursor-default" : "cursor-pointer hover:bg-surface-faint active:bg-surface-faint",
+					isDisabled
+						? "cursor-default"
+						: "cursor-pointer hover:bg-surface-faint active:bg-surface-faint",
 					"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),

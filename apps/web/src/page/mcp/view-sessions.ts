@@ -462,7 +462,7 @@ const sessionStats = <M>(h: HtmlBuilder<M>, data: McpSessionResponse): Html => {
 	const failed = calls.filter((row) => row.errorType !== null).length
 	const callTime = calls.reduce((sum, row) => sum + row.durationNs, 0)
 	const requests = `${data.isTruncated ? "the first " : ""}${formatNumber(data.requests.length)} ${pluralize(data.requests.length, "request")}`
-	return statRail(h, { columns: 4, className: "border-b border-border" }, [
+	return statRail(h, { columns: 4, isFlush: true }, [
 		statRailItem(h, {
 			eyebrow: "Tool calls",
 			value: formatNumber(calls.length),
