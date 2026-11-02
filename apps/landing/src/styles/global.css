@@ -11,6 +11,8 @@
 @source "../../../../packages/views/src/charts/plot-frame.ts";
 @source "../../../../packages/views/src/charts/bucket-tooltip.ts";
 @source "../../../../packages/views/src/ui/{layer,stack,typography}.ts";
+/* The kit's command dialog the docs search island renders. */
+@source "../../../../packages/views/src/ui/{command,dialog-view,autocomplete,combobox-view,scroll-area}.ts";
 
 /* Landing-only tokens — marketing surfaces, not part of the shared system. */
 :root {
