@@ -9,6 +9,8 @@ import { relativeTime } from "../../kit/relative-time"
 import { sectionNote, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `McpConnectedClientsSection`.
 
@@ -16,46 +18,44 @@ type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>
 
 const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html =>
-	h.li(
-		[h.Key(connection.id), h.Class("flex items-center gap-4 px-4 py-3")],
-		[
-			h.div(
-				[h.Class("min-w-0 flex-1")],
-				[
-					h.p([h.Class("truncate text-sm font-medium")], [connection.client_name]),
-					h.p(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[connection.user_email ?? connection.user_id],
-					),
-				],
-			),
-			h.p(
-				[h.Class("hidden shrink-0 text-xs text-muted-foreground sm:block")],
-				["Connected ", formatDateInTimezone(connection.connected_at, { timeZone: inputs.timeZone })],
-			),
-			h.p(
-				[h.Class("hidden shrink-0 text-xs text-muted-foreground md:block")],
-				[
-					"Last refreshed ",
-					relativeTime(h, {
-						value: connection.last_refreshed_at,
-						nowMs: inputs.nowMs,
-						timeZone: inputs.timeZone,
-					}),
-				],
-			),
-			button(
-				h,
-				{
-					variant: "ghost",
-					size: "sm",
-					className: "shrink-0 text-destructive",
-					attributes: [h.OnClick(Message.ClickedRevoke({ connectionId: connection.id }))],
-				},
-				["Revoke"],
-			),
-		],
-	)
+	hstack(h, { gap: "4", as: "li", className: "px-4 py-3", attributes: [h.Key(connection.id)] }, [
+		h.div(
+			[h.Class("min-w-0 flex-1")],
+			[
+				typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [
+					connection.client_name,
+				]),
+				typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [
+					connection.user_email ?? connection.user_id,
+				]),
+			],
+		),
+		h.p(
+			[h.Class("hidden shrink-0 text-xs text-muted-foreground sm:block")],
+			["Connected ", formatDateInTimezone(connection.connected_at, { timeZone: inputs.timeZone })],
+		),
+		h.p(
+			[h.Class("hidden shrink-0 text-xs text-muted-foreground md:block")],
+			[
+				"Last refreshed ",
+				relativeTime(h, {
+					value: connection.last_refreshed_at,
+					nowMs: inputs.nowMs,
+					timeZone: inputs.timeZone,
+				}),
+			],
+		),
+		button(
+			h,
+			{
+				variant: "ghost",
+				size: "sm",
+				className: "shrink-0 text-destructive",
+				attributes: [h.OnClick(Message.ClickedRevoke({ connectionId: connection.id }))],
+			},
+			["Revoke"],
+		),
+	])
 
 const content = (h: H, model: Model, inputs: Inputs): Html =>
 	AsyncData.matchData(model.connections, {
@@ -94,10 +94,9 @@ export const connectedClientsSection = (h: H, model: Model, inputs: Inputs): Htm
 					model.revoking === null
 						? []
 						: [
-								h.span(
-									[h.Class("font-medium text-foreground")],
-									[model.revoking.client_name],
-								),
+								typography(h, { tone: "foreground", weight: "medium" }, [
+									model.revoking.client_name,
+								]),
 								" loses access right away and has to be approved again to reconnect.",
 							],
 				confirmLabel: "Revoke client",

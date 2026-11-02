@@ -16,6 +16,7 @@ import { saveBar } from "../kit/save-bar"
 import { settingsSection, settingsSections } from "../kit/section"
 import { Message, type Model, type OrgInfo } from "./model"
 import { isNameDirty, LOGO_INPUT_ID, leaveEligibilityOf, nameDraftOf } from "./update"
+import { typography } from "../../../ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -131,7 +132,7 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 										h.Placeholder("Organization name"),
 									],
 								})
-							: h.p([h.Id("org-name"), h.Class("text-sm text-foreground")], [org.name]),
+							: typography(h, { size: "sm", tone: "foreground", as: "p", attributes: [h.Id("org-name")] }, [org.name]),
 					]),
 				],
 			),

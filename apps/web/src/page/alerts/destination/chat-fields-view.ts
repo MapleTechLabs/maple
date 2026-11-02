@@ -13,6 +13,8 @@ import { refreshButton } from "../../../ui/refresh-button"
 import { destinationProvider } from "../shared/providers"
 import { CHANNEL_COMBOBOX_ID, channelsOf, labelOf, Message as ChatMessage, type Model as ChatModel } from "./chat-fields"
 import type { DestinationForm } from "./form"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `ChatDestinationFields`' view. TODO(destination-dialog): the input's clear button and the
 // "Showing N of M" status line under a capped list.
@@ -37,8 +39,7 @@ const status = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, connectorName: string, 
 	const channels = channelsOf(inputs.model)
 	if (Option.isSome(failure) && failure.value.code === "integration_not_connected")
 		return [
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
+			hstack(h, { gap: "2", wrap: true },
 				[
 					fieldError(h, { ids: IDS, className: "text-2xs", state: IDLE }, failure.value.message),
 					linkButton(
@@ -57,8 +58,7 @@ const status = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, connectorName: string, 
 	if (Option.isSome(failure)) {
 		const isPermission = failure.value.type === "permission_error"
 		return [
-			h.div(
-				[h.Class("flex items-center gap-2")],
+			hstack(h, { gap: "2" },
 				[
 					fieldError(
 						h,
@@ -80,8 +80,7 @@ const status = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, connectorName: string, 
 	}
 	return channels.length === 0 && !isLoading
 		? [
-				h.p(
-					[h.Class("text-2xs text-muted-foreground")],
+				typography(h, { size: "2xs", tone: "muted", as: "p" },
 					["No channels returned. Make sure the Maple bot can see at least one channel, then hit Refresh."],
 				),
 			]
@@ -91,19 +90,16 @@ const status = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, connectorName: string, 
 const header = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isLoading: boolean): Html => {
 	const { form } = inputs
 	const storedName = inputs.isEditing && form.chatChannelId.length === 0 && form.chatChannelName.length > 0 ? form.chatChannelName : null
-	return h.div(
-		[h.Class("flex items-center justify-between gap-2")],
+	return hstack(h, { gap: "2", justify: "between" },
 		[
 			fieldLabel(h, { ids: IDS, className: "text-xs", state: IDLE }, "Channel"),
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-1.5")],
+			hstack(h, { gap: "1.5", shrink: true },
 				[
 					...(storedName === null
 						? []
 						: [
-								h.span(
-									[h.Class("truncate text-2xs text-muted-foreground")],
-									["Currently ", h.span([h.Class("font-medium text-foreground")], [`#${storedName}`])],
+								typography(h, { size: "2xs", tone: "muted", truncate: true },
+									["Currently ", typography(h, { tone: "foreground", weight: "medium" }, [`#${storedName}`])],
 								),
 							]),
 					refreshButton(h, {
@@ -125,8 +121,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 		return h.div(
 			[h.Class("space-y-2 rounded-md border border-dashed border-border-subtle p-3")],
 			[
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
+				typography(h, { size: "xs", tone: "muted", as: "p" },
 					["This destination's chat workspace isn't available. Create a new destination from a linked workspace instead."],
 				),
 			],
@@ -158,11 +153,10 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				renderItem: (label) => {
 					const channel = byLabel.get(label)
 					return [
-						h.span(
-							[h.Class("flex items-center gap-2")],
+						hstack(h, { gap: "2", as: "span" },
 							[
 								h.span([h.Class("truncate")], [`#${channel?.name ?? label}`]),
-								...(channel?.private === true ? [h.span([h.Class("text-2xs text-muted-foreground")], ["private"])] : []),
+								...(channel?.private === true ? [typography(h, { size: "2xs", tone: "muted" }, ["private"])] : []),
 							],
 						),
 					]

@@ -1,5 +1,11 @@
 # @maple-dev/alchemy
 
+## 0.5.0
+
+### Minor Changes
+
+- f31efa0: `Maple.AlertDestination` no longer accepts `type: "hazel-oauth"`. Hazel channels are now chat destinations through the Hazel connector linked in Maple, the same as other chat-connector destinations.
+
 ## 0.4.0
 
 ### Minor Changes

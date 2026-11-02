@@ -2,6 +2,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The tool scope row: what the page is about, one click out of each.
 
@@ -16,20 +19,21 @@ export type ScopeRowConfig<M> = Readonly<{
 }>
 
 const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
-	h.button(
-		[
-			h.Key(`${chip.kind}:${chip.value}`),
-			h.AriaLabel(`Remove ${chip.kind} ${chip.value}`),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: onRemove,
+			label: `Remove ${chip.kind} ${chip.value}`,
+			className:
 				"inline-flex h-[22px] max-w-64 items-center gap-1.5 rounded-sm border border-primary-a4 bg-primary-a2 px-2 hover:bg-primary-a3 active:bg-primary-a3",
-			),
-			h.DataAttribute("base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.Type("button"),
-			h.OnClick(onRemove),
-		],
+			attributes: [
+				h.Key(`${chip.kind}:${chip.value}`),
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				h.DataAttribute("slot", "tooltip-trigger"),
+			],
+		},
 		[
-			h.span([h.Class("text-2xs text-muted-foreground")], [chip.kind]),
+			typography(h, { size: "2xs", tone: "muted" }, [chip.kind]),
 			h.span([h.Class("truncate text-2xs text-primary")], [chip.value]),
 			icon(h, "XmarkIcon", {
 				size: 10,
@@ -49,27 +53,24 @@ export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html 
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					eyebrow(h, { variant: "mono" }, ["Scope"]),
-					...(config.chips.length === 0
-						? [h.span([h.Class("text-2xs text-foreground-subtle")], ["all tools · all models"])]
-						: [
-								...config.chips.map((chip) => chipButton(h, chip, config.onRemove(chip))),
-								button(
-									h,
-									{
-										variant: "link",
-										size: "xs",
-										className: "h-auto px-0.5 text-2xs text-muted-foreground sm:text-2xs",
-										attributes: [h.OnClick(config.onClearAll)],
-									},
-									["Clear all"],
-								),
-							]),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				eyebrow(h, { variant: "mono" }, ["Scope"]),
+				...(config.chips.length === 0
+					? [typography(h, { size: "2xs", tone: "subtle" }, ["all tools · all models"])]
+					: [
+							...config.chips.map((chip) => chipButton(h, chip, config.onRemove(chip))),
+							button(
+								h,
+								{
+									variant: "link",
+									size: "xs",
+									className: "h-auto px-0.5 text-2xs text-muted-foreground sm:text-2xs",
+									attributes: [h.OnClick(config.onClearAll)],
+								},
+								["Clear all"],
+							),
+						]),
+			]),
 			h.span(
 				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
 				[

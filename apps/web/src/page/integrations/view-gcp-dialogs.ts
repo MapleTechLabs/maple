@@ -16,6 +16,7 @@ import { gcpConnectors, neverReported } from "./update-gcp"
 import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } from "./view-gcp-parts"
 import { disconnectConfirm } from "./view-disconnect"
 import { removalItem } from "./view-gcp-setup-methods"
+import { typographyClass } from "../../ui/typography"
 
 // `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
 
@@ -42,7 +43,7 @@ const quietDisconnect = (h: H, model: Model, connector: V2GcpConnector): Html =>
 						[],
 						[
 							h.dt([h.Class("font-medium")], ["In Maple"]),
-							h.dd([h.Class("text-pretty text-muted-foreground")], ["Removes the connection."]),
+							h.dd([h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))], ["Removes the connection."]),
 						],
 					),
 					h.div(
@@ -50,7 +51,7 @@ const quietDisconnect = (h: H, model: Model, connector: V2GcpConnector): Html =>
 						[
 							h.dt([h.Class("font-medium")], ["In Google Cloud"]),
 							h.dd(
-								[h.Class("text-pretty text-muted-foreground")],
+								[h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))],
 								[
 									"Maple hasn't seen a setup finish or any data arrive. If you created anything, in the console or as code, delete it there. Maple also offers the cleanup script afterwards, which removes it however it was made.",
 								],
@@ -155,7 +156,7 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 												[
 													h.dt([h.Class("text-foreground")], ["Deletes"]),
 													h.dd(
-														[h.Class("text-pretty text-muted-foreground")],
+														[h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))],
 														[
 															deletesText(connector),
 														],

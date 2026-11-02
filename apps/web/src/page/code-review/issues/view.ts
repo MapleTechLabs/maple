@@ -7,7 +7,7 @@ import {
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { listFooter } from "../../../ui/list-footer"
 import type * as Select from "../../../ui/select"
@@ -25,6 +25,7 @@ import { searchBox } from "../kit/search"
 import { type FilterKey, Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS } from "./update"
 import { findingsList } from "./view-list"
+import { vstack } from "../../../ui/stack"
 
 // The code review issues page.
 
@@ -114,7 +115,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 					return filteredEmpty(h, {
 						noun: "issues",
 						onClear: Message.ClickedClearFilters(),
-						className: "rounded-md border border-dashed md:py-14",
+						className: emptyFrameClass("dashed"),
 					})
 				return empty(
 					h,
@@ -124,7 +125,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							emptyDescription(h, ["Issues the reviewer posts on pull requests are listed here."]),
 						]),
 					],
-					"rounded-md border border-dashed md:py-14",
+					emptyFrameClass("dashed"),
 				)
 			}
 			const footer =
@@ -138,8 +139,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							isLoading: AsyncData.isRefreshing(model.findings.data),
 							onLoadMore: Message.ClickedLoadMore(),
 						})
-			return h.div(
-				[h.Class("flex flex-col gap-3")],
+			return vstack(h, { gap: "3" },
 				[findingsList(h, model, response.findings, timeZone), ...(footer === null ? [] : [footer])],
 			)
 		},

@@ -10,6 +10,7 @@ import { findingsSection } from "./view-findings"
 import { repositoriesPanel } from "./view-repositories"
 import { findingSheet } from "./view-sheet"
 import { dependenciesLoading, firstScan, footnote, notConnected, severityRail } from "./view-states"
+import { vstack } from "../../../ui/stack"
 
 // The Dependencies tab inside the Security frame. No plan gate: it reads lockfiles.
 
@@ -58,10 +59,7 @@ const body = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 						...(focused === null
 							? []
 							: [repositoryBreakdown(h, focused, state.findings, state.production)]),
-						h.div(
-							[h.Class("flex flex-col gap-2")],
-							[findingsSection(h, model, state, clock), footnote(h)],
-						),
+						vstack(h, { gap: "2" }, [findingsSection(h, model, state, clock), footnote(h)]),
 					]
 		}
 	}
@@ -71,7 +69,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const clock: Clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
 	return securityLayout(
 		h,
-		{ active: "dependencies", overlay: [findingSheet(h, model, clock)] },
+		{ source: "dependencies", overlay: [findingSheet(h, model, clock)] },
 		body(h, model, clock),
 	)
 })

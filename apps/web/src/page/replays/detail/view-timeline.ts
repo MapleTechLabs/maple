@@ -15,12 +15,15 @@ import { httpSpanLabel } from "../../../ui/http-span-label"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
 import { stableSlice } from "../../kit/stable-slice"
 import { MARKER_LABELS, MARKER_STYLES } from "../kit/replay-meta"
 import { Message } from "./message"
 import type { Model, SpanRow, TraceSummary } from "./model"
 import { bufferedTrack, idleBandsTrack, markersTrack, type Playhead, playheadOf } from "./view-player"
+import { typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The replay editor timeline.
 // TODO(tooltip): the trace and span bars' hover tooltips.
@@ -41,8 +44,7 @@ export const markerLegend = (h: H): Html =>
 			h.AriaLabel("Activity marker legend"),
 		],
 		KINDS.map((kind) =>
-			h.li(
-				[h.Class("flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5", as: "li" },
 				[
 					h.span(
 						[
@@ -223,16 +225,13 @@ const spanRowItem = (h: H, view: TracesView, span: SpanRow): Html => {
 						spanAttributes: span.spanAttributes,
 						spanKind: span.spanKind,
 						className: "text-3xs",
-						textClassName: "text-3xs text-muted-foreground",
+						textClassName: typographyClass({ size: "3xs", tone: "muted" }),
 					}),
 				],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.RequestedSeek({ offsetMs: range.startMs })),
-					h.Class("relative h-5 flex-1 cursor-pointer"),
-				],
+			pressable(
+				h,
+				{ onClick: Message.RequestedSeek({ offsetMs: range.startMs }), className: "relative h-5 flex-1 cursor-pointer" },
 				[
 					h.span(
 						[
@@ -335,8 +334,7 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 									),
 								],
 								[
-									h.span(
-										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+									vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" },
 										[
 											h.span(
 												[
@@ -374,12 +372,9 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 							),
 						],
 					),
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(Message.RequestedSeek({ offsetMs: range.startMs })),
-							h.Class("relative h-11 flex-1 cursor-pointer"),
-						],
+					pressable(
+						h,
+						{ onClick: Message.RequestedSeek({ offsetMs: range.startMs }), className: "relative h-11 flex-1 cursor-pointer" },
 						[
 							h.span(
 								[

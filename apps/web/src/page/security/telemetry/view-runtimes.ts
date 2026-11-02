@@ -5,11 +5,19 @@ import {
 	type RuntimeAdvisory,
 } from "@maple/domain/runtime-advisories"
 import { RUNTIME_PRODUCTS } from "@maple/domain/runtime-posture"
+import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
@@ -18,7 +26,8 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { textLink } from "../../../ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { NARROW_TWO_COLUMNS } from "../kit/layout"
+import { NARROW_TWO_COLUMNS, ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
+import { advisorySeverityBadge } from "../kit/parts"
 import {
 	type CriticalUpgrade,
 	criticalUpgrades,
@@ -32,6 +41,8 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { telemetryLoading } from "./view-exposure"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // The Runtimes tab: versions with critical CVEs to upgrade now, then each service's runtime and
 // version against its release cycle and known vulnerabilities, worst first.
@@ -99,14 +110,18 @@ const statusCell = (h: H, entry: RuntimeEntry): Html => {
 	const mark = entry.replaced ? REPLACED_MARK : markOf(entry)
 	return h.div(
 		[
-			h.Class("flex min-w-0 flex-col items-start gap-1"),
+			h.Class(vstackClass({ gap: "1", align: "start", shrink: true })),
 			...(mark.title === undefined ? [] : [h.Title(mark.title)]),
 		],
 		[
 			badge(h, { variant: mark.variant }, [mark.label]),
 			...(mark.detail === null
 				? []
-				: [h.span([h.Class("whitespace-nowrap text-xs text-muted-foreground")], [mark.detail])]),
+				: [
+						typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
+							mark.detail,
+						]),
+					]),
 		],
 	)
 }
@@ -119,21 +134,12 @@ const runtimeCell = (h: H, entry: RuntimeEntry): Html =>
 			...(entry.row.runtimeVersion === ""
 				? []
 				: [
-						h.span(
-							[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
-							[entry.row.runtimeVersion],
-						),
+						typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+							entry.row.runtimeVersion,
+						]),
 					]),
 		],
 	)
-
-const SEVERITY_VARIANT = {
-	critical: "crit",
-	high: "warn",
-	medium: "muted",
-	low: "muted",
-	unknown: "muted",
-} as const satisfies Record<AdvisorySeverity, Mark["variant"]>
 
 const severityCounts = (counts: Record<AdvisorySeverity, number>): string =>
 	ADVISORY_SEVERITIES.filter((severity) => counts[severity] > 0)
@@ -160,43 +166,58 @@ const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
 	const vulnerabilities = entry.vulnerabilities
 	switch (vulnerabilities.status) {
 		case "not_covered":
-			return h.span(
-				[h.Class("text-xs text-muted-foreground"), h.Title(notScannedReason(entry))],
+			return typography(
+				h,
+				{ size: "xs", tone: "muted", attributes: [h.Title(notScannedReason(entry))] },
 				["Not scanned"],
 			)
 		case "not_checked":
-			return h.span(
-				[
-					h.Class("text-xs text-muted-foreground"),
-					h.Title(
-						"Not read on this visit: each visit checks the 96 busiest versions and reads up to 24 new ones",
-					),
-				],
+			return typography(
+				h,
+				{
+					size: "xs",
+					tone: "muted",
+					attributes: [
+						h.Title(
+							"Not read on this visit: each visit checks the 96 busiest versions and reads up to 24 new ones",
+						),
+					],
+				},
 				["Not checked yet"],
 			)
 		case "unavailable":
-			return h.span([h.Class("text-xs text-muted-foreground")], ["Unavailable"])
+			return typography(h, { size: "xs", tone: "muted" }, ["Unavailable"])
 		case "checked": {
 			const summary = vulnerabilities.summary
-			if (summary.worst === null)
-				return h.span([h.Class("text-xs text-muted-foreground")], ["None known"])
+			if (summary.worst === null) return typography(h, { size: "xs", tone: "muted" }, ["None known"])
 			// History, not a finding: no alarm colour on a version no longer running.
 			if (entry.replaced)
-				return h.span([h.Class("text-xs text-muted-foreground")], [severityCounts(summary.counts)])
+				return typography(h, { size: "xs", tone: "muted" }, [severityCounts(summary.counts)])
 			const rest = summary.total - summary.counts[summary.worst]
-			return h.div(
-				[h.Class("flex min-w-0 flex-col items-start gap-1"), h.Title(severityCounts(summary.counts))],
+			return vstack(
+				h,
+				{
+					gap: "1",
+					align: "start",
+					shrink: true,
+					attributes: [h.Title(severityCounts(summary.counts))],
+				},
 				[
-					badge(h, { variant: SEVERITY_VARIANT[summary.worst] }, [
-						`${summary.counts[summary.worst]} ${summary.worst}`,
-					]),
+					h.span(
+						[h.Class("flex items-center gap-1.5 whitespace-nowrap")],
+						[
+							advisorySeverityBadge(h, summary.worst),
+							typography(h, { size: "xs", mono: true, numeric: true }, [
+								String(summary.counts[summary.worst]),
+							]),
+						],
+					),
 					...(rest === 0
 						? []
 						: [
-								h.span(
-									[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
-									[`${rest} more`],
-								),
+								typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
+									`${rest} more`,
+								]),
 							]),
 				],
 			)
@@ -208,17 +229,17 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Runtimes by service",
-			action: h.span([h.Class("text-xs text-muted-foreground")], ["Needs attention first"]),
+			action: typography(h, { size: "xs", tone: "muted" }, ["Needs attention first"]),
 		}),
 		table(h, { ariaLabel: "Service runtimes" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Service"]),
-					tableHead(h, ["Runtime"]),
-					tableHead(h, ["Status"]),
-					tableHead(h, ["Vulnerabilities"]),
-					tableHead(h, ["SDK"]),
-					tableHead(h, ["Last seen"]),
+					tableHead(h, ["Runtime"], WIDE_COLUMN),
+					tableHead(h, ["Status"], WIDE_COLUMN),
+					tableHead(h, ["Vulnerabilities"], WIDE_COLUMN),
+					tableHead(h, ["SDK"], ROOMY_COLUMN),
+					tableHead(h, ["Last seen"], WIDE_COLUMN),
 				]),
 			]),
 			tableBody(
@@ -228,40 +249,59 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 						h,
 						[
 							tableCell(h, [
-								h.span(
-									[h.Class("flex min-w-0 flex-col")],
-									[
-										h.span([h.Class("truncate font-medium")], [entry.row.service]),
-										...(entry.row.environment === ""
-											? []
-											: [
-													h.span(
-														[h.Class("truncate text-xs text-muted-foreground")],
-														[entry.row.environment],
-													),
+								vstack(h, { shrink: true, as: "span" }, [
+									typography(h, { weight: "medium", truncate: true }, [entry.row.service]),
+									// Phones drop the runtime, status and vulnerability columns, so they ride under the service.
+									h.span([h.Class("text-sm sm:hidden")], [runtimeCell(h, entry)]),
+									h.span(
+										[
+											h.Class(
+												"flex flex-wrap items-start gap-x-3 gap-y-1 pt-1 sm:hidden",
+											),
+										],
+										[statusCell(h, entry), vulnerabilitiesCell(h, entry)],
+									),
+									...(entry.row.environment === ""
+										? []
+										: [
+												typography(h, { size: "xs", tone: "muted", truncate: true }, [
+													entry.row.environment,
 												]),
-									],
-								),
+											]),
+								]),
 							]),
-							tableCell(h, [runtimeCell(h, entry)]),
-							tableCell(h, [statusCell(h, entry)]),
-							tableCell(h, [vulnerabilitiesCell(h, entry)]),
-							tableCell(h, [sdkLabelOf(entry.row)], "text-xs text-muted-foreground"),
-							tableCell(h, [
-								isSeenThisHour(entry.row.lastSeen, nowMs)
-									? h.span(
-											[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
-											["This hour"],
-										)
-									: relativeTime(h, {
-											value: entry.row.lastSeen,
-											nowMs,
-											timeZone,
-											variant: "orDate",
-											tooltip: "title",
-											className: "whitespace-nowrap text-xs text-muted-foreground",
-										}),
-							]),
+							tableCell(h, [runtimeCell(h, entry)], WIDE_COLUMN),
+							tableCell(h, [statusCell(h, entry)], WIDE_COLUMN),
+							tableCell(h, [vulnerabilitiesCell(h, entry)], WIDE_COLUMN),
+							tableCell(
+								h,
+								[sdkLabelOf(entry.row)],
+								cn(typographyClass({ size: "xs", tone: "muted" }), ROOMY_COLUMN),
+							),
+							tableCell(
+								h,
+								[
+									isSeenThisHour(entry.row.lastSeen, nowMs)
+										? typography(
+												h,
+												{ size: "xs", tone: "muted", className: "whitespace-nowrap" },
+												["This hour"],
+											)
+										: relativeTime(h, {
+												value: entry.row.lastSeen,
+												nowMs,
+												timeZone,
+												variant: "orDate",
+												tooltip: "title",
+												className: typographyClass({
+													size: "xs",
+													tone: "muted",
+													className: "whitespace-nowrap",
+												}),
+											}),
+								],
+								WIDE_COLUMN,
+							),
 						],
 						undefined,
 						[
@@ -329,34 +369,31 @@ const noVersionNote = (h: H): Html =>
 	])
 
 const footnote = (h: H): Html =>
-	h.p(
-		[h.Class("text-xs text-muted-foreground")],
-		[
-			"Release data from ",
-			textLink(
-				h,
-				{
-					tone: "muted",
-					className: "underline",
-					href: "https://endoflife.date",
-					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
-				},
-				["endoflife.date"],
-			),
-			", vulnerabilities from ",
-			textLink(
-				h,
-				{
-					tone: "muted",
-					className: "underline",
-					href: "https://osv.dev",
-					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
-				},
-				["OSV.dev"],
-			),
-			" and, for Bun and Deno, their GitHub security advisories.",
-		],
-	)
+	typography(h, { size: "xs", tone: "muted", as: "p" }, [
+		"Release data from ",
+		textLink(
+			h,
+			{
+				tone: "muted",
+				className: "underline",
+				href: "https://endoflife.date",
+				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+			},
+			["endoflife.date"],
+		),
+		", vulnerabilities from ",
+		textLink(
+			h,
+			{
+				tone: "muted",
+				className: "underline",
+				href: "https://osv.dev",
+				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+			},
+			["OSV.dev"],
+		),
+		" and, for Bun and Deno, their GitHub security advisories.",
+	])
 
 // CRITICAL UPGRADES
 
@@ -378,9 +415,7 @@ const advisoryRow = (h: H, advisory: RuntimeAdvisory): Html =>
 				},
 				[advisory.id],
 			),
-			badge(h, { variant: SEVERITY_VARIANT[advisory.severity], className: "shrink-0" }, [
-				advisory.severity,
-			]),
+			advisorySeverityBadge(h, advisory.severity, "shrink-0"),
 			h.span(
 				[h.Class("min-w-0 flex-1 truncate text-muted-foreground"), h.Title(advisory.summary ?? "")],
 				[advisory.summary ?? "No summary published"],
@@ -413,54 +448,46 @@ const upgradeItem = (h: H, upgrade: CriticalUpgrade): Html => {
 	return h.li(
 		[h.Class("flex flex-col gap-2 py-3"), h.Key(upgrade.key)],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1")],
-				[
-					h.span(
-						[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2")],
-						[
-							h.span(
-								[h.Class("font-medium")],
-								[`${runtimeLabelOf(upgrade.entry)} ${upgrade.entry.row.runtimeVersion}`],
-							),
-							h.span(
-								[h.Class("truncate text-xs text-muted-foreground")],
-								[upgrade.services.join(", ")],
-							),
-						],
-					),
-					h.span(
-						[h.Class("flex items-center gap-2 text-sm")],
-						[
-							h.span(
-								[h.Class("text-xs text-muted-foreground")],
-								[severityCounts(upgrade.summary.counts)],
-							),
-							h.span([h.Class("font-medium")], [upgradeAdvice(upgrade)]),
-						],
-					),
-				],
-			),
+			hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1" }, [
+				h.span(
+					[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2")],
+					[
+						h.span(
+							[h.Class("font-medium")],
+							[`${runtimeLabelOf(upgrade.entry)} ${upgrade.entry.row.runtimeVersion}`],
+						),
+						typography(h, { size: "xs", tone: "muted", truncate: true }, [
+							upgrade.services.join(", "),
+						]),
+					],
+				),
+				h.span(
+					[h.Class("flex items-center gap-2 text-sm")],
+					[
+						typography(h, { size: "xs", tone: "muted" }, [
+							severityCounts(upgrade.summary.counts),
+						]),
+						h.span([h.Class("font-medium")], [upgradeAdvice(upgrade)]),
+					],
+				),
+			]),
 			...(isEndOfLife
 				? [
-						h.p(
-							[h.Class("text-xs text-severity-error")],
-							[
-								"This release line is end of life and gets no further fixes: move to a supported one.",
-							],
-						),
+						typography(h, { size: "xs", tone: "error", as: "p" }, [
+							"This release line is end of life and gets no further fixes: move to a supported one.",
+						]),
 					]
 				: []),
-			h.ul(
-				[h.Class("flex flex-col gap-1.5 text-sm")],
+			vstack(
+				h,
+				{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
 				urgent.slice(0, ADVISORIES_SHOWN).map((advisory) => advisoryRow(h, advisory)),
 			),
 			...(hidden > 0
 				? [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[`and ${hidden} more known for this version`],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							`and ${hidden} more known for this version`,
+						]),
 					]
 				: []),
 		],
@@ -471,15 +498,12 @@ const upgradesPanel = (h: H, upgrades: ReadonlyArray<CriticalUpgrade>): Html =>
 	panel(h, { className: "overflow-hidden border-severity-error-a3" }, [
 		panelHeader(h, {
 			className: "bg-severity-error-a1",
-			title: h.span(
-				[h.Class("flex items-center gap-2")],
-				[
-					icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
-					upgrades.length === 1
-						? "1 runtime version to upgrade now"
-						: `${upgrades.length} runtime versions to upgrade now`,
-				],
-			),
+			title: hstack(h, { gap: "2", as: "span" }, [
+				icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
+				upgrades.length === 1
+					? "1 runtime version to upgrade now"
+					: `${upgrades.length} runtime versions to upgrade now`,
+			]),
 		}),
 		h.p([h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")], [UPGRADES_COPY]),
 		h.ul(
@@ -499,7 +523,7 @@ const runtimesEmpty = (h: H): Html =>
 					h.span(
 						[],
 						[
-							"This tab lists the runtime each service reports through ",
+							"This page lists the runtime each service reports through ",
 							inlineCode(h, {}, ["process.runtime.name"]),
 							" and ",
 							inlineCode(h, {}, ["process.runtime.version"]),
@@ -509,7 +533,7 @@ const runtimesEmpty = (h: H): Html =>
 				]),
 			]),
 		],
-		"rounded-md border md:py-16",
+		emptyFrameClass("dashed"),
 	)
 
 export const runtimesBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
@@ -533,10 +557,7 @@ export const runtimesBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 				totalsRail(h, entries),
 				...(upgrades.length > 0 ? [upgradesPanel(h, upgrades)] : []),
 				...(hasNoVersion ? [noVersionNote(h)] : []),
-				h.div(
-					[h.Class("flex flex-col gap-2")],
-					[runtimesTable(h, entries, model.nowMs, timeZone), footnote(h)],
-				),
+				vstack(h, { gap: "2" }, [runtimesTable(h, entries, model.nowMs, timeZone), footnote(h)]),
 			]
 		},
 	})

@@ -9,7 +9,12 @@ type Children = ReadonlyArray<Html | string>
 
 export const marker = <M>(
 	h: HtmlBuilder<M>,
-	options: { readonly variant?: MarkerVariant; readonly className?: string },
+	options: {
+		readonly variant?: MarkerVariant
+		readonly className?: string
+		/** `"status"` for a live marker ("Thinking…") a screen reader announces. */
+		readonly role?: string
+	},
 	children: Children,
 ): Html => {
 	const variant = options.variant ?? "default"
@@ -18,6 +23,7 @@ export const marker = <M>(
 			h.Class(cn(markerVariants({ variant, className: options.className }))),
 			h.DataAttribute("slot", "marker"),
 			h.DataAttribute("variant", variant),
+			...(options.role === undefined ? [] : [h.Role(options.role)]),
 		],
 		children,
 	)

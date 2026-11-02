@@ -4,6 +4,7 @@ import type { IconName } from "../../../ui/icon"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { WindowSearch } from "./frame"
+import { hstackClass } from "../../../ui/stack"
 
 // `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
 
@@ -109,7 +110,7 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 		options.filters === undefined || options.filters.length === 0
 			? children
 			: [
-					options.h.div([options.h.Class("flex flex-wrap items-center gap-2")], options.filters),
+					options.h.div([options.h.Class(hstackClass({ gap: "2", wrap: true }))], options.filters),
 					...children,
 				],
 	)

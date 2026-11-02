@@ -29,6 +29,8 @@ import { bulletList, section } from "./parts"
 import type { ReviewSheet, SheetMessage } from "./review-sheet"
 import { ciRunsSection, historySection, postMergeSection, productionSection } from "./review-sheet-more"
 import { emptyMessage } from "../../../ui/empty"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `ReviewDetailContent`'s body.
 
@@ -100,7 +102,7 @@ const findingCard = (h: H, finding: PrReviewFinding, tracked: CodeReviewFinding 
 						),
 						h.span([h.Class("text-muted-foreground")], [CATEGORY_LABELS[finding.category]]),
 						...(finding.handle
-							? [h.span([h.Class("font-mono text-muted-foreground")], [finding.handle])]
+							? [typography(h, { tone: "muted", mono: true }, [finding.handle])]
 							: []),
 						...(tracked === undefined
 							? []
@@ -111,7 +113,7 @@ const findingCard = (h: H, finding: PrReviewFinding, tracked: CodeReviewFinding 
 								]),
 					],
 				),
-				h.p([h.Class("text-sm font-medium")], [finding.title]),
+				typography(h, { size: "sm", weight: "medium", as: "p" }, [finding.title]),
 				h.p(
 					[h.Class("font-mono text-xs break-all text-muted-foreground")],
 					[
@@ -123,44 +125,42 @@ const findingCard = (h: H, finding: PrReviewFinding, tracked: CodeReviewFinding 
 							: []),
 					],
 				),
-				messageResponse(h, finding.body, "text-sm text-muted-foreground"),
+				messageResponse(h, finding.body, typographyClass({ size: "sm", tone: "muted" })),
 			]),
 		],
 	)
 
 /** The "Before merge" steps, ticked ones struck through with who ticked them. */
 const mergeSteps = (h: H, steps: ReadonlyArray<PrReviewMergeStep>): Html =>
-	h.ul(
-		[h.Class("flex flex-col gap-1.5 text-sm")],
+	vstack(
+		h,
+		{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
 		steps.map((step) => {
 			const isDone = step.done === true
-			return h.li(
-				[h.Class("flex items-start gap-2")],
-				[
-					h.span(
-						[
-							h.AriaLabel(isDone ? "Done" : "Open"),
-							h.Class(
-								isDone
-									? "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground"
-									: "mt-0.5 size-4 shrink-0 rounded-sm border border-border",
-							),
-						],
-						isDone ? [icon(h, "CheckIcon", { size: 12 })] : [],
-					),
-					h.span(
-						[h.Class(isDone ? "text-muted-foreground line-through" : "text-foreground")],
-						[
-							step.path === undefined || step.subject !== step.path
-								? step.title
-								: `${step.title} (${step.path})`,
-							...(isDone && step.doneBy !== undefined
-								? [h.span([h.Class("ml-1.5 text-xs no-underline")], [`@${step.doneBy}`])]
-								: []),
-						],
-					),
-				],
-			)
+			return hstack(h, { gap: "2", align: "start", as: "li" }, [
+				h.span(
+					[
+						h.AriaLabel(isDone ? "Done" : "Open"),
+						h.Class(
+							isDone
+								? "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground"
+								: "mt-0.5 size-4 shrink-0 rounded-sm border border-border",
+						),
+					],
+					isDone ? [icon(h, "CheckIcon", { size: 12 })] : [],
+				),
+				h.span(
+					[h.Class(isDone ? "text-muted-foreground line-through" : "text-foreground")],
+					[
+						step.path === undefined || step.subject !== step.path
+							? step.title
+							: `${step.title} (${step.path})`,
+						...(isDone && step.doneBy !== undefined
+							? [h.span([h.Class("ml-1.5 text-xs no-underline")], [`@${step.doneBy}`])]
+							: []),
+					],
+				),
+			])
 		}),
 	)
 
@@ -172,7 +172,7 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 		section(h, "Summary", [
 			messageResponse(h, report.summary, "text-sm"),
 			...(report.confidenceReason
-				? [h.p([h.Class("text-xs text-muted-foreground")], [report.confidenceReason])]
+				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [report.confidenceReason])]
 				: []),
 		]),
 		...(report.keyChanges && report.keyChanges.length > 0
@@ -184,8 +184,9 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 		section(h, `Issues (${report.findings.length})`, [
 			report.findings.length === 0
 				? emptyMessage(h, {}, ["No issues filed on this head"])
-				: h.ul(
-						[h.Class("flex flex-col gap-3")],
+				: vstack(
+						h,
+						{ gap: "3", as: "ul" },
 						report.findings.map((finding) =>
 							findingCard(
 								h,
@@ -230,10 +231,11 @@ export const reviewSections = (
 		stats(h, detail, sheet.nowMs),
 		...(review.status === "skipped" && review.skipReason !== null
 			? [
-					h.p(
-						[h.Class("text-sm text-muted-foreground")],
-						["Skipped: ", SKIP_LABELS[review.skipReason], "."],
-					),
+					typography(h, { size: "sm", tone: "muted", as: "p" }, [
+						"Skipped: ",
+						SKIP_LABELS[review.skipReason],
+						".",
+					]),
 				]
 			: []),
 		...(problem === null

@@ -1,8 +1,16 @@
+import type { AdvisorySeverity } from "@maple/domain/runtime-advisories"
 import type { SecurityAuditRunStatus, SecurityAuditSeverity } from "@maple/domain/security-audit"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
 import { icon, type IconName } from "../../../ui/icon"
 import { severityBadge, severityIcon } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
@@ -46,6 +54,16 @@ export const securitySeverityBadge = <M>(
 			])
 		: severityBadge(h, level, className)
 }
+
+/** An advisory's severity in the same badge; one with no score reads as "Unrated". */
+export const advisorySeverityBadge = <M>(
+	h: HtmlBuilder<M>,
+	severity: AdvisorySeverity,
+	className?: string,
+): Html =>
+	severity === "unknown"
+		? badge(h, { variant: "muted", className: cn("text-muted-foreground", className) }, ["Unrated"])
+		: securitySeverityBadge(h, severity, className)
 
 /** A still loading block: the skeleton's surface without its sweep. */
 export const placeholder = <M>(h: HtmlBuilder<M>, className: string): Html =>
@@ -96,7 +114,7 @@ export const gateState = <M>(h: HtmlBuilder<M>, gate: Gate, className?: string):
 				emptyDescription(h, [copy.description]),
 			]),
 		],
-		cn("rounded-md border border-dashed md:py-14", className),
+		emptyFrameClass("dashed", className),
 	)
 }
 

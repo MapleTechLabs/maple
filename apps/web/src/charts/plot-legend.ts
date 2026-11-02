@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./chart"
+import { swatch } from "../ui/swatch"
 
 // Port of `PlotLegend` and `PlotStatsLegend` (packages/ui/src/components/plot/plot-legend.tsx).
 // Hover and click are Chart Messages; `active` and `highlighted` come from the chart Model.
@@ -21,12 +22,6 @@ export interface PlotLegendState {
 	readonly active: Option.Option<string>
 	readonly label: string
 }
-
-const swatch = (h: HtmlBuilder<Message>, color: string, dashed: boolean | undefined): Html =>
-	h.span([
-		h.Class(cn("size-2 shrink-0 rounded-xs", dashed && "border border-dashed")),
-		h.Style(dashed ? { "border-color": color } : { "background-color": color }),
-	])
 
 const legendValue = (h: HtmlBuilder<Message>, value: string, secondary: string | undefined): Html =>
 	h.span(
@@ -66,7 +61,7 @@ const legendItem = (h: HtmlBuilder<Message>, state: PlotLegendState, entry: Plot
 			),
 		],
 		[
-			swatch(h, entry.color, entry.dashed),
+			swatch(h, { color: entry.color, dashed: entry.dashed }),
 			h.span([h.Class("truncate")], [entry.label]),
 			...(entry.value === undefined ? [] : [legendValue(h, entry.value, entry.secondary)]),
 		],

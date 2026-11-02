@@ -20,6 +20,8 @@ import { metricTypeLabel } from "../shared"
 import { DEFAULT_PRESET, draftOf, summaryOf } from "./update"
 import { graduationActions, queryControls } from "./view-controls"
 import { metadataPanel, metricBreakdown, metricChart } from "./view-panels"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -57,7 +59,9 @@ const loading = (h: H): Html =>
 
 const noData = (h: H, metricName: string): Html =>
 	emptyMessage(h, { dashed: true, className: "flex flex-col items-center p-12" }, [
-		h.p([h.Class("font-medium text-foreground")], ["No data for this metric in this window"]),
+		typography(h, { tone: "foreground", weight: "medium", as: "p" }, [
+			"No data for this metric in this window",
+		]),
 		h.p(
 			[h.Class("mt-2 max-w-md")],
 			[
@@ -71,33 +75,27 @@ const noData = (h: H, metricName: string): Html =>
 /** `MetricDetailContent`. */
 const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string): Html => {
 	const draft = draftOf(model, summary)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			graduationActions(h, model),
-			h.submodel({
-				slotId: "metric-add-to-dashboard-dialog",
-				model: model.addToDashboard,
-				view: AddToDashboard.view,
-				viewInputs: { metricName: model.metricName },
-				toParentMessage: (message) => Message.GotAddToDashboardMessage({ message }),
-			}),
-			queryControls(h, model, summary.metricType, summary.isMonotonic),
-			h.div(
-				[h.Class("grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]")],
-				[
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-4")],
-						[
-							metricChart(h, model, draft, summary.unit, timeZone),
-							metricBreakdown(h, model, draft),
-						],
-					),
-					metadataPanel(h, model, summary, timeZone),
-				],
-			),
-		],
-	)
+	return vstack(h, { gap: "4" }, [
+		graduationActions(h, model),
+		h.submodel({
+			slotId: "metric-add-to-dashboard-dialog",
+			model: model.addToDashboard,
+			view: AddToDashboard.view,
+			viewInputs: { metricName: model.metricName },
+			toParentMessage: (message) => Message.GotAddToDashboardMessage({ message }),
+		}),
+		queryControls(h, model, summary.metricType, summary.isMonotonic),
+		h.div(
+			[h.Class("grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]")],
+			[
+				h.div(
+					[h.Class("flex min-w-0 flex-col gap-4")],
+					[metricChart(h, model, draft, summary.unit, timeZone), metricBreakdown(h, model, draft)],
+				),
+				metadataPanel(h, model, summary, timeZone),
+			],
+		),
+	])
 }
 
 const body = (h: H, model: Model, timeZone: string): Html =>

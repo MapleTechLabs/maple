@@ -14,6 +14,8 @@ import { keyValue, keyValueList } from "../../../ui/key-value"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { Message, type Model } from "./model"
 import { ACTOR_BADGES, SOURCE_LABELS } from "./view"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `AuditLogDetail` and its parts.
 
@@ -60,7 +62,7 @@ const metadataBlock = (value: unknown): string | null => {
 }
 
 const changeValue = (h: H, value: unknown): Html => {
-	if (isPlaceholder(value)) return h.span([h.Class("text-foreground-subtle italic")], [value.slice(1, -1)])
+	if (isPlaceholder(value)) return typography(h, { tone: "subtle", className: "italic" }, [value.slice(1, -1)])
 	if (value === undefined || value === null || value === "") return h.span([h.Class("text-foreground-subtle")], [EMPTY_VALUE])
 	return h.span([h.Class("break-all")], [formatScalar(value)])
 }
@@ -180,8 +182,7 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 								]),
 					]),
 					keyValue(h, { wrap: true, label: "Action" }, [
-						h.span(
-							[h.Class("flex flex-wrap items-center gap-1.5")],
+						hstack(h, { gap: "1.5", wrap: true, as: "span" },
 							[
 								...(actionText === null ? [] : [h.span([], [actionText])]),
 								inlineCode(h, { variant: "plain", className: "text-2xs text-foreground" }, [entry.action]),

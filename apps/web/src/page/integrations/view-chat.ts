@@ -8,6 +8,7 @@ import { skeleton } from "../../ui/skeleton"
 import { manifestGlyph } from "../../ui/manifest-glyph"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typographyClass } from "../../ui/typography"
 
 // The chat card's parts; the card is view-chat-card.ts.
 
@@ -33,7 +34,7 @@ export const identityRow = (
 							? `Link it so Maple knows it's you acting from ${platform}.`
 							: `Linked as ${shown}`,
 					],
-					"truncate text-2xs",
+					typographyClass({ size: "2xs", truncate: true }),
 					shown,
 				),
 			],

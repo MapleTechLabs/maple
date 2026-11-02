@@ -17,6 +17,8 @@ import { HISTOGRAM_TARGET_POINTS, volumeSeriesKeys, volumeTotal } from "./derive
 import { Message } from "./message"
 import type { Model, VolumeBrush, VolumeBucket } from "./model"
 import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 /** The strip is a scrubber above the list, not a chart in its own right. */
 export const LOGS_VOLUME_CHART_HEIGHT = 120
@@ -163,8 +165,7 @@ const emptyStrip = (
 										h,
 										{ as: "ul", className: "flex items-center gap-3 opacity-60" },
 										SEVERITY_ORDER.filter((s) => s !== "WARNING").map((severity) =>
-											h.li(
-												[h.Class("flex items-center gap-1.5")],
+											hstack(h, { gap: "1.5", as: "li" },
 												[
 													h.span([
 														h.Class("size-1.5 rounded-xs"),
@@ -212,8 +213,8 @@ const header = (h: HtmlBuilder<Message>, total: number): Html =>
 	h.div(
 		[h.Class("mb-1 flex items-baseline gap-2")],
 		[
-			h.span([h.Class("text-sm font-medium")], [formatNumber(total), " logs"]),
-			h.span([h.Class("text-xs text-muted-foreground")], ["in this window"]),
+			typography(h, { size: "sm", weight: "medium" }, [formatNumber(total), " logs"]),
+			typography(h, { size: "xs", tone: "muted" }, ["in this window"]),
 		],
 	)
 

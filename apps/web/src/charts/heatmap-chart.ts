@@ -20,6 +20,9 @@ import {
 import { plotFrame } from "./plot-frame"
 import { sequentialColorScale } from "./sequential-colors"
 import { resolveColor, type ThemeColors } from "./theme-colors"
+import { typography } from "../ui/typography"
+import { swatch } from "../ui/swatch"
+import { chartFrameClass } from "../ui/chart-frame"
 
 // Port of `QueryBuilderHeatmapChart` (packages/ui/src/components/charts/heatmap/
 // query-builder-heatmap-chart.tsx). The definition is ./definitions/heatmap.ts.
@@ -97,7 +100,7 @@ const emptyState = (h: H, inputs: HeatmapChartInputs): Html => {
 									]),
 								),
 							),
-							h.div([h.Class("text-2xs text-muted-foreground")], ["No data"]),
+							typography(h, { size: "2xs", tone: "muted", as: "div" }, ["No data"]),
 						],
 					),
 				],
@@ -131,14 +134,10 @@ const tooltipBody = (
 						h.div(
 							[h.Class("mt-1 flex items-center gap-1.5")],
 							tooltip.value === null
-								? [h.span([h.Class("italic text-muted-foreground")], ["no data"])]
+								? [typography(h, { tone: "muted", className: "italic" }, ["no data"])]
 								: [
-										h.span([
-											h.Class("size-2 shrink-0 rounded-xs"),
-											h.Style({ "background-color": colorAt(tooltip.value) }),
-										]),
-										h.span(
-											[h.Class("font-medium tabular-nums text-foreground")],
+										swatch(h, { color: colorAt(tooltip.value) }),
+										typography(h, { tone: "foreground", weight: "medium", numeric: true },
 											[formatScalar(tooltip.value, unit)],
 										),
 									],
@@ -203,7 +202,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 	})
 	return h.div(
 		[
-			h.Class(cn("relative h-full w-full select-none", inputs.className)),
+			h.Class(chartFrameClass("plot", inputs.className)),
 			h.Style({ animation: "tile-in 0.35s ease both" }),
 			h.OnMount(MeasureChartContainer()),
 		],

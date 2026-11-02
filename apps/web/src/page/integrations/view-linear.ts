@@ -1,12 +1,13 @@
 import type { LinearIntegrationStatus } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { errorState } from "../../ui/error-state"
 import { icon } from "../../ui/icon"
-import { item, itemContent, itemMedia } from "../../ui/item"
-import { skeleton } from "../../ui/skeleton"
+import { itemContent, mediaCard } from "../../ui/item"
+import { skeletonBlock } from "../../ui/skeleton"
 import {
 	integrationEmpty,
 	integrationEmptyCard,
@@ -20,6 +21,8 @@ import { LINEAR_ACCENT } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
+import { typography } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // The Linear card: connect, the connected workspace, and a revoked grant that needs a reconnect.
 
@@ -72,37 +75,34 @@ const notConnected = (h: H, model: Model): Html =>
 
 const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html => {
 	const busy = model.connect.isStarting || model.disconnect.isPending
-	return item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-		itemMedia(h, {}, [integrationIconPlate(h, BRAND)]),
+	return mediaCard(h, integrationIconPlate(h, BRAND), [
 		itemContent(
 			h,
 			[
 				h.div(
 					[],
 					[
-						h.div(
-							[h.Class("flex items-center gap-2")],
-							[
-								h.h3([h.Class("text-sm font-semibold")], ["Linear"]),
-								status.revoked
-									? badge(h, { variant: "warn" }, ["Revoked"])
-									: badge(h, { variant: "ok" }, ["Connected"]),
-							],
-						),
-						h.p(
-							[h.Class("mt-1 text-xs text-muted-foreground")],
-							[
-								status.revoked
-									? "Linear rejected Maple's access, so incidents no longer open or update issues. Reconnect to resume."
-									: "Maple opens one Linear issue per alert rule, then comments as it fires again, changes severity or resolves. Create a Linear destination to pick the team.",
-							],
-						),
+						hstack(h, { gap: "2" }, [
+							heading(h, { level: 3, variant: "section" }, ["Linear"]),
+							status.revoked
+								? badge(h, { variant: "warn" }, ["Revoked"])
+								: badge(h, { variant: "ok" }, ["Connected"]),
+						]),
+						typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-1" }, [
+							status.revoked
+								? "Linear rejected Maple's access, so incidents no longer open or update issues. Reconnect to resume."
+								: "Maple opens one Linear issue per alert rule, then comments as it fires again, changes severity or resolves. Create a Linear destination to pick the team.",
+						]),
 					],
 				),
 				...(status.workspaceName !== null && status.workspaceName !== ""
 					? [
 							h.div(
-								[h.Class("rounded-md bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground")],
+								[
+									h.Class(
+										"rounded-md bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground",
+									),
+								],
 								[
 									h.div(
 										[h.Class("[overflow-wrap:anywhere]")],
@@ -116,34 +116,31 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 						]
 					: []),
 				model.isAdmin
-					? h.div(
-							[h.Class("flex flex-wrap gap-2")],
-							[
-								button(
-									h,
-									{
-										size: "sm",
-										variant: status.revoked ? "default" : "outline",
-										isDisabled: busy,
-										isLoading: model.connect.isStarting,
-										attributes: [h.OnClick(Message.ClickedConnect())],
-									},
-									["Reconnect"],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isDisabled: busy,
-										isLoading: model.disconnect.isPending,
-										attributes: [h.OnClick(Message.ClickedDisconnect())],
-									},
-									["Disconnect"],
-								),
-							],
-						)
-					: h.p([h.Class("text-2xs text-muted-foreground")], [ADMIN_ONLY]),
+					? hstack(h, { gap: "2", align: "stretch", wrap: true }, [
+							button(
+								h,
+								{
+									size: "sm",
+									variant: status.revoked ? "default" : "outline",
+									isDisabled: busy,
+									isLoading: model.connect.isStarting,
+									attributes: [h.OnClick(Message.ClickedConnect())],
+								},
+								["Reconnect"],
+							),
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									isDisabled: busy,
+									isLoading: model.disconnect.isPending,
+									attributes: [h.OnClick(Message.ClickedDisconnect())],
+								},
+								["Disconnect"],
+							),
+						])
+					: typography(h, { size: "2xs", tone: "muted", as: "p" }, [ADMIN_ONLY]),
 				disconnectDialog(h, model, "linear"),
 			],
 			"gap-2",
@@ -156,8 +153,8 @@ const byState = (h: H, model: Model, data: LinearIntegrationStatus): Html =>
 
 export const linearCard = (h: H, model: Model): Html =>
 	AsyncData.match(model.statuses.linear.data, {
-		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "32" }),
+		onLoading: () => skeletonBlock(h, { height: "32" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

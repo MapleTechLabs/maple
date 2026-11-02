@@ -13,6 +13,8 @@ import * as Tabs from "../../../ui/tabs"
 import * as TabsView from "../../../ui/tabs-view"
 import { codeBlock } from "../../settings/kit/code-block"
 import { maskedToken, sourceSnippets } from "./snippets"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `SourceSetup`: endpoint, header and the platform's setup snippets. The parent embeds it and passes the
 // token only right after a create or roll.
@@ -92,12 +94,10 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 	const shown = token ?? maskedToken(config.keyPrefix)
 	const snippets = sourceSnippets(config.platform, shown, config.name)
 	const snippet = snippets.find((entry) => entry.id === model.tabs.selected) ?? snippets[0]
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(h, { gap: "4" },
 		[
 			panel(h, { padded: true, className: "gap-3" }, [
-				h.div(
-					[h.Class("flex flex-col gap-1.5")],
+				vstack(h, { gap: "1.5" },
 					[
 						eyebrow(h, {}, ["OTLP endpoint"]),
 						copyableField(h, {
@@ -109,8 +109,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 						}),
 					],
 				),
-				h.div(
-					[h.Class("flex flex-col gap-1.5")],
+				vstack(h, { gap: "1.5" },
 					[
 						eyebrow(h, {}, ["Header"]),
 						token === null
@@ -131,8 +130,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 			...(snippet === undefined
 				? []
 				: [
-						h.div(
-							[h.Class("flex flex-col gap-2")],
+						vstack(h, { gap: "2" },
 							[
 								...(snippets.length > 1
 									? [
@@ -161,8 +159,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 					]),
 			...(token === null
 				? [
-						h.p(
-							[h.Class("text-muted-foreground text-xs")],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
 							["The token is only shown when the source is created or rolled. Roll it to get a new one."],
 						),
 					]

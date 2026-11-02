@@ -1,14 +1,23 @@
 import type { ErrorIssueSampleTrace } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The issue occurrences table.
 
@@ -16,7 +25,7 @@ export type OccurrencesTableInputs = Readonly<{ nowMs: number; timeZone: string 
 
 const TRACE_PILL = cn(
 	"inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface-sunken px-2 py-0.5",
-	"font-mono text-2xs text-muted-foreground tabular-nums",
+	typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true }),
 	"hover:border-primary-a4 active:border-primary-a4 hover:bg-primary-a2 active:bg-primary-a2 hover:text-primary active:text-primary",
 )
 
@@ -38,25 +47,23 @@ const occurrenceRow = <M>(
 						tooltip: "title",
 					}),
 				],
-				"tabular-nums text-muted-foreground",
+				typographyClass({ tone: "muted", numeric: true }),
 			),
 			tableCell(h, [
-				h.span(
-					[h.Class("inline-flex items-center gap-1.5")],
+				hstack(h, { gap: "1.5", inline: true, as: "span" },
 					[
 						serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
 						h.span([], [trace.serviceName]),
 					],
 				),
 			]),
-			tableCell(
+			truncatedTableCell(
 				h,
 				[
 					truncatedText(h, { text: trace.exceptionMessage }, [
 						trace.exceptionMessage.split("\n", 1)[0] ?? "",
 					]),
 				],
-				truncatedCellStyles,
 			),
 			tableCell(h, [
 				h.a(

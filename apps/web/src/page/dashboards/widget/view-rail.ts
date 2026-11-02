@@ -1,10 +1,8 @@
 import { PANEL_TYPES, WIDGET_UNITS } from "@maple/domain/http"
-import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
 import { separator } from "../../../ui/display"
+import { eyebrow } from "../../../ui/eyebrow"
 import { field, fieldLabel, type FieldState, input } from "../../../ui/field"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { textarea } from "../../../ui/textarea"
@@ -17,13 +15,11 @@ import type { Model } from "./model"
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
 import { typeSettings } from "./view-rail-types"
+import { vstack } from "../../../ui/stack"
 
 // `WidgetSettingsBar` and the `WidgetSettings` fields the timeseries panels compose.
 
 type H = HtmlBuilder<Message>
-
-/** The eyebrow caption, restated at `sm:` because FieldLabel sets its own size there. */
-const RAIL_LABEL_CLASS = cn(eyebrowVariants({ variant: "label" }), "sm:text-2xs sm:leading-normal")
 
 const stateOf = (isFilled: boolean): FieldState => ({
 	isDirty: false,
@@ -48,7 +44,7 @@ export const railSetting = (
 	children: ReadonlyArray<Html>,
 ): Html =>
 	field(h, { className: "items-stretch gap-1.5", state: stateOf(isFilled) }, [
-		fieldLabel(h, { ids: idsOf(name), className: RAIL_LABEL_CLASS, state: stateOf(isFilled) }, label),
+		fieldLabel(h, { ids: idsOf(name), isEyebrow: true, state: stateOf(isFilled) }, label),
 		...children,
 	])
 
@@ -72,33 +68,25 @@ export const checkboxRow = (
 	onToggle: Message,
 	isDisabled = false,
 ): Html =>
-	h.div(
-		[
-			h.Class(cn(fieldStyles, "flex-row items-center gap-2")),
-			h.DataAttribute("slot", "field"),
-			...(isChecked ? [h.DataAttribute("filled", "")] : []),
-		],
-		[
-			...Checkbox.view(h, {
-				model: { isChecked },
-				toParentMessage: () => onToggle,
-				id: `${id}-root`,
-				inputId: id,
-				isDisabled,
-				className: "shrink-0",
-			}),
-			h.label(
-				[
-					h.Id(Checkbox.labelId(id)),
-					h.For(id),
-					h.Class(cn(fieldLabelStyles, "font-normal text-xs text-muted-foreground sm:text-xs")),
-					h.DataAttribute("slot", "field-label"),
-					...(isChecked ? [h.DataAttribute("filled", "")] : []),
-				],
-				[label],
-			),
-		],
-	)
+	field(h, { className: "flex-row items-center gap-2", state: stateOf(isChecked) }, [
+		...Checkbox.view(h, {
+			model: { isChecked },
+			toParentMessage: () => onToggle,
+			id: `${id}-root`,
+			inputId: id,
+			isDisabled,
+			className: "shrink-0",
+		}),
+		fieldLabel(
+			h,
+			{
+				ids: { control: id, label: Checkbox.labelId(id), error: `${id}-error` },
+				className: "font-normal text-xs text-muted-foreground sm:text-xs",
+				state: stateOf(isChecked),
+			},
+			label,
+		),
+	])
 
 const nameField = (h: H, state: EditorState): Html =>
 	railSetting(h, "name", "Name", state.title !== "", [
@@ -261,19 +249,16 @@ export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyAr
 		},
 	),
 	divider(h),
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			checkboxRow(
-				h,
-				"qb-percent-change",
-				"% change",
-				state.includePercentChange,
-				Message.ToggledPercentChange(),
-				state.comparisonMode === "none",
-			),
-		],
-	),
+	vstack(h, { gap: "3" }, [
+		checkboxRow(
+			h,
+			"qb-percent-change",
+			"% change",
+			state.includePercentChange,
+			Message.ToggledPercentChange(),
+			state.comparisonMode === "none",
+		),
+	]),
 ]
 
 /** `TimeSeriesSettings`: stacking on bar and area, curve and points on line and area. */
@@ -337,22 +322,16 @@ export const settingsRail = (h: H, model: Model, timeZone: string): Html => {
 	const state = model.state
 	if (state === null) return h.empty
 	const panel = toPanelType(state.visualization, state.chartId)
-	return h.div(
-		[h.Class("flex flex-col gap-5")],
-		[
-			h.p(
-				[h.Class(eyebrowVariants({ variant: "label" })), h.DataAttribute("slot", "eyebrow")],
-				["Panel options"],
-			),
-			nameField(h, state),
-			descriptionField(h, state),
-			// A note never queries, so it has no window of its own.
-			...(panel === "markdown" ? [] : [timeRangeField(h, model, state, timeZone)]),
-			divider(h),
-			typePicker(h, state),
-			...(panel === "line" || panel === "bar" || panel === "area"
-				? timeseriesSettings(h, model, state)
-				: typeSettings(h, model, state, panel)),
-		],
-	)
+	return vstack(h, { gap: "5" }, [
+		eyebrow(h, { variant: "label", as: "p" }, ["Panel options"]),
+		nameField(h, state),
+		descriptionField(h, state),
+		// A note never queries, so it has no window of its own.
+		...(panel === "markdown" ? [] : [timeRangeField(h, model, state, timeZone)]),
+		divider(h),
+		typePicker(h, state),
+		...(panel === "line" || panel === "bar" || panel === "area"
+			? timeseriesSettings(h, model, state)
+			: typeSettings(h, model, state, panel)),
+	])
 }

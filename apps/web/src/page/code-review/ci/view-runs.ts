@@ -19,6 +19,8 @@ import { ciResultBadge, traceLink } from "../kit/parts"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { emptyFrameClass } from "../../../ui/empty"
 
 // `CiRunsList`, `RunRows` and the paging footers.
 
@@ -107,8 +109,13 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 									),
 							...(job.reason
 								? [
-										h.span(
-											[h.Class("truncate text-muted-foreground"), h.Title(job.reason)],
+										typography(
+											h,
+											{
+												tone: "muted",
+												truncate: true,
+												attributes: [h.Title(job.reason)],
+											},
 											[job.reason],
 										),
 									]
@@ -138,7 +145,11 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			tableCell(
 				h,
 				[
-					h.div([h.Class("truncate font-medium"), h.Title(run.pipeline)], [run.pipeline]),
+					typography(
+						h,
+						{ weight: "medium", truncate: true, as: "div", attributes: [h.Title(run.pipeline)] },
+						[run.pipeline],
+					),
 					runMeta(h, run, prUrl),
 					...failedJobs(h, run),
 					...traceLink(h, run, time.nowMs, "mt-1 -ml-2 sm:hidden"),
@@ -232,7 +243,7 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 				return filteredEmpty(h, {
 					noun: "runs",
 					description: "No run in this window has this result or branch.",
-					className: "rounded-md border border-dashed md:py-14",
+					className: emptyFrameClass("dashed"),
 					onClear: canClear ? Message.ClickedClearRunFilters() : undefined,
 				})
 			const rows = [...response.runs, ...model.cursors.flatMap((cursor) => runsOf(model, cursor))]

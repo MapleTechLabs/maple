@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
 import { backdropBar } from "../../ui/meter"
 import { panel, panelBody, panelHeader } from "../../ui/panel"
+import { pressable } from "../../ui/pressable"
 import { textLink } from "../../ui/text-link"
 import { truncatedText } from "../../ui/truncated-text"
 import { errorRateValue, latencyValue } from "../../ui/values"
@@ -12,6 +13,8 @@ import { statRail, statRailItem } from "../kit/stat-rail"
 import { toolSpark } from "../agent-sessions/tools-kit/spark"
 import type { McpServerOverview } from "./data"
 import { clientIcon, kindTag, type McpSparkEnv, toolColor } from "./view-kit"
+import { typographyClass } from "../../ui/typography"
+import { vstack } from "../../ui/stack"
 
 // The service page's MCP tab: a summary of the server that links into `/mcp/:service`. Its panels
 // are the Overview tab's (`topOperationsPanel`): backdrop bars, toned values, a spark per row.
@@ -50,12 +53,9 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 					h.li(
 						[h.Key(row.tool)],
 						[
-							h.button(
-								[
-									h.Type("button"),
-									h.OnClick(options.onOpenTool(row.tool)),
-									h.Class(rowClass),
-								],
+							pressable(
+								h,
+								{ onClick: options.onOpenTool(row.tool), className: rowClass },
 								[
 									backdropBar(h, {
 										value: row.calls,
@@ -133,7 +133,7 @@ const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 									truncatedText(h, {
 										text: client.name,
 										mono: true,
-										className: "text-xs text-foreground",
+										className: typographyClass({ size: "xs", tone: "foreground" }),
 									}),
 									...kindTag(h, client.kind),
 								],
@@ -166,8 +166,7 @@ export const serviceMcpTab = <M>(
 	// Clients that only connected have no calls to rank.
 	const callers = data.clients.filter((client) => client.calls > 0)
 	const top = callers[0]
-	return h.div(
-		[h.Class("flex flex-col gap-4 p-4")],
+	return vstack(h, { gap: "4", className: "p-4" },
 		[
 			h.div(
 				[

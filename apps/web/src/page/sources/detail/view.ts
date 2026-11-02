@@ -27,6 +27,8 @@ import { sourceOf } from "./update"
 import { integrationActions, sourceActions } from "./view-actions"
 import { overviewTab } from "./view-overview"
 import { settingsTab, setupTab } from "./view-tabs"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -46,7 +48,7 @@ const notFound = (h: H): Html =>
 	})
 
 const loading = (h: H): Html =>
-	h.div([h.Class("flex flex-col gap-3")], [skeleton(h, "h-10 w-72"), skeleton(h, "h-40 w-full")])
+	vstack(h, { gap: "3" }, [skeleton(h, "h-10 w-72"), skeleton(h, "h-40 w-full")])
 
 /** `SourceTabs`: links, so the open tab is in the URL; the overview drops `tab`. */
 const tabs = (h: H, source: V2Source, active: SourceTab): Html =>
@@ -139,10 +141,10 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 					...(source.key_prefix === null
 						? []
 						: [
-								h.span(
-									[h.Class("text-muted-foreground font-mono text-xs")],
-									[source.key_prefix, "…"],
-								),
+								typography(h, { size: "xs", tone: "muted", mono: true }, [
+									source.key_prefix,
+									"…",
+								]),
 							]),
 				],
 			}),

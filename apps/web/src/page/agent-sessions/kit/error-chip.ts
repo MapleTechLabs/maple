@@ -1,11 +1,14 @@
-import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { badge } from "../../../ui/display"
 import { icon, type IconName } from "../../../ui/icon"
 import { statusDot } from "../../../ui/status-dot"
+import { typographyClass } from "../../../ui/typography"
 
 /** Turn failures read red with the agent glyph; tool failures amber with the gear. */
-export const TURN_CHIP = "border-severity-error-a3 bg-severity-error-a2 text-severity-error"
+export const TURN_CHIP = typographyClass({
+	tone: "error",
+	className: "border-severity-error-a3 bg-severity-error-a2",
+})
 export const TOOL_CHIP = "border-severity-warn-a4 bg-severity-warn-a2 text-severity-warn"
 
 /** `ErrorChip`: a failure count as a pill with its kind's glyph, the one error badge on agent views. */
@@ -19,11 +22,9 @@ export const errorChip = <M>(
 		attributes?: ReadonlyArray<Attribute<M>>
 	}>,
 ): Html =>
-	h.span(
-		[
-			h.Class(cn(badgeVariants({ pill: true, size: "xs", mono: true }), options.className)),
-			...(options.attributes ?? []),
-		],
+	badge(
+		h,
+		{ pill: true, size: "xs", mono: true, className: options.className, attributes: options.attributes },
 		[
 			options.iconName === undefined
 				? statusDot(h, { tone: "custom", size: "sm", className: "bg-current" })

@@ -2,6 +2,7 @@ import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import * as Field from "../../ui/field"
 import { icon } from "../../ui/icon"
@@ -28,6 +29,8 @@ import type { Model } from "./model"
 import { ingestPanel, roleName } from "./view-aws"
 import { dataPicker, NAMESPACE_LABEL } from "./view-aws-choose"
 import { methodSelect, SMALL, setupBody } from "./view-aws-setup"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, vstackClass } from "../../ui/stack"
 
 // AWS in the connect flow: deploy a read-only role, pick regions and services, then deploy the
 // metric stream and watch the first delivery.
@@ -81,17 +84,16 @@ const accountForm = (h: H, model: Model): Html => {
 	)
 	const state = Field.stateOf(card.accountId, card.createError !== null)
 	return h.form(
-		[h.Class("flex flex-col gap-2"), h.OnSubmit(Message.SubmittedAwsAccount())],
+		[h.Class(vstackClass({ gap: "2" })), h.OnSubmit(Message.SubmittedAwsAccount())],
 		[
 			Field.field(h, { className: "items-stretch gap-2", state }, [
 				Field.fieldLabel(h, { ids: ACCOUNT_IDS, state }, "AWS account ID"),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				hstack(h, { gap: "2", wrap: true },
 					[
 						input(h, {
 							id: ACCOUNT_IDS.control,
 							className: "min-w-48 flex-1",
-							controlClassName: "font-mono tabular-nums",
+							controlClassName: typographyClass({ mono: true, numeric: true }),
 							fieldState: state,
 							attributes: [
 								h.Autocomplete("off"),
@@ -168,7 +170,7 @@ const accountLine = (h: H, connection: V2AwsConnection): Html =>
 		[
 			icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
 			h.span([], ["AWS account ID"]),
-			h.span([h.Class("font-mono tabular-nums")], [connection.account_id]),
+			typography(h, { mono: true, numeric: true }, [connection.account_id]),
 			button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAwsAdd())] }, [
 				"Change",
 			]),
@@ -202,7 +204,7 @@ const waitingForRole = (
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
 				[
-					h.h3([h.Class("text-sm")], [`Run the role stack in ${connection.account_id}`]),
+					heading(h, { level: 3, variant: "subsection" }, [`Run the role stack in ${connection.account_id}`]),
 					methodSelect(h, model, "role"),
 				],
 			),
@@ -268,7 +270,7 @@ const roleDeployed = (
 				],
 				[
 					h.dt([h.Class("text-muted-foreground")], ["Account"]),
-					h.dd([h.Class("font-mono tabular-nums")], [connection.account_id]),
+					h.dd([h.Class(typographyClass({ mono: true, numeric: true }))], [connection.account_id]),
 					h.dt([h.Class("text-muted-foreground")], ["Role"]),
 					h.dd([h.Class("font-mono text-xs [overflow-wrap:anywhere]")], [connection.role_arn]),
 				],
@@ -411,7 +413,7 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 			),
 			...(card.metricsError === null
 				? []
-				: [h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [card.metricsError])]),
+				: [typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [card.metricsError])]),
 			button(
 				h,
 				{

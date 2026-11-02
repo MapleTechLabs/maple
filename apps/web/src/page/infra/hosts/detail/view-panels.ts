@@ -18,6 +18,7 @@ import { seriesLegend } from "../../../kit/series-legend"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { type HostMetric, Message } from "./message"
 import type { HostSummary, Model } from "./model"
+import { typography } from "../../../../ui/typography"
 
 // `HostMetadataPanel`, and the Metrics panel of `HostDetailPage` with its `MetricStrip`s.
 
@@ -132,7 +133,9 @@ const metricStrip = (h: H, model: Model, strip: (typeof METRIC_STRIPS)[number], 
 			h.div(
 				[h.Class("border-b px-1 py-3 lg:border-b-0 lg:border-r lg:py-5")],
 				[
-					h.div([h.Class("text-xs font-medium text-foreground")], [strip.label]),
+					typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "div" }, [
+						strip.label,
+					]),
 					h.div([h.Class("mt-1 text-2xs leading-relaxed text-muted-foreground")], [strip.caption]),
 				],
 			),
@@ -148,10 +151,9 @@ export const metricsPanel = (h: H, model: Model, timeZone: string): Html =>
 	panel(h, { className: "overflow-visible" }, [
 		panelHeader(h, {
 			title: "Metrics",
-			action: h.span(
-				[h.Class("text-xs tabular-nums text-muted-foreground")],
-				[countLabel(METRIC_STRIPS.length, "signal")],
-			),
+			action: typography(h, { size: "xs", tone: "muted", numeric: true }, [
+				countLabel(METRIC_STRIPS.length, "signal"),
+			]),
 		}),
 		h.div(
 			[h.Class("px-4"), h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())],

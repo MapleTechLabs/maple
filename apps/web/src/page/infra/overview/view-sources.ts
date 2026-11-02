@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { segmentedBar } from "../../../ui/meter"
 import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonMeter } from "../../../ui/skeleton"
 import { sectionHeading } from "../../kit/section-heading"
 import type { TimeSearch } from "../kit/view-tabs"
 import { sourceHref } from "./links"
@@ -14,6 +14,8 @@ import type { HealthSegment, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
 import { ROW_CLASS, sectionCaption } from "./view-findings"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `SourcesTable`, `SourceRowBody` and `HealthBar`.
 
@@ -38,44 +40,38 @@ const SEGMENT_LABEL = {
 
 const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>): Html => {
 	const drawn = segments.filter((segment) => segment.count > 0)
-	return h.div(
-		[h.Class("flex flex-col gap-1.5")],
-		[
-			segmentedBar(h, {
-				className: "w-full gap-px bg-muted",
-				minVisible: 2,
-				segments: drawn.map((segment) => ({
-					key: segment.key,
-					value: segment.count,
-					className: SEGMENT_CLASS[segment.key],
-				})),
-			}),
-			h.span(
-				[h.Class("flex gap-3 text-2xs text-muted-foreground tabular-nums")],
-				drawn.map((segment) =>
-					h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]]),
-				),
+	return vstack(h, { gap: "1.5" }, [
+		segmentedBar(h, {
+			className: "w-full gap-px bg-muted",
+			minVisible: 2,
+			segments: drawn.map((segment) => ({
+				key: segment.key,
+				value: segment.count,
+				className: SEGMENT_CLASS[segment.key],
+			})),
+		}),
+		h.span(
+			[h.Class("flex gap-3 text-2xs text-muted-foreground tabular-nums")],
+			drawn.map((segment) =>
+				h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]]),
 			),
-		],
-	)
+		),
+	])
 }
 
 /** `healthBar` for a source we couldn't check: an empty track, so the row is not blank. */
 const healthBarUnavailable = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-1.5")],
-		[
-			h.span([h.Class("h-1.5 w-full rounded-full border border-dashed")], []),
-			h.span([h.Class("text-2xs")], ["\u00a0"]),
-		],
-	)
+	vstack(h, { gap: "1.5" }, [
+		h.span([h.Class("h-1.5 w-full rounded-full border border-dashed")], []),
+		h.span([h.Class("text-2xs")], ["\u00a0"]),
+	])
 
 /** `healthBar`'s shape while loading: the bar and an empty legend line, so the row keeps its height. */
 const healthBarLoading = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-1.5")],
-		[skeleton(h, "h-1.5 w-full rounded-full"), h.span([h.Class("text-2xs")], ["\u00a0"])],
-	)
+	vstack(h, { gap: "1.5" }, [
+		skeletonMeter(h),
+		h.span([h.Class("text-2xs")], ["\u00a0"]),
+	])
 
 /** `isFailureExplained`: the page already shows the one failure every source shares. */
 export const sourceRow = <M>(
@@ -93,29 +89,23 @@ export const sourceRow = <M>(
 				[h.Class("flex w-52 shrink-0 items-center gap-3")],
 				[
 					sourceMark(h, id, 18),
-					h.span(
-						[h.Class("flex min-w-0 flex-col gap-0.5")],
-						[
-							h.span(
-								[h.Class("text-sm text-foreground group-hover:text-primary")],
-								[SOURCE_TITLE[id]],
-							),
-							...(isQuietFailure
-								? []
-								: [
-										state.status === "loading"
-											? skeleton(h, "my-0.5 h-3 w-16")
-											: h.span(
-													[h.Class("text-xs text-muted-foreground")],
-													[
-														state.status === "ready"
-															? state.summary.resources
-															: "Couldn't load",
-													],
-												),
-									]),
-						],
-					),
+					vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
+						h.span(
+							[h.Class("text-sm text-foreground group-hover:text-primary")],
+							[SOURCE_TITLE[id]],
+						),
+						...(isQuietFailure
+							? []
+							: [
+									state.status === "loading"
+										? skeleton(h, "my-0.5 h-3 w-16")
+										: typography(h, { size: "xs", tone: "muted" }, [
+												state.status === "ready"
+													? state.summary.resources
+													: "Couldn't load",
+											]),
+								]),
+					]),
 				],
 			),
 			h.span(
@@ -159,10 +149,10 @@ const sourceRowPending = <M>(h: HtmlBuilder<M>): Html =>
 				[h.Class("flex w-52 shrink-0 items-center gap-3")],
 				[
 					skeleton(h, "size-[18px] shrink-0 rounded-sm"),
-					h.span(
-						[h.Class("flex min-w-0 flex-col gap-0.5")],
-						[skeleton(h, "my-0.5 h-4 w-24"), skeleton(h, "my-0.5 h-3 w-16")],
-					),
+					vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
+						skeleton(h, "my-0.5 h-4 w-24"),
+						skeleton(h, "my-0.5 h-3 w-16"),
+					]),
 				],
 			),
 			h.span([h.Class("hidden min-w-0 flex-1 pr-6 md:block")], [healthBarLoading(h)]),

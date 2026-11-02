@@ -6,6 +6,7 @@ import { delta } from "../../ui/delta"
 import { skeleton } from "../../ui/skeleton"
 import type { Model, UsageTotals } from "./model"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
+import { typography } from "../../ui/typography"
 
 // The service usage cards.
 
@@ -35,7 +36,7 @@ export const usageCards = <M>(
 					statRailItem(h, {
 						eyebrow: card.title,
 						// The muted table empty glyph, not a bold value-sized dash.
-						value: h.span([h.Class("font-normal text-muted-foreground")], ["–"]),
+						value: typography(h, { tone: "muted", weight: "normal" }, ["–"]),
 						subline: isExplained(failure)
 							? h.span([h.Class("sr-only")], ["Couldn't load"])
 							: h.span([h.Class("font-prose")], ["Couldn't load"]),

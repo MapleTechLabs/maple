@@ -8,6 +8,7 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { skeleton } from "../../ui/skeleton"
 import {
@@ -36,7 +37,7 @@ import { logFilter } from "./view-gcp-configure-filter"
 import { methodSetup } from "./view-gcp-configure-method"
 import { scriptSection } from "./view-gcp-configure-run"
 import { scopeFields } from "./view-gcp-configure-scope"
-import { GCP_TITLE } from "./view-gcp-parts"
+import { vstack } from "../../ui/stack"
 
 // Google Cloud in the connect flow: a scope by ID and how to apply the setup, what to collect,
 // then the setup itself and a checklist that ticks as Google Cloud reports back.
@@ -76,7 +77,7 @@ const methodChoice = (h: H, configure: ConfigureModel): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-3 border-t border-border pt-5")],
 		[
-			h.h3([h.Class(GCP_TITLE)], ["How do you want to apply the setup?"]),
+			heading(h, { level: 3, variant: "subsection" }, ["How do you want to apply the setup?"]),
 			choiceTiles(
 				h,
 				METHODS.map((method) => ({
@@ -91,49 +92,46 @@ const methodChoice = (h: H, configure: ConfigureModel): Html =>
 	)
 
 const connectRail = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			flowRail(h, {
-				eyebrow: "Which scope to pick",
-				items: [
-					{
-						icon: "CubeIcon",
-						title: "Project",
-						detail: "One project. Its ID, like acme-prod, not the name or number.",
-					},
-					{
-						icon: "FolderIcon",
-						title: "Folder",
-						detail: "Every project in it, including new ones. Digits only.",
-					},
-					{
-						icon: "LayersIcon",
-						title: "Organization",
-						detail: "Every project you own. Digits only.",
-					},
-				],
-				trust: "An ID can't be changed later. To watch a different scope, add another account from the source page.",
-			}),
-			flowRail(h, {
-				eyebrow: "Before you start",
-				items: [
-					{
-						icon: "UserIcon",
-						title: "Owner on the host project",
-						detail: "Or the roles listed in the docs",
-					},
-					{
-						icon: "ChartLineIcon",
-						title: "Billing linked for metrics",
-						detail: "Logs work without it",
-					},
-				],
-				timeNote: "Takes about 3 minutes",
-				docs: { label: "Setup docs", href: DOCS },
-			}),
-		],
-	)
+	vstack(h, { gap: "3" }, [
+		flowRail(h, {
+			eyebrow: "Which scope to pick",
+			items: [
+				{
+					icon: "CubeIcon",
+					title: "Project",
+					detail: "One project. Its ID, like acme-prod, not the name or number.",
+				},
+				{
+					icon: "FolderIcon",
+					title: "Folder",
+					detail: "Every project in it, including new ones. Digits only.",
+				},
+				{
+					icon: "LayersIcon",
+					title: "Organization",
+					detail: "Every project you own. Digits only.",
+				},
+			],
+			trust: "An ID can't be changed later. To watch a different scope, add another account from the source page.",
+		}),
+		flowRail(h, {
+			eyebrow: "Before you start",
+			items: [
+				{
+					icon: "UserIcon",
+					title: "Owner on the host project",
+					detail: "Or the roles listed in the docs",
+				},
+				{
+					icon: "ChartLineIcon",
+					title: "Billing linked for metrics",
+					detail: "Logs work without it",
+				},
+			],
+			timeNote: "Takes about 3 minutes",
+			docs: { label: "Setup docs", href: DOCS },
+		}),
+	])
 
 const connectStatus = (h: H, configure: ConfigureModel, connector: V2GcpConnector | null): Html => {
 	if (connector !== null)

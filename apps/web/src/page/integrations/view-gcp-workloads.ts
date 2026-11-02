@@ -14,6 +14,7 @@ import {
 	gcpWorkloadTone,
 } from "../../components/infra/gcp/tabs"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { emptyMessage } from "../../ui/empty"
 import { icon } from "../../ui/icon"
@@ -28,6 +29,8 @@ import { valueClass } from "../infra-integrations/gcp/list/view-tables"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { fleetOf, gcpTitles, inventoryOf, logTiles, metricsTiles } from "./view-gcp-band"
+import { typography, typographyClass } from "../../ui/typography"
+import { vstack } from "../../ui/stack"
 
 // `Workloads`, `Resources` and `GcpUsageBand`.
 
@@ -67,8 +70,8 @@ const workloads = (h: H, model: Model, className: string): Html => {
 				h.div(
 					[h.Class("flex min-w-0 flex-1 items-baseline gap-3")],
 					[
-						h.h3([h.Class("text-sm font-semibold")], ["Workloads"]),
-						h.span([h.Class("truncate text-2xs text-muted-foreground")], ["last 24h"]),
+						heading(h, { level: 3, variant: "section" }, ["Workloads"]),
+						typography(h, { size: "2xs", tone: "muted", truncate: true }, ["last 24h"]),
 					],
 				),
 				...(services.length > 1
@@ -137,28 +140,25 @@ const workloads = (h: H, model: Model, className: string): Html => {
 								],
 								[
 									statusDot(h, { tone: tone === "neutral" ? "ok" : tone }),
-									h.div(
-										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-										[
-											truncatedText(h, {
-												text: gcpWorkloadName(rowService, workload.keys),
-												className:
-													"text-xs font-medium text-foreground group-hover:text-primary",
-											}),
-											truncatedText(h, {
-												text: [
-													GCP_INFRA_SERVICES[rowService].title,
-													gcpWorkloadLocation(rowService, workload.keys),
-													manyProjects
-														? gcpWorkloadProject(rowService, workload.keys)
-														: undefined,
-												]
-													.filter((part) => part !== undefined && part !== "")
-													.join(" · "),
-												className: "text-2xs text-muted-foreground",
-											}),
-										],
-									),
+									vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+										truncatedText(h, {
+											text: gcpWorkloadName(rowService, workload.keys),
+											className:
+												"text-xs font-medium text-foreground group-hover:text-primary",
+										}),
+										truncatedText(h, {
+											text: [
+												GCP_INFRA_SERVICES[rowService].title,
+												gcpWorkloadLocation(rowService, workload.keys),
+												manyProjects
+													? gcpWorkloadProject(rowService, workload.keys)
+													: undefined,
+											]
+												.filter((part) => part !== undefined && part !== "")
+												.join(" · "),
+											className: typographyClass({ size: "2xs", tone: "muted" }),
+										}),
+									]),
 									...GCP_INFRA_COLUMNS[rowService]
 										.slice(0, VALUES_SHOWN)
 										.map((spec, index) =>
@@ -183,10 +183,9 @@ const workloads = (h: H, model: Model, className: string): Html => {
 														],
 														[formatGcpValue(spec.format, workload.values[index])],
 													),
-													h.span(
-														[h.Class("text-2xs text-muted-foreground")],
-														[spec.label],
-													),
+													typography(h, { size: "2xs", tone: "muted" }, [
+														spec.label,
+													]),
 												],
 											),
 										),
@@ -207,8 +206,8 @@ const resources = (h: H, model: Model, className: string): Html => {
 	return panel(h, { className: cn("h-fit border-border-subtle", className) }, [
 		panelHeader(h, {
 			className: "border-border-subtle",
-			children: [h.h3([h.Class("text-sm font-semibold")], ["Resources"])],
-			action: h.span([h.Class("text-2xs text-muted-foreground")], ["listed hourly"]),
+			children: [heading(h, { level: 3, variant: "section" }, ["Resources"])],
+			action: typography(h, { size: "2xs", tone: "muted" }, ["listed hourly"]),
 		}),
 		types.length === 0
 			? h.p(
@@ -236,8 +235,9 @@ const resources = (h: H, model: Model, className: string): Html => {
 									],
 									[
 										truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
-										h.span(
-											[h.Class("shrink-0 tabular-nums text-muted-foreground")],
+										typography(
+											h,
+											{ tone: "muted", numeric: true, className: "shrink-0" },
 											[formatNumber(count)],
 										),
 									],
@@ -289,34 +289,30 @@ export const usageBand = (h: H, model: Model, connectors: ReadonlyArray<V2GcpCon
 	const logs = connectors.some((connector) => connector.last_log_received_at !== null)
 	const metrics = connectors.some((connector) => connector.last_metrics_received_at !== null)
 	if (!logs && !metrics) return null
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			logs && metrics
-				? statRail(
-						h,
-						{
-							className:
-								"md:grid-cols-2 md:divide-y @2xl/page:grid-cols-4 @2xl/page:divide-y-0",
-						},
-						[...logTiles(h, model, false), ...metricsTiles(h, model, false)],
-					)
-				: statRail(
-						h,
-						{ className: "md:grid-cols-2 md:divide-y @md/page:grid-cols-3 @md/page:divide-y-0" },
-						logs ? logTiles(h, model, true) : metricsTiles(h, model, true),
+	return vstack(h, { gap: "4" }, [
+		logs && metrics
+			? statRail(
+					h,
+					{
+						className: "md:grid-cols-2 md:divide-y @2xl/page:grid-cols-4 @2xl/page:divide-y-0",
+					},
+					[...logTiles(h, model, false), ...metricsTiles(h, model, false)],
+				)
+			: statRail(
+					h,
+					{ className: "md:grid-cols-2 md:divide-y @md/page:grid-cols-3 @md/page:divide-y-0" },
+					logs ? logTiles(h, model, true) : metricsTiles(h, model, true),
+				),
+		...(metrics
+			? [
+					h.div(
+						[h.Class("flex flex-col gap-4 lg:flex-row lg:items-start")],
+						[
+							workloads(h, model, "min-w-0 flex-1"),
+							resources(h, model, "lg:w-72 lg:shrink-0 xl:w-80"),
+						],
 					),
-			...(metrics
-				? [
-						h.div(
-							[h.Class("flex flex-col gap-4 lg:flex-row lg:items-start")],
-							[
-								workloads(h, model, "min-w-0 flex-1"),
-								resources(h, model, "lg:w-72 lg:shrink-0 xl:w-80"),
-							],
-						),
-					]
-				: []),
-		],
-	)
+				]
+			: []),
+	])
 }

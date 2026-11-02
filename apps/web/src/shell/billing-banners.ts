@@ -16,6 +16,7 @@ import { button, linkButton } from "../ui/button"
 import { iconButton } from "../ui/icon-button"
 import { icon } from "../ui/icon"
 import { Message } from "./message"
+import { hstackClass } from "../ui/stack"
 
 // The Clerk-mode billing banners above the page body:
 // subscription ended, payment failed and the usage quota, all read from the Autumn customer.
@@ -130,7 +131,7 @@ const quota = (h: H, customer: BillingCustomer, isApproachingDismissed: boolean)
 						? []
 						: [iconButton(h, { label: "Dismiss", attributes: [h.OnClick(Message.ClickedDismissQuotaBanner())] }, [icon(h, "XmarkIcon")])]),
 				],
-				"flex items-center gap-2",
+				hstackClass({ gap: "2" }),
 			),
 		]),
 	]

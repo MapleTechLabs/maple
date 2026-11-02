@@ -4,6 +4,7 @@ import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { toLoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
 import { listFooter } from "../../../ui/list-footer"
+import { stripClass } from "../../../ui/rule"
 import { skeletonList } from "../../../ui/skeleton"
 import { MountRowSelect } from "./command"
 import { listFailureOf, type ListStatus, type PagingState, pagingOf } from "./derive"
@@ -58,7 +59,7 @@ export const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => 
 		hasMore: paging === "more",
 		isFailed: paging === "failed",
 		onLoadMore: Message.ClickedLoadMore(),
-		className: "border-t border-border-subtle p-4",
+		className: stripClass("block"),
 		children:
 			paging === "failed" ? [h.span([], ["Couldn't load more errors."])] : [],
 	})

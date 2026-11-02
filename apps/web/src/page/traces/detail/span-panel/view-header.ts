@@ -16,6 +16,8 @@ import { copyableValue, selectableValue } from "./copy"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { outcomeBadgeStyle, type PlatformInfo } from "./platform"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // The panel's header, summary stats, cache and platform blocks (`SpanDetailPanel`).
 
@@ -76,10 +78,9 @@ export const panelHeader = (h: H, model: Model): Html => {
 									),
 								],
 							),
-							h.span(
-								[h.Class("shrink-0 text-3xs text-muted-foreground")],
-								[getSpanKindLabel(span.spanKind)],
-							),
+							typography(h, { size: "3xs", tone: "muted", className: "shrink-0" }, [
+								getSpanKindLabel(span.spanKind),
+							]),
 						],
 					),
 				],
@@ -113,31 +114,26 @@ export const summaryStats = (h: H, model: Model): Html => {
 	return h.div(
 		[h.Class("flex items-center gap-4 border-b px-3 py-1.5 text-xs shrink-0")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
-					h.span(
-						[h.Class("font-mono")],
-						[copyableValue(h, model, { id: "duration", value: duration }, [duration])],
-					),
-				],
-			),
+			hstack(h, { gap: "1.5" }, [
+				icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
+				h.span(
+					[h.Class("font-mono")],
+					[copyableValue(h, model, { id: "duration", value: duration }, [duration])],
+				),
+			]),
 			selfTimeMs === null
 				? null
-				: h.span(
-						[
-							h.Class("font-mono text-muted-foreground"),
-							h.Title("Time not spent in child spans"),
-						],
+				: typography(
+						h,
+						{ tone: "muted", mono: true, attributes: [h.Title("Time not spent in child spans")] },
 						["self ", h.span([h.Class("text-foreground")], [formatDuration(selfTimeMs)])],
 					),
 			traceShare === null || span.isMissing === true
 				? null
-				: h.span(
-						[h.Class("font-mono text-muted-foreground")],
-						[formatPercent(traceShare, { floor: 0.001 }), " of trace"],
-					),
+				: typography(h, { tone: "muted", mono: true }, [
+						formatPercent(traceShare, { floor: 0.001 }),
+						" of trace",
+					]),
 			badge(
 				h,
 				{ variant: "outline", size: "xs", className: getSpanStatusBadgeClass(span.statusCode) },
@@ -179,24 +175,21 @@ export const platformSummary = (h: H, model: Model, platform: PlatformInfo): Htm
 	h.div(
 		[h.Class("@container/platform border-b px-3 py-2 text-xs shrink-0 space-y-1.5")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					icon(h, platform.icon, { size: 12, className: cn("shrink-0", platform.accentClassName) }),
-					h.span([h.Class("font-medium")], [platform.label]),
-					platform.outcome === null
-						? null
-						: badge(
-								h,
-								{
-									variant: "outline",
-									size: "xs",
-									className: cn("ml-auto", outcomeBadgeStyle(platform.outcome.bad)),
-								},
-								[platform.outcome.value],
-							),
-				],
-			),
+			hstack(h, { gap: "1.5" }, [
+				icon(h, platform.icon, { size: 12, className: cn("shrink-0", platform.accentClassName) }),
+				h.span([h.Class("font-medium")], [platform.label]),
+				platform.outcome === null
+					? null
+					: badge(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								className: cn("ml-auto", outcomeBadgeStyle(platform.outcome.bad)),
+							},
+							[platform.outcome.value],
+						),
+			]),
 			keyValueList(
 				h,
 				{ className: "grid grid-cols-1 gap-x-4 gap-y-1 text-2xs @min-[22rem]/platform:grid-cols-2" },
@@ -205,13 +198,10 @@ export const platformSummary = (h: H, model: Model, platform: PlatformInfo): Htm
 						? []
 						: [
 								keyValue(h, { label: "Edge", mono: true }, [
-									h.span(
-										[h.Class("inline-flex items-center gap-1")],
-										[
-											icon(h, "GlobeIcon", { size: 10, className: "shrink-0" }),
-											platform.edge,
-										],
-									),
+									hstack(h, { gap: "1", inline: true, as: "span" }, [
+										icon(h, "GlobeIcon", { size: 10, className: "shrink-0" }),
+										platform.edge,
+									]),
 								]),
 							]),
 					...(platform.location === null

@@ -23,6 +23,7 @@ import { widgetEmptyState, widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
+import { chartFrameClass } from "../../../ui/chart-frame"
 
 // `makeChartWidget`: one factory for every widget
 // that mounts a registry chart, each branch handing its chart only the settings it declares.
@@ -315,7 +316,7 @@ export const chartWidgetTile = <M>(
 		if (isServiceChart(chartId))
 			return theme === null || ctx.nowMs === null || !isChartRuntimeReady(ctx.chartRuntime)
 				? [skeleton]
-				: [serviceChart(h, ctx, widget, chartId, data, theme, ctx.nowMs, options.className ?? "h-full w-full aspect-auto")]
-		return [chartView(h, ctx, widget, { category, data, className: options.className ?? "h-full w-full aspect-auto", legend })]
+				: [serviceChart(h, ctx, widget, chartId, data, theme, ctx.nowMs, options.className ?? chartFrameClass("fill"))]
+		return [chartView(h, ctx, widget, { category, data, className: options.className ?? chartFrameClass("fill"), legend })]
 	})
 }

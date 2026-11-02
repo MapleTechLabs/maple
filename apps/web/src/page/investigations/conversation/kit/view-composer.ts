@@ -1,9 +1,8 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { alertDescriptionStyles } from "@maple/ui/styles/ui/alert"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertAction } from "../../../../ui/alert"
+import { alert, alertAction, alertDescription } from "../../../../ui/alert"
 import { button } from "../../../../ui/button"
 import { icon } from "../../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupButton } from "../../../../ui/input-group"
@@ -122,15 +121,13 @@ export const failureNotice = <M>(
 	}>,
 ): Html =>
 	alert(h, { variant: "crit", size: "sm", className: "mb-3 text-sm" }, [
-		h.div(
-			[
-				h.Class(cn(alertDescriptionStyles, "min-w-0", TONE_TEXT.crit)),
-				h.DataAttribute("slot", "alert-description"),
-				...(options.truncateTitle === undefined ? [] : [h.Title(options.truncateTitle)]),
-			],
+		alertDescription(
+			h,
 			options.truncateTitle === undefined
 				? options.text
 				: [h.span([h.Class("line-clamp-2 [overflow-wrap:anywhere]")], options.text)],
+			cn("min-w-0", TONE_TEXT.crit),
+			options.truncateTitle === undefined ? [] : [h.Title(options.truncateTitle)],
 		),
 		alertAction(h, [
 			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(options.onAction)] }, [

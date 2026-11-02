@@ -8,6 +8,8 @@ import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { skeleton } from "../../../ui/skeleton"
 import { panel, panelHeader, panelTitle } from "../../../ui/panel"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // The Supabase pages' panel frame, header link, row skeleton and load states.
 
@@ -23,13 +25,12 @@ export const sectionPanel = <M>(
 		panelHeader(h, {
 			action: options.action,
 			children: [
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-0.5")],
+				vstack(h, { gap: "0.5", shrink: true },
 					[
 						panelTitle(h, [options.title]),
 						...(options.description === undefined
 							? []
-							: [h.p([h.Class("text-2xs text-foreground-subtle")], [options.description])]),
+							: [typography(h, { size: "2xs", tone: "subtle", as: "p" }, [options.description])]),
 					],
 				),
 			],
@@ -44,7 +45,7 @@ export const panelLink = <M>(h: HtmlBuilder<M>, href: string, label: string): Ht
 	)
 
 export const panelMeta = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
-	h.span([h.Class(cn("font-mono text-2xs tabular-nums text-muted-foreground", className))], [text])
+	h.span([h.Class(cn(typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true }), className))], [text])
 
 export const rowsLoading = <M>(h: HtmlBuilder<M>, count: number): Html =>
 	h.div(

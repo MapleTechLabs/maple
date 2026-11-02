@@ -15,7 +15,7 @@ import { runsBody, startRunAction } from "./view-runs"
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const gate = pageGateOf(model)
-	if (gate !== null) return securityLayout(h, { active: model.tab }, [gateState(h, gate)])
+	if (gate !== null) return securityLayout(h, { source: "code", codeTab: model.tab }, [gateState(h, gate)])
 	const overlay: ReadonlyArray<Html> = [
 		h.submodel({
 			slotId: "security-add-target-form",
@@ -36,14 +36,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		case "overview":
 			return securityLayout(
 				h,
-				{ active: "overview", actions: overviewActions(h, model), overlay },
+				{ source: "code", codeTab: "overview", actions: overviewActions(h, model), overlay },
 				overviewBody(h, model),
 			)
 		case "findings":
 			return securityLayout(
 				h,
 				{
-					active: "findings",
+					source: "code",
+					codeTab: "findings",
 					actions: addTargetButton(h, model),
 					overlay,
 				},
@@ -52,7 +53,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		case "runs":
 			return securityLayout(
 				h,
-				{ active: "runs", actions: startRunAction(h, model) ?? addTargetButton(h, model), overlay },
+				{
+					source: "code",
+					codeTab: "runs",
+					actions: startRunAction(h, model) ?? addTargetButton(h, model),
+					overlay,
+				},
 				runsBody(h, model, inputs.context.timeZone),
 			)
 	}

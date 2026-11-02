@@ -12,7 +12,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Field from "../../../ui/field"
 import * as ToggleGroup from "../../../ui/toggle-group"
 
-// `/security/findings/$targetId/$fingerprint`: one finding with its triage.
+// `/security/code/findings/$targetId/$fingerprint`: one finding with its triage.
 
 export const Model = Schema.Struct({
 	targetId: SecurityAuditTargetId,

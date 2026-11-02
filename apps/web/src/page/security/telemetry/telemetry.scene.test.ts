@@ -12,6 +12,7 @@ import {
 } from "../../../lab/security-telemetry-fixture"
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageContext } from "../../contract"
+import { breadcrumbsOf, codeCrumbs } from "../kit/layout"
 import { runtimeEntries } from "./derive"
 import { Message, type Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -71,6 +72,39 @@ describe("security telemetry tabs", () => {
 			expectView(text("Probe requests")).toBeAbsent(),
 			expectView(text("No scanner traffic in the last 7 days")).toBeAbsent(),
 		)
+	})
+
+	test("the rail links every source to its page and marks the open one", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes()),
+			expectView(role("navigation", { name: "Security sources" })).toExist(),
+			expectView(role("link", { name: "Code security audit" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityCode()),
+			),
+			expectView(role("link", { name: "Dependencies" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDependencies({ search: {} })),
+			),
+			expectView(role("link", { name: "Exposure" })).toHaveAttr("href", hrefOf(exposureRoute)),
+			expectView(role("link", { name: "Runtimes" })).toHaveAttr("aria-current", "page"),
+			expectView(role("link", { name: "Exposure" })).not.toHaveAttr("aria-current", "page"),
+			expectView(role("heading", { name: "Runtimes", level: 1 })).toExist(),
+		)
+	})
+
+	test("every Security trail links all but its last crumb, the page itself", () => {
+		const trails = [
+			breadcrumbsOf("runtimes"),
+			breadcrumbsOf("code"),
+			breadcrumbsOf("code", "findings"),
+			[...codeCrumbs({ label: "Runs", href: "/security/code/runs" }), { label: "Run 7c1e04b2" }],
+		]
+		for (const trail of trails) {
+			expect(trail.slice(0, -1).every((entry) => entry.href !== undefined)).toBe(true)
+			expect(trail.at(-1)?.href).toBeUndefined()
+		}
 	})
 
 	test("no scanner traffic shows the calm empty state", () => {
@@ -213,7 +247,7 @@ describe("security telemetry tabs", () => {
 			expectView(text(/release line is end of life/)).toExist(),
 			// Python's only advisory is medium: listed in the table, not as an upgrade to make now.
 			expectView(role("link", { name: "CVE-2025-0938" })).toBeAbsent(),
-			expectView(text("1 medium")).toExist(),
+			expectView(text("Medium")).toExist(),
 			expectView(text("None known")).toExist(),
 			// Java's advisory read failed; Python 3.13 was past the read budget.
 			expectView(text("Unavailable")).toExist(),

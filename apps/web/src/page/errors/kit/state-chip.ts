@@ -3,6 +3,7 @@ import type { InvestigationSummary, SignalState } from "../../../lib/models/erro
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "../../../ui/status-dot"
+import { textLink } from "../../../ui/text-link"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
 
 // The signal state and investigation chips.
@@ -23,24 +24,24 @@ export const investigationChip = <M>(
 ): Html => {
 	const label = INVESTIGATION_LABEL[investigation.status]
 	const withConfidence = options.withConfidence ?? true
-	return h.button(
-		[
-			h.Type("button"),
-			h.OnClick(options.onOpen, { defaultAction: "Prevent", propagation: "Stop" }),
-			h.Class(
-				cn(
-					"inline-flex max-w-full items-center gap-1.5 text-2xs font-medium whitespace-nowrap",
-					"text-muted-foreground hover:text-foreground active:text-foreground hover:underline active:underline",
-					"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm",
-					options.className,
+	return textLink(
+		h,
+		{
+			tone: "muted",
+			onClick: options.onOpen,
+			clickOptions: { defaultAction: "Prevent", propagation: "Stop" },
+			className: cn(
+				"max-w-full gap-1.5 rounded-sm text-2xs font-medium whitespace-nowrap focus-visible:rounded-sm",
+				options.className,
+			),
+			attributes: [
+				h.Title(
+					investigation.confidence
+						? `Maple ${label.toLowerCase()} — ${investigation.confidence} confidence`
+						: `Maple ${label.toLowerCase()}`,
 				),
-			),
-			h.Title(
-				investigation.confidence
-					? `Maple ${label.toLowerCase()} — ${investigation.confidence} confidence`
-					: `Maple ${label.toLowerCase()}`,
-			),
-		],
+			],
+		},
 		[
 			statusDot(h, { tone: "custom", className: "bg-current" }),
 			h.span([h.Class(cn("truncate", options.compact === true && "hidden @xl/page:inline"))], [label]),

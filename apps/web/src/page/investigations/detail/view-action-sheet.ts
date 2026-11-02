@@ -14,6 +14,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { ACTION_GLYPH } from "./view-canvas"
 import { evidenceChips, type TipTrigger } from "./view-sections"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // `ActionDetailSheet`: the whole proposed action,
 // the diagnosis behind it and its evidence, keyed by `?action=`.
@@ -39,8 +41,7 @@ export const actionSheetContent = (
 		sheetDetailHeader(h, {
 			dialogId,
 			kind: [
-				h.span(
-					[h.Class("flex items-center gap-2")],
+				hstack(h, { gap: "2", as: "span" },
 					[
 						icon(h, glyph.icon, { size: 12, className: "shrink-0" }),
 						"Proposed action ",
@@ -59,8 +60,7 @@ export const actionSheetContent = (
 			"sheet",
 			dialogId,
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				hstack(h, { gap: "2", wrap: true },
 					[
 						...(action.target === null
 							? []
@@ -84,12 +84,10 @@ export const actionSheetContent = (
 				...(report === null
 					? []
 					: [
-							h.section(
-								[h.Class("flex flex-col gap-2")],
+							vstack(h, { gap: "2", as: "section" },
 								[
 									sectionEyebrow(h, "From the diagnosis"),
-									h.p(
-										[h.Class("text-sm leading-relaxed text-foreground")],
+									typography(h, { size: "sm", tone: "foreground", as: "p", className: "leading-relaxed" },
 										[report.suspectedCause],
 									),
 									h.p(
@@ -124,8 +122,7 @@ export const actionSheetContent = (
 				...(evidence.length === 0
 					? []
 					: [
-							h.section(
-								[h.Class("flex flex-col gap-2")],
+							vstack(h, { gap: "2", as: "section" },
 								[
 									sectionEyebrow(h, "Evidence behind the diagnosis"),
 									...evidence.map((item, index) => {
@@ -136,12 +133,7 @@ export const actionSheetContent = (
 											[
 												...(item.note
 													? [
-															h.p(
-																[
-																	h.Class(
-																		"text-sm leading-relaxed text-foreground",
-																	),
-																],
+															typography(h, { size: "sm", tone: "foreground", as: "p", className: "leading-relaxed" },
 																[item.note],
 															),
 														]
@@ -154,7 +146,7 @@ export const actionSheetContent = (
 							),
 						]),
 			],
-			"flex flex-col gap-6",
+			vstackClass({ gap: "6" }),
 		),
 	]
 }

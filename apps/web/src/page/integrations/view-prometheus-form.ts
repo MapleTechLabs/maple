@@ -9,6 +9,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import type { FormFieldName } from "./prometheus"
 import { isFormValid, parsedInterval, prometheusTargets } from "./update-prometheus"
+import { typography } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `ScrapeTargetsSection`'s `FormDialog` (add and edit) and its delete `ConfirmDialog`.
 
@@ -51,7 +53,7 @@ export const textField = (
 	return Field.field(h, { state }, [
 		options.aside === undefined
 			? label
-			: h.div([h.Class("flex items-center justify-between gap-2")], [label, options.aside]),
+			: hstack(h, { gap: "2", justify: "between" }, [label, options.aside]),
 		Field.input(h, {
 			ids,
 			state,
@@ -245,7 +247,7 @@ export const targetDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			title: "Delete scrape target?",
 			description: [
 				"Maple stops scraping ",
-				h.span([h.Class("font-medium text-foreground")], [target?.name ?? ""]),
+				typography(h, { tone: "foreground", weight: "medium" }, [target?.name ?? ""]),
 				" and removes it from Sources. This cannot be undone.",
 			],
 			confirmLabel: "Delete scrape target",

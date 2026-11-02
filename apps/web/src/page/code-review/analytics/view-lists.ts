@@ -9,16 +9,17 @@ import { meter } from "../../../ui/meter"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { analyticsPanel } from "../kit/analytics-panel"
 import { authorLabel } from "../kit/author"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
 
 type Row = Readonly<{ key: string; name: string; value: number }>
 
 export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: ReadonlyArray<Row>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-2")],
+	vstack(h, { gap: "2" },
 		[
-			h.span([h.Class("text-xs text-muted-foreground")], [title]),
+			typography(h, { size: "xs", tone: "muted" }, [title]),
 			rows.length === 0
 				? h.span(
 						[h.Class("py-1 text-sm text-foreground-subtle")],
@@ -34,9 +35,8 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 										size: 16,
 										className: "shrink-0 text-muted-foreground",
 									}),
-									h.span([h.Class("min-w-0 flex-1 truncate")], [row.name]),
-									h.span(
-										[h.Class("tabular-nums text-muted-foreground")],
+									typography(h, { truncate: true, className: "min-w-0 flex-1" }, [row.name]),
+									typography(h, { tone: "muted", numeric: true },
 										[formatNumber(row.value)],
 									),
 								],
@@ -51,17 +51,15 @@ type Bar = Readonly<{ key: string; label: string; value: number; tone?: string }
 const barList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<Bar>, emptyLabel: string): Html => {
 	const max = Math.max(...rows.map((row) => row.value), 1)
 	if (rows.length === 0) return emptyMessage(h, {}, [emptyLabel])
-	return h.ul(
-		[h.Class("flex flex-col gap-2.5")],
+	return vstack(h, { gap: "2.5", as: "ul" },
 		rows.map((row) =>
-			h.li(
-				[h.Key(row.key), h.Class("flex flex-col gap-1")],
+			vstack(h, { gap: "1", as: "li", attributes: [h.Key(row.key)] },
 				[
 					h.span(
 						[h.Class("flex items-center justify-between gap-2 text-sm")],
 						[
 							h.span([h.Class("truncate")], [row.label]),
-							h.span([h.Class("tabular-nums text-muted-foreground")], [formatNumber(row.value)]),
+							typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
 						],
 					),
 					meter(h, {

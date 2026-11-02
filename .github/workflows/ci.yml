@@ -261,6 +261,16 @@ jobs:
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun run check:tokens
 
+                  # apps/web/src/ui/INDEX.md is how agents find a kit component before building one.
+                  - name: Validate the dashboard kit index
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun run ui:index:check
+
+                  # Class strings copied across 3+ page files belong in the kit; the count only shrinks.
+                  - name: Validate repeated dashboard class strings
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun run ui:patterns:check
+
                   # What @maple-dev/browser costs every page load vs replay-sampled
                   # visitors only; budgets live in scripts/size.ts.
                   - name: Browser SDK bundle budget

@@ -8,10 +8,13 @@ import { severityBadge } from "../../../ui/logs/severity-badge"
 import { icon } from "../../../ui/icon"
 import { logMessageOf, logMessageView } from "../../../ui/logs/log-message"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
+import { pressable } from "../../../ui/pressable"
+import { textLink } from "../../../ui/text-link"
 import { serviceDot } from "../../../ui/values"
 import { severityLabel } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
+import { hstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -35,21 +38,19 @@ export const copyable = (
 	children: ReadonlyArray<Html | string>,
 ): Html => {
 	const status = copyStatusOf(model, copyId)
-	return h.button(
-		[
-			h.Type("button"),
-			h.AriaLabel("Copy value"),
-			h.Class(
-				cn(
-					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
-					status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
-					status === "copied" && "bg-severity-info-a3",
-					status === "error" && "bg-severity-error-a3",
-				),
+	return pressable(
+		h,
+		{
+			label: "Copy value",
+			onClick: Message.ClickedCopy({ copyId, text: value }),
+			className: cn(
+				"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+				status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+				status === "copied" && "bg-severity-info-a3",
+				status === "error" && "bg-severity-error-a3",
 			),
-			h.OnClick(Message.ClickedCopy({ copyId, text: value })),
-			h.Title("Click to copy"),
-		],
+			attributes: [h.Title("Click to copy")],
+		},
 		children,
 	)
 }
@@ -61,19 +62,7 @@ export const logTextButton = (
 	onClick: Message,
 	children: ReadonlyArray<Html | string>,
 ): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.Class(
-				cn(
-					"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
-					className,
-				),
-			),
-			h.OnClick(onClick),
-		],
-		children,
-	)
+	textLink(h, { tone: "muted", onClick, className: cn("flex gap-1 text-3xs", className) }, children)
 
 const severityTrigger = (h: H, log: LogRecord): Html =>
 	h.span(
@@ -98,8 +87,7 @@ export const heroHeader = (
 	return h.div(
 		[h.Class("border-b px-4 py-3 shrink-0"), ...(tone === undefined ? [] : [h.Style(tone)])],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
+			hstack(h, { gap: "2" },
 				[
 					severityTrigger(h, log),
 					badge(h, { variant: "outline", size: "xs", mono: true }, [

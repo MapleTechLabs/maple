@@ -10,6 +10,7 @@ import type { WidgetDataState } from "./data-state"
 import { widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
+import { vstackClass } from "../../../ui/stack"
 
 // The stat widget, with its trend sparkline when
 // `display.sparkline` names a series (`StatSparkline`).
@@ -105,7 +106,7 @@ export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 	const hasSparkline = display.sparkline?.enabled === true && display.sparkline.dataSource !== undefined
 	const options = frame(ctx, widget, {
 		contentClassName: hasSparkline
-			? "flex-1 min-h-0 flex flex-col"
+			? vstackClass({ grow: true, className: "min-h-0" })
 			: "flex-1 min-h-0 flex items-center justify-center p-2 @min-[200px]/widget:p-4",
 		loadingSkeleton: hasSparkline
 			? h.div(

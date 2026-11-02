@@ -8,13 +8,17 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { card } from "../../../ui/card"
 import * as DialogView from "../../../ui/dialog-view"
 import { eyebrow } from "../../../ui/eyebrow"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { CONFIDENCE_TONE } from "../kit"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { actionSheetContent } from "./view-action-sheet"
 import { ACTION_GLYPH } from "./view-canvas"
 import { evidenceChips, type TipTrigger } from "./view-sections"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `DiagnosisReportCard`: the report an investigation's
 // Chat and Transcript tabs lead with until the thread's own `submit_diagnosis` turn lands. Its
@@ -84,8 +88,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 			h.header(
 				[h.Class("space-y-1.5")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-1.5")],
+					hstack(h, { gap: "1.5" },
 						[
 							icon(h, "PulseIcon", { className: "size-3.5 text-muted-foreground" }),
 							eyebrow(h, { variant: "label" }, ["AI Diagnosis"]),
@@ -96,18 +99,14 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 							),
 						],
 					),
-					h.h3(
-						[h.Class("font-display text-lg font-semibold leading-snug tracking-tight text-foreground")],
-						[report.suspectedCause],
-					),
-					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], [report.summary]),
+					heading(h, { level: 3, variant: "title", className: "leading-snug" }, [report.suspectedCause]),
+					typography(h, { size: "sm", tone: "muted", as: "p", className: "leading-relaxed" }, [report.summary]),
 				],
 			),
 			...(report.affectedScope
 				? [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[h.span([h.Class("font-medium text-foreground")], ["Scope:"]), " ", report.affectedScope],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
+							[typography(h, { tone: "foreground", weight: "medium" }, ["Scope:"]), " ", report.affectedScope],
 						),
 					]
 				: []),
@@ -121,7 +120,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 								...evidence.map((item, index) => {
 									const chips = evidenceChips(h, item, "card", trigger)
 									return h.keyed("div")(String(index), [h.Class("space-y-1.5 rounded-md bg-surface-sunken p-3")], [
-										...(item.note ? [h.p([h.Class("text-sm leading-relaxed text-foreground")], [item.note])] : []),
+										...(item.note ? [typography(h, { size: "sm", tone: "foreground", as: "p", className: "leading-relaxed" }, [item.note])] : []),
 										...(chips === null ? [] : [chips]),
 									])
 								}),
@@ -151,14 +150,13 @@ const actionRow = (h: H, action: ActionNodeData): Html => {
 		action.text,
 		[],
 		[
-			h.button(
-				[
-					h.Class(
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedReportAction({ index: action.index }),
+					className:
 						"-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-					),
-					h.Type("button"),
-					h.OnClick(Message.ClickedReportAction({ index: action.index })),
-				],
+				},
 				[
 					h.span(
 						[

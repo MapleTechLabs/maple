@@ -8,6 +8,7 @@ import { empty, emptyContent, emptyDescription, emptyHeader, emptyTitle } from "
 import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
 import { icon } from "../../../ui/icon"
 import { listFooter } from "../../../ui/list-footer"
+import { pressable } from "../../../ui/pressable"
 import { statusDot } from "../../../ui/status-dot"
 import { serviceDot } from "../../../ui/values"
 import { docsLink, emptyActions, filteredEmpty, presenceLoading, signalEmptyState } from "../../kit/signal-empty-state"
@@ -16,6 +17,7 @@ import { anomalyRow } from "../kit/row"
 import { clusterByService, GROUP_LABEL, groupIncidents } from "./derive"
 import { Message } from "./message"
 import type { GroupKey, Model, StatusTab } from "./model"
+import { typography } from "../../../ui/typography"
 
 // `AnomaliesPageBody` and `AnomalyGroup`: the anomalies, grouped.
 
@@ -32,20 +34,17 @@ const group = (
 	return h.section(
 		[h.Key(key)],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ToggledGroup({ group: key })),
-					h.AriaExpanded(isOpen),
-					h.AriaControls(`anomaly-group-${key}`),
-					h.Class(
-						cn(
-							"sticky top-0 z-10 flex h-8 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken pr-2 pl-2 text-left outline-none",
-							"backdrop-blur supports-[backdrop-filter]:bg-surface-strong",
-							"hover:bg-surface-strong active:bg-surface-strong",
-						),
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledGroup({ group: key }),
+					className: cn(
+						"sticky top-0 z-10 flex h-8 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken pr-2 pl-2 text-left outline-none",
+						"backdrop-blur supports-[backdrop-filter]:bg-surface-strong",
+						"hover:bg-surface-strong active:bg-surface-strong",
 					),
-				],
+					attributes: [h.AriaExpanded(isOpen), h.AriaControls(`anomaly-group-${key}`)],
+				},
 				[
 					h.span(
 						[h.Class("flex size-4 shrink-0 items-center justify-center text-muted-foreground")],
@@ -53,7 +52,7 @@ const group = (
 					),
 					statusDot(h, { tone: SEVERITY_TONE[key].tone, size: "lg" }),
 					h.span([h.Class("shrink-0 text-sm font-medium text-foreground")], [GROUP_LABEL[key]]),
-					h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(incidents.length)]),
+					typography(h, { size: "xs", tone: "muted", numeric: true }, [String(incidents.length)]),
 				],
 			),
 			...(isOpen

@@ -23,6 +23,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
+import { heading } from "../../../ui/heading"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { rowLink } from "../../../ui/table"
@@ -30,6 +31,11 @@ import { severityBadge } from "../shared/badges"
 import { incidentHref, ruleHref } from "../shared/links"
 import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
+import { typography, typographyClass } from "../../../ui/typography"
+import { stripClass } from "../../../ui/rule"
+import { hstack } from "../../../ui/stack"
+import { barFillClass } from "../../../ui/meter"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // `InboxTab` and `HeadroomList`: the hub's Inbox tab.
 
@@ -74,30 +80,29 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 			h.div(
 				[h.Class("space-y-1.5")],
 				[
-					h.h2(
-						[h.Class("text-2xl font-semibold tracking-tight tabular-nums")],
+					heading(
+						h,
+						{ level: 2, variant: "title", className: "tabular-nums" },
 						[
 							isQuiet ? "Nothing firing" : `${firing} firing`,
 							...(isQuiet ? [quietStreak(h, incidents, now)] : []),
 							...(held > 0
 								? [
-										h.span(
-											[h.Class("text-muted-foreground font-normal")],
+										typography(h, { tone: "muted", weight: "normal" },
 											[" · ", String(held), " waiting on data"],
 										),
 									]
 								: []),
 						],
 					),
-					h.p([h.Class("text-muted-foreground font-mono text-xs")], [summary]),
+					typography(h, { size: "xs", tone: "muted", mono: true, as: "p" }, [summary]),
 				],
 			),
 			...(isQuiet
 				? [
 						headroomList(h, ruleHeadroom(rules, statesByRule), now),
 						lanes.length === 0 && spots.length === 0
-							? h.p(
-									[h.Class("font-mono text-xs text-muted-foreground")],
+							? typography(h, { size: "xs", tone: "muted", mono: true, as: "p" },
 									[
 										"No rule fired in the last 24 hours · no blind spots: every enabled rule is evaluating and routed.",
 									],
@@ -115,8 +120,7 @@ const quietStreak = <M>(
 	now: number,
 ): Html => {
 	const quietFor = quietForMs(incidents, now)
-	return h.span(
-		[h.Class("font-normal text-muted-foreground")],
+	return typography(h, { tone: "muted", weight: "normal" },
 		[" · ", quietFor === null ? "quiet for 24h+" : `quiet for ${formatResolutionDuration(quietFor)}`],
 	)
 }
@@ -128,14 +132,15 @@ const openIncidentsList = <M>(
 	incidents: ReadonlyArray<AlertIncidentDocument>,
 	now: number,
 ) =>
-	h.div(
-		[h.Class("overflow-x-auto rounded-md border")],
+	borderedBox(
+		h,
+		{ overflow: "x-auto" },
 		[
 			h.div(
 				[h.Class("min-w-[560px]")],
 				[
 					h.div(
-						[h.Class(cn(INCIDENT_GRID, "border-b px-4 py-2 text-xs text-muted-foreground"))],
+						[h.Class(cn(INCIDENT_GRID, typographyClass({ size: "xs", tone: "muted", className: stripClass("head") })))],
 						[
 							h.span([], ["Open · ", String(incidents.length)]),
 							h.span([], ["Now / threshold"]),
@@ -173,8 +178,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 			h.div(
 				[h.Class("min-w-0 space-y-1")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
+					hstack(h, { gap: "2", shrink: true },
 						[
 							isHeld
 								? badge(h, { variant: "outline", className: "text-muted-foreground" }, [
@@ -192,11 +196,10 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 							),
 						],
 					),
-					h.p([h.Class("truncate text-xs text-muted-foreground")], [incidentSubline(incident)]),
+					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [incidentSubline(incident)]),
 				],
 			),
-			h.span(
-				[h.Class("font-mono text-xs tabular-nums")],
+			typography(h, { size: "xs", mono: true, numeric: true },
 				[
 					isHeld
 						? h.span([h.Class("text-muted-foreground")], ["no data"])
@@ -204,8 +207,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 					h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold]),
 				],
 			),
-			h.span(
-				[h.Class("font-mono text-xs tabular-nums")],
+			typography(h, { size: "xs", mono: true, numeric: true },
 				[formatAlertDuration(incident.firstTriggeredAt, msIso(now))],
 			),
 		],
@@ -252,8 +254,7 @@ const fireStrip = <M>(
 				[h.Class("flex items-baseline justify-between gap-4")],
 				[
 					eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
-					h.span(
-						[h.Class("font-mono text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", mono: true },
 						[
 							countLabel(inWindow.length, "incident"),
 							" · MTTR ",
@@ -379,13 +380,12 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 			),
 		],
 		[
-			h.span([h.Class(cn("font-mono text-xs", meta.className))], [meta.label]),
+			h.span([h.Class(cn(typographyClass({ size: "xs", mono: true }), meta.className))], [meta.label]),
 			h.div(
 				[h.Class("min-w-0")],
 				[
-					h.p([h.Class("truncate text-sm")], [spot.rule.name]),
-					h.p(
-						[h.Class("truncate font-prose text-xs text-muted-foreground"), h.Title(spot.detail)],
+					typography(h, { size: "sm", truncate: true, as: "p" }, [spot.rule.name]),
+					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p", className: "font-prose", attributes: [h.Title(spot.detail)] },
 						[spot.detail],
 					),
 				],
@@ -429,8 +429,7 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 				[h.Class("flex items-baseline justify-between gap-4")],
 				[
 					eyebrow(h, { as: "h3" }, ["Headroom"]),
-					h.span(
-						[h.Class("font-mono text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", mono: true },
 						["latest check against each threshold"],
 					),
 				],
@@ -445,8 +444,7 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 					),
 			...(hidden > 0
 				? [
-						h.p(
-							[h.Class("font-mono text-2xs text-muted-foreground")],
+						typography(h, { size: "2xs", tone: "muted", mono: true, as: "p" },
 							["+ ", countLabel(hidden, "more rule")],
 						),
 					]
@@ -476,8 +474,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 					),
 					...(row.groupKey !== null
 						? [
-								h.p(
-									[h.Class("truncate font-mono text-2xs text-muted-foreground")],
+								typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true, as: "p" },
 									[row.groupKey],
 								),
 							]
@@ -491,10 +488,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 						? [
 								h.span([
 									h.Class(
-										cn(
-											"absolute inset-y-0 left-0 rounded-xs",
-											isNear ? "bg-severity-warn" : "bg-foreground-faint",
-										),
+										barFillClass(isNear ? "bg-severity-warn" : "bg-foreground-faint"),
 									),
 									h.Style({ width: `${Math.max(closeness * 100, 1.5)}%` }),
 								]),

@@ -23,6 +23,7 @@ import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `AlertsPage` and `AlertsHub`: the `/alerts` page and its tabs.
 
@@ -86,13 +87,10 @@ const newRuleItem = (
 	label,
 	content: [
 		icon(h, iconName, { className: "mt-0.5 self-start" }),
-		h.span(
-			[h.Class("flex min-w-0 flex-col gap-0.5")],
-			[
-				h.span([h.Class("text-sm")], [label]),
-				h.span([h.Class("whitespace-normal text-xs text-muted-foreground")], [description]),
-			],
-		),
+		vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
+			h.span([h.Class("text-sm")], [label]),
+			h.span([h.Class("whitespace-normal text-xs text-muted-foreground")], [description]),
+		]),
 	],
 })
 
@@ -162,25 +160,22 @@ const newRuleButton = (h: H, model: Model): Html =>
 
 // Destinations are a Routing concern, so "New destination" only shows on that tab.
 const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			...(model.isAdmin && tab === "routing"
-				? [
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								attributes: [h.OnClick(Message.ClickedNewDestination())],
-							},
-							[icon(h, "PlusIcon"), "New destination"],
-						),
-					]
-				: []),
-			newRuleButton(h, model),
-		],
-	)
+	hstack(h, { gap: "2" }, [
+		...(model.isAdmin && tab === "routing"
+			? [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							attributes: [h.OnClick(Message.ClickedNewDestination())],
+						},
+						[icon(h, "PlusIcon"), "New destination"],
+					),
+				]
+			: []),
+		newRuleButton(h, model),
+	])
 
 /** `SyncUnavailable`: the rules or incidents stream stopped before its first answer. */
 const SYNC_UNAVAILABLE = makeClientErrorBody({

@@ -6,6 +6,7 @@ import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, type ChartSpec, encodeChar
 import { type ChartRenderer, MountChart, PLOT_BOX_ATTRIBUTE, PortalTooltipBody } from "./chart-mounts"
 // The tooltip shell theming, imported here because every chart goes through the frame.
 import "@maple/ui/components/plot/plot-tooltip.css"
+import { layer } from "../ui/layer"
 
 // Port of `PlotFrame` (packages/ui/src/components/plot/plot-frame.tsx). The markup and class
 // composition are the React component's; the chart itself is mounted by `MountChart`.
@@ -75,13 +76,7 @@ const plotBox = (
 			...(inputs.overlay === undefined
 				? []
 				: [
-						h.div(
-							[
-								h.DataAttribute("chart-overlay", ""),
-								h.Class("pointer-events-none absolute inset-0"),
-							],
-							[inputs.overlay],
-						),
+						layer(h, { attributes: [h.DataAttribute("chart-overlay", "")] }, [inputs.overlay]),
 					]),
 			tooltipHolder(h, inputs),
 		],

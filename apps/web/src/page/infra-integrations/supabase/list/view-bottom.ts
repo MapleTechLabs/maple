@@ -13,6 +13,8 @@ import type { SupabaseFleetInsights } from "../model"
 import { type AdvisorFinding, advisorFindings, advisorsChecked } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../../../ui/typography"
+import { vstack } from "../../../../ui/stack"
 
 // The overview's bottom row: recurring log issues across projects, and advisor findings.
 
@@ -45,15 +47,12 @@ const issueRow = (
 		`${issue.projectRef}:${issue.source}:${issue.message}`,
 		supabaseLogsHref(search, issue.projectRef),
 		[
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+			vstack(h, { gap: "0.5", shrink: true, grow: true },
 				[
-					h.span(
-						[h.Class("truncate font-mono text-xs text-foreground"), h.Title(issue.message)],
+					typography(h, { size: "xs", tone: "foreground", mono: true, truncate: true, attributes: [h.Title(issue.message)] },
 						[issue.message],
 					),
-					h.span(
-						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
+					typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true },
 						[
 							h.span([h.Class(TONE_TEXT[severity.tone])], [severity.label]),
 							` · ${names.get(issue.projectRef) ?? issue.projectRef} · ${logSourceLabel(issue.source)}`,

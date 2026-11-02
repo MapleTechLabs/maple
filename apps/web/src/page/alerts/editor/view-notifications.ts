@@ -9,6 +9,7 @@ import { field, fieldLabel, input } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { statusDot } from "../../../ui/status-dot"
+import { pressable } from "../../../ui/pressable"
 import { textarea } from "../../../ui/textarea"
 import { stableSlice } from "../../kit/stable-slice"
 import { destinationsOf } from "./derive-rows"
@@ -17,6 +18,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
 import { destinationList, type NotifyView } from "./view-notify"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `NotificationsSection`: who gets notified, per tier,
 // and the optional message template.
@@ -60,23 +63,19 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 	return h.div(
 		[h.Class("mt-3")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ToggledMessageTemplate()),
-					h.Class(
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledMessageTemplate(),
+					className:
 						"flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
-					),
-					h.AriaExpanded(isOpen),
-				],
+					attributes: [h.AriaExpanded(isOpen)],
+				},
 				[
-					h.span(
-						[h.Class("flex items-center gap-1.5")],
-						[
-							icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 }),
-							"Message template",
-						],
-					),
+					hstack(h, { gap: "1.5", as: "span" }, [
+						icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 }),
+						"Message template",
+					]),
 					...(hasTemplate && !isOpen
 						? [
 								badge(
@@ -93,14 +92,11 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 						h.div(
 							[h.Class("mt-3 space-y-3")],
 							[
-								h.p(
-									[h.Class("text-muted-foreground text-xs")],
-									[
-										"Customize the Slack / Discord / PagerDuty message. Leave blank to use Maple's default format. Supports ",
-										inlineCode(h, {}, ["{{ variable }}"]),
-										" substitution.",
-									],
-								),
+								typography(h, { size: "xs", tone: "muted", as: "p" }, [
+									"Customize the Slack / Discord / PagerDuty message. Leave blank to use Maple's default format. Supports ",
+									inlineCode(h, {}, ["{{ variable }}"]),
+									" substitution.",
+								]),
 								field(h, { className: "items-stretch gap-1.5", state: titleState }, [
 									fieldLabel(h, { ids: titleIds, state: titleState }, "Title"),
 									input(h, {
@@ -119,7 +115,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 									fieldLabel(h, { ids: bodyIds, state: bodyState }, "Body (Markdown)"),
 									textarea(h, {
 										id: "notification-body",
-										className: "font-mono text-xs",
+										className: typographyClass({ size: "xs", mono: true }),
 										defaultValue: form.notificationBody,
 										attributes: [
 											h.AriaLabelledBy(bodyIds.label),
@@ -220,9 +216,10 @@ const variables = (h: H): Html =>
 	h.div(
 		[h.Class("space-y-1.5")],
 		[
-			h.span([h.Class("text-muted-foreground text-xs")], ["Insert a variable:"]),
-			h.div(
-				[h.Class("flex flex-wrap gap-1")],
+			typography(h, { size: "xs", tone: "muted" }, ["Insert a variable:"]),
+			hstack(
+				h,
+				{ gap: "1", align: "stretch", wrap: true },
 				ALERT_TEMPLATE_VARIABLES.map((variable) =>
 					button(
 						h,

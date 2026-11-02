@@ -3,6 +3,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
 import { modelLabel } from "./format"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // The two model pickers both dialogs show: which model hunts, and which one verifies.
 
@@ -37,27 +39,26 @@ export const modelPicker = <M>(
 	}>,
 ): Html => {
 	const labelId = `${options.idPrefix}-${options.stage}-label`
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-1.5")],
-		[
-			h.span([h.Id(labelId), h.Class("text-xs text-muted-foreground")], [STAGE_LABEL[options.stage]]),
-			h.submodel({
-				slotId: options.model.id,
-				model: options.model,
-				view: SelectView.view,
-				viewInputs: {
-					entries: entriesFor(options.stage),
-					labelledBy: labelId,
-					className: "w-full",
-					renderValue: (value) => [modelLabel(value)],
-					renderItem: (option) => [
-						option.label,
-						h.span([h.Class("ml-2 text-xs text-muted-foreground")], [option.title ?? ""]),
-					],
-					toView: (parts) => h.div([h.Class("contents")], parts),
-				},
-				toParentMessage: options.wrap,
-			}),
-		],
-	)
+	return vstack(h, { gap: "1.5", shrink: true }, [
+		typography(h, { size: "xs", tone: "muted", attributes: [h.Id(labelId)] }, [
+			STAGE_LABEL[options.stage],
+		]),
+		h.submodel({
+			slotId: options.model.id,
+			model: options.model,
+			view: SelectView.view,
+			viewInputs: {
+				entries: entriesFor(options.stage),
+				labelledBy: labelId,
+				className: "w-full",
+				renderValue: (value) => [modelLabel(value)],
+				renderItem: (option) => [
+					option.label,
+					typography(h, { size: "xs", tone: "muted", className: "ml-2" }, [option.title ?? ""]),
+				],
+				toView: (parts) => h.div([h.Class("contents")], parts),
+			},
+			toParentMessage: options.wrap,
+		}),
+	])
 }

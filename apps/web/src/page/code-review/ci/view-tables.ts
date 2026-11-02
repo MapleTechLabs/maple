@@ -4,17 +4,19 @@ import { formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { TONE_SOFT, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { panel, panelHeader } from "../../../ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { pressable } from "../../../ui/pressable"
+import { clickableRowClass, laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { ciResultBadge, traceKept } from "../kit/parts"
 import { listRelativeTime, relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `WorkflowsTable`, `RedStreakLine` and `JobsTable`.
 
@@ -29,7 +31,7 @@ const repositoryLabel = (row: { readonly owner: string; readonly repository: str
 	row.owner === "" ? row.repository : `${row.owner}/${row.repository}`
 
 const rateClass = (rate: number | null) =>
-	cn("px-3 text-right tabular-nums", rate !== null && rate > 0 ? TONE_TEXT.crit : "text-muted-foreground")
+	cn(typographyClass({ numeric: true, className: "px-3 text-right" }), rate !== null && rate > 0 ? TONE_TEXT.crit : "text-muted-foreground")
 
 const head = (h: H, cells: ReadonlyArray<readonly [string, string, string?]>) =>
 	tableHeader(
@@ -58,7 +60,7 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 			traceKept(red.since, time.nowMs)
 				? h.a(
 						[
-							h.Class("text-foreground underline-offset-4 hover:underline active:underline"),
+							h.Class(typographyClass({ tone: "foreground", hoverUnderline: true })),
 							h.Href(traceHref),
 							h.Title("Open the first failed run's trace"),
 							// `event.stopPropagation()` keeps the row's click off; the page follows the link itself.
@@ -105,20 +107,20 @@ const workflowRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(
+			laneTableCell(
 				h,
+				isActive,
 				[
-					h.button(
+					pressable(
+						h,
+						{
+							isSelected: isActive,
+							className:
+								"flex w-full min-w-0 items-center gap-2 text-left focus-visible:underline focus-visible:ring-0",
+							attributes: [h.OnClick(select, { propagation: "Stop" })],
+						},
 						[
-							h.Type("button"),
-							h.AriaPressed(String(isActive)),
-							h.OnClick(select, { propagation: "Stop" }),
-							h.Class(
-								"flex w-full min-w-0 items-center gap-2 text-left focus-visible:underline focus-visible:outline-none",
-							),
-						],
-						[
-							h.span([h.Class("truncate font-medium"), h.Title(row.pipeline)], [row.pipeline]),
+							typography(h, { weight: "medium", truncate: true, attributes: [h.Title(row.pipeline)] }, [row.pipeline]),
 							...(row.red
 								? [
 										badge(h, { size: "sm", className: cn("shrink-0", TONE_SOFT.crit) }, [
@@ -140,13 +142,9 @@ const workflowRow = (
 					),
 					...(row.red ? [redStreakLine(h, row.red, time)] : []),
 				],
-				cn(
-					"px-4 py-2.5 leading-normal",
-					ROW_LANE,
-					isActive ? "before:bg-primary" : "before:bg-transparent",
-				),
+				"px-4 py-2.5 leading-normal",
 			),
-			tableCell(h, [formatNumber(row.runs)], "px-3 text-right tabular-nums"),
+			tableCell(h, [formatNumber(row.runs)], typographyClass({ numeric: true, className: "px-3 text-right" })),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),
 			tableCell(
 				h,
@@ -166,14 +164,13 @@ const workflowRow = (
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2", as: "span" },
 						[
 							ciResultBadge(h, row.lastResult),
 							listRelativeTime(h, {
 								value: row.lastStartedAt,
 								variant: "short",
-								className: "text-xs text-muted-foreground",
+								className: typographyClass({ size: "xs", tone: "muted" }),
 								...time,
 							}),
 						],
@@ -182,7 +179,7 @@ const workflowRow = (
 				"hidden px-4 sm:table-cell",
 			),
 		],
-		cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", isActive && "bg-surface-strong"),
+		clickableRowClass(isActive),
 		[h.Key(`${row.owner}/${row.repository}/${row.pipeline}`), h.OnClick(select)],
 	)
 }
@@ -224,7 +221,7 @@ const jobRow = (h: H, row: CodeReviewCiJob): Html => {
 			tableCell(
 				h,
 				[
-					h.div([h.Class("truncate font-medium"), h.Title(row.job)], [row.job]),
+					typography(h, { weight: "medium", truncate: true, as: "div", attributes: [h.Title(row.job)] }, [row.job]),
 					h.div(
 						[
 							h.Class("mt-0.5 truncate text-xs text-muted-foreground"),
@@ -235,7 +232,7 @@ const jobRow = (h: H, row: CodeReviewCiJob): Html => {
 				],
 				"px-4 py-2.5 leading-normal",
 			),
-			tableCell(h, [formatNumber(row.runs)], "px-3 text-right tabular-nums"),
+			tableCell(h, [formatNumber(row.runs)], typographyClass({ numeric: true, className: "px-3 text-right" })),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),
 			tableCell(
 				h,

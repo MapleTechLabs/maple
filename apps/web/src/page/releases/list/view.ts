@@ -25,6 +25,8 @@ import type { Model, ReleasesData } from "./model"
 import { filtersRail } from "./view-filters"
 import { liveNow, releasesTimeline, type TimeSearch } from "./view-overview"
 import { releasesTable } from "./view-table"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // TODO(session-range): `sessionTimeRangeSearchMiddleware` (the range carried across pages).
 
@@ -47,8 +49,7 @@ const chipsOf = (model: Model) => {
 }
 
 const loadingSkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
+	vstack(h, { gap: "3" },
 		[
 			skeleton(h, "h-4 w-64"),
 			skeleton(h, "h-52 w-full rounded-md"),
@@ -92,7 +93,7 @@ const releasesEmpty = (h: H, model: Model): Html => {
 			noun: "releases",
 			purpose: "Releases compare errors and latency before and after each deploy.",
 			setupDocs: "github",
-			detail: h.p([h.Class("font-prose text-xs text-muted-foreground")], vcsHint(h)),
+			detail: typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, vcsHint(h)),
 		})
 	return empty(h, [
 		emptyHeader(h, [
@@ -116,8 +117,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 	if (groups.length === 0) return panel(h, {}, [releasesEmpty(h, model)])
 	const issues = AsyncData.getOrElse(model.issues.data, () => null)
 	const live_ = liveNow(h, live, timeSearch, model.search.environments)
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
+	return vstack(h, { gap: "3" },
 		[
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground")],
@@ -159,8 +159,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 							clearLabel: "Clear filter",
 						}),
 					])
-				: h.div(
-						[h.Class("flex flex-col gap-1.5")],
+				: vstack(h, { gap: "1.5" },
 						[
 							releasesTable(h, {
 								groups: visibleGroups,

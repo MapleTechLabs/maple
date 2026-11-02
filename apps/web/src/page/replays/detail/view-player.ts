@@ -37,6 +37,8 @@ import {
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The replay surface and its transport controls.
 // TODO(scrubber-drag): the scrubber seeks on pointer down; drag-to-scrub and the hover time bubble
@@ -169,7 +171,11 @@ const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner 
 						],
 						[hasSpinner ? spinner(h, "size-5") : icon(h, "EyeIcon", { className: "size-5" })],
 					),
-					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], children),
+					typography(
+						h,
+						{ size: "sm", tone: "muted", as: "p", className: "leading-relaxed" },
+						children,
+					),
 				],
 			),
 		],
@@ -196,8 +202,9 @@ const playerError = (h: H, failure: LoadFailure): Html => {
 						[h.Class("space-y-1")],
 						[
 							h.p([h.Class("text-sm font-medium text-muted-foreground")], [failure.title]),
-							h.p(
-								[h.Class("text-sm leading-relaxed text-muted-foreground")],
+							typography(
+								h,
+								{ size: "sm", tone: "muted", as: "p", className: "leading-relaxed" },
 								[failure.message],
 							),
 						],
@@ -245,7 +252,11 @@ const statusOverlay = (
 						)
 					: playerMessage(h, [
 							"This session wasn’t recorded. Replay is off or unsampled for this app. Its traces and events are still below.",
-							h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "sessionReplay")]),
+							hstack(
+								h,
+								{ align: "stretch", justify: "center", as: "span", className: "mt-2" },
+								[docsLink(h, "sessionReplay")],
+							),
 						])
 	return h.div([h.Class("absolute inset-0 bg-surface-sunken")], [body])
 }
@@ -341,14 +352,11 @@ const urlBar = (h: H, urlInitial: string): Html =>
 	h.div(
 		[h.Class("flex items-center gap-3 border-b border-border bg-surface-sunken px-3.5 py-2.5")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5"), h.AriaHidden(true)],
-				[
-					h.span([h.Class("size-3 rounded-full bg-[#ff5f57]")], []),
-					h.span([h.Class("size-3 rounded-full bg-[#febc2e]")], []),
-					h.span([h.Class("size-3 rounded-full bg-[#28c840]")], []),
-				],
-			),
+			hstack(h, { gap: "1.5", attributes: [h.AriaHidden(true)] }, [
+				h.span([h.Class("size-3 rounded-full bg-window-dot-close")], []),
+				h.span([h.Class("size-3 rounded-full bg-window-dot-minimize")], []),
+				h.span([h.Class("size-3 rounded-full bg-window-dot-zoom")], []),
+			]),
 			h.div(
 				[
 					h.Class(
@@ -357,10 +365,9 @@ const urlBar = (h: H, urlInitial: string): Html =>
 				],
 				[
 					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0" }),
-					h.span(
-						[h.Class("truncate font-mono")],
-						[urlInitial ? hostFromUrl(urlInitial) : "about:blank"],
-					),
+					typography(h, { mono: true, truncate: true }, [
+						urlInitial ? hostFromUrl(urlInitial) : "about:blank",
+					]),
 				],
 			),
 		],
