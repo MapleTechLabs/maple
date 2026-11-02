@@ -71,7 +71,7 @@ const userCell = <M>(h: HtmlBuilder<M>, user: string | null, userName: string | 
 		[
 			h.Class(
 				cn(
-					"hidden w-36 shrink-0 truncate font-mono text-xs @min-[800px]/panel:block",
+					"hidden w-36 shrink-0 truncate font-mono text-xs @min-[950px]/panel:block",
 					user === null ? "text-foreground-subtle" : "text-foreground",
 				),
 			),
@@ -92,7 +92,7 @@ const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: Sessions
 					[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
 					[
 						h.span(
-							[h.Class("truncate text-foreground @min-[800px]/panel:hidden")],
+							[h.Class("truncate text-foreground @min-[950px]/panel:hidden")],
 							[row.userName ?? row.user ?? "anonymous"],
 						),
 						h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["user session"]),
@@ -243,7 +243,7 @@ export const sessionsBody = <M>(
 							th(h, {
 								label: "User",
 								width: "w-36 shrink-0",
-								hidden: "hidden @min-[800px]/panel:flex",
+								hidden: "hidden @min-[950px]/panel:flex",
 							}),
 							th(h, { label: "Client", width: "w-44 shrink-0" }),
 							th(h, { label: "Calls", width: "w-14 shrink-0", align: "right" }),
