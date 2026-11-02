@@ -54,6 +54,17 @@ const count = (value: number): string => formatNumber(value)
 const EXPOSED_COPY =
 	"A scanner asked for something that should never be public and the service answered with a 2xx. Check that the response does not contain it. Services that answer almost every path are listed separately as likely catch-all routes."
 
+const sampleTraceLink = (h: H, traceId: string): Html =>
+	textLink(
+		h,
+		{
+			tone: "muted",
+			className: "whitespace-nowrap text-xs",
+			href: hrefOf(AppRoute.Trace({ traceId, search: {} })),
+		},
+		["Sample trace"],
+	)
+
 const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boolean): Html =>
 	panel(h, { className: "overflow-hidden border-severity-error-a3" }, [
 		panelHeader(h, {
@@ -98,6 +109,14 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 										],
 										[row.path],
 									),
+									...(row.sampleTraceId === ""
+										? []
+										: [
+												h.span(
+													[h.Class("block font-normal sm:hidden")],
+													[sampleTraceLink(h, row.sampleTraceId)],
+												),
+											]),
 								],
 								"font-medium",
 							),
@@ -130,24 +149,7 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 							tableCell(h, [lastSeen(h, clock, row.lastSeen)], WIDE_COLUMN),
 							tableCell(
 								h,
-								row.sampleTraceId === ""
-									? []
-									: [
-											textLink(
-												h,
-												{
-													tone: "muted",
-													className: "whitespace-nowrap text-xs",
-													href: hrefOf(
-														AppRoute.Trace({
-															traceId: row.sampleTraceId,
-															search: {},
-														}),
-													),
-												},
-												["Sample trace"],
-											),
-										],
+								row.sampleTraceId === "" ? [] : [sampleTraceLink(h, row.sampleTraceId)],
 								cn("text-right", WIDE_COLUMN),
 							),
 						],

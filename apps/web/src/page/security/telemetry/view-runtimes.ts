@@ -233,9 +233,16 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 									[h.Class("flex min-w-0 flex-col")],
 									[
 										h.span([h.Class("truncate font-medium")], [entry.row.service]),
-										// Phones drop the runtime and status columns, so both ride under the service.
+										// Phones drop the runtime, status and vulnerability columns, so they ride under the service.
 										h.span([h.Class("text-sm sm:hidden")], [runtimeCell(h, entry)]),
-										h.span([h.Class("pt-1 sm:hidden")], [statusCell(h, entry)]),
+										h.span(
+											[
+												h.Class(
+													"flex flex-wrap items-start gap-x-3 gap-y-1 pt-1 sm:hidden",
+												),
+											],
+											[statusCell(h, entry), vulnerabilitiesCell(h, entry)],
+										),
 										...(entry.row.environment === ""
 											? []
 											: [
