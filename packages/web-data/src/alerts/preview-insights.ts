@@ -5,6 +5,7 @@ import {
 	type AlertRulePreviewSeries,
 	type AlertSkipReason,
 } from "@maple/domain/http"
+import { Schema } from "effect"
 
 import {
 	buildRuleCreateParamsV2,
@@ -19,6 +20,12 @@ import {
 	signalLabels,
 	type RuleFormState,
 } from "./form-utils"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+/** Same JSON text; an absent value only matches another absent value. */
+const sameJson = (left: unknown, right: unknown): boolean =>
+	left === undefined || right === undefined ? left === right : encodeJson(left) === encodeJson(right)
 
 /** How many groups the editor's preview chart draws before collapsing the rest into "N more". */
 export const PREVIEW_GROUP_LIMIT = 3
@@ -164,7 +171,7 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			after: query(draft),
 			same:
 				a.signal_type === b.signal_type &&
-				JSON.stringify(a.query_builder_draft) === JSON.stringify(b.query_builder_draft) &&
+				sameJson(a.query_builder_draft, b.query_builder_draft) &&
 				a.raw_query_sql === b.raw_query_sql,
 		},
 		{
@@ -321,7 +328,7 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			field: "Message",
 			before: a.notification_template === null ? "default" : "custom",
 			after: b.notification_template === null ? "default" : "custom",
-			same: JSON.stringify(a.notification_template) === JSON.stringify(b.notification_template),
+			same: sameJson(a.notification_template, b.notification_template),
 		},
 		{
 			field: "Enabled",

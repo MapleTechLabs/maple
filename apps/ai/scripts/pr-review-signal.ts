@@ -24,7 +24,7 @@ import { run } from "./pr-review-local"
 const CORPUS_DIR = fileURLToPath(
 	new URL("../../../packages/backend/src/services/pr-review/__fixtures__/review-signal/", import.meta.url),
 )
-const encodeCase = Schema.encodeSync(ReviewSignalCase)
+const encodeCase = Schema.encodeSync(Schema.fromJsonString(ReviewSignalCase))
 
 const Comment = Schema.Struct({
 	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -32,7 +32,9 @@ const Comment = Schema.Struct({
 	user: Schema.NullOr(Schema.Struct({ login: Schema.String })),
 	in_reply_to_id: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 })
-const decodeComments = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Comment)))
+const decodeCommentPages = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Array(Schema.Array(Comment))),
+)
 const PullRequest = Schema.Struct({ title: Schema.String })
 const decodePullRequest = Schema.decodeUnknownOption(Schema.fromJsonString(PullRequest))
 
@@ -43,7 +45,10 @@ const REVIEWER = "maple-review-bot[bot]"
 const list = (path: string) => {
 	const result = run(["gh", "api", "--paginate", "--slurp", path])
 	if (!result.ok) return []
-	return Option.getOrElse(decodeComments(JSON.stringify(JSON.parse(result.stdout).flat())), () => [])
+	return Option.getOrElse(
+		Option.map(decodeCommentPages(result.stdout), (pages) => pages.flat()),
+		() => [],
+	)
 }
 
 const snapshot = (owner: string, repo: string, number: number): boolean => {
@@ -72,7 +77,7 @@ const snapshot = (owner: string, repo: string, number: number): boolean => {
 	}
 	if (!existsSync(CORPUS_DIR)) mkdirSync(CORPUS_DIR, { recursive: true })
 	// Generated, so compact: the labels are the file people read and edit.
-	writeFileSync(join(CORPUS_DIR, `${item.id}.json`), `${JSON.stringify(encodeCase(item))}\n`)
+	writeFileSync(join(CORPUS_DIR, `${item.id}.json`), `${encodeCase(item)}\n`)
 	console.log(`${item.id}: ${summaries.length} reviews, ${inline.length} inline notes · ${title}`)
 	return true
 }

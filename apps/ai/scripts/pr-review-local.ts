@@ -526,7 +526,7 @@ const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContex
 	const slug = `repos/${args.owner}/${args.repo}`
 	// Decoded at the boundary, one schema per read.
 	const read = <A>(schema: Schema.Decoder<A>, path: string): A =>
-		Schema.decodeUnknownSync(schema)(JSON.parse(must(["gh", "api", path])))
+		Schema.decodeUnknownSync(Schema.fromJsonString(schema))(must(["gh", "api", path]))
 	const commits = read(GhContextCommits, `${slug}/pulls/${args.number}/commits?per_page=100`)
 	const comments = [
 		...read(
@@ -837,7 +837,7 @@ const postSummaryComment = (
 	const existing = pages.flat().find((c) => (c.body ?? "").includes(comment.marker) && c.user?.login === me)
 	mkdirSync(args.out, { recursive: true })
 	const bodyFile = join(args.out, `.comment-${randomUUID()}.json`)
-	writeFileSync(bodyFile, JSON.stringify({ body: comment.body }))
+	writeFileSync(bodyFile, encodeJson({ body: comment.body }))
 	const written = must(
 		existing === undefined
 			? ["gh", "api", "-X", "POST", `${slug}/issues/${args.number}/comments`, "--input", bodyFile]
@@ -857,8 +857,14 @@ interface ToolRecord {
 	isError?: boolean
 }
 
-const renderOutput = (value: unknown): string =>
-	typeof value === "string" ? value : JSON.stringify(value, null, 2)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+// `JSON.stringify(undefined)` is undefined rather than a throw; keep that for absent values.
+const prettyJson = (value: unknown): string | undefined =>
+	value === undefined ? undefined : encodePrettyJson(value)
+
+const renderOutput = (value: unknown): string | undefined =>
+	typeof value === "string" ? value : prettyJson(value)
 
 /** The new-side lines of a file's diff, keyed by number, as the agent saw them. */
 const newSideLines = (file: PullRequestFile | undefined): Map<number, string> => {
@@ -912,7 +918,7 @@ const childSummary = (child: SettledChild) => {
 
 /** One child reviewer, as a transcript section: why it ended, then each call and what came back. */
 const childTranscript = (child: SettledChild, index: number): ReadonlyArray<string> => {
-	const text = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value, null, 2))
+	const text = (value: unknown) => (typeof value === "string" ? value : (prettyJson(value) ?? ""))
 	const answer = (child.history?.content ?? [])
 		.filter((message) => message.role === "assistant")
 		.flatMap((message) => message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])))
@@ -974,8 +980,6 @@ export const reviewLocally = async (
 	const env = { ...process.env }
 	if (args.model !== undefined) env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
 	const settings = await Effect.runPromise(
-		// A CLI script: this is its entry point.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		loadLlmSettings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))),
 	)
 	const model =
@@ -1026,7 +1030,7 @@ export const reviewLocally = async (
 				const record: ToolRecord = { id: event.callId, name: event.name, input: event.input }
 				tools.push(record)
 				byCall.set(event.callId, record)
-				process.stdout.write(`\n→ ${event.name} ${JSON.stringify(event.input).slice(0, 160)}\n`)
+				process.stdout.write(`\n→ ${event.name} ${encodeJson(event.input).slice(0, 160)}\n`)
 				return
 			}
 			case "tool-result": {
@@ -1034,7 +1038,7 @@ export const reviewLocally = async (
 				if (record === undefined) return
 				record.output = renderOutput(event.output)
 				record.isError = event.isError === true
-				process.stdout.write(`  ${record.isError ? "✗" : "←"} ${record.output.length} chars\n`)
+				process.stdout.write(`  ${record.isError ? "✗" : "←"} ${record.output?.length ?? 0} chars\n`)
 				return
 			}
 			case "turn-end":
@@ -1196,7 +1200,7 @@ export const reviewLocally = async (
 		...tools.flatMap((tool, i) => [
 			`## ${i + 1}. ${tool.name}${tool.isError ? " (error)" : ""}`,
 			"```json",
-			JSON.stringify(tool.input, null, 2),
+			prettyJson(tool.input) ?? "",
 			"```",
 			"```",
 			tool.output ?? "(no result)",
@@ -1217,26 +1221,22 @@ export const reviewLocally = async (
 		)
 		writeFileSync(
 			join(dir, "report.json"),
-			JSON.stringify(
-				{
-					pr: pr.html_url,
-					headSha: pr.head.sha,
-					model: model.name,
-					codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
-					usage,
-					durationMs,
-					endReason,
-					children: children.map(childSummary),
-					tools: tools.map(({ name, input, isError, output }) => ({
-						name,
-						input,
-						isError,
-						outputChars: output?.length ?? 0,
-					})),
-				},
-				null,
-				2,
-			),
+			encodePrettyJson({
+				pr: pr.html_url,
+				headSha: pr.head.sha,
+				model: model.name,
+				codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
+				usage,
+				durationMs,
+				endReason,
+				children: children.map(childSummary),
+				tools: tools.map(({ name, input, isError, output }) => ({
+					name,
+					input,
+					isError,
+					outputChars: output?.length ?? 0,
+				})),
+			}),
 		)
 		console.log(`\n\nNo review submitted (${endReason}). Transcript: ${join(dir, "transcript.md")}`)
 		return dir
@@ -1324,31 +1324,27 @@ export const reviewLocally = async (
 	writeFileSync(join(dir, "review.md"), review.join("\n"))
 	writeFileSync(
 		join(dir, "report.json"),
-		JSON.stringify(
-			{
-				pr: pr.html_url,
-				headSha: pr.head.sha,
-				model: model.name,
-				codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
-				usage,
-				durationMs,
-				endReason,
-				closedOut,
-				promptFile: args.promptFile ?? null,
-				report,
-				publication,
-				offDiff: offDiff.map(({ annotation }) => `${annotation.path}:${annotation.startLine}`),
-				children: children.map(childSummary),
-				tools: tools.map(({ name, input, isError, output }) => ({
-					name,
-					input,
-					isError,
-					outputChars: output?.length ?? 0,
-				})),
-			},
-			null,
-			2,
-		),
+		encodePrettyJson({
+			pr: pr.html_url,
+			headSha: pr.head.sha,
+			model: model.name,
+			codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
+			usage,
+			durationMs,
+			endReason,
+			closedOut,
+			promptFile: args.promptFile ?? null,
+			report,
+			publication,
+			offDiff: offDiff.map(({ annotation }) => `${annotation.path}:${annotation.startLine}`),
+			children: children.map(childSummary),
+			tools: tools.map(({ name, input, isError, output }) => ({
+				name,
+				input,
+				isError,
+				outputChars: output?.length ?? 0,
+			})),
+		}),
 	)
 
 	if (args.post && args.range === undefined) {

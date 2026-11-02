@@ -35,8 +35,7 @@ export const FetchLog = Command.define("FetchLogPageLog", {
 	messages: [Message.CompletedFetchLog],
 	execute: ({ key, ...logKey }) =>
 		getLog({ data: keyToInput(logKey) }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchLog({ key, result })),
 		),

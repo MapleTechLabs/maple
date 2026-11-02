@@ -158,6 +158,7 @@ const ServiceAccountKey = Schema.Struct({
 	private_key_id: Schema.String,
 })
 const decodeServiceAccountKey = Schema.decodeUnknownEffect(Schema.fromJsonString(ServiceAccountKey))
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const pemToPkcs8 = (pem: string): ArrayBuffer => {
 	const der = Buffer.from(pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, ""), "base64")
@@ -168,15 +169,22 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 export const importServiceAccountKey = (encoded: Redacted.Redacted<string>) =>
 	decodeServiceAccountKey(Buffer.from(Redacted.value(encoded), "base64").toString("utf8")).pipe(
 		Effect.flatMap((key) =>
-			Effect.tryPromise(() =>
-				crypto.subtle.importKey(
-					"pkcs8",
-					pemToPkcs8(key.private_key),
-					{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-					false,
-					["sign"],
-				),
-			).pipe(
+			Effect.tryPromise({
+				try: () =>
+					crypto.subtle.importKey(
+						"pkcs8",
+						pemToPkcs8(key.private_key),
+						{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+						false,
+						["sign"],
+					),
+				catch: () =>
+					new GcpApiError({
+						message: "MAPLE_GCP_SERVICE_ACCOUNT_KEY holds a private key that does not import",
+						api: "Google OAuth",
+						kind: "invalid",
+					}),
+			}).pipe(
 				Effect.map((signingKey) => ({
 					clientEmail: key.client_email,
 					keyId: key.private_key_id,
@@ -218,7 +226,7 @@ export const fetchMapleAccessToken = Effect.fnUntraced(function* (
 			exp: issuedAt + TOKEN_LIFETIME_SECONDS,
 		},
 	]
-		.map((part) => base64Url(JSON.stringify(part)))
+		.map((part) => base64Url(encodeJsonSync(part)))
 		.join(".")
 	const signature = yield* Effect.promise(() =>
 		crypto.subtle.sign("RSASSA-PKCS1-v1_5", signer.key, new TextEncoder().encode(signingInput)),

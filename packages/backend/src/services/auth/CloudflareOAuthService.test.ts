@@ -213,7 +213,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(row?.external_user_email, null)
 			// Token is encrypted at rest, never stored verbatim.
 			assert.isTrue(!!row && row.access_token_ciphertext !== "cf-access-token")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect refuses a valid state redeemed by a different Maple user or org", () => {
@@ -233,7 +233,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, false)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect refuses the initiator's org redeemed by another member", () => {
@@ -250,7 +250,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, false)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect rejects an unknown or expired state", () => {
@@ -268,7 +268,7 @@ describe("CloudflareOAuthService", () => {
 			// Nothing was connected as a side effect.
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, false)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch([]))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch([])]))
 	})
 
 	it.effect("completeConnect accepts a grant spanning multiple accounts as one connection", () => {
@@ -314,7 +314,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(token.accountId, "acc_2")
 			const outside = yield* service.getValidAccessToken(asOrgId("org_a"), "acc_3").pipe(Effect.flip)
 			assert.strictEqual(outside._tag, "@maple/http/errors/IntegrationsValidationError")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect refuses a token with no refresh token and revokes it", () => {
@@ -377,12 +377,10 @@ describe("CloudflareOAuthService", () => {
 			)
 			assert.isUndefined(row)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
+			]),
 		)
 	})
 
@@ -412,11 +410,7 @@ describe("CloudflareOAuthService", () => {
 				),
 			)
 			assert.isUndefined(row)
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)),
-			),
-		)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)]))
 	})
 
 	it.effect("connects as one Cloudflare source that Logpush jobs send as, removed on disconnect", () => {
@@ -468,7 +462,7 @@ describe("CloudflareOAuthService", () => {
 				),
 			)
 			assert.deepStrictEqual(job, { source_id: null })
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("disconnect on a non-connected org reports nothing removed", () => {
@@ -563,12 +557,10 @@ describe("CloudflareOAuthService", () => {
 			const stale = yield* service.getValidAccessToken(asOrgId("org_a"), "acc_1").pipe(Effect.flip)
 			assert.strictEqual(stale._tag, "@maple/http/errors/IntegrationsValidationError")
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
+			]),
 		)
 	})
 })

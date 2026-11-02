@@ -969,6 +969,8 @@ export const SecurityRunsSearch = Schema.Struct({
 /** One repository's breakdown on the Dependencies tab; absent shows them all. */
 export const SecurityDependenciesSearch = Schema.Struct({
 	repo: Schema.optional(Schema.String),
+	/** The repositories or advisories table; absent shows the matrix, or a repository's upgrade plan. */
+	view: Schema.optional(Schema.Literals(["repositories", "advisories"])),
 })
 
 export type SecurityFindingsSearch = typeof SecurityFindingsSearch.Type

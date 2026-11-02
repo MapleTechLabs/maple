@@ -93,14 +93,15 @@ export const LoadLogVolume = Command.define("LoadGcpIntegrationLogVolume", {
 				filters: { resourceAttributeFilters: [{ ...GCP_LOG_SOURCE, mode: "equals" }] },
 			},
 		}).pipe(
-			Effect.map((response) =>
-				gcpLogVolume(
-					response.data,
-					parseWarehouseDateTime(window.startTime),
-					parseWarehouseDateTime(window.endTime),
-				),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					gcpLogVolume(
+						response.data,
+						parseWarehouseDateTime(window.startTime),
+						parseWarehouseDateTime(window.endTime),
+					),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedGcpLogVolume({ key, result })),
 		),

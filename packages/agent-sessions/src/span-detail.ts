@@ -12,6 +12,7 @@
 // messages yields an empty list, not a placeholder transcript.
 
 import type { AiSessionSpan } from "@maple/domain/http"
+import { Option, Schema } from "effect"
 
 import { classifyAiSpan, isLlmCall } from "./session-turns"
 
@@ -258,9 +259,10 @@ function ownToolCall(span: AiSessionSpan): SpanToolCall | undefined {
  *  display string re-serialises; the raw string case is already the payload. */
 export function jsonText(value: unknown): string {
 	if (typeof value === "string") return value
-	const text = JSON.stringify(value)
-	return text === undefined ? String(value) : text
+	return Option.getOrElse(encodeJson(value), () => String(value))
 }
+
+const encodeJson = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 /* -------------------------------------------------------------------------- */
 /* Message walking                                                            */

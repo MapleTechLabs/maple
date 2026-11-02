@@ -1,6 +1,7 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
+import { writeClipboardApi } from "../copy-button"
 import { Message, type VirtualRow } from "./logs-stream-message"
 
 /**
@@ -41,7 +42,8 @@ const rowsOf = (scroller: HTMLElement): ReadonlyArray<HTMLElement> =>
  * of every mounted row. The window
  * reaches the Model only when it changes, not on every scroll event.
  */
-type VirtualizeMessage = typeof Message.ChangedVirtualWindow.Type | typeof Message.ChangedScrolledAway.Type
+const VirtualizeMessage = Schema.Union([Message.ChangedVirtualWindow, Message.ChangedScrolledAway])
+type VirtualizeMessage = typeof VirtualizeMessage.Type
 
 const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 	Stream.callback<VirtualizeMessage>((queue) =>
@@ -215,10 +217,7 @@ export const ScrollStreamToIndex = Command.define("ScrollStreamToIndex", {
 
 /** `useCopy`'s write. A refused clipboard (no permission, no focus) is not an error the stream shows. */
 const writeClipboard = (text: string) =>
-	Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
-		Effect.ignore,
-		Effect.as(Message.CompletedCopy()),
-	)
+	writeClipboardApi(text).pipe(Effect.ignore, Effect.as(Message.CompletedCopy()))
 
 export const CopyText = Command.define("CopyText", {
 	args: { text: Schema.String },

@@ -51,6 +51,8 @@ const MAX_BUFFERED_EVENTS = 1_000
 /** How often a failing endpoint may warn. */
 const WARN_INTERVAL_MS = 30_000
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 export interface MapleEventsConfig {
 	/**
 	 * Stamped as `service_name` on every event. Falls back to
@@ -191,7 +193,7 @@ export const make = Effect.fn("MapleEvents.make")(function* (config: MapleEvents
 				"user-agent": `maple-effect-sdk-server/${SDK_VERSION}`,
 			}),
 			HttpClientRequest.bodyText(
-				`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+				`${lines.map((line) => encodeJson(line)).join("\n")}\n`,
 				"application/x-ndjson",
 			),
 			client.execute,

@@ -9,7 +9,7 @@ import {
 	HEALTH_LABEL,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as ServiceMap from "@maple/views/service-map/map/service-map"
@@ -34,6 +34,8 @@ import {
 import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
 import { hstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The 3D viewport: the perspective bar, the
 // paper section with the canvas wrappers, the timber sign labels, the HUD, legend and camera
@@ -281,17 +283,17 @@ const canvas = <M>(
 				[
 					h.canvas([
 						h.Style({ display: "block" }),
-						h.Attribute(TOPOLOGY_ATTRIBUTE, JSON.stringify(input.topology)),
+						h.Attribute(TOPOLOGY_ATTRIBUTE, encodeJson(input.topology)),
 						h.Attribute(
 							STATE_ATTRIBUTE,
-							JSON.stringify({
+							encodeJson({
 								selectedId: input.selectedId,
 								view: input.model.perspective,
 								flowing: input.flowing,
 								dark: input.isDark,
 							}),
 						),
-						h.Attribute(COMMAND_ATTRIBUTE, JSON.stringify(input.model.command)),
+						h.Attribute(COMMAND_ATTRIBUTE, encodeJson(input.model.command)),
 						h.OnMount(Mount.mapMessage(MountScene(), toMessage)),
 					]),
 				],

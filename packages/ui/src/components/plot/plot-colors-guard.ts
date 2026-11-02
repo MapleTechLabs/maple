@@ -38,6 +38,10 @@
  * are resolved". The walk is also bounded — depth 6, 24 array entries — so it
  * stays free next to a definition holding rows.
  */
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const BARE_TOKEN = /^--[a-zA-Z0-9]/
 const MAX_WALK_DEPTH = 6
 
@@ -52,7 +56,7 @@ export function warnUnresolvedColors(definition: unknown, ariaLabel: string): vo
 				// never worth unmounting the page it was spotted on; throwing here
 				// turned a mis-painted series into a blank widget.
 				console.error(
-					`PlotFrame(${ariaLabel}): unresolved colour token ${JSON.stringify(value)} at ${path}. ` +
+					`PlotFrame(${ariaLabel}): unresolved colour token ${encodeJson(value)} at ${path}. ` +
 						`A bare custom property is not a colour; the canvas paint resolver throws on it. ` +
 						`Resolve it with usePlotColors/resolvePlotColor, or wrap it as var(${value}).`,
 				)

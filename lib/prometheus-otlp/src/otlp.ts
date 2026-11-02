@@ -125,6 +125,7 @@ const numberDataPoint = (
 
 /** Stable fingerprint of a label set, excluding a component label. */
 const seriesKey = (labels: Readonly<Record<string, string>>, exclude: string): string =>
+	// oxlint-disable-next-line effecttsgo/global-json -- lib/prometheus-otlp does not depend on effect
 	JSON.stringify(
 		Object.keys(labels)
 			.filter((key) => key !== exclude)
@@ -535,6 +536,7 @@ export const encodeExportRequestChunks = (
 	options: { readonly maxDataPoints: number; readonly maxBytes: number },
 ): ReadonlyArray<Uint8Array> =>
 	splitExportRequest(request, options.maxDataPoints).flatMap((chunk) => {
+		// oxlint-disable-next-line effecttsgo/global-json -- lib/prometheus-otlp does not depend on effect
 		const body = utf8.encode(JSON.stringify(chunk))
 		const points = countDataPoints(chunk)
 		if (body.byteLength <= options.maxBytes || points <= 1) return [body]

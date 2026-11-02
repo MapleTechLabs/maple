@@ -32,6 +32,9 @@ import { AUDIT_TOOL_GUIDANCE, SourceReadError, type SourceReaderApi } from "@/se
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "@/platform/Llm"
 
 const MAX_OUTPUT_BYTES = 48 * 1024
+const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 const SKILL_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../packages/security-audit/skill")
 
 interface Args {
@@ -69,7 +72,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		if (raw === undefined) return undefined
 		const value = Number(raw)
 		if (Number.isSafeInteger(value) && value > 0) return value
-		console.error(`--${name} must be a positive integer, got ${JSON.stringify(raw)}`)
+		console.error(`--${name} must be a positive integer, got ${encodeJson(raw)}`)
 		return process.exit(2)
 	}
 	const one = (name: string) => flags.get(name)?.at(-1)
@@ -212,16 +215,16 @@ const PriorMetadata = Schema.Struct({ run_id: Schema.String, source_ref: Schema.
 
 const loadPrior = (dir: string): PriorRun => {
 	const metadata = Schema.decodeUnknownSync(PriorMetadata)(
-		JSON.parse(readFileSync(join(dir, "run-metadata.json"), "utf8")),
+		decodeJson(readFileSync(join(dir, "run-metadata.json"), "utf8")),
 	)
 	return {
 		runId: metadata.run_id,
 		sourceRef: metadata.source_ref,
 		ledger: Schema.decodeUnknownSync(Ledger)(
-			JSON.parse(readFileSync(join(dir, "coverage-ledger.json"), "utf8")),
+			decodeJson(readFileSync(join(dir, "coverage-ledger.json"), "utf8")),
 		),
 		findings: Schema.decodeUnknownSync(Findings)(
-			JSON.parse(readFileSync(join(dir, "findings.json"), "utf8")),
+			decodeJson(readFileSync(join(dir, "findings.json"), "utf8")),
 		),
 	}
 }
@@ -229,7 +232,7 @@ const loadPrior = (dir: string): PriorRun => {
 /** The skill's run directory, written as each shared file changes. */
 const fileStore = (out: string): AuditStoreApi => {
 	const write = (name: string, value: string) => Effect.sync(() => writeFileSync(join(out, name), value))
-	const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
+	const json = (value: unknown) => `${encodePrettyJson(value)}\n`
 	return {
 		saveMetadata: (metadata) => write("run-metadata.json", json(metadata)),
 		saveArchitecture: (_, md) => write("architecture.md", md),
@@ -250,7 +253,7 @@ const fileStore = (out: string): AuditStoreApi => {
 			Effect.sync(() => {
 				appendFileSync(
 					join(out, "events.jsonl"),
-					`${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`,
+					`${encodeJson({ at: new Date().toISOString(), ...event })}\n`,
 				)
 				const line =
 					event._tag === "Agent"
@@ -332,10 +335,7 @@ const main = async () => {
 		}
 		return yield* runAudit(input).pipe(
 			// The script composes the engine with its host here, at its entry point.
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(
-				Layer.mergeAll(Layer.succeed(AuditAgents, agents), Layer.succeed(AuditStore, fileStore(out))),
-			),
+			Effect.provide([Layer.succeed(AuditAgents, agents), Layer.succeed(AuditStore, fileStore(out))]),
 		)
 	})
 	const result = await Effect.runPromise(

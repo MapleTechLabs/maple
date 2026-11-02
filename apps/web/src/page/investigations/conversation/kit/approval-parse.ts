@@ -1,12 +1,14 @@
+import { Option, Schema } from "effect"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 export type ParseResult = { ok: true; value: unknown } | { ok: false }
 
 export function safeParseJson(value: unknown): ParseResult {
 	if (typeof value !== "string" || value.length === 0) return { ok: false }
-	try {
-		return { ok: true, value: JSON.parse(value) as unknown }
-	} catch {
-		return { ok: false }
-	}
+	return Option.match(decodeJson(value), {
+		onNone: (): ParseResult => ({ ok: false }),
+		onSome: (parsed): ParseResult => ({ ok: true, value: parsed }),
+	})
 }
 
 export function asRecord(value: unknown): Record<string, unknown> | undefined {

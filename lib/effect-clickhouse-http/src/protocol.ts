@@ -17,6 +17,7 @@ export type ProtocolFailure = ClickHouseLimitError | ClickHouseProtocolError | C
 const ERROR_BYTES = 16 * 1024
 const encoder = new TextEncoder()
 const isRow = Schema.is(Schema.Record(Schema.String, Schema.Unknown))
+const decodeJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 
 /** Synchronous framing state with typed Result failures; the stream lifts them into Effect. */
 class Decoder {
@@ -88,8 +89,8 @@ class Decoder {
 			return this.addInvalid(text, ended)
 		}
 		if (text.trim() === "") return Result.succeed(undefined)
-		// BOUNDARY: JSON.parse returns untrusted wire data, validated as an object row below.
-		const parsed = Result.try((): unknown => JSON.parse(text))
+		// BOUNDARY: untrusted wire data, validated as an object row below.
+		const parsed = decodeJson(text)
 		if (Result.isFailure(parsed)) {
 			return this.addInvalid(text, ended)
 		}

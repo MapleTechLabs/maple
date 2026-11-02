@@ -64,8 +64,10 @@ export const loadStatus = Effect.gen(function* () {
 
 export const loadFleet = (window: TimeWindow) =>
 	getAwsInfraFleet({ data: window }).pipe(
-		Effect.map((response): ReadonlyArray<FleetRead> => response.kinds),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<FleetRead> => response.kinds,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -79,8 +81,10 @@ export type SparksInput = typeof SparksInput.Type
 
 export const loadSparks = (input: SparksInput) =>
 	getAwsInfraSparklines({ data: { ...input, kinds: [...input.kinds] } }).pipe(
-		Effect.map((response): ReadonlyArray<SparkRead> => response.kinds),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<SparkRead> => response.kinds,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -95,7 +99,9 @@ export type TimeseriesInput = typeof TimeseriesInput.Type
 
 export const loadTimeseries = (input: TimeseriesInput) =>
 	getAwsInfraTimeseries({ data: { ...input, keys: [...input.keys] } }).pipe(
-		Effect.map((response): ReadonlyArray<BucketPoint> => response.points),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<BucketPoint> => response.points,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)

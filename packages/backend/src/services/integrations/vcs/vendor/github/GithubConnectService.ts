@@ -479,18 +479,15 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				const isSameOrgReconnect = Option.isSome(existingInstallation)
 				const hasCode = code !== undefined && code.length > 0
 				const userToken = hasCode
-					? Option.some(
-							yield* githubApp.exchangeUserOAuthCode(code).pipe(
-								Effect.tapError(() =>
-									Effect.annotateCurrentSpan({
-										orgId: stateRow.orgId,
-										"vcs.connect.outcome": "oauth_exchange_failed",
-										"vcs.connect.reason":
-											"could not exchange OAuth code for a user token",
-									}),
-								),
-								Effect.mapError(fromGithubError),
+					? yield* githubApp.exchangeUserOAuthCode(code).pipe(
+							Effect.tapError(() =>
+								Effect.annotateCurrentSpan({
+									orgId: stateRow.orgId,
+									"vcs.connect.outcome": "oauth_exchange_failed",
+									"vcs.connect.reason": "could not exchange OAuth code for a user token",
+								}),
 							),
+							Effect.mapBoth({ onSuccess: Option.some, onFailure: fromGithubError }),
 						)
 					: Option.none<string>()
 				if (Option.isSome(userToken)) {

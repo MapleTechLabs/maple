@@ -62,12 +62,9 @@ const stripWidgetTimeParams = (widget: Widget): Widget => {
 
 /** `parsePortableDashboardJson` over an already-parsed value. */
 export const parsePortable = (parsed: unknown) =>
-	Effect.map(
-		Effect.mapError(
-			decodePortable(parsed),
-			(error) => new PortableDashboardParseError({ message: error.message }),
-		),
-		(decoded): PortableDashboard => ({
+	Effect.mapBoth(decodePortable(parsed), {
+		onFailure: (error) => new PortableDashboardParseError({ message: error.message }),
+		onSuccess: (decoded): PortableDashboard => ({
 			name: decoded.name,
 			...(decoded.description === undefined ? undefined : { description: decoded.description }),
 			...(decoded.tags === undefined ? undefined : { tags: [...decoded.tags] }),
@@ -79,7 +76,7 @@ export const parsePortable = (parsed: unknown) =>
 			timeRange: decoded.timeRange,
 			widgets: decoded.widgets.map(stripWidgetTimeParams),
 		}),
-	)
+	})
 
 /** `isPersesDashboardJson`. */
 export const isPersesDashboardJson = (value: unknown): value is Record<string, unknown> =>
@@ -97,16 +94,19 @@ const sanitizeFilenameSegment = (value: string): string => {
 	return sanitized.length > 0 ? sanitized : "dashboard"
 }
 
+const encodePrettyJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 /** `downloadPortableDashboard`: the JSON file through a temporary anchor. */
 export const downloadPortable = (document: DashboardDocument) =>
-	Effect.sync(() => {
-		const json = JSON.stringify(toPortable(document), null, 2)
-		const url = URL.createObjectURL(new Blob([json], { type: "application/json" }))
-		const anchor = window.document.createElement("a")
-		anchor.href = url
-		anchor.download = `${sanitizeFilenameSegment(document.name)}.json`
-		window.document.body.appendChild(anchor)
-		anchor.click()
-		window.document.body.removeChild(anchor)
-		URL.revokeObjectURL(url)
-	})
+	Effect.flatMap(encodePrettyJson(toPortable(document)), (json) =>
+		Effect.sync(() => {
+			const url = URL.createObjectURL(new Blob([json], { type: "application/json" }))
+			const anchor = window.document.createElement("a")
+			anchor.href = url
+			anchor.download = `${sanitizeFilenameSegment(document.name)}.json`
+			window.document.body.appendChild(anchor)
+			anchor.click()
+			window.document.body.removeChild(anchor)
+			URL.revokeObjectURL(url)
+		}),
+	)

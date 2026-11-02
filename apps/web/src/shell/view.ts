@@ -1,13 +1,13 @@
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Submodel } from "foldkit"
-import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { menuPopup } from "@maple/views/ui/dropdown-menu"
-import { icon } from "@maple/views/ui/icon"
 import { pageLayoutRoot } from "@maple/views/ui/page-layout"
+import { hstack } from "@maple/views/ui/stack"
 import { sidebarContent, sidebarDesktop, sidebarInset, sidebarMobile, sidebarWrapper } from "@maple/views/ui/sidebar"
 import * as Tooltip from "@maple/views/ui/tooltip"
+import { typography } from "@maple/views/ui/typography"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { billingBanners } from "./billing-banners"
 import * as SupportChannelView from "./support-channel-view"
@@ -119,19 +119,29 @@ const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: Shel
 		toParentMessage: (message) => Message.GotSupportChannelMessage({ message }),
 	})
 
-/** `AppUpdateBanner`: not dismissible, a stale bundle may not read what the new build writes. */
-const appUpdateBanner = (h: HtmlBuilder<Message>): Html =>
-	h.div(
-		[h.Class("px-4 pt-3")],
+/** `AppUpdatePill`: not dismissible, a stale bundle may not read what the new build writes. */
+const appUpdatePill = (h: HtmlBuilder<Message>): Html =>
+	hstack(
+		h,
+		{
+			gap: "3",
+			attributes: [h.Role("status")],
+			// Dark popover barely clears the page, so it lifts a step and takes the control highlight.
+			// z-1: page action bars carry a z-index (save bars and footers z-10+, bulk bar z-40), so they cover it.
+			className:
+				"fixed right-4 bottom-4 z-1 rounded-full border border-input bg-popover py-1 pr-1 pl-3.5 shadow-popup before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:shadow-control dark:bg-secondary sm:right-8 sm:bottom-8",
+		},
 		[
-			alert(h, {}, [
-				icon(h, "ArrowRotateClockwiseIcon", { size: 16 }),
-				alertTitle(h, ["Maple was updated"]),
-				alertDescription(h, ["Reload to use the latest version."]),
-				alertAction(h, [
-					button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedReload())] }, ["Reload"]),
-				]),
-			]),
+			typography(h, { size: "sm", tone: "soft" }, ["Maple was updated"]),
+			button(
+				h,
+				{
+					size: "xs",
+					className: "rounded-full before:rounded-full",
+					attributes: [h.OnClick(Message.ClickedReload())],
+				},
+				["Reload"],
+			),
 		],
 	)
 
@@ -172,7 +182,6 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 						!hidesTopbarConnect(inputs.currentPath),
 						inputs.sourceLink ?? null,
 					),
-					...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
 					...(inputs.clerk === undefined || inputs.clerk === null
 						? []
 						: billingBanners(
@@ -182,6 +191,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 							)),
 					page.body,
 				]),
+				...(model.isAppOutdated ? [appUpdatePill(h)] : []),
 				// The rails' sheets below `lg` (each portal moves itself to <body> while open).
 				...railSheets,
 				// Clerk: the Support menu's shared Slack channel dialog (its portal moves to <body>).

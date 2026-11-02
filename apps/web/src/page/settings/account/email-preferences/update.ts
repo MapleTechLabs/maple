@@ -135,13 +135,20 @@ const upsert = (enabled: boolean, fields: UpsertFields) =>
 				...(fields.timezone !== undefined && { timezone: fields.timezone }),
 				...(fields.namespaces !== undefined && { namespaces: fields.namespaces }),
 				...(fields.environments !== undefined && { environments: fields.environments }),
-				...(fields.webAnalyticsEnabled !== undefined && { webAnalyticsEnabled: fields.webAnalyticsEnabled }),
+				...(fields.webAnalyticsEnabled !== undefined && {
+					webAnalyticsEnabled: fields.webAnalyticsEnabled,
+				}),
 			}),
 		}),
 	).pipe(Effect.asVoid, Effect.mapError(toLoadFailure), Effect.result)
 
 const ToggleDigest = Command.define("ToggleDigest", {
-	args: { digest: Schema.Literals(["ops", "web"]), isOn: Schema.Boolean, enabled: Schema.Boolean, fields: UpsertFields },
+	args: {
+		digest: Schema.Literals(["ops", "web"]),
+		isOn: Schema.Boolean,
+		enabled: Schema.Boolean,
+		fields: UpsertFields,
+	},
 	messages: [Message.CompletedToggle],
 	execute: ({ digest, isOn, enabled, fields }) =>
 		Effect.map(upsert(enabled, fields), (result) => Message.CompletedToggle({ digest, isOn, result })),
@@ -170,8 +177,7 @@ const PreviewDigest = Command.define("PreviewDigest", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			digest === "ops" ? client.digest.preview() : client.digest.previewWebAnalytics(),
 		).pipe(
-			Effect.map((response) => response.html),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.html, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedPreview({ result })),
 		),
@@ -224,7 +230,8 @@ export const baselineOf = (model: Model): DigestDraft => {
 }
 
 export const draftOf = (model: Model): DigestDraft => Draft.draftOf(model.draft, baselineOf(model))
-export const isDraftDirty = (model: Model): boolean => Draft.isDirty(model.draft, baselineOf(model), sameDigestDraft)
+export const isDraftDirty = (model: Model): boolean =>
+	Draft.isDirty(model.draft, baselineOf(model), sameDigestDraft)
 export const isBusy = (model: Model): boolean => model.isTogglingOps || model.isTogglingWeb || model.isSaving
 
 /** The first write records the prefilled zone, so a toggle alone does not leave the row on UTC. */
@@ -263,7 +270,11 @@ const editDraft = (model: Model, patch: Partial<DigestDraft>): Model => ({
 })
 
 const scheduleValue = (field: ScheduleField, value: string): Partial<DigestDraft> =>
-	field === "timezone" ? { timezone: value } : field === "dayOfWeek" ? { dayOfWeek: Number(value) } : { sendHour: Number(value) }
+	field === "timezone"
+		? { timezone: value }
+		: field === "dayOfWeek"
+			? { dayOfWeek: Number(value) }
+			: { sendHour: Number(value) }
 
 /** The chips mirror the draft: the combobox's own selection is replaced by the draft's. */
 const updateScope = (
@@ -293,7 +304,10 @@ const toggle = (model: Model, digest: "ops" | "web"): Return => {
 }
 
 const refetch = (model: Model): Return => ({
-	model: { ...model, subscription: Option.getOrElse(AsyncData.revalidate(model.subscription), () => model.subscription) },
+	model: {
+		...model,
+		subscription: Option.getOrElse(AsyncData.revalidate(model.subscription), () => model.subscription),
+	},
 	commands: [FetchSubscription()],
 })
 
@@ -313,25 +327,39 @@ export const update = (model: Model, message: Message): Return =>
 			}
 		},
 		CompletedFetchFacets: ({ facets }) => ({ model: { ...model, facets } }),
-		ClickedRetry: () => ({ model: { ...model, subscription: AsyncData.Loading() }, commands: [FetchSubscription()] }),
+		ClickedRetry: () => ({
+			model: { ...model, subscription: AsyncData.Loading() },
+			commands: [FetchSubscription()],
+		}),
 		ToggledOps: () => toggle(model, "ops"),
 		ToggledWeb: () => toggle(model, "web"),
 		CompletedToggle: ({ digest, isOn, result }) => {
 			const settled = { ...model, isTogglingOps: false, isTogglingWeb: false }
 			const name = digest === "ops" ? "Weekly ops digest" : "Web analytics digest"
 			return Result.match(result, {
-				onSuccess: () => ({ ...refetch(settled), outMessage: toast("success", `${name} turned ${isOn ? "on" : "off"}`) }),
+				onSuccess: () => ({
+					...refetch(settled),
+					outMessage: toast("success", `${name} turned ${isOn ? "on" : "off"}`),
+				}),
 				onFailure: (error) => ({
 					model: settled,
-					outMessage: toast("error", `Couldn't update the ${digest === "ops" ? "weekly ops" : "web analytics"} digest`, error.message),
+					outMessage: toast(
+						"error",
+						`Couldn't update the ${digest === "ops" ? "weekly ops" : "web analytics"} digest`,
+						error.message,
+					),
 				}),
 			})
 		},
 		ChangedSchedule: ({ field, value }) => ({ model: editDraft(model, scheduleValue(field, value)) }),
 		GotNamespacesMessage: ({ message: child }) =>
-			updateScope(model, "namespaces", child, (inner) => Message.GotNamespacesMessage({ message: inner })),
+			updateScope(model, "namespaces", child, (inner) =>
+				Message.GotNamespacesMessage({ message: inner }),
+			),
 		GotEnvironmentsMessage: ({ message: child }) =>
-			updateScope(model, "environments", child, (inner) => Message.GotEnvironmentsMessage({ message: inner })),
+			updateScope(model, "environments", child, (inner) =>
+				Message.GotEnvironmentsMessage({ message: inner }),
+			),
 		ClickedDiscard: () => ({ model: { ...model, draft: Draft.discard() } }),
 		ClickedSave: () => {
 			// Save resends the pre-toggle `enabled`, which would undo a toggle in flight.
@@ -348,7 +376,12 @@ export const update = (model: Model, message: Message): Return =>
 					...refetch({
 						...model,
 						isSaving: false,
-						draft: Draft.commit(model.draft, { submitted, sent: null }, baselineOf(model), sameDigestDraft),
+						draft: Draft.commit(
+							model.draft,
+							{ submitted, sent: null },
+							baselineOf(model),
+							sameDigestDraft,
+						),
 					}),
 					outMessage: toast("success", "Email preferences saved"),
 				}),
@@ -358,7 +391,9 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			}),
 		ClickedPreview: ({ digest }) =>
-			model.previewing !== null ? { model } : { model: { ...model, previewing: digest }, commands: [PreviewDigest({ digest })] },
+			model.previewing !== null
+				? { model }
+				: { model: { ...model, previewing: digest }, commands: [PreviewDigest({ digest })] },
 		CompletedPreview: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (html) =>

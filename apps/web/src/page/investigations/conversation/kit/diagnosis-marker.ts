@@ -11,17 +11,13 @@ export interface DiagnosisMarker {
 }
 
 const decodeReport = Schema.decodeUnknownOption(AiTriageResult)
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 /** Parse a `submit_diagnosis` tool output into a {@link DiagnosisMarker}, or `null`. */
 export const parseDiagnosisMarker = (output: unknown): DiagnosisMarker | null => {
-	let value: unknown = output
-	if (typeof output === "string") {
-		try {
-			value = JSON.parse(output)
-		} catch {
-			return null
-		}
-	}
+	const parsed = typeof output === "string" ? decodeJson(output) : Option.some(output)
+	if (Option.isNone(parsed)) return null
+	const value = parsed.value
 	if (!value || typeof value !== "object") return null
 	const v = value as Record<string, unknown>
 	if (v.status !== "diagnosis") return null

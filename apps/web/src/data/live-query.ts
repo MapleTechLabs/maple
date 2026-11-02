@@ -5,12 +5,17 @@ import {
 	type InitialQueryBuilder,
 	type QueryBuilder,
 } from "@tanstack/db"
-import { Effect, Queue, Stream } from "effect"
+import { Effect, Queue, Schema, Stream } from "effect"
 
 interface LiveQuery {
 	readonly subscription: { readonly unsubscribe: () => void }
 	readonly collection: { readonly cleanup: () => Promise<void> }
 }
+
+export class LiveQueryReleaseError extends Schema.TaggedError<LiveQueryReleaseError>()(
+	"@maple/web/LiveQueryReleaseError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
 
 /**
  * A failed cleanup must not take the app down; the live query is gone either way. Each step is
@@ -18,8 +23,20 @@ interface LiveQuery {
  */
 export const releaseLiveQuery = ({ collection, subscription }: LiveQuery): Effect.Effect<void> =>
 	Effect.andThen(
-		Effect.ignore(Effect.try(() => subscription.unsubscribe())),
-		Effect.ignore(Effect.tryPromise(() => collection.cleanup())),
+		Effect.ignore(
+			Effect.try({
+				try: () => subscription.unsubscribe(),
+				catch: (cause) =>
+					new LiveQueryReleaseError({ message: "Could not unsubscribe the live query", cause }),
+			}),
+		),
+		Effect.ignore(
+			Effect.tryPromise({
+				try: () => collection.cleanup(),
+				catch: (cause) =>
+					new LiveQueryReleaseError({ message: "Could not clean up the live query", cause }),
+			}),
+		),
 	)
 
 /**

@@ -33,11 +33,16 @@ const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown
 	return proto === Object.prototype || proto === null
 }
 
+const encodeSortedJson = Schema.encodeSync(
+	Schema.fromJsonString(Schema.Unknown, {
+		replacer: (_, value: unknown) =>
+			isPlainObject(value) ? Object.fromEntries(Object.keys(value).sort().map((name) => [name, value[name]])) : value,
+	}),
+)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** A key's hash: JSON with object keys sorted (undefined fields drop out). */
-export const hashKey = (key: QueryKey): string =>
-	JSON.stringify(key, (_, value: unknown) =>
-		isPlainObject(value) ? Object.fromEntries(Object.keys(value).sort().map((name) => [name, value[name]])) : value,
-	)
+export const hashKey = (key: QueryKey): string => encodeSortedJson(key)
 
 /** Epoch ms of a `boundsKey` ("start/end") window, or none for any other key part. */
 const windowOf = (part: unknown): Option.Option<Readonly<{ start: number; end: number }>> => {
@@ -103,7 +108,7 @@ export const serialize = (entries: CacheEntries): string => {
 	const encoded = Array.getSomes(
 		Array.sort(Array.fromIterable(entries.values()), byNewest).map((entry) =>
 			Option.zipWith(encodeCacheValue(entry.key), encodeCacheValue(entry.data), (key, data) =>
-				JSON.stringify({ key, data, updatedAt: entry.updatedAtMs }),
+				encodeJson({ key, data, updatedAt: entry.updatedAtMs }),
 			),
 		),
 	)

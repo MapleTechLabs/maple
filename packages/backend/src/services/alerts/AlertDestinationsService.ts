@@ -126,20 +126,23 @@ const linearSecretConfig = (team: LinearTeam): DestinationSecretConfig => ({
 	teamName: team.name,
 })
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const encryptSecret = (
-	plaintext: string,
+	secretConfig: DestinationSecretConfig,
 	encryptionKey: Buffer,
 	destinationId: AlertDestinationDocument["id"],
-): Effect.Effect<EncryptedValue, AlertDestinationEncryptionError> =>
-	encryptAes256Gcm(
-		plaintext,
-		encryptionKey,
-		() =>
-			new AlertDestinationEncryptionError({
-				message: "Failed to encrypt destination secret",
-				destinationId,
-			}),
+): Effect.Effect<EncryptedValue, AlertDestinationEncryptionError> => {
+	const encryptionError = () =>
+		new AlertDestinationEncryptionError({
+			message: "Failed to encrypt destination secret",
+			destinationId,
+		})
+	return Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(secretConfig).pipe(
+		Effect.mapError(encryptionError),
+		Effect.flatMap((plaintext) => encryptAes256Gcm(plaintext, encryptionKey, encryptionError)),
 	)
+}
 
 const summarizeWebhookUrl = (url: string) =>
 	Option.match(Option.liftThrowable(() => new URL(url))(), {
@@ -576,11 +579,7 @@ export class AlertDestinationsService extends Context.Service<
 			if (secretConfig.type === "telegram") {
 				yield* validateTelegramCredentials(secretConfig.botToken, secretConfig.chatId)
 			}
-			const encryptedSecret = yield* encryptSecret(
-				JSON.stringify(secretConfig),
-				encryptionKey,
-				destinationId,
-			)
+			const encryptedSecret = yield* encryptSecret(secretConfig, encryptionKey, destinationId)
 			const timestamp = yield* runtime.now
 			const row = {
 				id: destinationId,
@@ -827,11 +826,7 @@ export class AlertDestinationsService extends Context.Service<
 			) {
 				yield* validateTelegramCredentials(nextSecretConfig.botToken, nextSecretConfig.chatId)
 			}
-			const encryptedSecret = yield* encryptSecret(
-				JSON.stringify(nextSecretConfig),
-				encryptionKey,
-				destinationId,
-			)
+			const encryptedSecret = yield* encryptSecret(nextSecretConfig, encryptionKey, destinationId)
 			const timestamp = yield* runtime.now
 			const nextName = normalizeOptionalString(request.name) ?? existing.name
 			const nextEnabled = request.enabled === undefined ? existing.enabled : request.enabled
@@ -952,7 +947,7 @@ export class AlertDestinationsService extends Context.Service<
 								.where(($) => [
 									$.orgId.eq(orgId),
 									PG.sql
-										.cond`${$.destinationIdsJson} @> ${JSON.stringify([destinationId])}::jsonb`,
+										.cond`${$.destinationIdsJson} @> ${encodeJson([destinationId])}::jsonb`,
 								]),
 						)
 						if (stillReferenced.length > 0) {

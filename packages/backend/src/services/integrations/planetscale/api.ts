@@ -148,24 +148,18 @@ export const runPlanetScale = <A, E extends SdkError>(
 	effect.pipe(
 		Effect.mapError(toApiError(operation)),
 		// The token is per org, so this cannot be hoisted into the static service graph.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			Layer.mergeAll(
-				PlanetScale.fromOAuth({
-					accessToken: Redacted.make(target.accessToken),
-					// Operations take the organization in their input; this field is unused.
-					organization: "",
-					apiBaseUrl: `${target.apiBaseUrl.replace(/\/$/, "")}/v1`,
-				}),
-				Layer.succeed(
-					HttpClient.HttpClient,
-					withRequestTimeout(httpClient, options.timeoutRetries ?? 0),
-				),
-				// The SDK's default policy retries 5xx and 429 until our timeout fires; callers own
-				// retries (pollers re-run every tick), so an HTTP error surfaces at once.
-				Layer.succeed(PlanetScale.Retry.Retry, { while: () => false }),
-			),
-		),
+		Effect.provide([
+			PlanetScale.fromOAuth({
+				accessToken: Redacted.make(target.accessToken),
+				// Operations take the organization in their input; this field is unused.
+				organization: "",
+				apiBaseUrl: `${target.apiBaseUrl.replace(/\/$/, "")}/v1`,
+			}),
+			Layer.succeed(HttpClient.HttpClient, withRequestTimeout(httpClient, options.timeoutRetries ?? 0)),
+			// The SDK's default policy retries 5xx and 429 until our timeout fires; callers own
+			// retries (pollers re-run every tick), so an HTTP error surfaces at once.
+			Layer.succeed(PlanetScale.Retry.Retry, { while: () => false }),
+		]),
 		Effect.annotateSpans("peer.service", "planetscale"),
 	)
 

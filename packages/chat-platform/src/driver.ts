@@ -99,10 +99,11 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 						const group = index < groups.length ? groups[index] : NO_BLOCKS
 						// A fingerprint of what this message should now say, not a wire format — nothing decodes
 						// it, it is only ever compared with the previous flush's.
-						// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
+						// oxlint-disable-next-line effecttsgo/global-json-in-effect
 						const rendered = JSON.stringify(group)
 						if (index >= posted.length) {
-							posted.push(yield* transport.post(target, group, phase))
+							const postedMessage = yield* transport.post(target, group, phase)
+							posted.push(postedMessage)
 							sent.push(rendered)
 							// At least once: a run lost between the post and this report posts it again later.
 							if (options.onPosted !== undefined) yield* options.onPosted([...posted])

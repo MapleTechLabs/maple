@@ -8,6 +8,7 @@ import {
 	type MigrationJournalSchema,
 	type MigrationPhase,
 } from "./local-store-migrations/journal-schema"
+import { decodeJsonSync } from "./json"
 import type { LocalSchemaIdentity } from "./schema-identity"
 import { adoptLegacySidecars, dataDirSidecarPath } from "./store-version"
 
@@ -172,7 +173,7 @@ export const readMigrationJournalStructure = async (dataDir: string): Promise<Mi
 	try {
 		// A custom-named store may still keep its journal at the pre-sidecar path.
 		adoptLegacySidecars(dataDir)
-		return parseJournal(JSON.parse(await readFile(migrationJournalPath(dataDir), "utf8")) as unknown)
+		return parseJournal(decodeJsonSync(await readFile(migrationJournalPath(dataDir), "utf8")))
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
 		throw new Error(

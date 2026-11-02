@@ -10,6 +10,7 @@ import { AGGREGATIONS_BY_SOURCE, GROUP_BY_TOKENS } from "@maple/query-engine/que
 import { QUERY_BUILDER_METRIC_TYPES, QUERY_BUILDER_SIGNAL_SOURCES } from "@maple/query-model"
 import { TRACES_NUMERIC_AGGREGATIONS } from "@maple/query-engine/query-builder"
 import { makeQueryDraft } from "@maple/backend/dashboard-templates/helpers"
+import { stringifyJsonPretty } from "./json"
 
 /**
  * The agent-facing description of what a dashboard widget can be.
@@ -43,7 +44,7 @@ export const DASHBOARD_SCHEMA_SECTIONS = [
 
 export type DashboardSchemaSection = (typeof DASHBOARD_SCHEMA_SECTIONS)[number]
 
-const json = (value: unknown): string => "```json\n" + JSON.stringify(value, null, 2) + "\n```"
+const json = (value: unknown): string => "```json\n" + stringifyJsonPretty(value) + "\n```"
 
 const mcpPanels = (): ReadonlyArray<WidgetTypeMeta> => PANEL_TYPES.filter((meta) => meta.mcpExposed)
 

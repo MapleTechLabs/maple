@@ -117,9 +117,10 @@ export const FetchContext = Command.define("FetchLogContext", {
 	},
 	messages: [Message.CompletedFetchContext],
 	execute: ({ key, side, log, instance, pinnedNamespace }) =>
-		Effect.suspend(() => listLogs({ data: contextInput(log, instance, side, pinnedNamespace) ?? {} })).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+		Effect.suspend(() =>
+			listLogs({ data: contextInput(log, instance, side, pinnedNamespace) ?? {} }),
+		).pipe(
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchContext({ key, side, result })),
 		),
@@ -136,8 +137,7 @@ export const FetchTraceLogs = Command.define("FetchLogTraceLogs", {
 	messages: [Message.CompletedFetchTraceLogs],
 	execute: ({ key, traceId, timestamp, pinnedNamespace }) =>
 		listLogs({ data: traceLogsInput(traceId, timestamp, pinnedNamespace) }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTraceLogs({ key, result })),
 		),
@@ -149,11 +149,16 @@ export const FetchTraceSpans = Command.define("FetchLogTraceSpans", {
 	messages: [Message.CompletedFetchTraceSpans],
 	execute: ({ key, traceId, timestamp }) =>
 		getSpanHierarchy({ data: { traceId, timestamp } }).pipe(
-			Effect.map((response) => ({
-				traceStartTime: response.traceStartTime ?? null,
-				spanNames: response.spans.map((span) => ({ spanId: span.spanId, spanName: span.spanName })),
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({
+					traceStartTime: response.traceStartTime ?? null,
+					spanNames: response.spans.map((span) => ({
+						spanId: span.spanId,
+						spanName: span.spanName,
+					})),
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTraceSpans({ key, result })),
 		),

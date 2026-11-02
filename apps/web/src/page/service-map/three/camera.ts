@@ -1,9 +1,12 @@
+import { Schema } from "effect"
 import { connectedIds, type SpatialView } from "../../../components/service-map/three/spatial-layout"
 import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import type { Vec3 } from "./kit"
 import type { Layout } from "./world"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The camera rig. The camera and HTML labels share
 // one projection; labels are the `[data-scene-label]` elements under the scene root.
@@ -57,11 +60,11 @@ const derive = (input: RigInput) => ({
 	input,
 	linksById: new Map(input.layout.links.map((link) => [link.id, link])),
 	nodesById: new Map(input.topology.nodes.map((node) => [node.id, node])),
-	labelRevision: JSON.stringify([
+	labelRevision: encodeJson([
 		input.topology.nodes.map((node) => [node.id, node.label, node.throughput, node.dimmed]),
 		input.layout.links.map((link) => [link.id, link.edge.callsPerSecond]),
 	]),
-	layoutKey: JSON.stringify([...input.layout.layout.positions]),
+	layoutKey: encodeJson([...input.layout.layout.positions]),
 	bounds: boundsOf(input.layout.layout),
 })
 

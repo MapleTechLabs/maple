@@ -136,23 +136,30 @@ export const reducedMotionChanges: Stream.Stream<Message> = Dom.streamFromMediaQ
 /** Default `fitView()` of the map: padding 0.1 inside the canvas's zoom range. */
 export const MAP_FIT: Canvas.FitRequest = { padding: 0.1, minZoom: 0.05, maxZoom: 2 }
 
+export class ElkLayoutError extends Schema.TaggedError<ElkLayoutError>()("@maple/web/ElkLayoutError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
+
 /** ELK in its worker (`layoutServiceMapWithElk`); the module and elkjs load on first use. */
 export const RunElkLayout = Command.define("RunElkLayout", {
 	args: { signature: Schema.String, graph: EffectiveGraphSchema, previous: Schema.Option(Positions) },
 	messages: [Message.SucceededElkLayout, Message.FailedElkLayout],
 	execute: ({ signature, graph, previous }) =>
-		Effect.tryPromise(() =>
-			import("@maple/ui/components/service-map/service-map-elk").then((elk) =>
-				elk.layoutServiceMapWithElk(
-					[...graph.nodes],
-					[...graph.edges],
-					{ ...DEFAULT_LAYOUT_CONFIG },
-					Option.getOrUndefined(
-						Option.map(previous, (positions) => new Map(Object.entries(positions))),
+		Effect.tryPromise({
+			try: () =>
+				import("@maple/ui/components/service-map/service-map-elk").then((elk) =>
+					elk.layoutServiceMapWithElk(
+						[...graph.nodes],
+						[...graph.edges],
+						{ ...DEFAULT_LAYOUT_CONFIG },
+						Option.getOrUndefined(
+							Option.map(previous, (positions) => new Map(Object.entries(positions))),
+						),
 					),
 				),
-			),
-		).pipe(
+			catch: (cause) => new ElkLayoutError({ message: "The ELK layout failed", cause }),
+		}).pipe(
 			Effect.map((result) =>
 				Message.SucceededElkLayout({ signature, positions: Object.fromEntries(result.positions) }),
 			),

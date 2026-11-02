@@ -1,4 +1,4 @@
-import { Array as Arr, Context, Effect, Layer, Option } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option, Schema } from "effect"
 import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bindings"
 
 // ReplayBlobStore — reads rrweb chunk payloads out of R2.
@@ -57,6 +57,14 @@ export interface ReplayBlobStoreApi {
 // against the single ClickHouse round trip this replaces.
 const FETCH_CONCURRENCY = 8
 
+export class ReplayChunkDecodeError extends Schema.TaggedError<ReplayChunkDecodeError>()(
+	"@maple/backend/platform/ReplayChunkDecodeError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
 const decodeGzip = (bytes: Uint8Array): Promise<string> =>
 	new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"))).text()
 
@@ -75,9 +83,14 @@ const makeHydrate =
 							onNone: () => Effect.succeed(Option.none<T>()),
 							onSome: (bytes) =>
 								// tryPromise: a corrupt gzip body must fail into the catch below, not die.
-								Effect.tryPromise(() => decodeGzip(bytes)).pipe(
-									Effect.map((events) => Option.some({ ...chunk, events })),
-								),
+								Effect.tryPromise({
+									try: () => decodeGzip(bytes),
+									catch: (cause) =>
+										new ReplayChunkDecodeError({
+											message: "Failed to gunzip replay chunk",
+											cause,
+										}),
+								}).pipe(Effect.map((events) => Option.some({ ...chunk, events }))),
 						}),
 					),
 					// A failed fetch degrades the recording rather than the request.

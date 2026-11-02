@@ -37,6 +37,8 @@ class NotificationDispatchError extends Schema.TaggedError<NotificationDispatchE
 	},
 ) {}
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 export interface NotificationRequest {
 	readonly deliveryKey: string
 	readonly ruleId: string
@@ -168,7 +170,8 @@ const make: Effect.Effect<
 		}
 		// Every request here is an error issue or its escalation, which no alert incident or rule page has.
 		const chatUrl = request.linkUrl
-		const payloadJson = JSON.stringify({
+		const sentAtMs = yield* Clock.currentTimeMillis
+		const payloadJson = yield* encodeJson({
 			eventType: request.escalation ? "escalation" : request.eventType,
 			...(request.escalation ? { escalation: request.escalation } : undefined),
 			incidentId: request.incidentId,
@@ -191,8 +194,16 @@ const make: Effect.Effect<
 			},
 			linkUrl: request.linkUrl,
 			chatUrl,
-			sentAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
-		})
+			sentAt: new Date(sentAtMs).toISOString(),
+		}).pipe(
+			Effect.mapError(
+				(cause) =>
+					new NotificationDispatchError({
+						message: "Failed to encode notification payload",
+						cause,
+					}),
+			),
+		)
 		const result = yield* dispatchDeliveryImpl(
 			context,
 			payloadJson,

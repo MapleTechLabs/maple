@@ -104,6 +104,8 @@ interface ServiceUsageRow {
 	totalSizeBytes: number
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** Empty arrays mean "the whole org", which is every pre-existing subscription. */
 const UNSCOPED: DigestScope = { environments: [], namespaces: [] }
 
@@ -112,10 +114,11 @@ const UNSCOPED: DigestScope = { environments: [], namespaces: [] }
  * one set of warehouse queries and one rendered email.
  */
 const scopeKey = (orgId: string, scope: DigestScope): string =>
-	JSON.stringify([orgId, [...scope.environments].sort(), [...scope.namespaces].sort()])
+	encodeJson([orgId, [...scope.environments].sort(), [...scope.namespaces].sort()])
 
 const StoredScopeColumn = Schema.fromJsonString(Schema.Array(Schema.String))
 const decodeScopeColumn = Schema.decodeUnknownOption(StoredScopeColumn)
+const encodeScopeColumn = Schema.encodeSync(StoredScopeColumn)
 
 /**
  * `[]` for anything that is not a JSON array of strings — a malformed scope
@@ -347,8 +350,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 							dayOfWeek: input.dayOfWeek ?? 1,
 							...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 							timezone: input.timezone ?? "UTC",
-							namespacesJson: JSON.stringify(input.namespaces ?? []),
-							environmentsJson: JSON.stringify(input.environments ?? []),
+							namespacesJson: encodeScopeColumn(input.namespaces ?? []),
+							environmentsJson: encodeScopeColumn(input.environments ?? []),
 							webAnalyticsEnabled: input.webAnalyticsEnabled !== false,
 							webAnalyticsOptedOutAt: input.webAnalyticsEnabled === false ? now : null,
 							createdAt: now,
@@ -367,10 +370,10 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 								...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 								...(input.timezone != null ? { timezone: input.timezone } : undefined),
 								...(input.namespaces != null
-									? { namespacesJson: JSON.stringify(input.namespaces) }
+									? { namespacesJson: encodeScopeColumn(input.namespaces) }
 									: undefined),
 								...(input.environments != null
-									? { environmentsJson: JSON.stringify(input.environments) }
+									? { environmentsJson: encodeScopeColumn(input.environments) }
 									: undefined),
 								// Only touched when sent, so saving the ops digest never flips it.
 								...(input.webAnalyticsEnabled != null
@@ -457,7 +460,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			yield* Effect.annotateCurrentSpan("maple.digest.environments", scope.environments.join(","))
 			yield* Effect.annotateCurrentSpan("maple.digest.namespaces", scope.namespaces.join(","))
 
-			const now = new Date(yield* Clock.currentTimeMillis)
+			const nowMs = yield* Clock.currentTimeMillis
+			const now = new Date(nowMs)
 
 			// Every window is day-aligned to UTC midnight. `bucket_seconds: 86_400`
 			// snaps `toStartOfInterval` to UTC midnight, so a rolling now-7d window
@@ -881,12 +885,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		) =>
 			Stream.paginate(0, (offset: number) =>
 				clerkRequest(spanName, attributes, () => fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
-					Effect.mapError(() => new DigestPersistenceError({ message: errorMessage })),
-					Effect.map((page) => {
-						// Advance by the rows returned; stop on totalCount or an empty page.
-						const next = offset + page.data.length
-						const done = next >= page.totalCount || page.data.length === 0
-						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					Effect.mapBoth({
+						onFailure: () => new DigestPersistenceError({ message: errorMessage }),
+						onSuccess: (page) => {
+							// Advance by the rows returned; stop on totalCount or an empty page.
+							const next = offset + page.data.length
+							const done = next >= page.totalCount || page.data.length === 0
+							return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+						},
 					}),
 				),
 			).pipe(Stream.runCollect)

@@ -77,6 +77,8 @@ import { presenceOf } from "./shell/view-nav"
 import { isResolved } from "./shell/source-link"
 import * as Toast from "@maple/views/ui/toast"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 type UpdateReturn = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>
 
@@ -204,8 +206,22 @@ const publicContextOf = (model: Model, maybeOrgId: Option.Option<OrgId>): Option
 			)
 		: Option.none()
 
+/**
+ * The last answer for the last Model: the lifted page Subscriptions read the context once each
+ * per Model, and a Model never changes in place.
+ */
+const lastByModel = <A>(compute: (model: Model) => A): ((model: Model) => A) => {
+	let last: { readonly model: Model; readonly value: A } | null = null
+	return (model) => {
+		if (last !== null && last.model === model) return last.value
+		const value = compute(model)
+		last = { model, value }
+		return value
+	}
+}
+
 /** What every page reads from the root: a signed-in org on a shell route, or a bare public page. */
-export const pageContextOf = (model: Model): Option.Option<PageContext> =>
+export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastByModel((model) =>
 	Session.match(model.session, {
 		Resolving: () => Option.none(),
 		SignedOut: () => publicContextOf(model, Option.none()),
@@ -226,7 +242,8 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 							},
 						})),
 					),
-	})
+	}),
+)
 
 /** A page's request the shell answers: the namespace pin or its infra surfaces. */
 const shellRequestOf = (out: PageOutMessage): Option.Option<Shell.Message> =>
@@ -369,6 +386,14 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 const writePage =
 	(transition: PageTransition): Step =>
 	(model) => {
+		// The page kept its slot and asked for nothing: same Model, so the frame is skipped.
+		if (
+			transition.slot === model.page &&
+			model.preload.holder === pageIdentity(transition.slot) &&
+			transition.commands.length === 0 &&
+			Option.isNone(transition.outMessage)
+		)
+			return { model }
 		const followed = actOnPageOut(model, transition.outMessage)
 		const held = Preload.held(
 			followed.model.preload,
@@ -677,7 +702,7 @@ const clerkOrganizationOf = (model: Model) =>
 	Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeOrganization)
 
 /** `ClerkReverseRedirects`' plan and region gates, for a signed-in Clerk org off the auth pages. */
-export const planGateOf = (model: Model): Option.Option<Gate> =>
+export const planGateOf: (model: Model) => Option.Option<Gate> = lastByModel((model) =>
 	Session.match(model.session, {
 		Resolving: () => Option.none<Gate>(),
 		SignedOut: () => Option.none<Gate>(),
@@ -692,7 +717,8 @@ export const planGateOf = (model: Model): Option.Option<Gate> =>
 					}),
 				),
 			),
-	})
+	}),
+)
 
 const isWrongRegion = (model: Model): boolean =>
 	Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
@@ -827,7 +853,7 @@ const syncSessionTimeRange: Step = (model) =>
 				Option.filter(
 					completeRangeOf(model.route),
 					(value) =>
-						JSON.stringify(value) !== JSON.stringify(state.value) &&
+						encodeJson(value) !== encodeJson(state.value) &&
 						isWithin(value, Number.POSITIVE_INFINITY, state.nowMs, model.timeZone),
 				),
 				{

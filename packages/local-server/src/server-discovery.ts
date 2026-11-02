@@ -3,6 +3,7 @@
 import { Effect, Option, Schema } from "effect"
 import { readFileSync, unlinkSync } from "node:fs"
 import { durableWrite } from "./durable-files"
+import { encodeJsonPretty } from "./json"
 import { ignoreFailure, isProcessAlive } from "./store-claim"
 import { stateFileError } from "./store-errors"
 
@@ -27,7 +28,7 @@ export const readDiscovery = (path: string): Effect.Effect<Option.Option<ServerD
 
 export const writeDiscovery = (path: string, discovery: ServerDiscovery) =>
 	Effect.tryPromise({
-		try: () => durableWrite(path, `${JSON.stringify(discovery, null, 2)}\n`),
+		try: () => durableWrite(path, `${encodeJsonPretty(discovery)}\n`),
 		catch: stateFileError(path, "write"),
 	})
 

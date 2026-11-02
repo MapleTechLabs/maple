@@ -45,12 +45,22 @@ export const escapeDirectives = (text: string): string =>
 		)
 		.lines.join("\n")
 
+/** The remark pipeline threw on a text. */
+export class MarkdownParseError extends Schema.TaggedError<MarkdownParseError>()(
+	"@maple/web/kit/MarkdownParseError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** Each text parsed by the lazily imported remark pipeline; a rejected text parses to `null`. */
 export const parseMarkdownTexts = (texts: ReadonlyArray<string>) =>
 	Effect.promise(() => import("@foldkit/markdown/vite")).pipe(
 		Effect.flatMap(({ parseMarkdown }) =>
 			Effect.forEach(texts, (text) =>
-				Effect.try(() => parseMarkdown(escapeDirectives(text))).pipe(
+				Effect.try({
+					try: () => parseMarkdown(escapeDirectives(text)),
+					catch: (cause) =>
+						new MarkdownParseError({ message: "The remark pipeline rejected the text", cause }),
+				}).pipe(
 					Effect.map((document): ParsedMarkdown => ({ text, document })),
 					Effect.orElseSucceed((): ParsedMarkdown => ({ text, document: null })),
 				),

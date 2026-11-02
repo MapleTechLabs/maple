@@ -178,7 +178,7 @@ const tinybird = async <S extends Schema.Decoder<unknown>>(
 	})
 	const body = await response.text()
 	if (!response.ok) fail(`${init?.method ?? "GET"} ${path} → ${response.status}: ${body.slice(0, 500)}`)
-	return Schema.decodeUnknownSync(schema)(JSON.parse(body))
+	return Schema.decodeUnknownSync(Schema.fromJsonString(schema))(body)
 }
 
 const countRows = async (target: Target, condition: string): Promise<number> => {
