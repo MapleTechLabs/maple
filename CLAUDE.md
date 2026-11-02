@@ -110,7 +110,8 @@ truthiness.
 - **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
   spans on hot paths like token validation.
 - **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
-  Tailwind 4, Nucleo icons.
+  Tailwind 4, Nucleo icons. Dashboard pages are built from the kit only; read `apps/web/CLAUDE.md`
+  before UI work (find the component in `apps/web/src/ui/INDEX.md`, build missing ones in the kit).
   Add icons to `apps/web/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
   ```bash
   sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \

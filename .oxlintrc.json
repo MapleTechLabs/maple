@@ -67,7 +67,28 @@
 				"maple/no-raw-shadow": "error",
 				"maple/no-transition-all": "error",
 				"maple/single-tooltip-delay": "error",
-				"maple/tone-alpha-steps": "error"
+				"maple/tone-alpha-steps": "error",
+				"maple/no-raw-color": "error",
+				"maple/no-arbitrary-text-size": "error"
+			}
+		},
+		// Build from the kit (docs/design-rules.md): pages compose apps/web/src/ui and page/kit.
+		// Existing sites are ratcheted per file by scripts/oxlint-plugins/ui-kit-baseline.json.
+		{
+			"files": ["apps/web/src/**"],
+			"rules": {
+				"maple/no-kit-styles-in-pages": "error",
+				"maple/no-raw-control": "error",
+				"maple/no-raw-heading": "error"
+			}
+		},
+		// The kit itself, the lab that showcases it, and tests render raw elements.
+		{
+			"files": ["apps/web/src/ui/**", "apps/web/src/page/kit/**", "apps/web/src/lab/**", "**/*.test.ts"],
+			"rules": {
+				"maple/no-kit-styles-in-pages": "off",
+				"maple/no-raw-control": "off",
+				"maple/no-raw-heading": "off"
 			}
 		},
 		// Lab fixtures hold sample telemetry (log bodies, error messages), not UI copy.
