@@ -18,6 +18,7 @@ import {
 	isCustomEndpoint,
 	maskToken,
 } from "./install-snippets"
+import { typography } from "../../../ui/typography"
 
 // `InstallHostModal`'s dialog. Rendered only while open or closing.
 
@@ -77,7 +78,7 @@ const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 			])
 
 const note = (h: H, children: ReadonlyArray<Html | string>): Html =>
-	h.p([h.Class("text-muted-foreground text-xs")], children)
+	typography(h, { size: "xs", tone: "muted", as: "p" }, children)
 
 const code = (h: H, text: string): Html => h.code([h.Class("font-mono")], [text])
 

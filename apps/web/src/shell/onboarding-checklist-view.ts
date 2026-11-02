@@ -13,6 +13,8 @@ import { meter } from "../ui/meter"
 import * as PopoverView from "../ui/popover"
 import { pressable } from "../ui/pressable"
 import { Message, type Model } from "./onboarding-checklist"
+import { typography } from "../ui/typography"
+import { hstack } from "../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -158,37 +160,33 @@ export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingCheckl
 				h.div(
 					[h.Class("relative space-y-3 border-b px-4 pt-4 pb-3")],
 					[
-						h.div(
-							[h.Class("flex items-start gap-3")],
-							[
-								h.span(
-									[
-										h.Class(
-											"flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
-										),
-									],
-									[icon(h, isClaimed ? "CircleCheckIcon" : "StarIcon", { size: 18 })],
-								),
-								h.div(
-									[h.Class("min-w-0 space-y-1")],
-									[
-										heading(h, { level: 3, variant: "section" }, [
+						hstack(h, { gap: "3", align: "start" }, [
+							h.span(
+								[
+									h.Class(
+										"flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
+									),
+								],
+								[icon(h, isClaimed ? "CircleCheckIcon" : "StarIcon", { size: 18 })],
+							),
+							h.div(
+								[h.Class("min-w-0 space-y-1")],
+								[
+									heading(h, { level: 3, variant: "section" }, [
+										isClaimed ? `${amount} in credits added` : `Get ${amount} in credits`,
+									]),
+									typography(
+										h,
+										{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
+										[
 											isClaimed
-												? `${amount} in credits added`
-												: `Get ${amount} in credits`,
-										]),
-										h.p(
-											[h.Class("text-xs leading-relaxed text-muted-foreground")],
-											[
-												isClaimed
-													? `${amount} in credits applied. It comes off your next invoice.`
-													: "Finish these within 24 hours of creating your org, then claim the credits.",
-											],
-										),
-									],
-								),
-							],
-						),
+												? `${amount} in credits applied. It comes off your next invoice.`
+												: "Finish these within 24 hours of creating your org, then claim the credits.",
+										],
+									),
+								],
+							),
+						]),
 						meter(h, {
 							value: progress,
 							minVisible: 0,
@@ -245,14 +243,11 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 									icon(h, "StarIcon", { className: "text-primary" }),
 									isClaimable || deadlineMs === null
 										? h.span([], ["Claim ", credits(checklist), " credits"])
-										: h.span(
-												[h.Class("font-mono tabular-nums")],
-												[
-													formatCountdown(deadlineMs - model.nowMs, {
-														fixedHours: true,
-													}),
-												],
-											),
+										: typography(h, { mono: true, numeric: true }, [
+												formatCountdown(deadlineMs - model.nowMs, {
+													fixedHours: true,
+												}),
+											]),
 									progressChip(h, checklist.completed_count, checklist.total_count),
 								],
 							),
@@ -308,10 +303,12 @@ const panelFooter = (
 					),
 				]
 	return [
-		h.span(
-			[h.Class("font-mono tabular-nums text-muted-foreground")],
-			[String(checklist.completed_count), " of ", String(checklist.total_count), " done"],
-		),
+		typography(h, { tone: "muted", mono: true, numeric: true }, [
+			String(checklist.completed_count),
+			" of ",
+			String(checklist.total_count),
+			" done",
+		]),
 		...(timeLeft === null
 			? []
 			: [

@@ -17,6 +17,9 @@ import { browserIconFor, deviceIconFor } from "../kit/sessions-parts"
 import { recordedMarker } from "../kit/replay-window"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
+import { scrollRegion } from "../../../ui/scroll-region"
 
 // The rail's Session tab.
 // TODO(tooltip): the identity links' and copy buttons' hover tooltips.
@@ -37,8 +40,8 @@ const value = (h: H, text: string, options: Readonly<{ isMono?: boolean; classNa
 		[
 			h.Class(
 				cn(
-					"text-xs text-foreground",
-					options.isMono === true && "font-mono tabular-nums",
+					typographyClass({ size: "xs", tone: "foreground" }),
+					options.isMono === true && typographyClass({ mono: true, numeric: true }),
 					options.className,
 				),
 			),
@@ -92,7 +95,7 @@ const stat = (h: H, iconName: IconName, label: string, count: number, isDanger =
 				[
 					h.Class(
 						cn(
-							"font-mono text-sm font-semibold tabular-nums",
+							typographyClass({ size: "sm", weight: "semibold", mono: true, numeric: true }),
 							isDanger ? "text-severity-error" : "text-foreground",
 						),
 					),
@@ -103,14 +106,11 @@ const stat = (h: H, iconName: IconName, label: string, count: number, isDanger =
 	)
 
 const legend = (h: H, swatch: string, label: string, text: string): Html =>
-	h.span(
-		[h.Class("flex items-center gap-1.5")],
-		[
-			statusDot(h, { tone: "custom", className: swatch }),
-			label,
-			h.span([h.Class("font-mono tabular-nums text-foreground")], [text]),
-		],
-	)
+	hstack(h, { gap: "1.5", as: "span" }, [
+		statusDot(h, { tone: "custom", className: swatch }),
+		label,
+		h.span([h.Class("font-mono tabular-nums text-foreground")], [text]),
+	])
 
 const summary = (h: H, session: ReplayDetail): Html => {
 	const total = session.durationMs
@@ -262,15 +262,18 @@ const envFact = (
 		className?: string
 	}>,
 ): Html =>
-	h.span(
-		[
-			h.Class("flex min-w-0 items-center gap-2"),
-			h.Title(`${options.label}: ${options.value || "unknown"}`),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			shrink: true,
+			as: "span",
+			attributes: [h.Title(`${options.label}: ${options.value || "unknown"}`)],
+		},
 		[
 			options.glyph === undefined || options.glyph === ""
 				? icon(h, options.icon, {
-						className: "size-3.5 shrink-0 text-muted-foreground",
+						className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }),
 						attributes: [h.AriaHidden(true)],
 					})
 				: h.span(
@@ -281,7 +284,7 @@ const envFact = (
 				[
 					h.Class(
 						cn(
-							"min-w-0 truncate text-xs",
+							typographyClass({ size: "xs", truncate: true, className: "min-w-0" }),
 							options.value ? "text-foreground" : "text-muted-foreground",
 							options.className,
 						),
@@ -387,8 +390,9 @@ const context = (h: H, model: SessionView, session: ReplayDetail): Html => {
 
 /** The Session tab: the recording's numbers, then identity, visitor, acquisition, environment and context. */
 export const sessionTab = (h: H, model: SessionView, session: ReplayDetail): Html =>
-	h.div(
-		[h.Class("min-h-0 flex-1 overflow-y-auto")],
+	scrollRegion(
+		h,
+		{},
 		[
 			summary(h, session),
 			identity(h, model, session),

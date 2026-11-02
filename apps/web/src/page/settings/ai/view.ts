@@ -37,6 +37,9 @@ import { saveBar } from "../kit/save-bar"
 import { settingsSection, settingsSections } from "../kit/section"
 import { Message, type Model, type Provider } from "./model"
 import { isLimitsDirty, limitsDraftOf } from "./update"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { gridClass } from "../../../ui/grid"
 
 type H = HtmlBuilder<Message>
 
@@ -107,14 +110,11 @@ const providerCard = (
 					attributes: [h.Id(RadioGroup.labelId(radioInputId(options.value)))],
 				},
 				[
-					h.span(
-						[h.Class("flex items-center gap-2.5")],
-						[
-							...RadioGroup.radio(h, radioConfig, options.value),
-							h.span([h.Class("text-sm font-medium text-foreground")], [options.title]),
-							...(options.badge === undefined ? [] : [options.badge]),
-						],
-					),
+					hstack(h, { gap: "2.5", as: "span" }, [
+						...RadioGroup.radio(h, radioConfig, options.value),
+						typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [options.title]),
+						...(options.badge === undefined ? [] : [options.badge]),
+					]),
 					h.span(
 						[h.Class("pl-6.5 text-xs leading-relaxed text-muted-foreground")],
 						[options.description],
@@ -132,7 +132,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 	const state = Field.stateOf(model.keyDraft, false)
 	const ids = fieldIds("openrouter-api-key")
 	return h.form(
-		[h.Class("flex flex-col gap-3"), h.OnSubmit(Message.SubmittedKey())],
+		[h.Class(vstackClass({ gap: "3" })), h.OnSubmit(Message.SubmittedKey())],
 		[
 			field(h, { state }, [
 				fieldLabel(h, { ids, state }, isReplacing ? "New OpenRouter API key" : "OpenRouter API key"),
@@ -155,108 +155,100 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 					"Create one at openrouter.ai/settings/keys. Maple checks it with OpenRouter, then stores it encrypted.",
 				),
 			]),
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					button(
-						h,
-						{
-							type: "submit",
-							size: "sm",
-							isLoading: model.isSavingKey,
-							isDisabled: model.keyDraft.value.trim() === "",
-						},
-						["Save key"],
-					),
-					...(isReplacing
-						? [
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "sm",
-										isDisabled: model.isSavingKey,
-										attributes: [h.OnClick(Message.ClickedCancelReplace())],
-									},
-									["Cancel"],
-								),
-							]
-						: []),
-				],
-			),
+			hstack(h, { gap: "1.5" }, [
+				button(
+					h,
+					{
+						type: "submit",
+						size: "sm",
+						isLoading: model.isSavingKey,
+						isDisabled: model.keyDraft.value.trim() === "",
+					},
+					["Save key"],
+				),
+				...(isReplacing
+					? [
+							button(
+								h,
+								{
+									variant: "ghost",
+									size: "sm",
+									isDisabled: model.isSavingKey,
+									attributes: [h.OnClick(Message.ClickedCancelReplace())],
+								},
+								["Cancel"],
+							),
+						]
+					: []),
+			]),
 		],
 	)
 }
 
 /** `AddOnUpsell`: a lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
 const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			...(current.configured
-				? [
-						h.div(
-							[
-								h.Class(
-									"flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
-								),
-							],
-							[
-								h.p(
-									[h.Class("text-xs leading-relaxed text-muted-foreground")],
-									[
-										"Your saved key (sk-or-...",
-										current.keyHint ?? "",
-										") is not in use because the add-on has lapsed.",
-									],
-								),
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "sm",
-										className: "shrink-0 text-destructive-foreground",
-										isDisabled: model.isRemoving,
-										attributes: [h.OnClick(Message.ClickedRemoveKey())],
-									},
-									["Remove"],
-								),
-							],
-						),
-					]
-				: []),
-			h.p(
-				[h.Class("text-xs leading-relaxed text-muted-foreground")],
-				[
-					"Needs the OpenRouter add-on, ",
-					ADD_ON_PRICE,
-					", billed with your plan. Cancel any time from billing.",
-				],
-			),
-			button(
-				h,
-				{
-					size: "sm",
-					className: "w-fit",
-					isDisabled: model.isAttachingAddOn,
-					attributes: [h.OnClick(Message.ClickedAddOn())],
-				},
-				["Add to plan"],
-			),
-			confirmDialog(h, {
-				slotId: "openrouter-add-on-dialog",
-				model: model.addOnDialog,
-				toParentMessage: (message) => Message.GotAddOnDialogMessage({ message }),
-				tone: "default",
-				title: `Add the OpenRouter add-on for ${ADD_ON_PRICE}?`,
-				description:
-					"If your organization has a payment method on file, the add-on is attached right away and billed with your plan. Otherwise you continue to checkout.",
-				confirmLabel: "Add to plan",
-				onConfirm: Message.ClickedConfirmAddOn(),
-				isPending: model.isAttachingAddOn,
-			}),
-		],
-	)
+	vstack(h, { gap: "3" }, [
+		...(current.configured
+			? [
+					h.div(
+						[
+							h.Class(
+								"flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
+							),
+						],
+						[
+							typography(
+								h,
+								{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
+								[
+									"Your saved key (sk-or-...",
+									current.keyHint ?? "",
+									") is not in use because the add-on has lapsed.",
+								],
+							),
+							button(
+								h,
+								{
+									variant: "ghost",
+									size: "sm",
+									className: "shrink-0 text-destructive-foreground",
+									isDisabled: model.isRemoving,
+									attributes: [h.OnClick(Message.ClickedRemoveKey())],
+								},
+								["Remove"],
+							),
+						],
+					),
+				]
+			: []),
+		typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+			"Needs the OpenRouter add-on, ",
+			ADD_ON_PRICE,
+			", billed with your plan. Cancel any time from billing.",
+		]),
+		button(
+			h,
+			{
+				size: "sm",
+				className: "w-fit",
+				isDisabled: model.isAttachingAddOn,
+				attributes: [h.OnClick(Message.ClickedAddOn())],
+			},
+			["Add to plan"],
+		),
+		confirmDialog(h, {
+			slotId: "openrouter-add-on-dialog",
+			model: model.addOnDialog,
+			toParentMessage: (message) => Message.GotAddOnDialogMessage({ message }),
+			tone: "default",
+			title: `Add the OpenRouter add-on for ${ADD_ON_PRICE}?`,
+			description:
+				"If your organization has a payment method on file, the add-on is attached right away and billed with your plan. Otherwise you continue to checkout.",
+			confirmLabel: "Add to plan",
+			onConfirm: Message.ClickedConfirmAddOn(),
+			isPending: model.isAttachingAddOn,
+		}),
+	])
 
 const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyArray<Html> => {
 	if (!current.entitled) return [addOnUpsell(h, model, current)]
@@ -269,33 +261,33 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 					),
 				],
 				[
-					h.code([h.Class("truncate font-mono text-sm")], ["sk-or-...", current.keyHint ?? ""]),
-					h.div(
-						[h.Class("flex shrink-0 items-center gap-1")],
-						[
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									isDisabled: model.isRemoving,
-									attributes: [h.OnClick(Message.ClickedReplace())],
-								},
-								["Replace"],
-							),
-							button(
-								h,
-								{
-									variant: "ghost",
-									size: "sm",
-									className: "text-destructive-foreground",
-									isDisabled: model.isRemoving,
-									attributes: [h.OnClick(Message.ClickedRemoveKey())],
-								},
-								["Remove"],
-							),
-						],
+					h.code(
+						[h.Class(typographyClass({ size: "sm", mono: true, truncate: true }))],
+						["sk-or-...", current.keyHint ?? ""],
 					),
+					hstack(h, { gap: "1", className: "shrink-0" }, [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: model.isRemoving,
+								attributes: [h.OnClick(Message.ClickedReplace())],
+							},
+							["Replace"],
+						),
+						button(
+							h,
+							{
+								variant: "ghost",
+								size: "sm",
+								className: "text-destructive-foreground",
+								isDisabled: model.isRemoving,
+								attributes: [h.OnClick(Message.ClickedRemoveKey())],
+							},
+							["Remove"],
+						),
+					]),
 				],
 			),
 		]
@@ -306,7 +298,7 @@ const providerChoice = (h: H, model: Model, current: OpenRouterKeyDocument): Rea
 	const isInUse = current.entitled && current.configured
 	const selected: Provider = model.picked ?? (isInUse ? "openrouter" : "managed")
 	return [
-		RadioGroup.radioGroup(h, { label: "Model provider", className: "grid gap-3 sm:grid-cols-2" }, [
+		RadioGroup.radioGroup(h, { label: "Model provider", className: gridClass({ sm: 2, gap: "3" }) }, [
 			providerCard(h, {
 				value: "managed",
 				selected,
@@ -377,13 +369,10 @@ const limitRow = (
 	const state: FieldState = { ...IDLE, isInvalid: options.error !== null, isFilled: options.value !== "" }
 	const ids = fieldIds(options.id)
 	return field(h, { className: "flex-row items-start justify-between gap-6 p-4", state }, [
-		h.div(
-			[h.Class("flex min-w-0 flex-col gap-0.5")],
-			[
-				fieldLabel(h, { ids, state }, options.label),
-				fieldDescription(h, { ids, state, className: "max-w-sm leading-relaxed" }, options.help),
-			],
-		),
+		vstack(h, { gap: "0.5", shrink: true }, [
+			fieldLabel(h, { ids, state }, options.label),
+			fieldDescription(h, { ids, state, className: "max-w-sm leading-relaxed" }, options.help),
+		]),
 		h.div(
 			[h.Class("flex w-48 shrink-0 flex-col gap-2")],
 			[
@@ -406,10 +395,10 @@ const limitRow = (
 								max: options.limit,
 								label: `${options.label} used today`,
 							}),
-							h.span(
-								[h.Class("font-mono text-2xs text-muted-foreground")],
-								[formatNumber(options.spent), " used today"],
-							),
+							typography(h, { size: "2xs", tone: "muted", mono: true }, [
+								formatNumber(options.spent),
+								" used today",
+							]),
 						]
 					: [fieldError(h, { ids, state }, options.error)]),
 			],
@@ -493,11 +482,12 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 							className:
 								"shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90",
 						}),
-						h.span([h.Class("text-xs font-medium text-foreground")], ["Advanced limits"]),
-						h.span(
-							[h.Class("truncate text-2xs text-muted-foreground")],
-							["Model passes per day, reserve for high and critical incidents"],
-						),
+						typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [
+							"Advanced limits",
+						]),
+						typography(h, { size: "2xs", tone: "muted", truncate: true }, [
+							"Model passes per day, reserve for high and critical incidents",
+						]),
 					],
 				},
 				[
@@ -610,19 +600,19 @@ const escalationCard = (h: H): Html =>
 			h.div(
 				[h.Class("flex min-w-0 gap-3")],
 				[
-					icon(h, "BellIcon", { size: 16, className: "mt-0.5 shrink-0 text-muted-foreground" }),
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-0.5")],
-						[
-							h.span([h.Class("text-sm font-medium text-foreground")], ["Escalation routing"]),
-							h.span(
-								[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
-								[
-									"Route triaged issues by severity and confidence to your alert destinations.",
-								],
-							),
-						],
-					),
+					icon(h, "BellIcon", {
+						size: 16,
+						className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
+					}),
+					vstack(h, { gap: "0.5", shrink: true }, [
+						typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
+							"Escalation routing",
+						]),
+						h.span(
+							[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
+							["Route triaged issues by severity and confidence to your alert destinations."],
+						),
+					]),
 				],
 			),
 			linkButton(

@@ -10,6 +10,8 @@ import { formDialog } from "../../../ui/form-dialog"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `TagEditorDialog` on `FormDialog`: one dashboard's tags,
 // added by typing or from the org's other tags, removed by chip; Save reports them.
@@ -141,8 +143,7 @@ const draftChips = (h: H, model: Model): Html =>
 				{ ids: TAG_IDS, className: "text-2xs", state: IDLE },
 				"No tags yet, so this dashboard won't appear under any Tags filter.",
 			)
-		: h.div(
-				[h.Class("flex flex-wrap gap-1")],
+		: hstack(h, { gap: "1", align: "stretch", wrap: true },
 				model.drafts.map((tag) =>
 					badge(
 						h,
@@ -171,15 +172,14 @@ const suggestions = (h: H, unused: ReadonlyArray<string>): ReadonlyArray<Html> =
 		: [
 				field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 					plainFieldLabel(h, "Used elsewhere"),
-					h.div(
-						[h.Class("flex flex-wrap gap-1")],
+					hstack(h, { gap: "1", align: "stretch", wrap: true },
 						unused.map((tag) =>
 							button(
 								h,
 								{
 									variant: "outline",
 									size: "xs",
-									className: "font-mono text-2xs",
+									className: typographyClass({ size: "2xs", mono: true }),
 									attributes: [h.OnClick(Message.ClickedSuggestedTag({ tag }))],
 								},
 								[
@@ -198,8 +198,7 @@ const tagInput = (h: H, model: Model): Html => {
 	const canAdd = normalizeTags(splitTagInput(model.input)).length > 0
 	return field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 		fieldLabel(h, { ids: TAG_IDS, className: "text-xs", state: IDLE }, "Add a tag"),
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
+		hstack(h, { gap: "1.5" },
 			[
 				input(h, {
 					id: TAG_INPUT_ID,

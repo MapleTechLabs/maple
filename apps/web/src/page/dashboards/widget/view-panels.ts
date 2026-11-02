@@ -25,6 +25,8 @@ import {
 } from "./view-product"
 import { FUNNEL_MAX_STEPS, stepBuilder } from "./view-steps"
 import { lookupField } from "../../kit/autocomplete-lookups"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `FunnelQueryPanel` and `PathsQueryPanel`, each
 // with the Run preview row the editor page puts under it.
@@ -59,16 +61,12 @@ export const funnelPanel = (h: H, model: Model, state: EditorState): ReadonlyArr
 			h.div(
 				[h.Class("space-y-1.5")],
 				[
-					h.div(
-						[h.Class("flex items-baseline gap-2")],
-						[
-							eyebrow(h, {}, ["Steps"]),
-							h.span(
-								[h.Class("font-mono text-3xs text-muted-foreground")],
-								["in order · session step only first · up to 10"],
-							),
-						],
-					),
+					hstack(h, { gap: "2", align: "baseline" }, [
+						eyebrow(h, {}, ["Steps"]),
+						typography(h, { size: "3xs", tone: "muted", mono: true }, [
+							"in order · session step only first · up to 10",
+						]),
+					]),
 					stepBuilder(h, model, {
 						scope: "funnel",
 						steps: funnel.steps,
@@ -150,48 +148,41 @@ const pathsAddOns = (h: H, model: Model, paths: EditorState["paths"]): ReadonlyA
 		: []),
 	...(paths.addOns.include
 		? [
-				h.div(
-					[h.Class("flex items-center gap-2")],
-					[
-						rowLabel(h, "Include"),
-						segments(
-							h,
-							"Include",
-							paths.include,
-							[
-								{ value: "all", label: "Events + pages" },
-								{ value: "events", label: "Events" },
-								{ value: "pages", label: "Pages" },
-							],
-							(include) => product(ProductEdit.SetPathsInclude({ include })),
-						),
-					],
-				),
+				hstack(h, { gap: "2" }, [
+					rowLabel(h, "Include"),
+					segments(
+						h,
+						"Include",
+						paths.include,
+						[
+							{ value: "all", label: "Events + pages" },
+							{ value: "events", label: "Events" },
+							{ value: "pages", label: "Pages" },
+						],
+						(include) => product(ProductEdit.SetPathsInclude({ include })),
+					),
+				]),
 			]
 		: []),
 	...(paths.addOns.exclude
 		? [
-				h.div(
-					[h.Class("flex items-center gap-2")],
-					[
-						rowLabel(h, "Exclude"),
-						input(h, {
-							id: "widget-paths-exclude",
-							size: "sm",
-							className: "w-[320px] font-mono text-xs",
-							attributes: [
-								h.Value(paths.excludeText),
-								h.Placeholder("heartbeat, /, /health"),
-								h.AriaLabel("Excluded names"),
-								h.OnInput((value) => product(ProductEdit.ChangedPathsExclude({ value }))),
-							],
-						}),
-						h.span(
-							[h.Class("text-2xs text-muted-foreground")],
-							["event names or page paths, comma-separated, dropped before sequencing"],
-						),
-					],
-				),
+				hstack(h, { gap: "2" }, [
+					rowLabel(h, "Exclude"),
+					input(h, {
+						id: "widget-paths-exclude",
+						size: "sm",
+						className: "w-[320px] font-mono text-xs",
+						attributes: [
+							h.Value(paths.excludeText),
+							h.Placeholder("heartbeat, /, /health"),
+							h.AriaLabel("Excluded names"),
+							h.OnInput((value) => product(ProductEdit.ChangedPathsExclude({ value }))),
+						],
+					}),
+					typography(h, { size: "2xs", tone: "muted" }, [
+						"event names or page paths, comma-separated, dropped before sequencing",
+					]),
+				]),
 			]
 		: []),
 ]
@@ -209,30 +200,24 @@ export const pathsPanel = (h: H, model: Model, state: EditorState): ReadonlyArra
 				h.div(
 					[h.Class("space-y-1.5")],
 					[
-						h.div(
-							[h.Class("flex items-center gap-2")],
-							[
-								eyebrow(h, {}, ["Paths"]),
-								segments(
-									h,
-									"Direction",
-									paths.direction,
-									[
-										{ value: "after", label: "After" },
-										{ value: "before", label: "Before" },
-									],
-									(direction) => product(ProductEdit.SetPathsDirection({ direction })),
-								),
-								h.span(
-									[h.Class("font-mono text-3xs text-muted-foreground")],
-									[
-										paths.direction === "after"
-											? "what people did next, from the first time they hit the anchor"
-											: "how people got there, back from the last time they hit the anchor",
-									],
-								),
-							],
-						),
+						hstack(h, { gap: "2" }, [
+							eyebrow(h, {}, ["Paths"]),
+							segments(
+								h,
+								"Direction",
+								paths.direction,
+								[
+									{ value: "after", label: "After" },
+									{ value: "before", label: "Before" },
+								],
+								(direction) => product(ProductEdit.SetPathsDirection({ direction })),
+							),
+							typography(h, { size: "3xs", tone: "muted", mono: true }, [
+								paths.direction === "after"
+									? "what people did next, from the first time they hit the anchor"
+									: "how people got there, back from the last time they hit the anchor",
+							]),
+						]),
 						stepBuilder(h, model, {
 							scope: "paths",
 							steps: [paths.anchor],
@@ -243,38 +228,27 @@ export const pathsPanel = (h: H, model: Model, state: EditorState): ReadonlyArra
 						}),
 					],
 				),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-x-4 gap-y-2")],
-					[
-						h.div(
-							[h.Class("flex items-center gap-2")],
-							[
-								rowLabel(h, "Steps"),
-								segments(h, "Steps", String(paths.depth), DEPTH_OPTIONS, (depth) =>
-									product(ProductEdit.SetPathsDepth({ depth: Number(depth) })),
-								),
-							],
+				hstack(h, { wrap: true, className: "gap-x-4 gap-y-2" }, [
+					hstack(h, { gap: "2" }, [
+						rowLabel(h, "Steps"),
+						segments(h, "Steps", String(paths.depth), DEPTH_OPTIONS, (depth) =>
+							product(ProductEdit.SetPathsDepth({ depth: Number(depth) })),
 						),
-						h.div(
-							[h.Class("flex items-center gap-2")],
-							[
-								rowLabel(h, "Branches", "shrink-0 text-2xs text-muted-foreground"),
-								segments(
-									h,
-									"Branches per step",
-									String(paths.branches),
-									BRANCH_OPTIONS,
-									(branches) =>
-										product(ProductEdit.SetPathsBranches({ branches: Number(branches) })),
-								),
-								h.span(
-									[h.Class("text-2xs text-muted-foreground")],
-									["named per step, the rest fold into Other"],
-								),
-							],
+					]),
+					hstack(h, { gap: "2" }, [
+						rowLabel(
+							h,
+							"Branches",
+							typographyClass({ size: "2xs", tone: "muted", className: "shrink-0" }),
 						),
-					],
-				),
+						segments(h, "Branches per step", String(paths.branches), BRANCH_OPTIONS, (branches) =>
+							product(ProductEdit.SetPathsBranches({ branches: Number(branches) })),
+						),
+						typography(h, { size: "2xs", tone: "muted" }, [
+							"named per step, the rest fold into Other",
+						]),
+					]),
+				]),
 				populationFilter(h, model, "paths", paths.filterClause, "Paths population filter"),
 				addOnBar(h, PATHS_ADD_ONS, paths.addOns, (key) =>
 					product(ProductEdit.ToggledPathsAddOn({ key })),

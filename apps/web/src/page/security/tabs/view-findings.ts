@@ -2,7 +2,7 @@ import type { SecurityAuditFinding, SecurityAuditTarget } from "@maple/domain/ht
 import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
 import { label } from "../../../ui/label"
@@ -28,6 +28,7 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // The Findings tab, as Linear lists issues: severity tabs, a filter toolbar, then one dense line
 // per finding under collapsible severity groups.
@@ -238,7 +239,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 								]),
 							]),
 						],
-						"rounded-md border border-dashed md:py-14",
+						emptyFrameClass("dashed"),
 					)
 				: rows.length === 0
 					? h.div(
@@ -248,14 +249,14 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 								Object.keys(model.findingsSearch).some((key) => key !== "status")
 									? filteredEmpty(h, {
 											noun: "findings",
-											className: "rounded-md border border-dashed md:py-14",
+											className: emptyFrameClass("dashed"),
 											description: "Nothing in this status matches the filters.",
 											onClear: Message.ClickedClearFilters(),
 										})
 									: empty(
 											h,
 											[emptyHeader(h, [emptyTitle(h, ["No findings in this status"])])],
-											"rounded-md border border-dashed md:py-14",
+											emptyFrameClass("dashed"),
 										),
 							],
 						)
@@ -263,8 +264,9 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 	const shown = rows.filter((finding) => finding.verdict !== "rejected").length
 	return [
 		findingsIntro(h),
-		h.section(
-			[h.AriaLabel("Findings"), h.Class("overflow-hidden rounded-md border bg-card")],
+		borderedBox(
+			h,
+			{ as: "section", overflow: "hidden", card: true, attributes: [h.AriaLabel("Findings")] },
 			[
 				// Nothing to filter until there is a target, as the errors hub hides its toolbar when empty.
 				...(targets.length === 0 || state._tag !== "Ready"

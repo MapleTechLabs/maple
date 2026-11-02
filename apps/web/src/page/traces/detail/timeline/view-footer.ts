@@ -5,6 +5,8 @@ import { textLink } from "../../../../ui/text-link"
 import { serviceDot } from "../../../../ui/values"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // The Timeline's footer (key hints and the service legend) and its shortcuts sheet.
 
@@ -48,16 +50,14 @@ export const footer = (h: H, model: Model): Html =>
 				],
 				[
 					...model.services.map((service) =>
-						h.div(
-							[h.Class("flex shrink-0 items-center gap-1")],
+						hstack(h, { gap: "1", className: "shrink-0" },
 							[
 								serviceDot(h, { serviceName: service }),
 								h.span([h.Class("font-medium whitespace-nowrap")], [service]),
 							],
 						),
 					),
-					h.div(
-						[h.Class("flex shrink-0 items-center gap-1")],
+					hstack(h, { gap: "1", className: "shrink-0" },
 						[
 							h.span(
 								[
@@ -111,7 +111,7 @@ export const shortcutsOverlay = (h: H): Html =>
 					h.div(
 						[h.Class("mb-3 flex items-center justify-between")],
 						[
-							h.span([h.Class("text-xs font-medium")], ["Timeline shortcuts"]),
+							typography(h, { size: "xs", weight: "medium" }, ["Timeline shortcuts"]),
 							button(
 								h,
 								{

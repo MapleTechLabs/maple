@@ -15,6 +15,8 @@ import { settingsSection, settingsSections } from "../../kit/section"
 import { textField } from "../fields"
 import type { AccountPasskey, AccountUser } from "../user"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ timeZone: string }>
@@ -34,8 +36,7 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 			truncatedTableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center gap-2.5")],
+					hstack(h, { gap: "2.5" },
 						[
 							icon(h, "FingerprintIcon", {
 								size: 16,
@@ -43,17 +44,17 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 							}),
 							truncatedText(h, {
 								text: passkey.name || "Unnamed passkey",
-								className: "text-xs font-medium",
+								className: typographyClass({ size: "xs", weight: "medium" }),
 							}),
 						],
 					),
 				],
 			),
-			tableCell(h, [formatDate(passkey.createdAtMs)], "text-muted-foreground text-xs"),
+			tableCell(h, [formatDate(passkey.createdAtMs)], typographyClass({ size: "xs", tone: "muted" })),
 			tableCell(
 				h,
 				[passkey.lastUsedAtMs === null ? "Never" : formatDate(passkey.lastUsedAtMs)],
-				"text-muted-foreground text-xs",
+				typographyClass({ size: "xs", tone: "muted" }),
 			),
 			tableCell(h, [
 				rowActionsMenu(h, {
@@ -89,8 +90,7 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 const body = (h: H, model: Model, user: AccountUser, inputs: Inputs): ReadonlyArray<Html> => {
 	if (!model.isSupported)
 		return [
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
+			typography(h, { size: "sm", tone: "muted", as: "p" },
 				[
 					"This browser does not support passkeys. Open Maple in a recent version of Chrome, Safari, Edge or Firefox over HTTPS to register one.",
 				],

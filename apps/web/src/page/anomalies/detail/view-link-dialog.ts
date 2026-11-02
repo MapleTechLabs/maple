@@ -20,6 +20,7 @@ import { workflowRingIcon } from "../../errors/kit/workflow"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
 
 // `AnomalyLinkIssueDialog`: a command
 // dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.
@@ -61,16 +62,21 @@ const item = (h: H, model: Model, issue: ErrorIssueDocument, index: number, time
 				[h.Class("flex min-w-0 flex-1 items-center gap-2")],
 				[
 					workflowRingIcon(h, issue.workflowState, 14),
-					h.span([h.Class("truncate text-foreground")], [issue.exceptionType || "Unknown error"]),
+					typography(h, { tone: "foreground", truncate: true }, [
+						issue.exceptionType || "Unknown error",
+					]),
 					...(issue.exceptionMessage
-						? [h.span([h.Class("truncate text-muted-foreground")], [issue.exceptionMessage])]
+						? [typography(h, { tone: "muted", truncate: true }, [issue.exceptionMessage])]
 						: []),
 				],
 			),
 			h.span(
 				[h.Class("ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground")],
 				[
-					h.code([h.Class("font-mono tabular-nums")], [shortIssueId(issue.id)]),
+					h.code(
+						[h.Class(typographyClass({ mono: true, numeric: true }))],
+						[shortIssueId(issue.id)],
+					),
 					relativeTime(h, {
 						value: issue.lastSeenAt,
 						nowMs: model.nowMs,
@@ -181,14 +187,11 @@ export const linkIssueDialog = (
 									),
 								],
 								[
-									h.span(
-										[h.Class("text-xs text-muted-foreground")],
-										[
-											model.linkAllServices
-												? "Showing issues across all services"
-												: `Scoped to ${incident.serviceName}`,
-										],
-									),
+									typography(h, { size: "xs", tone: "muted" }, [
+										model.linkAllServices
+											? "Showing issues across all services"
+											: `Scoped to ${incident.serviceName}`,
+									]),
 									textLink(
 										h,
 										{ className: "text-xs", onClick: Message.ToggledLinkScope() },

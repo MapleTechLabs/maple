@@ -24,6 +24,8 @@ import { DEFAULT_PRESET } from "./update"
 import { loadingGrid, previewGrid } from "./view-grid"
 import { loadingTable, metricsTable } from "./view-table"
 import { searchInput } from "../../../ui/search-input"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The window carried across pages is the root's (`route/session-time-range.ts`).
 // TODO(session-range): `sessionTimeRangeSearchMiddleware` (the window carried across pages) is not ported.
@@ -71,7 +73,7 @@ const typeItem =
 					option.label,
 					...(count === undefined
 						? []
-						: [h.span([h.Class("text-muted-foreground tabular-nums")], [String(count)])]),
+						: [typography(h, { tone: "muted", numeric: true }, [String(count)])]),
 				],
 			),
 		]
@@ -124,40 +126,37 @@ const VIEW_OPTIONS = (h: H) =>
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
 const actions = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
-		[
-			segmentedSelect<BrowseView, Message>(h, {
-				size: "sm",
-				ariaLabel: "View",
-				options: VIEW_OPTIONS(h),
-				value: model.search.view ?? "grid",
-				onChange: (view) => Message.ClickedView({ view }),
-			}),
-			timeControls(h, {
-				search: model.search,
-				defaultPreset: DEFAULT_PRESET,
-				window: model.window,
-				onReset: Message.ClickedResetTimeRange(),
-				onReload: Message.ClickedReload(),
-				isReloading: model.isReloading,
-				trigger: (label) =>
-					h.submodel({
-						slotId: "time-range-picker",
-						model: model.timePicker,
-						view: TimeRangePicker.view,
-						toParentMessage: toTimePicker,
-						viewInputs: {
-							label,
-							selectedPreset:
-								model.search.timePreset ??
-								(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
-							presets: TimeRangePicker.PRESET_VALUES,
-						},
-					}),
-			}),
-		],
-	)
+	hstack(h, { gap: "2", wrap: true }, [
+		segmentedSelect<BrowseView, Message>(h, {
+			size: "sm",
+			ariaLabel: "View",
+			options: VIEW_OPTIONS(h),
+			value: model.search.view ?? "grid",
+			onChange: (view) => Message.ClickedView({ view }),
+		}),
+		timeControls(h, {
+			search: model.search,
+			defaultPreset: DEFAULT_PRESET,
+			window: model.window,
+			onReset: Message.ClickedResetTimeRange(),
+			onReload: Message.ClickedReload(),
+			isReloading: model.isReloading,
+			trigger: (label) =>
+				h.submodel({
+					slotId: "time-range-picker",
+					model: model.timePicker,
+					view: TimeRangePicker.view,
+					toParentMessage: toTimePicker,
+					viewInputs: {
+						label,
+						selectedPreset:
+							model.search.timePreset ??
+							(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
+						presets: TimeRangePicker.PRESET_VALUES,
+					},
+				}),
+		}),
+	])
 
 const isFiltered = (model: Model) => (model.search.q ?? "") !== "" || model.search.type !== undefined
 

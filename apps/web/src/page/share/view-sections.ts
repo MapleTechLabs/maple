@@ -6,6 +6,7 @@ import { emptyMessage } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
 import { Message } from "./message"
+import { hstackClass } from "../../ui/stack"
 
 // `DashboardSectionView` with `readOnly`: the chevron, the title and the tabs, no editing; the classes are
 // the editable header's.
@@ -84,7 +85,7 @@ export const sharedSection = (h: H, { section, activeTabId, isCollapsed, grid }:
 					...(hasTabs && !isCollapsed
 						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, section, activeTabId)])]
 						: []),
-					h.div([h.Class(cn("flex items-center gap-1", !hasTabs && "ml-auto"))], []),
+					h.div([h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))], []),
 				],
 			),
 			...(isCollapsed

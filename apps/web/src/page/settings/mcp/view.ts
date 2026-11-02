@@ -22,6 +22,7 @@ import { Message } from "./message"
 import { CLIENT_LABELS, type Model } from "./model"
 import { connectedClientsSection } from "./view-clients"
 import { toolsSection } from "./view-tools"
+import { typography } from "../../../ui/typography"
 
 export type ViewInputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>
 
@@ -41,7 +42,7 @@ const snippet = (
 	h.div(
 		[h.Class("space-y-2")],
 		[
-			h.p([h.Class("font-prose text-xs text-muted-foreground")], hint),
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, hint),
 			codeBlock(h, {
 				code,
 				language,

@@ -29,6 +29,7 @@ import {
 import { fileCard } from "./view-gcp-configure-script"
 import { applied, runStatus } from "./view-gcp-configure-status"
 import { openCloudShellButton, type ScriptFailure, SMALL } from "./view-gcp-parts"
+import { hstack, vstack, vstackClass } from "../../ui/stack"
 
 // `ApplyStage` / `GcpApplyView`: the script and the run's status, or the confirmed run.
 
@@ -50,34 +51,31 @@ export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, b
 				? `Metrics · ${removed}`
 				: null,
 	].filter((label) => label !== null)
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
-		[
-			chip(h, [
-				h.span([h.Class("text-muted-foreground")], [GCP_SCOPE_NAMES[connector.scope_type]]),
-				h.span([h.Class("font-mono")], [connector.scope_id]),
-			]),
-			...(connector.scope_type === "project"
-				? []
-				: [
-						chip(h, [
-							h.span([h.Class("text-muted-foreground")], ["Host"]),
-							h.span([h.Class("font-mono")], [connector.project_id]),
-						]),
+	return hstack(h, { gap: "2", wrap: true }, [
+		chip(h, [
+			h.span([h.Class("text-muted-foreground")], [GCP_SCOPE_NAMES[connector.scope_type]]),
+			h.span([h.Class("font-mono")], [connector.scope_id]),
+		]),
+		...(connector.scope_type === "project"
+			? []
+			: [
+					chip(h, [
+						h.span([h.Class("text-muted-foreground")], ["Host"]),
+						h.span([h.Class("font-mono")], [connector.project_id]),
 					]),
-			...capabilities.map((label) => chip(h, [label])),
-			button(
-				h,
-				{
-					variant: "link",
-					size: "xs",
-					className: "ml-auto h-auto p-0",
-					attributes: [h.OnClick(Message.ClickedGcpRunEdit())],
-				},
-				["Edit"],
-			),
-		],
-	)
+				]),
+		...capabilities.map((label) => chip(h, [label])),
+		button(
+			h,
+			{
+				variant: "link",
+				size: "xs",
+				className: "ml-auto h-auto p-0",
+				attributes: [h.OnClick(Message.ClickedGcpRunEdit())],
+			},
+			["Edit"],
+		),
+	])
 }
 
 /** `RunAs`: who may run or apply a setup, an Owner of the host project with the scope's roles. */
@@ -120,37 +118,31 @@ export const scriptSection = (
 ): Html => {
 	const sinkExists = connector.applied_logs_enabled === true
 	const { script, failure } = scriptState(configure)
-	return h.section(
-		[h.Class("flex flex-col gap-3")],
-		[
-			h.div(
-				[h.Class("flex flex-col gap-0.5")],
-				[
-					heading(h, { level: 3, variant: "subsection" }, ["Run this script in Cloud Shell"]),
-					h.p([h.Class(SMALL)], ["Nothing changes in Google Cloud until it runs."]),
-				],
-			),
-			fileCard(h, model, configure, {
-				name: "setup.sh",
-				text: script,
-				failure,
-				secret: true,
-				children: [openCloudShellButton(h, connector.project_id, "default")],
-			}),
-			h.p(
-				[h.Class(SMALL)],
-				[
-					"Run it ",
-					...runAs(h, connector),
-					" ",
-					!connector.logs_enabled && sinkExists
-						? "Takes one to two minutes. "
-						: "Takes about a minute and is safe to run again. ",
-					externalLink(h, `${DOCS}#roles-for-running-the-script`, "Roles if you aren't an Owner"),
-				],
-			),
-		],
-	)
+	return vstack(h, { gap: "3", as: "section" }, [
+		vstack(h, { gap: "0.5" }, [
+			heading(h, { level: 3, variant: "subsection" }, ["Run this script in Cloud Shell"]),
+			h.p([h.Class(SMALL)], ["Nothing changes in Google Cloud until it runs."]),
+		]),
+		fileCard(h, model, configure, {
+			name: "setup.sh",
+			text: script,
+			failure,
+			secret: true,
+			children: [openCloudShellButton(h, connector.project_id, "default")],
+		}),
+		h.p(
+			[h.Class(SMALL)],
+			[
+				"Run it ",
+				...runAs(h, connector),
+				" ",
+				!connector.logs_enabled && sinkExists
+					? "Takes one to two minutes. "
+					: "Takes about a minute and is safe to run again. ",
+				externalLink(h, `${DOCS}#roles-for-running-the-script`, "Roles if you aren't an Owner"),
+			],
+		),
+	])
 }
 
 export const applyStage = (
@@ -192,7 +184,7 @@ export const applyStage = (
 		configurePanel(
 			h,
 			[runSummary(h, connector, filterShort(choice)), scriptSection(h, model, configure, connector)],
-			"flex flex-col gap-5",
+			vstackClass({ gap: "5" }),
 		),
 		runStatus(h, connector, { opened, overdue, nowMs, method: "script" }),
 		configureFooter(h, [

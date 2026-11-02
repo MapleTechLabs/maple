@@ -26,6 +26,8 @@ import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
 import { errorChip, TOOL_CHIP } from "../kit/error-chip"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The session overview: checks and the tool ledger, the rail.
 
@@ -59,42 +61,37 @@ const ledgerHeader = (h: H, summary: SessionSummary): Html => {
 			sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Tools", className: "mb-0" }),
 			...(summary.tools.length > 0
 				? [
-						h.div(
-							[h.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1")],
-							[
-								keyValueList(h, { layout: "inline" }, [
-									keyValue(
-										h,
-										{ label: "Distinct", mono: true, valueClassName: "font-semibold" },
-										[formatNumber(summary.tools.length)],
-									),
-									keyValue(
-										h,
-										{ label: "Calls", mono: true, valueClassName: "font-semibold" },
-										[formatNumber(calls)],
-									),
-									keyValue(
-										h,
-										{
-											label: "Tool time",
-											mono: true,
-											valueClassName: "font-semibold text-chart-4",
-										},
-										[formatDuration(toolMs)],
-									),
+						hstack(h, { align: "baseline", wrap: true, className: "gap-x-4 gap-y-1" }, [
+							keyValueList(h, { layout: "inline" }, [
+								keyValue(
+									h,
+									{ label: "Distinct", mono: true, valueClassName: "font-semibold" },
+									[formatNumber(summary.tools.length)],
+								),
+								keyValue(h, { label: "Calls", mono: true, valueClassName: "font-semibold" }, [
+									formatNumber(calls),
 								]),
-								...(failed > 0
-									? [
-											errorChip(h, {
-												iconName: "GearIcon",
-												count: failed,
-												noun: "failed call",
-												className: TOOL_CHIP,
-											}),
-										]
-									: []),
-							],
-						),
+								keyValue(
+									h,
+									{
+										label: "Tool time",
+										mono: true,
+										valueClassName: "font-semibold text-chart-4",
+									},
+									[formatDuration(toolMs)],
+								),
+							]),
+							...(failed > 0
+								? [
+										errorChip(h, {
+											iconName: "GearIcon",
+											count: failed,
+											noun: "failed call",
+											className: TOOL_CHIP,
+										}),
+									]
+								: []),
+						]),
 					]
 				: []),
 		],
@@ -185,10 +182,10 @@ const failedCallRow = (h: H, model: Model, event: SessionToolCall, sessionStartM
 				[h.Class("font-medium font-mono text-severity-error text-xs")],
 				[event.errorLabel ?? "error"],
 			),
-			h.span([h.Class("font-mono text-muted-foreground text-xs")], [callWhen(event, sessionStartMs)]),
+			typography(h, { size: "xs", tone: "muted", mono: true }, [callWhen(event, sessionStartMs)]),
 			...(event.errorDetail === undefined
 				? []
-				: [h.span([h.Class("min-w-0 text-muted-foreground text-xs")], [event.errorDetail])]),
+				: [typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [event.errorDetail])]),
 			button(
 				h,
 				{
@@ -240,7 +237,11 @@ const ledgerRow = (
 								className: cn(LEDGER_NAME, "pl-[15px] text-xs"),
 							}),
 					h.span(
-						[h.Class(cn(LEDGER_COUNT, "font-mono text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(LEDGER_COUNT, typographyClass({ size: "xs", mono: true, numeric: true })),
+							),
+						],
 						[String(tool.calls)],
 					),
 					h.span(
@@ -248,7 +249,7 @@ const ledgerRow = (
 							h.Class(
 								cn(
 									LEDGER_COUNT,
-									"font-mono text-xs tabular-nums",
+									typographyClass({ size: "xs", mono: true, numeric: true }),
 									tool.failed > 0 ? "text-severity-error" : "text-foreground-faint",
 								),
 							),
@@ -256,11 +257,22 @@ const ledgerRow = (
 						[String(tool.failed)],
 					),
 					h.span(
-						[h.Class(cn(LEDGER_TIME, "font-mono text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(LEDGER_TIME, typographyClass({ size: "xs", mono: true, numeric: true })),
+							),
+						],
 						[formatDuration(tool.totalMs)],
 					),
 					h.span(
-						[h.Class(cn(LEDGER_TIME, "font-mono text-muted-foreground text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(
+									LEDGER_TIME,
+									typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }),
+								),
+							),
+						],
 						[formatDuration(tool.slowestMs)],
 					),
 					callLane(h, model, tool, axis, sessionStartMs),
@@ -299,7 +311,7 @@ const toolUsage = (h: H, model: Model, summary: SessionSummary): Html => {
 		[
 			ledgerHeader(h, summary),
 			summary.tools.length === 0
-				? h.p([h.Class("text-muted-foreground text-xs")], ["no tool calls"])
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, ["no tool calls"])
 				: h.div(
 						[h.Class("flex flex-col")],
 						[
@@ -318,15 +330,13 @@ const waiting = (h: H, model: Model, progress: LoadProgress): Html =>
 			h.Class("flex grow flex-col items-center justify-center gap-3 py-16 text-center"),
 		],
 		[
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
-				["The overview reads the whole session, and this one is still arriving."],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"The overview reads the whole session, and this one is still arriving.",
+			]),
 			loadIndicator(h, model, progress, "items-center"),
-			h.p(
-				[h.Class("text-xs text-foreground-subtle")],
-				["The Traces, Flow and Transcript views already show what has loaded."],
-			),
+			typography(h, { size: "xs", tone: "subtle", as: "p" }, [
+				"The Traces, Flow and Transcript views already show what has loaded.",
+			]),
 		],
 	)
 

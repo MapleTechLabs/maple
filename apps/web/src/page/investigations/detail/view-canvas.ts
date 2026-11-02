@@ -31,7 +31,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { pressable } from "../../../ui/pressable"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonMeter } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { relativeTime } from "../../kit/relative-time"
 import { NODE_LINK_ATTRIBUTE } from "../clicks"
@@ -39,6 +39,8 @@ import { MountNodeLinks } from "./command"
 import { CONTROL_GUTTER, fitScale, graphOf, HEADING_GUTTER } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstack, hstackClass } from "../../../ui/stack"
+import { typography } from "../../../ui/typography"
 
 // `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
 
@@ -107,8 +109,7 @@ const nodeLink = (h: H) => h.Attribute(NODE_LINK_ATTRIBUTE, "")
 const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): ReadonlyArray<Html> => {
 	const isCurrent = data.current === true
 	const body = [
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
+		hstack(h, { gap: "1.5" },
 			[
 				h.span(
 					[
@@ -255,8 +256,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-start gap-1.5")],
+			hstack(h, { gap: "1.5", align: "start" },
 				[
 					h.span(
 						[
@@ -276,7 +276,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 				: []),
 			h.div(
 				[h.AriaHidden(true), h.Class("flex flex-col gap-1 pt-0.5")],
-				[skeleton(h, "h-1.5 w-full rounded-full"), skeleton(h, "h-1.5 w-1/2 rounded-full")],
+				[skeletonMeter(h), skeletonMeter(h, "half")],
 			),
 			liveBar(h, true),
 		],
@@ -351,7 +351,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 					[
 						h.p([h.Class("line-clamp-2 text-xs leading-[1.4] text-foreground")], [data.text]),
 						h.p(
-							[h.Class("flex items-center gap-1.5")],
+							[h.Class(hstackClass({ gap: "1.5" }))],
 							[
 								...(data.target === null
 									? []
@@ -590,11 +590,10 @@ const PROVENANCE_HINT = "what produced this investigation, and what it produced"
 const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 	const running =
 		graph.runningSince === null ? null : splitDuration(Math.max(0, nowMs - graph.runningSince))
-	return h.div(
-		[h.Class("flex items-center gap-2.5")],
+	return hstack(h, { gap: "2.5" },
 		[
 			eyebrow(h, {}, ["Provenance"]),
-			h.span([h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")], [PROVENANCE_HINT]),
+			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [PROVENANCE_HINT]),
 			...(graph.caption
 				? [
 						h.span(
@@ -832,15 +831,13 @@ export const provenanceLoading = (h: H): Html =>
 		h,
 		{ className: PANEL, attributes: [h.AriaBusy(true)] },
 		[
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
+			hstack(h, { gap: "2.5" },
 				[
 					eyebrow(h, {}, ["Provenance"]),
-					h.span(
-						[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" },
 						[PROVENANCE_HINT],
 					),
-					eyebrow(h, { variant: "mono", className: "flex shrink-0 items-center gap-1.5" }, [
+					eyebrow(h, { variant: "mono", className: hstackClass({ gap: "1.5", className: "shrink-0" }) }, [
 						h.span([], ["Mapping the chain"]),
 						h.span(
 							[h.Class("inline-flex"), h.AriaHidden(true)],

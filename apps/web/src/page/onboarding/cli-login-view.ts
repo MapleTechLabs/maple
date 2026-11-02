@@ -4,6 +4,7 @@ import { label } from "../../ui/label"
 import * as OtpField from "../../ui/otp-field"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { CODE_FIELD_ID, CODE_LABEL_ID, Message, type Model, type DeviceInfo } from "./cli-login"
+import { typography } from "../../ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -38,7 +39,7 @@ const entry = (h: H, model: Model): Html => {
 						slot(6),
 						slot(7),
 					]),
-					h.p([h.Class("text-xs text-muted-foreground")], ["Enter the eight-character code shown in your terminal."]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, ["Enter the eight-character code shown in your terminal."]),
 				],
 			),
 			...(model.state._tag === "Failed"
@@ -55,18 +56,17 @@ const ready = (h: H, info: DeviceInfo, workspace: Html): Html =>
 			h.div(
 				[h.Class("space-y-1 border border-border bg-surface-sunken p-3")],
 				[
-					h.p([h.Class("text-xs text-muted-foreground")], ["Requesting device"]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, ["Requesting device"]),
 					h.p(
 						[h.Class("line-clamp-2 font-medium [overflow-wrap:anywhere]"), h.Title(info.deviceName)],
 						[info.deviceName],
 					),
 					h.p([h.Class("font-mono text-sm text-muted-foreground")], [info.userCode]),
-					h.p([h.Class("text-xs text-muted-foreground")], ["Expires at ", info.expiresAtLabel]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, ["Expires at ", info.expiresAtLabel]),
 				],
 			),
 			workspace,
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
+			typography(h, { size: "sm", tone: "muted", as: "p" },
 				["The CLI will receive a revocable credential with your current workspace role."],
 			),
 			h.div(

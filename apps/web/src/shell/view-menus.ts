@@ -15,6 +15,9 @@ import type { Model, ShellClerk } from "./model"
 import { partitionSubItems } from "./nav"
 import { shellNavGroups, surfacesOf } from "./view-nav"
 import { pinnedNamespaceOf, userAvatar, userImageOf, userNameOf } from "./view-sidebar"
+import { typography } from "../ui/typography"
+import { hstack } from "../ui/stack"
+import { identityLabel } from "../ui/identity-label"
 
 // The open menu's content: GuestMenu, SupportMenu, the self-hosted org switcher's namespace list
 // and the collapsed rail's section menus.
@@ -73,19 +76,16 @@ const themeToggle = (h: HtmlBuilder<Message>, model: Model): Html =>
 				className: "shrink-0 text-muted-foreground",
 			}),
 			h.span([], ["Dark mode"]),
-			h.span(
-				[h.Class("ml-auto flex items-center gap-2")],
-				[
-					kbd(h, undefined, ["T"]),
-					...switchControl(h, {
-						id: "shell-theme-switch",
-						inputId: "shell-theme-switch-input",
-						isChecked: model.theme === "dark",
-						ariaLabel: "Toggle dark mode",
-						onToggle: Message.ClickedThemeSwitch(),
-					}),
-				],
-			),
+			hstack(h, { gap: "2", as: "span", className: "ml-auto" }, [
+				kbd(h, undefined, ["T"]),
+				...switchControl(h, {
+					id: "shell-theme-switch",
+					inputId: "shell-theme-switch-input",
+					isChecked: model.theme === "dark",
+					ariaLabel: "Toggle dark mode",
+					onToggle: Message.ClickedThemeSwitch(),
+				}),
+			]),
 		],
 	)
 
@@ -171,7 +171,11 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 			),
 		]
 	if (observed.length === 0 && Option.isNone(pinned))
-		return [h.div([h.Class("px-2 py-1.5 text-xs text-muted-foreground")], ["No namespaces detected"])]
+		return [
+			typography(h, { size: "xs", tone: "muted", as: "div", className: "px-2 py-1.5" }, [
+				"No namespaces detected",
+			]),
+		]
 	const rows = namespaceRows(observed, pinned, model.namespaceQuery)
 	const entries: ReadonlyArray<Item> = [
 		...(rows.isFiltered
@@ -186,7 +190,7 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 				{
 					content: [
 						h.span([h.Class("truncate")], [name]),
-						h.span([h.Class("ml-2 text-xs text-muted-foreground")], ["no recent data"]),
+						typography(h, { size: "xs", tone: "muted", className: "ml-2" }, ["no recent data"]),
 						checkIcon(h),
 					],
 					onSelect: Message.ClickedNamespace({ maybeNamespace: Option.some(name) }),
@@ -268,23 +272,25 @@ const clerkUserMenu = (
 							url: userImageOf(clerk),
 							label: name,
 						}),
-						h.div(
-							[h.Class("grid flex-1 text-left text-sm leading-tight")],
-							[
-								h.span([h.Class("truncate font-medium"), h.Title(name)], [name]),
-								...(email === ""
-									? []
-									: [
-											h.span(
-												[
-													h.Class("truncate text-muted-foreground text-xs"),
-													h.Title(email),
-												],
-												[email],
-											),
-										]),
-							],
-						),
+						identityLabel(h, [
+							typography(h, { weight: "medium", truncate: true, attributes: [h.Title(name)] }, [
+								name,
+							]),
+							...(email === ""
+								? []
+								: [
+										typography(
+											h,
+											{
+												size: "xs",
+												tone: "muted",
+												truncate: true,
+												attributes: [h.Title(email)],
+											},
+											[email],
+										),
+									]),
+						]),
 					],
 				),
 			]),

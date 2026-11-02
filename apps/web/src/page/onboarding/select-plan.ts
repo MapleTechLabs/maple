@@ -11,6 +11,7 @@ import { heading } from "../../ui/heading"
 import { icon } from "../../ui/icon"
 import * as PricingCards from "./pricing-cards"
 import * as PricingCardsView from "./pricing-cards-view"
+import { layer } from "../../ui/layer"
 
 // `/select-plan`: the trial pitch, or for a returning subscriber whose plan lapsed, the reactivation framing,
 // over the same pricing cards.
@@ -112,8 +113,9 @@ export const view = (h: H, model: Model, customer: BillingCustomer | undefined):
 					),
 				],
 			),
-			h.div(
-				[h.Class("pointer-events-none absolute inset-0")],
+			layer(
+				h,
+				{},
 				[
 					h.div(
 						[

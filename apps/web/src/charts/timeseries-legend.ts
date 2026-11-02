@@ -13,6 +13,8 @@ import { pressable } from "../ui/pressable"
 import { table } from "../ui/table"
 import { Message, type Model } from "./chart"
 import { bucketSecondsOf, normaliseRows, scaleRates, type SeriesDefinition } from "./timeseries"
+import { hstack } from "../ui/stack"
+import { swatch } from "../ui/swatch"
 
 // `TimeseriesLegend` (packages/ui/src/components/plot/timeseries.tsx): the compact legend or the
 // Min/Max/Mean/Last table, below or beside the plot; shared by the line, area and bar charts.
@@ -59,10 +61,7 @@ const compactLegend = (
 					attributes: [h.Key(entry.key), h.Title(entry.label)],
 				},
 				[
-					h.span([
-						h.Class("size-2 shrink-0 rounded-xs"),
-						h.Style({ "background-color": entry.color }),
-					]),
+					swatch(h, { color: entry.color }),
 					h.span([h.Class("truncate")], [entry.label]),
 				],
 			),
@@ -142,27 +141,21 @@ const statsTable = (
 									h.td(
 										[h.Class("max-w-0 py-0.5 pr-3")],
 										[
-											h.span(
-												[h.Class("flex min-w-0 items-center gap-1.5")],
-												[
-													h.span([
-														h.Class("size-2 shrink-0 rounded-xs"),
-														h.Style({ "background-color": entry.color }),
-													]),
-													h.span(
-														[
-															h.Class(
-																cn(
-																	"truncate",
-																	allZero && "text-muted-foreground",
-																),
+											hstack(h, { gap: "1.5", shrink: true, as: "span" }, [
+												swatch(h, { color: entry.color }),
+												h.span(
+													[
+														h.Class(
+															cn(
+																"truncate",
+																allZero && "text-muted-foreground",
 															),
-															h.Title(entry.label),
-														],
-														[entry.label],
-													),
-												],
-											),
+														),
+														h.Title(entry.label),
+													],
+													[entry.label],
+												),
+											]),
 										],
 									),
 									...STAT_COLUMNS.map((column) =>

@@ -29,6 +29,9 @@ import {
 	windowSelectId,
 } from "./product-selects"
 import { pageSelect } from "./view-select"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
+import { queryPanelBar } from "../../kit/query-panel-bar"
 
 // `QueryPanelShell` and `AddOnToggleBar`, and the rows the funnel and
 // paths panels share: the population filter, Count by, the window, the breakdown.
@@ -67,16 +70,14 @@ export const panelShell = (
 					className: "w-36 border-none bg-transparent shadow-none px-1",
 					ariaLabel: "Query source",
 					toView: (parts) =>
-						h.div(
-							[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
-							[
+						queryPanelBar(h, [
 								iconButton(
 									h,
 									{
 										size: "icon-xs",
 										label: isCollapsed ? "Expand query" : "Collapse query",
 										hasTooltip: false,
-										className: "text-muted-foreground hover:text-foreground active:text-foreground",
+										className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 										attributes: [h.OnClick(Message.ToggledProductPanel())],
 									},
 									[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
@@ -135,8 +136,7 @@ export const populationFilter = (
 	return h.div(
 		[h.Class("space-y-1")],
 		[
-			h.div(
-				[h.Class("flex items-start gap-2")],
+			hstack(h, { gap: "2", align: "start" },
 				[
 					rowLabel(h, "Where", "w-16 shrink-0 pt-2 text-2xs text-muted-foreground"),
 					whereEditor(h, {
@@ -166,7 +166,7 @@ export const populationFilter = (
 }
 
 const row = (h: H, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex items-center gap-2")], children)
+	hstack(h, { gap: "2" }, children)
 
 /** Count by: the four keys, each with what it counts. */
 export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): Html =>
@@ -189,7 +189,7 @@ export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): H
 						[h.Class("flex flex-col")],
 						[
 							h.span([], [option.label]),
-							h.span([h.Class("text-3xs text-muted-foreground")], [description]),
+							typography(h, { size: "3xs", tone: "muted" }, [description]),
 						],
 					),
 				]
@@ -220,7 +220,7 @@ export const windowRow = (
 			row(h, [
 				rowLabel(h, inputs.label),
 				...parts,
-				h.span([h.Class("text-2xs text-muted-foreground")], [inputs.hint]),
+				typography(h, { size: "2xs", tone: "muted" }, [inputs.hint]),
 			]),
 	})
 }
@@ -251,8 +251,7 @@ export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined
 			toView: (parts) =>
 				row(h, [
 					rowLabel(h, "Breakdown"),
-					h.div(
-						[h.Class("flex items-center gap-1.5")],
+					hstack(h, { gap: "1.5" },
 						[
 							...parts,
 							...(isAttribute
@@ -274,7 +273,7 @@ export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined
 								: []),
 						],
 					),
-					h.span([h.Class("text-2xs text-muted-foreground")], ["one bar per group, top 6"]),
+					typography(h, { size: "2xs", tone: "muted" }, ["one bar per group, top 6"]),
 				]),
 		},
 	)
@@ -282,8 +281,7 @@ export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined
 
 /** Run preview under a panel, and the query letter it runs. */
 export const runRow = (h: H, error: string | null): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3")],
+	hstack(h, { gap: "3" },
 		[
 			button(
 				h,
@@ -294,6 +292,6 @@ export const runRow = (h: H, error: string | null): Html =>
 				},
 				["Run preview"],
 			),
-			h.span([h.Class("text-2xs text-muted-foreground ml-auto")], ["A"]),
+			typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, ["A"]),
 		],
 	)

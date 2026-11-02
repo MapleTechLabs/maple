@@ -37,6 +37,8 @@ import { hostnameOf } from "./prometheus"
 import { prometheusTargets } from "./update-prometheus"
 import { targetDetails } from "./view-prometheus-details"
 import { targetDialogs } from "./view-prometheus-form"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
 // TODO(tooltip): the last-error line renders its trigger; the raw-error popup is the overlay port's.
@@ -172,8 +174,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
+					hstack(h, { gap: "2", shrink: true },
 						[
 							h.span(
 								[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
@@ -279,7 +280,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 						slotId: menuId,
 						model: card.menus[menuId] ?? Menu.init(menuId),
 						label: `Actions for ${target.name}`,
-						className: "text-muted-foreground hover:text-foreground active:text-foreground shrink-0",
+						className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
 						entries: [
 							{
 								_tag: "Item",
@@ -371,7 +372,7 @@ export const scrapeTargetsSection = (
 		return targets.length === 0
 			? focusId === null
 				? emptyState(h, integration)
-				: h.p([h.Class("text-muted-foreground text-sm")], ["This scrape target no longer exists."])
+				: typography(h, { size: "sm", tone: "muted", as: "p" }, ["This scrape target no longer exists."])
 			: h.div(
 					[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]")],
 					[
@@ -391,10 +392,9 @@ export const scrapeTargetsSection = (
 				...(isEmpty
 					? []
 					: [
-							h.div(
-								[h.Class("flex items-center justify-between gap-3")],
+							hstack(h, { gap: "3", justify: "between" },
 								[
-									h.p([h.Class("text-muted-foreground text-sm")], [COPY.description]),
+									typography(h, { size: "sm", tone: "muted", as: "p" }, [COPY.description]),
 									addButton(h, integration, "shrink-0"),
 								],
 							),

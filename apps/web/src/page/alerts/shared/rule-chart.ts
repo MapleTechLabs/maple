@@ -38,6 +38,8 @@ import { pressable } from "../../../ui/pressable"
 import { chartEmpty, chartError, chartLoading } from "../../../ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
 import { isoMs } from "./time"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The view half of the alert rule chart; the
 // definition is `charts/definitions/alert-rule.ts`, built by the chart Mount from the spec here.
@@ -274,7 +276,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						h.div(
 							[h.Class("max-w-sm space-y-2")],
 							[
-								h.p([h.Class("font-medium text-sm")], ["Preview query failed"]),
+								typography(h, { size: "sm", weight: "medium", as: "p" }, [
+									"Preview query failed",
+								]),
 								h.p([h.Class("line-clamp-3 text-muted-foreground")], [inputs.error]),
 							],
 						),
@@ -286,68 +290,62 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 	const thresholdCaption = h.div(
 		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-muted-foreground")],
 		[
-			h.span(
-				[h.Class("flex items-center gap-2")],
-				[
-					h.span([
-						h.AriaHidden(true),
-						h.Class(
-							cn(
-								"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed",
-								criticalThreshold != null ? "border-severity-warn" : "border-severity-error",
-							),
+			hstack(h, { gap: "2", as: "span" }, [
+				h.span([
+					h.AriaHidden(true),
+					h.Class(
+						cn(
+							"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed",
+							criticalThreshold != null ? "border-severity-warn" : "border-severity-error",
 						),
-					]),
-					h.span(
-						[],
-						[
-							...(criticalThreshold != null ? ["Warning "] : []),
-							thresholdUpper != null
-								? "Threshold range "
-								: breachBelow
-									? criticalThreshold != null
-										? "below "
-										: "Breach below "
-									: criticalThreshold != null
-										? "above "
-										: "Breach above ",
-							h.span(
-								[h.Class("font-mono font-medium text-foreground")],
-								[
-									formatSignalValue(signalType, threshold),
-									...(thresholdUpper != null
-										? [` – ${formatSignalValue(signalType, thresholdUpper)}`]
-										: []),
-								],
-							),
-						],
 					),
-				],
-			),
-			...(criticalThreshold != null
-				? [
+				]),
+				h.span(
+					[],
+					[
+						...(criticalThreshold != null ? ["Warning "] : []),
+						thresholdUpper != null
+							? "Threshold range "
+							: breachBelow
+								? criticalThreshold != null
+									? "below "
+									: "Breach below "
+								: criticalThreshold != null
+									? "above "
+									: "Breach above ",
 						h.span(
-							[h.Class("flex items-center gap-2")],
+							[h.Class("font-mono font-medium text-foreground")],
 							[
-								h.span([
-									h.AriaHidden(true),
-									h.Class(
-										"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-severity-error",
-									),
-								]),
-								h.span(
-									[],
-									[
-										"Critical ",
-										breachBelow ? "below " : "above ",
-										h.span(
-											[h.Class("font-mono font-medium text-foreground")],
-											[formatSignalValue(signalType, criticalThreshold)],
-										),
-									],
-								),
+								formatSignalValue(signalType, threshold),
+								...(thresholdUpper != null
+									? [` – ${formatSignalValue(signalType, thresholdUpper)}`]
+									: []),
 							],
 						),
+					],
+				),
+			]),
+			...(criticalThreshold != null
+				? [
+						hstack(h, { gap: "2", as: "span" }, [
+							h.span([
+								h.AriaHidden(true),
+								h.Class(
+									"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-severity-error",
+								),
+							]),
+							h.span(
+								[],
+								[
+									"Critical ",
+									breachBelow ? "below " : "above ",
+									h.span(
+										[h.Class("font-mono font-medium text-foreground")],
+										[formatSignalValue(signalType, criticalThreshold)],
+									),
+								],
+							),
+						]),
 					]
 				: []),
 		],
@@ -359,21 +357,18 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			h.div(
 				[h.Class("space-y-0.5")],
 				[
-					h.p(
-						[h.Class("text-foreground text-xs")],
-						[
-							"Showing",
-							" ",
-							h.span(
-								[h.Class("font-medium")],
-								[source === "none" ? "" : SIGNAL_SOURCE_LABEL[source]],
-							),
-							" ",
-							"— ",
-							SIGNAL_SOURCE_LABEL[otherSource].toLowerCase(),
-							" has no points in this window.",
-						],
-					),
+					typography(h, { size: "xs", tone: "foreground", as: "p" }, [
+						"Showing",
+						" ",
+						h.span(
+							[h.Class("font-medium")],
+							[source === "none" ? "" : SIGNAL_SOURCE_LABEL[source]],
+						),
+						" ",
+						"— ",
+						SIGNAL_SOURCE_LABEL[otherSource].toLowerCase(),
+						" has no points in this window.",
+					]),
 					...(inputs.error != null
 						? [h.p([h.Class("line-clamp-2 text-2xs text-muted-foreground")], [inputs.error])]
 						: []),
@@ -385,18 +380,15 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 	const ghostNote = h.div(
 		[h.Class("flex items-center gap-3 text-2xs text-muted-foreground")],
 		[
-			h.span(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					h.span([
-						h.AriaHidden(true),
-						h.Class(
-							"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-muted-foreground",
-						),
-					]),
-					SIGNAL_SOURCE_LABEL[otherSource],
-				],
-			),
+			hstack(h, { gap: "1.5", as: "span" }, [
+				h.span([
+					h.AriaHidden(true),
+					h.Class(
+						"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-muted-foreground",
+					),
+				]),
+				SIGNAL_SOURCE_LABEL[otherSource],
+			]),
 			...(merged.divergence != null && merged.divergence > Math.abs(threshold) * 0.05
 				? [
 						badge(h, { variant: "warn", size: "xs" }, [
@@ -419,40 +411,32 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			...(hasSignal && hasGhost ? [ghostNote] : []),
 			...(inputs.showWouldFire === true && wouldFireBands.length > 0
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							[
-								"Shaded: rule would have fired (approximate: the live scheduler checks a sliding window).",
-							],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							"Shaded: rule would have fired (approximate: the live scheduler checks a sliding window).",
+						]),
 					]
 				: []),
 			...(hasSignal && heldBands.length > 0
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							["Grey tail: incident held, waiting on data."],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							"Grey tail: incident held, waiting on data.",
+						]),
 					]
 				: []),
 			...(hasSignal && source === "preview" && noDataBands.length > 0
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							["Hatched: no data received in these windows."],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							"Hatched: no data received in these windows.",
+						]),
 					]
 				: []),
 			...(truncatedTo !== null
 				? [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
-							[
-								clampedToPreview ? "Axis starts at " : "Query series starts at ",
-								formatTime(isoMs(truncatedTo), "tooltip"),
-								". The range needs more windows than one preview replays: widen the rule's window or shorten the range.",
-							],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							clampedToPreview ? "Axis starts at " : "Query series starts at ",
+							formatTime(isoMs(truncatedTo), "tooltip"),
+							". The range needs more windows than one preview replays: widen the rule's window or shorten the range.",
+						]),
 					]
 				: []),
 			...(checks.length > 0 ? [rail(h, inputs, checks, domain, incidentBands, formatTime)] : []),

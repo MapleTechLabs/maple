@@ -18,6 +18,8 @@ import { latencyValue } from "../../../ui/values"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // One row of the traces table.
 
@@ -52,8 +54,7 @@ const rootSpanCell = (
 	return tableCell(
 		h,
 		[
-			h.div(
-				[h.Class("flex flex-col min-w-0")],
+			vstack(h, { shrink: true },
 				[
 					// A plain click peeks (`MountPeekRows`); modified, middle and right clicks follow the link.
 					rowLink(h, {
@@ -67,7 +68,7 @@ const rootSpanCell = (
 						spanKind: row.rootKind,
 						textClassName: "text-xs",
 					}),
-					truncatedText(h, { text: stamp, className: "text-3xs text-muted-foreground" }, [
+					truncatedText(h, { text: stamp, className: typographyClass({ size: "3xs", tone: "muted" }) }, [
 						h.span([h.Class("hidden @min-[480px]/page:inline")], [stamp, " "]),
 						h.span(
 							[h.Class("text-foreground-subtle")],
@@ -124,7 +125,7 @@ export const traceRow = (
 			),
 			tableCell(
 				h,
-				[h.span([h.Class("font-mono text-xs text-muted-foreground")], [formatNumber(row.spanCount)])],
+				[typography(h, { size: "xs", tone: "muted", mono: true }, [formatNumber(row.spanCount)])],
 				cn(CELL, "hidden @min-[560px]/page:table-cell"),
 			),
 			tableCell(

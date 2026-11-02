@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 import { traceIdBadge } from "../../../ui/trace-badges"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { skeleton, skeletonList, skeletonMeter } from "../../../ui/skeleton"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { docsLink } from "../../kit/signal-empty-state"
 import type { Message } from "./message"
@@ -29,7 +29,7 @@ export const detailLoading = (h: HtmlBuilder<Message>): Html =>
 				[h.Class("space-y-2")],
 				[
 					skeleton(h, "h-8 w-32"),
-					skeleton(h, "h-1.5 w-full rounded-full"),
+					skeletonMeter(h),
 					h.div(
 						[h.Class("flex gap-4")],
 						[skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")],

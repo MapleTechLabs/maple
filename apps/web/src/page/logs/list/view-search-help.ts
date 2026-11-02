@@ -6,6 +6,7 @@ import { iconButton } from "../../../ui/icon-button"
 import { highlightedText } from "../../../ui/logs/highlight"
 import * as Popover from "../../../ui/popover"
 import { Message } from "./message"
+import { typography } from "../../../ui/typography"
 
 // What the log search box
 // accepts, from the info affordance beside the SEARCH label (a hover popover, 200 ms).
@@ -69,7 +70,7 @@ const lookupRow = (h: HtmlBuilder<Message>, lookup: (typeof LOOKUPS)[number]): H
 }
 
 const content = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
-	h.p([h.Class("font-medium text-foreground text-xs")], ["What you can search"]),
+	typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "p" }, ["What you can search"]),
 	h.p(
 		[h.Class("mt-1 text-2xs text-muted-foreground leading-relaxed")],
 		["One box. It reads the shape of what you type and picks the lookup."],
@@ -91,7 +92,7 @@ const content = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 		[
 			"A trace scope becomes a chip you can remove. Wrap an id in",
 			" ",
-			h.span([h.Class("font-mono text-foreground")], ['"quotes"']),
+			typography(h, { tone: "foreground", mono: true }, ['"quotes"']),
 			" to search it as text instead.",
 		],
 	),

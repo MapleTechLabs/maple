@@ -21,6 +21,7 @@ import type { Model } from "./model"
 import { getCloudPlatform } from "./platform"
 import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
 import { spanLogs, tabsView } from "./view-tabs"
+import { sidePanelFrame } from "../../../kit/side-panel"
 
 export type ViewInputs = Readonly<{ timeZone: string }>
 
@@ -179,9 +180,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const values = hasInfra
 		? (["details", "logs", "infrastructure"] as const)
 		: (["details", "logs"] as const)
-	return h.div(
-		[h.Class("flex flex-col h-full bg-background overflow-hidden")],
-		[
+	return sidePanelFrame(h, [
 			panelHeader(h, model),
 			scrollArea(h, { className: "min-h-0 flex-1", idPrefix: "span-panel-scroll" }, [
 				summaryStats(h, model),

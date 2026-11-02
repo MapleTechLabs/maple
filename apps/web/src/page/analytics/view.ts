@@ -26,6 +26,7 @@ import { TRAFFIC_TOKENS } from "./view-chart"
 import { expandDialog } from "./view-expand"
 import { filtersRail, showsBreakdownCards } from "./view-filters"
 import { overviewContent, sharedPageFailure } from "./view-overview"
+import { hstack } from "../../ui/stack"
 
 // The web analytics page.
 
@@ -119,35 +120,32 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model.search))
 	if (chips.length === 0) return []
 	return [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-1.5")],
-			[
-				...chips.map((chip) =>
-					badge(
-						h,
-						{
-							variant: "meta",
-							size: "xs",
-							mono: true,
-							className: "h-auto px-1.5 py-0.5 hover:text-foreground active:text-foreground",
-							onClick: Message.ChangedFilter({ key: chip.key, value: undefined }),
-							attributes: [h.Key(`${chip.key}:${chip.value}`)],
-						},
-						[chip.label, " ✕"],
-					),
-				),
-				button(
+		hstack(h, { gap: "1.5", wrap: true }, [
+			...chips.map((chip) =>
+				badge(
 					h,
 					{
-						variant: "link",
+						variant: "meta",
 						size: "xs",
-						className: "h-auto px-1 text-3xs text-muted-foreground sm:text-3xs",
-						attributes: [h.OnClick(Message.ClickedClearFilters())],
+						mono: true,
+						className: "h-auto px-1.5 py-0.5 hover:text-foreground active:text-foreground",
+						onClick: Message.ChangedFilter({ key: chip.key, value: undefined }),
+						attributes: [h.Key(`${chip.key}:${chip.value}`)],
 					},
-					["Clear all"],
+					[chip.label, " ✕"],
 				),
-			],
-		),
+			),
+			button(
+				h,
+				{
+					variant: "link",
+					size: "xs",
+					className: "h-auto px-1 text-3xs text-muted-foreground sm:text-3xs",
+					attributes: [h.OnClick(Message.ClickedClearFilters())],
+				},
+				["Clear all"],
+			),
+		]),
 	]
 }
 
@@ -178,26 +176,23 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					title: "Web analytics",
 					gap: "lg",
 					filters: filtersRail(h, model),
-					actions: h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
-						[
-							...liveBadge(h, model),
-							replaysLink(h, model),
-							pageTime(h, {
-								search: model.search,
-								defaultPreset: DEFAULT_PRESET,
-								window: model.window,
-								picker: model.timePicker,
-								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-								onReset: Message.ClickedResetTimeRange(),
-								onReload: Message.ClickedReload(),
-								isReloading: model.isReloading,
-								// The page-level failure card's Try again is the one retry.
-								isReloadHidden:
-									showsBreakdownCards(model) && sharedPageFailure(model) !== undefined,
-							}),
-						],
-					),
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						...liveBadge(h, model),
+						replaysLink(h, model),
+						pageTime(h, {
+							search: model.search,
+							defaultPreset: DEFAULT_PRESET,
+							window: model.window,
+							picker: model.timePicker,
+							toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+							onReset: Message.ClickedResetTimeRange(),
+							onReload: Message.ClickedReload(),
+							isReloading: model.isReloading,
+							// The page-level failure card's Try again is the one retry.
+							isReloadHidden:
+								showsBreakdownCards(model) && sharedPageFailure(model) !== undefined,
+						}),
+					]),
 					tabs: tabs(h, model),
 				},
 				[...chipsRow(h, model), body(h, model, timeZone, inputs.isBelowSm === true)],

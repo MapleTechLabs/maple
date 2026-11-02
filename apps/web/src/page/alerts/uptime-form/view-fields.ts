@@ -21,6 +21,8 @@ import {
 } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // The form's inputs and the HTTP and schedule sections.
 
@@ -52,12 +54,15 @@ export const textField = (
 		...(options.inputMode === "numeric" ? [h.Attribute("inputmode", "numeric")] : []),
 	]
 	return h.div(
-		[h.Class(cn("flex flex-col gap-1.5", options.className))],
+		[h.Class(cn(vstackClass({ gap: "1.5" }), options.className))],
 		[
 			label(
 				h,
 				{
-					className: options.isLabelHidden === true ? "sr-only" : "text-xs text-muted-foreground",
+					className:
+						options.isLabelHidden === true
+							? "sr-only"
+							: typographyClass({ size: "xs", tone: "muted" }),
 					attributes: [h.For(id)],
 				},
 				[options.label],
@@ -72,7 +77,7 @@ export const textField = (
 					]),
 			...(options.hint === undefined
 				? []
-				: [h.p([h.Class("text-xs text-muted-foreground")], [options.hint])]),
+				: [typography(h, { size: "xs", tone: "muted", as: "p" }, [options.hint])]),
 		],
 	)
 }
@@ -91,12 +96,15 @@ export const selectField = (
 	}>,
 ): Html =>
 	h.div(
-		[h.Class(cn("flex flex-col gap-1.5", options.className))],
+		[h.Class(cn(vstackClass({ gap: "1.5" }), options.className))],
 		[
 			label(
 				h,
 				{
-					className: options.isLabelHidden === true ? "sr-only" : "text-xs text-muted-foreground",
+					className:
+						options.isLabelHidden === true
+							? "sr-only"
+							: typographyClass({ size: "xs", tone: "muted" }),
 					attributes: [h.For(options.id)],
 				},
 				[options.label],
@@ -123,7 +131,9 @@ const section = (h: H, title: string, hint: string | undefined, children: Readon
 				[h.Class("flex flex-col gap-0.5 sm:pt-2")],
 				[
 					heading(h, { level: 3, variant: "subsection" }, [title]),
-					...(hint === undefined ? [] : [h.p([h.Class("text-xs text-muted-foreground")], [hint])]),
+					...(hint === undefined
+						? []
+						: [typography(h, { size: "xs", tone: "muted", as: "p" }, [hint])]),
 				],
 			),
 			h.div([h.Class("flex min-w-0 flex-col gap-3")], children),
@@ -195,49 +205,40 @@ export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): Rea
 					h.div(
 						[h.Class("mt-2 flex flex-col gap-3")],
 						[
-							h.div(
-								[h.Class("flex flex-col gap-1.5")],
-								[
-									label(
-										h,
-										{
-											className: "text-xs text-muted-foreground",
-											attributes: [h.For("uptime-headers")],
-										},
-										["Headers, one per line"],
-									),
-									textarea(h, {
-										id: "uptime-headers",
-										attributes: [
-											h.Value(form.headers),
-											h.OnInput(changed("headers")),
-											h.Placeholder("Authorization: Bearer …"),
-										],
-									}),
-								],
-							),
+							vstack(h, { gap: "1.5" }, [
+								label(
+									h,
+									{
+										className: typographyClass({ size: "xs", tone: "muted" }),
+										attributes: [h.For("uptime-headers")],
+									},
+									["Headers, one per line"],
+								),
+								textarea(h, {
+									id: "uptime-headers",
+									attributes: [
+										h.Value(form.headers),
+										h.OnInput(changed("headers")),
+										h.Placeholder("Authorization: Bearer …"),
+									],
+								}),
+							]),
 							...(form.method === "POST"
 								? [
-										h.div(
-											[h.Class("flex flex-col gap-1.5")],
-											[
-												label(
-													h,
-													{
-														className: "text-xs text-muted-foreground",
-														attributes: [h.For("uptime-body")],
-													},
-													["Body"],
-												),
-												textarea(h, {
-													id: "uptime-body",
-													attributes: [
-														h.Value(form.body),
-														h.OnInput(changed("body")),
-													],
-												}),
-											],
-										),
+										vstack(h, { gap: "1.5" }, [
+											label(
+												h,
+												{
+													className: typographyClass({ size: "xs", tone: "muted" }),
+													attributes: [h.For("uptime-body")],
+												},
+												["Body"],
+											),
+											textarea(h, {
+												id: "uptime-body",
+												attributes: [h.Value(form.body), h.OnInput(changed("body"))],
+											}),
+										]),
 									]
 								: []),
 						],
@@ -254,86 +255,83 @@ const assertionRow = (h: H, row: AssertionDraft, index: number): Html => {
 	const needsTarget = row.type === "json_path" || row.type === "header"
 	const needsValue = row.op !== "exists"
 	const valueLabel = `Check ${index + 1} value`
-	return h.li(
-		[h.Key(String(row.id)), h.Class("flex flex-wrap items-center gap-2")],
-		[
-			selectField(h, {
-				id: `uptime-assertion-${row.id}-type`,
-				label: `Check ${index + 1} type`,
-				isLabelHidden: true,
-				value: row.type,
-				entries: ASSERTION_TYPES,
-				onChange: (value) =>
-					Message.ChangedAssertionType({
-						id: row.id,
-						type: isAssertionType(value) ? value : "status",
-					}),
-				className: "w-40",
-			}),
-			...(needsTarget
-				? [
-						h.div(
-							[h.Class("w-36")],
-							[
-								input(h, {
-									id: `uptime-assertion-${row.id}-target`,
-									attributes: [
-										h.AriaLabel(
-											row.type === "header"
-												? `Check ${index + 1} header name`
-												: `Check ${index + 1} path`,
-										),
-										h.Placeholder(row.type === "header" ? "content-type" : "$.status"),
-										h.Value(row.target),
-										h.OnInput((value) =>
-											Message.ChangedAssertion({ id: row.id, part: "target", value }),
-										),
-									],
-								}),
-							],
-						),
-					]
-				: []),
-			selectField(h, {
-				id: `uptime-assertion-${row.id}-op`,
-				label: `Check ${index + 1} operator`,
-				isLabelHidden: true,
-				value: row.op,
-				entries: ops,
-				onChange: (value) => Message.ChangedAssertion({ id: row.id, part: "op", value }),
-				className: "w-32",
-			}),
-			...(needsValue
-				? [
-						h.div(
-							[h.Class("min-w-32 flex-1")],
-							[
-								input(h, {
-									id: `uptime-assertion-${row.id}-value`,
-									attributes: [
-										h.AriaLabel(valueLabel),
-										h.Value(row.value),
-										h.OnInput((value) =>
-											Message.ChangedAssertion({ id: row.id, part: "value", value }),
-										),
-										...(row.type === "latency" ? [h.Placeholder("Milliseconds")] : []),
-									],
-								}),
-							],
-						),
-					]
-				: [h.span([h.Class("flex-1")], [])]),
-			iconButton(
-				h,
-				{
-					label: `Remove check ${index + 1}`,
-					className: "text-muted-foreground",
-					attributes: [h.OnClick(Message.RemovedAssertion({ id: row.id }))],
-				},
-				[icon(h, "XmarkIcon")],
-			),
-		],
-	)
+	return hstack(h, { gap: "2", wrap: true, as: "li", attributes: [h.Key(String(row.id))] }, [
+		selectField(h, {
+			id: `uptime-assertion-${row.id}-type`,
+			label: `Check ${index + 1} type`,
+			isLabelHidden: true,
+			value: row.type,
+			entries: ASSERTION_TYPES,
+			onChange: (value) =>
+				Message.ChangedAssertionType({
+					id: row.id,
+					type: isAssertionType(value) ? value : "status",
+				}),
+			className: "w-40",
+		}),
+		...(needsTarget
+			? [
+					h.div(
+						[h.Class("w-36")],
+						[
+							input(h, {
+								id: `uptime-assertion-${row.id}-target`,
+								attributes: [
+									h.AriaLabel(
+										row.type === "header"
+											? `Check ${index + 1} header name`
+											: `Check ${index + 1} path`,
+									),
+									h.Placeholder(row.type === "header" ? "content-type" : "$.status"),
+									h.Value(row.target),
+									h.OnInput((value) =>
+										Message.ChangedAssertion({ id: row.id, part: "target", value }),
+									),
+								],
+							}),
+						],
+					),
+				]
+			: []),
+		selectField(h, {
+			id: `uptime-assertion-${row.id}-op`,
+			label: `Check ${index + 1} operator`,
+			isLabelHidden: true,
+			value: row.op,
+			entries: ops,
+			onChange: (value) => Message.ChangedAssertion({ id: row.id, part: "op", value }),
+			className: "w-32",
+		}),
+		...(needsValue
+			? [
+					h.div(
+						[h.Class("min-w-32 flex-1")],
+						[
+							input(h, {
+								id: `uptime-assertion-${row.id}-value`,
+								attributes: [
+									h.AriaLabel(valueLabel),
+									h.Value(row.value),
+									h.OnInput((value) =>
+										Message.ChangedAssertion({ id: row.id, part: "value", value }),
+									),
+									...(row.type === "latency" ? [h.Placeholder("Milliseconds")] : []),
+								],
+							}),
+						],
+					),
+				]
+			: [h.span([h.Class("flex-1")], [])]),
+		iconButton(
+			h,
+			{
+				label: `Remove check ${index + 1}`,
+				className: "text-muted-foreground",
+				attributes: [h.OnClick(Message.RemovedAssertion({ id: row.id }))],
+			},
+			[icon(h, "XmarkIcon")],
+		),
+	])
 }
 
 /** "Up when": every row must pass. */
@@ -342,8 +340,9 @@ export const assertionsSection = (h: H, model: Model): Html =>
 		...(model.form.assertions.length === 0
 			? []
 			: [
-					h.ul(
-						[h.Class("flex flex-col gap-2")],
+					vstack(
+						h,
+						{ gap: "2", as: "ul" },
 						model.form.assertions.map((row, index) => assertionRow(h, row, index)),
 					),
 				]),
@@ -366,26 +365,24 @@ export const assertionsSection = (h: H, model: Model): Html =>
 
 /** A short numeric input with its unit, inline in a sentence. */
 const inlineNumber = (h: H, field: TextField, labelText: string, value: string, unit: string): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			label(h, { className: "text-sm text-muted-foreground", attributes: [h.For(`uptime-${field}`)] }, [
-				labelText,
-			]),
-			inputGroup(h, { className: "w-36 shrink-0" }, [
-				inputGroupInput(h, {
-					id: `uptime-${field}`,
-					className: "min-w-0",
-					attributes: [
-						h.Value(value),
-						h.OnInput(changed(field)),
-						h.Attribute("inputmode", "numeric"),
-					],
-				}),
-				inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, [unit])]),
-			]),
-		],
-	)
+	hstack(h, { gap: "2" }, [
+		label(
+			h,
+			{
+				className: typographyClass({ size: "sm", tone: "muted" }),
+				attributes: [h.For(`uptime-${field}`)],
+			},
+			[labelText],
+		),
+		inputGroup(h, { className: "w-36 shrink-0" }, [
+			inputGroupInput(h, {
+				id: `uptime-${field}`,
+				className: "min-w-0",
+				attributes: [h.Value(value), h.OnInput(changed(field)), h.Attribute("inputmode", "numeric")],
+			}),
+			inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, [unit])]),
+		]),
+	])
 
 /** Cadence, then failures in a row and the timeout on one line. */
 export const scheduleSection = (h: H, model: Model): Html =>

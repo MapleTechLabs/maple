@@ -9,6 +9,7 @@ import * as MenuView from "../../../../ui/menu-view"
 import { statusDot } from "../../../../ui/status-dot"
 import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
+import { hstack } from "../../../../ui/stack"
 
 // Multi-account Cloudflare: these only render with two or more accounts; a single-account org keeps
 // a plain chip.
@@ -100,17 +101,14 @@ export const accountsStrip = (
 					attributes: [h.Key(account.accountId)],
 				},
 				[
-					h.span(
-						[h.Class("flex items-center gap-2")],
-						[
-							statusDot(h, { tone: account.health.tone }),
-							h.span([h.Class("truncate text-xs font-medium text-foreground")], [account.name]),
-							h.span(
-								[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
-								[formatPercentColumn(fraction)],
-							),
-						],
-					),
+					hstack(h, { gap: "2", as: "span" }, [
+						statusDot(h, { tone: account.health.tone }),
+						h.span([h.Class("truncate text-xs font-medium text-foreground")], [account.name]),
+						h.span(
+							[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
+							[formatPercentColumn(fraction)],
+						),
+					]),
 					h.span(
 						[h.Class("block h-1 w-full overflow-hidden rounded-full bg-muted")],
 						[

@@ -23,6 +23,8 @@ import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass, vstackClass } from "../../../ui/stack"
 
 // `KeysTable`, `ApiRow`, `DevicesTable`.
 
@@ -115,14 +117,13 @@ const apiRow = (
 		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken active:bg-surface-sunken"))],
 		[
 			h.div(
-				[h.Class(cn(COL.name, "flex flex-col gap-1"))],
+				[h.Class(cn(COL.name, vstackClass({ gap: "1" })))],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
+					hstack(h, { gap: "2", shrink: true },
 						[
 							truncatedText(h, {
 								text: key.name,
-								className: "text-foreground text-sm font-medium",
+								className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
 							}),
 							h.span(
 								[h.Class("text-muted-foreground shrink-0 font-mono text-2xs")],
@@ -135,7 +136,7 @@ const apiRow = (
 						? [
 								truncatedText(h, {
 									text: key.description,
-									className: "text-muted-foreground text-2xs",
+									className: typographyClass({ size: "2xs", tone: "muted" }),
 								}),
 							]
 						: []),
@@ -155,13 +156,13 @@ const apiRow = (
 								text: key.created_by_email ?? EMPTY_VALUE,
 								className: "text-foreground-soft",
 							}),
-							h.span([h.Class("text-muted-foreground truncate")], [formatDate(key.created_at)]),
+							typography(h, { tone: "muted", truncate: true }, [formatDate(key.created_at)]),
 						],
 					),
 				],
 			),
 			h.span(
-				[h.Class(cn(COL.lastUsed, "text-muted-foreground truncate text-2xs"))],
+				[h.Class(cn(COL.lastUsed, typographyClass({ size: "2xs", tone: "muted", truncate: true })))],
 				[
 					key.last_used_at
 						? relativeTime(h, {
@@ -243,9 +244,9 @@ const deviceRow = (
 		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-surface-sunken active:bg-surface-sunken"))],
 		[
 			h.div(
-				[h.Class(cn(DEVICE_COL.name, "flex min-w-0 items-center gap-2"))],
+				[h.Class(cn(DEVICE_COL.name, hstackClass({ gap: "2", shrink: true })))],
 				[
-					truncatedText(h, { text: key.name, className: "text-foreground text-sm font-medium" }),
+					truncatedText(h, { text: key.name, className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }) }),
 					h.span([h.Class("text-muted-foreground shrink-0 font-mono text-2xs")], [key.key_prefix]),
 				],
 			),
@@ -254,11 +255,11 @@ const deviceRow = (
 				className: cn(DEVICE_COL.owner, "text-foreground-soft text-2xs"),
 			}),
 			h.span(
-				[h.Class(cn(DEVICE_COL.created, "text-muted-foreground truncate text-2xs"))],
+				[h.Class(cn(DEVICE_COL.created, typographyClass({ size: "2xs", tone: "muted", truncate: true })))],
 				[formatDate(key.created_at)],
 			),
 			h.span(
-				[h.Class(cn(DEVICE_COL.lastUsed, "text-muted-foreground truncate text-2xs"))],
+				[h.Class(cn(DEVICE_COL.lastUsed, typographyClass({ size: "2xs", tone: "muted", truncate: true })))],
 				[
 					key.last_used_at
 						? relativeTime(h, {
@@ -271,7 +272,7 @@ const deviceRow = (
 				],
 			),
 			h.span(
-				[h.Class(cn(DEVICE_COL.expires, "text-muted-foreground truncate text-2xs"))],
+				[h.Class(cn(DEVICE_COL.expires, typographyClass({ size: "2xs", tone: "muted", truncate: true })))],
 				[key.expires_at ? formatDate(key.expires_at) : "Never"],
 			),
 			h.div(

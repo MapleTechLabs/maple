@@ -7,7 +7,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMessage, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyMessage, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { panel, panelHeader } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
@@ -40,6 +40,8 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `CodeReviewTeamPage`: team KPIs, a few highlights, and the per-person scorecard against the team
 // median, ranked only on request.
@@ -337,7 +339,7 @@ const memberRow = (h: H, member: CodeReviewTeamMember, rank: number | null, rank
 				tableCell(
 					h,
 					[column.format(metricOf(member, column.metric))],
-					cn("px-3 text-right tabular-nums", column.className),
+					cn(typographyClass({ numeric: true, className: "px-3 text-right" }), column.className),
 					[h.Title(column.detail(member))],
 				),
 			),
@@ -460,13 +462,12 @@ const noTeamData = (h: H): Html =>
 				["Open the GitHub integration"],
 			),
 		],
-		"rounded-md border border-dashed md:py-14",
+		emptyFrameClass("dashed"),
 	)
 
 const teamView = (h: H, model: Model, team: CodeReviewTeam): Html => {
 	const highlighted = highlights(h, team.members)
-	return h.div(
-		[h.Class("flex flex-col gap-6")],
+	return vstack(h, { gap: "6" },
 		[
 			headlineStrip(h, team.totals),
 			...(highlighted === null ? [] : [highlighted]),
@@ -489,7 +490,7 @@ const content = (h: H, model: Model): Html =>
 					noun: "team members",
 					description: "Widen the window or clear the filter.",
 					onClear: Message.ClickedClearFilters(),
-					className: "rounded-md border border-dashed md:py-14",
+					className: emptyFrameClass("dashed"),
 				})
 			return empty(
 				h,
@@ -499,7 +500,7 @@ const content = (h: H, model: Model): Html =>
 						emptyDescription(h, ["No pull request was reviewed and no CI run finished in this window. Widen the window."]),
 					]),
 				],
-				"rounded-md border border-dashed md:py-14",
+				emptyFrameClass("dashed"),
 			)
 		},
 	})

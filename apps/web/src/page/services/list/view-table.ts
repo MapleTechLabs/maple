@@ -44,6 +44,8 @@ import { MountTable } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstackClass, vstack } from "../../../ui/stack"
 
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"
@@ -117,7 +119,7 @@ const sparkline = (
 /** The deploy cell's lines: commit subject (once resolved) over `sha · age`, or the state line. */
 const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: ServiceRow): Html => {
 	const info = deployInfo(service.commits)
-	if (info === undefined) return h.span([h.Class("text-xs text-muted-foreground")], ["N/A"])
+	if (info === undefined) return typography(h, { size: "xs", tone: "muted" }, ["N/A"])
 	const age =
 		info.firstSeen !== "" ? formatRelativeTimeOrDate(info.firstSeen, ctx.model.nowMs, ctx.timeZone) : ""
 	const messages: Readonly<Record<string, string>> = Option.getOrElse(
@@ -167,14 +169,13 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 				[message !== "" ? message : shortSha],
 			)
 		: h.span([h.Class("min-w-0 max-w-full truncate text-xs text-foreground")], [shortSha])
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-0.5")],
+	return vstack(h, { gap: "0.5", shrink: true },
 		[
 			trigger,
 			stateLine ??
 				(metaText === ""
 					? null
-					: h.span([h.Class("truncate font-mono text-3xs text-muted-foreground")], [metaText])),
+					: typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [metaText])),
 		],
 	)
 }
@@ -230,7 +231,7 @@ const serviceRow = (
 					],
 				),
 				...(subtitle !== ""
-					? [h.div([h.Class("truncate text-xs text-muted-foreground")], [subtitle])]
+					? [typography(h, { size: "xs", tone: "muted", truncate: true, as: "div" }, [subtitle])]
 					: []),
 			]),
 			tableCell(
@@ -387,7 +388,7 @@ const groupHeaderRow = (
 		[
 			tableCell(
 				h,
-				[h.div([h.Class(cn("flex items-center gap-2", className))], children)],
+				[h.div([h.Class(cn(hstackClass({ gap: "2" }), className))], children)],
 				"py-2",
 				[h.Attribute("colspan", "7")],
 			),
@@ -432,8 +433,7 @@ const desktopTable = (
 						? [
 								groupHeaderRow(h, `ns-${namespace}`, "bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong", [
 									namespaceLabel(h, namespace),
-									h.span(
-										[h.Class("text-xs text-muted-foreground")],
+									typography(h, { size: "xs", tone: "muted" },
 										[
 											countLabel(
 												envGroups.reduce((sum, [, rows]) => sum + rows.length, 0),
@@ -451,8 +451,7 @@ const desktopTable = (
 							"bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
 							[
 								environmentBadge(h, environment),
-								h.span(
-									[h.Class("text-xs text-muted-foreground")],
+								typography(h, { size: "xs", tone: "muted" },
 									[String(rows.length), " ", pluralize(rows.length, "service")],
 								),
 							],
@@ -511,8 +510,7 @@ const mobileList = (
 											],
 											[
 												namespaceLabel(h, namespace),
-												h.span(
-													[h.Class("text-xs text-muted-foreground")],
+												typography(h, { size: "xs", tone: "muted" },
 													[
 														countLabel(
 															envGroups.reduce(
@@ -542,8 +540,7 @@ const mobileList = (
 											],
 											[
 												environmentBadge(h, environment),
-												h.span(
-													[h.Class("text-xs text-muted-foreground")],
+												typography(h, { size: "xs", tone: "muted" },
 													[countLabel(rows.length, "service")],
 												),
 											],
@@ -595,12 +592,7 @@ const mobileList = (
 															...(mode === "environment" &&
 															service.serviceNamespace !== ""
 																? [
-																		h.div(
-																			[
-																				h.Class(
-																					"truncate text-xs text-muted-foreground",
-																				),
-																			],
+																		typography(h, { size: "xs", tone: "muted", truncate: true, as: "div" },
 																			[service.serviceNamespace],
 																		),
 																	]
@@ -664,7 +656,7 @@ const mobileList = (
 														[
 															errorRateValue(h, {
 																rate: service.errorRate,
-																className: "block text-sm font-semibold",
+																className: typographyClass({ size: "sm", weight: "semibold", className: "block" }),
 															}),
 															eyebrow(h, { as: "div" }, ["err"]),
 														],

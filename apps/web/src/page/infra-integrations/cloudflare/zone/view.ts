@@ -47,6 +47,7 @@ import {
 	securitySection,
 } from "./view-sections"
 import { zoneSignals } from "./view-strips"
+import { hstack } from "../../../../ui/stack"
 
 // `ZoneDetailPage`.
 
@@ -80,10 +81,10 @@ const header = (h: H, model: Model, hasFilters: boolean): HeaderParts => {
 				: [heroChip(h, ["account ", account.name])]
 	const chips = filterChips(h, model, filters)
 	const hero = pageHeroParts(h, {
-		title: h.span(
-			[h.Class("flex items-center gap-3")],
-			[...(severity === null ? [] : [statusDot(h, { tone: severity, size: "lg" })]), model.zoneName],
-		),
+		title: hstack(h, { gap: "3", as: "span" }, [
+			...(severity === null ? [] : [statusDot(h, { tone: severity, size: "lg" })]),
+			model.zoneName,
+		]),
 		meta: [
 			heroChip(h, "zone"),
 			...accountChip,
@@ -268,10 +269,7 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 								actions:
 									headerActions.length === 0
 										? undefined
-										: h.div(
-												[h.Class("flex flex-wrap items-center gap-2")],
-												headerActions,
-											),
+										: hstack(h, { gap: "2", wrap: true }, headerActions),
 								rightPanel: zoneRail(h, model, {
 									serviceName: serviceNameOf(model),
 									accountName: account?.name ?? null,

@@ -11,6 +11,7 @@ import { toggle } from "../../../ui/toggle"
 import * as Tooltip from "../../../ui/tooltip"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../../ui/typography"
 
 // The logs table toolbar: the Columns picker,
 // wrap and density, under one `TooltipProvider delay={250}`. Pinned columns live in `?columns`.
@@ -47,8 +48,7 @@ const columnsContent = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Ht
 	const options = columnOptions(model)
 	if (options.length === 0)
 		return [
-			h.p(
-				[h.Class("py-2 text-xs text-muted-foreground")],
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "py-2" },
 				["No attribute keys in this window"],
 			),
 		]

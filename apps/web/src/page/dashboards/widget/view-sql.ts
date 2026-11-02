@@ -16,6 +16,9 @@ import type { Model } from "./model"
 import { type RawSqlState, rawSqlErrorOf } from "./raw-sql"
 import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
+import { queryPanelBar } from "../../kit/query-panel-bar"
 
 // `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
@@ -37,16 +40,14 @@ const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text
 
 const header = (h: H, rawSql: RawSqlState): Html => {
 	const issue = rawSqlIssue(rawSql.draft.sql)
-	return h.div(
-		[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
-		[
+	return queryPanelBar(h, [
 			iconButton(
 				h,
 				{
 					size: "icon-xs",
 					label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
 					hasTooltip: false,
-					className: "text-muted-foreground hover:text-foreground active:text-foreground",
+					className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
 				},
 				[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
@@ -59,7 +60,7 @@ const header = (h: H, rawSql: RawSqlState): Html => {
 				},
 				["sql"],
 			),
-			h.span([h.Class("text-2xs text-muted-foreground")], ["ClickHouse"]),
+			typography(h, { size: "2xs", tone: "muted" }, ["ClickHouse"]),
 			h.div([h.Class("flex-1")], []),
 			...(issue !== null && !rawSql.isCollapsed
 				? [
@@ -185,7 +186,7 @@ const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 						h.OnInput((value) => Message.ChangedSqlBucket({ value })),
 					],
 				}),
-				h.span([h.Class("text-2xs text-muted-foreground")], ["s"]),
+				typography(h, { size: "2xs", tone: "muted" }, ["s"]),
 			]),
 		],
 	)
@@ -218,8 +219,7 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 								]),
 					],
 				),
-				h.div(
-					[h.Class("flex items-center gap-3")],
+				hstack(h, { gap: "3" },
 					[
 						button(
 							h,
@@ -230,8 +230,7 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 							},
 							["Run preview"],
 						),
-						h.span(
-							[h.Class("text-2xs text-muted-foreground ml-auto")],
+						typography(h, { size: "2xs", tone: "muted", className: "ml-auto" },
 							["Targets ", inlineCode(h, {}, [widgetOf(model)?.visualization ?? ""])],
 						),
 					],

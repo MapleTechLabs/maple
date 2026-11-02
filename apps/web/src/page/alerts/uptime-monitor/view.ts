@@ -39,6 +39,8 @@ import {
 	responseTimePanel,
 	setupPanel,
 } from "./view-panels"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `/alerts/uptime/$monitorId`: the header, the incident block when down, then the panels.
 
@@ -186,10 +188,10 @@ const body = (
 						checksPanel(h, monitor, timeZone),
 					],
 				),
-				h.div(
-					[h.Class("flex flex-col gap-4")],
-					[lastCheckPanel(h, monitor), setupPanel(h, model, monitor, serviceHrefOf(monitor))],
-				),
+				vstack(h, { gap: "4" }, [
+					lastCheckPanel(h, monitor),
+					setupPanel(h, model, monitor, serviceHrefOf(monitor)),
+				]),
 			],
 		),
 	]
@@ -248,10 +250,10 @@ const page = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						title: [monitor.name],
 						adornment: uptimeStatusChip(h, monitor, nowMs),
 						meta: [
-							h.span(
-								[h.Class("font-mono text-xs text-muted-foreground")],
-								[requestLine(monitor), ...(expects === null ? [] : [` · ${expects}`])],
-							),
+							typography(h, { size: "xs", tone: "muted", mono: true }, [
+								requestLine(monitor),
+								...(expects === null ? [] : [` · ${expects}`]),
+							]),
 						],
 					}),
 					actions: headerActions(h, model, monitor),

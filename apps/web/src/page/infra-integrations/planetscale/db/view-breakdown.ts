@@ -18,6 +18,8 @@ import {
 } from "../../../../components/infra/planetscale/metrics"
 import { formatWholePercent } from "../../../../components/infra/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { columnClass } from "../../../../ui/column"
 
 // `PlanetScaleBranchBreakdownPanel`.
 
@@ -143,7 +145,7 @@ const rowsOf = (candidates: ReadonlyArray<BranchCandidate>, spec: MeasureSpec) =
 }
 
 const metaChip = (h: H, text: string): Html =>
-	h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])
+	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
 
 const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): ReadonlyArray<Html> => [
 	h.div(
@@ -153,7 +155,7 @@ const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): Readonly
 				[
 					h.Class(
 						cn(
-							"truncate text-sm",
+							typographyClass({ size: "sm", truncate: true }),
 							row.isOther ? "text-muted-foreground" : "font-mono text-foreground-soft",
 							isSelected && "text-primary",
 						),
@@ -213,7 +215,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 			[
 				columnHead(h, {
 					label: "Branch",
-					width: "w-0 flex-1 min-w-52",
+					width: columnClass({ min: "52" }),
 					sort: {
 						onSort: Message.ClickedBreakdownSort({ key: "branch" }),
 						isActive: inputs.sort.key === "branch",

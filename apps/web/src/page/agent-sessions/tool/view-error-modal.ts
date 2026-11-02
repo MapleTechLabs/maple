@@ -28,6 +28,8 @@ import { occurrencesOf } from "./error-modal-update"
 import { railView } from "./view-error-modal-rail"
 import { samplesPane } from "./view-error-modal-samples"
 import type { Prepared } from "./view-errors"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The tool error modal: one error group of one tool in full.
 
@@ -81,8 +83,7 @@ const mutedHeading = (h: H, text: string): Html =>
 
 const headingOf = (h: H, group: Prepared, text: string): Html => {
 	if (group.fingerprint === UNGROUPED_FINGERPRINT)
-		return h.div(
-			[h.Class("flex flex-col gap-1")],
+		return vstack(h, { gap: "1" },
 			[
 				mutedHeading(h, "Failures recorded before error grouping"),
 				h.p(
@@ -179,8 +180,7 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 						"Failed calls / ",
 						bucket.unit,
 					]),
-					h.span(
-						[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
+					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 						["max ", formatNumber(Math.max(0, ...group.spark))],
 					),
 				],
@@ -290,12 +290,11 @@ const errorModal = (h: H, model: Model, inputs: ModalInputs | undefined): Html =
 		},
 	})
 
-const NAV_BUTTON = "text-muted-foreground hover:text-foreground active:text-foreground"
+const NAV_BUTTON = typographyClass({ tone: "muted", hoverTone: "foreground" })
 
 const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 	const { position } = inputs
-	return h.div(
-		[h.Class("flex items-center gap-2")],
+	return hstack(h, { gap: "2" },
 		[
 			iconButton(
 				h,

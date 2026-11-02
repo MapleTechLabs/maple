@@ -28,6 +28,7 @@ import { podTable, podTableLoading } from "../pod-table"
 import { Message } from "./message"
 import { type Model, seriesId, type WorkloadKind, type WorkloadMetric, type WorkloadSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { hstack } from "../../../../ui/stack"
 
 // `WorkloadDetailPage` and `WorkloadDetailChart`.
 
@@ -134,8 +135,7 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return h.div(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-3")],
+			hstack(h, { gap: "3", justify: "between", wrap: true },
 				[
 					segmentedSelect(h, {
 						size: "xs",

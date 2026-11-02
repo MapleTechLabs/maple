@@ -32,7 +32,6 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { pressable } from "../../../../ui/pressable"
 import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
-import { button } from "../../../../ui/button"
 import { textLink } from "../../../../ui/text-link"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
@@ -82,6 +81,9 @@ import {
 	servicesTable,
 	subscriptionsTable,
 } from "./view-tables"
+import { removableChip } from "../../../../ui/removable-chip"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPageParts` and `titleRow` are what the lab reuses.
 
@@ -206,44 +208,19 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 /** `FilterChipRail` with the one region chip. */
 const regionChip = (h: H, region: string): Html => {
 	const label = `region ${region}`
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],
-		[
-			h.span(
-				[
-					h.Class(
-						"inline-flex items-center gap-1 rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground",
-					),
-				],
-				[
-					h.span([h.Class("max-w-[22ch] truncate text-foreground-soft")], [label]),
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "icon-2xs",
-							className: "text-muted-foreground hover:text-foreground active:text-foreground",
-							attributes: [
-								h.AriaLabel(`Remove ${label}`),
-								h.OnClick(Message.ClickedClearRegion()),
-							],
-						},
-						[icon(h, "XmarkIcon")],
-					),
-				],
-			),
-			textLink(
-				h,
-				{
-					tone: "muted",
-					isMono: true,
-					className: "ml-1 text-3xs",
-					onClick: Message.ClickedClearRegion(),
-				},
-				["Clear all"],
-			),
-		],
-	)
+	return hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] }, [
+		removableChip(h, { label, onRemove: Message.ClickedClearRegion() }),
+		textLink(
+			h,
+			{
+				tone: "muted",
+				isMono: true,
+				className: "ml-1 text-3xs",
+				onClick: Message.ClickedClearRegion(),
+			},
+			["Clear all"],
+		),
+	])
 }
 
 // The dot beside the name carries a warning; only a critical note keeps its colour in the text.
@@ -290,26 +267,23 @@ const projectsStrip = (
 							"flex min-w-0 flex-1 flex-col gap-2 border-b px-4 py-3 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
 					},
 					[
-						h.span(
-							[h.Class("flex items-center gap-2")],
-							[
-								...healthDotOf(h, projectHealth),
-								h.span(
-									[h.Class("truncate font-mono text-xs font-medium text-foreground")],
-									[project],
-								),
-								h.span(
-									[h.Class("ml-auto flex items-baseline gap-1 whitespace-nowrap")],
-									[
-										h.span(
-											[h.Class("font-mono text-2xs tabular-nums text-foreground")],
-											[formatPercentColumn(fraction)],
-										),
-										h.span([h.Class("text-3xs text-muted-foreground")], [shareUnit]),
-									],
-								),
-							],
-						),
+						hstack(h, { gap: "2", as: "span" }, [
+							...healthDotOf(h, projectHealth),
+							h.span(
+								[h.Class("truncate font-mono text-xs font-medium text-foreground")],
+								[project],
+							),
+							h.span(
+								[h.Class("ml-auto flex items-baseline gap-1 whitespace-nowrap")],
+								[
+									h.span(
+										[h.Class("font-mono text-2xs tabular-nums text-foreground")],
+										[formatPercentColumn(fraction)],
+									),
+									typography(h, { size: "3xs", tone: "muted" }, [shareUnit]),
+								],
+							),
+						]),
 						h.span(
 							[h.Class("block h-1 w-full overflow-hidden rounded-full bg-muted")],
 							[

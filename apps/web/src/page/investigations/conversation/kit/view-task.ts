@@ -13,6 +13,8 @@ import { dotLoader } from "./dot-loader"
 import type { TaskPart, ToolPart } from "./ui-message"
 import { agentPresentation } from "./view-cards"
 import { type PanelHost, runningClock } from "./view-tool"
+import { typography } from "../../../../ui/typography"
+import { vstack, vstackClass } from "../../../../ui/stack"
 
 // `TaskCard`: one sub-agent run as a line that opens its
 // sheet: the question in full, the answer, and whatever of the child's own steps reached the parent.
@@ -100,7 +102,9 @@ const answer = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html =
 			[part.errorText],
 		)
 	if (part.answer !== undefined) return h.div([h.Class("text-sm")], [host.richText(part.answer)])
-	return h.p([h.Class("text-sm text-muted-foreground")], ["The run ended without returning an answer."])
+	return typography(h, { size: "sm", tone: "muted", as: "p" }, [
+		"The run ended without returning an answer.",
+	])
 }
 
 /** `SheetDetailHeader` (not mono) over the `SheetPanel` of answer and steps. */
@@ -143,21 +147,18 @@ const sheetContent = <M>(
 							]),
 						]
 					: []),
-				h.section(
-					[h.Class("flex flex-col gap-2")],
-					[
-						sectionHeading(h, {
-							variant: "eyebrow",
-							as: "h3",
-							title: "Answer",
-							className: "mb-0",
-						}),
-						answer(h, host, part),
-					],
-				),
+				vstack(h, { gap: "2", as: "section" }, [
+					sectionHeading(h, {
+						variant: "eyebrow",
+						as: "h3",
+						title: "Answer",
+						className: "mb-0",
+					}),
+					answer(h, host, part),
+				]),
 				...steps(h, host, part),
 			],
-			"flex flex-col gap-6",
+			vstackClass({ gap: "6" }),
 		),
 	]
 }
@@ -186,28 +187,25 @@ const steps = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Readonl
 	part.messages.length === 0
 		? []
 		: [
-				h.section(
-					[h.Class("flex flex-col gap-2")],
-					[
-						sectionHeading(h, {
-							variant: "eyebrow",
-							as: "h3",
-							title: "Its own steps",
-							className: "mb-0",
-						}),
-						...part.messages.map((message) =>
-							h.keyed("div")(
-								message.id,
-								[h.Class("flex flex-col gap-1.5")],
-								message.parts.flatMap((leaf) =>
-									leaf._tag === "text"
-										? [host.richText(leaf.text)]
-										: leaf._tag === "dynamic-tool"
-											? [host.tool(leaf)]
-											: [],
-								),
+				vstack(h, { gap: "2", as: "section" }, [
+					sectionHeading(h, {
+						variant: "eyebrow",
+						as: "h3",
+						title: "Its own steps",
+						className: "mb-0",
+					}),
+					...part.messages.map((message) =>
+						h.keyed("div")(
+							message.id,
+							[h.Class(vstackClass({ gap: "1.5" }))],
+							message.parts.flatMap((leaf) =>
+								leaf._tag === "text"
+									? [host.richText(leaf.text)]
+									: leaf._tag === "dynamic-tool"
+										? [host.tool(leaf)]
+										: [],
 							),
 						),
-					],
-				),
+					),
+				]),
 			]

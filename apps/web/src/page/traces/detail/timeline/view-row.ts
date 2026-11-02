@@ -10,6 +10,8 @@ import { icon } from "../../../../ui/icon"
 import { iconButton } from "../../../../ui/icon-button"
 import type { Bar } from "./layout"
 import { Message } from "./message"
+import { typographyClass } from "../../../../ui/typography"
+import { hstackClass } from "../../../../ui/stack"
 
 // `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
 // TODO(tooltip): event-marker tooltips and the hover span tooltip are not ported (triggers only).
@@ -111,7 +113,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 				? [
 						h.span(
 							[
-								attr(h, "shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"),
+								attr(h, typographyClass({ size: "3xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" })),
 								h.Title(`Depth ${bar.depth}`),
 							],
 							["L", String(bar.depth)],
@@ -139,7 +141,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 					)
 				: h.span([attr(h, "inline-block size-4 shrink-0")], []),
 			h.span(
-				[attr(h, "flex shrink-0 items-center"), h.Title(category.label)],
+				[attr(h, hstackClass({ className: "shrink-0" })), h.Title(category.label)],
 				[
 					icon(h, category.icon, {
 						size: 12,
@@ -154,7 +156,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 						cn(
 							"truncate font-mono font-medium text-foreground-soft",
 							bar.isError && TONE_TEXT.crit,
-							bar.span.isMissing === true && "italic text-muted-foreground",
+							bar.span.isMissing === true && typographyClass({ tone: "muted", className: "italic" }),
 						),
 					),
 				],

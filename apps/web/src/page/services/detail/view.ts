@@ -34,6 +34,7 @@ import { dependenciesTab } from "./view-dependencies"
 import { operationsTab } from "./view-operations"
 import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
+import { hstack } from "../../../ui/stack"
 
 // TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
 
@@ -134,10 +135,12 @@ const headerActions = (h: H, model: Model): Html => {
 			ariaLabel: "Environment",
 			className: "w-full sm:w-auto",
 			toView: (parts) =>
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[...parts, runsOn(h, model), createAlert(h, model), controls],
-				),
+				hstack(h, { gap: "2", wrap: true }, [
+					...parts,
+					runsOn(h, model),
+					createAlert(h, model),
+					controls,
+				]),
 		},
 	})
 }

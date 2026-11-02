@@ -33,6 +33,8 @@ import {
 	type SparkWindow,
 	sparkOf,
 } from "./view-signal"
+import { typographyClass } from "../../../ui/typography"
+import { hstackClass } from "../../../ui/stack"
 
 // The error signal header and row skeleton.
 
@@ -190,7 +192,7 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 					[severityPicker(h, signal, state)],
 				),
 				h.span(
-					[h.Class(cn(LANE.identity, "flex items-baseline gap-2"))],
+					[h.Class(cn(LANE.identity, hstackClass({ gap: "2", align: "baseline" })))],
 					[
 						truncatedText(
 							h,
@@ -271,7 +273,7 @@ const volumeLane = (
 			h.span([h.Class(LANE.spark)], [signalSpark(h, dense, signal, isSurging, label)]),
 			h.span(
 				[
-					h.Class(cn(LANE.count, "text-xs tabular-nums")),
+					h.Class(cn(LANE.count, typographyClass({ size: "xs", numeric: true }))),
 					h.Title(
 						signal.windowCount === null
 							? `None in the last 24 hours · ${formatExactCount(signal.totalCount)} all time`

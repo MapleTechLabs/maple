@@ -10,6 +10,7 @@ import { panelOf } from "./update"
 import { crawledPagesCard, aiDialogTable } from "./view-ai"
 import { breakdownTable, dimensionTabs, panelFilterInput, panelView } from "./view-breakdown"
 import { overviewCards } from "./view-overview"
+import { hstack } from "../../ui/stack"
 
 // The expand dialogs of `AnalyticsBreakdownPanel` and `AiPanel`: one dialog, whichever card opened it.
 
@@ -45,7 +46,7 @@ const breakdownContent = (h: H, model: Model, panelId: string): ReadonlyArray<Ht
 					"over the selected window. Pick a row to filter the page.",
 				]),
 			]),
-			h.div([h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")], [
+			hstack(h, { justify: "between", wrap: true, className: "gap-x-3 gap-y-2" }, [
 				dimensionTabs(h, card.id, card.dimensions, view.activeTab),
 				panelFilterInput(h, card.id, state.query, dimension.nounPlural, "w-56", "-dialog", true),
 			]),

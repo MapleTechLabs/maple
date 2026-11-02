@@ -17,6 +17,7 @@ import { anomalyRow } from "../kit/row"
 import { clusterByService, GROUP_LABEL, groupIncidents } from "./derive"
 import { Message } from "./message"
 import type { GroupKey, Model, StatusTab } from "./model"
+import { typography } from "../../../ui/typography"
 
 // `AnomaliesPageBody` and `AnomalyGroup`: the anomalies, grouped.
 
@@ -51,7 +52,7 @@ const group = (
 					),
 					statusDot(h, { tone: SEVERITY_TONE[key].tone, size: "lg" }),
 					h.span([h.Class("shrink-0 text-sm font-medium text-foreground")], [GROUP_LABEL[key]]),
-					h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(incidents.length)]),
+					typography(h, { size: "xs", tone: "muted", numeric: true }, [String(incidents.length)]),
 				],
 			),
 			...(isOpen

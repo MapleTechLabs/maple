@@ -13,6 +13,7 @@ import { STATUS_CLASSES, trafficRows, trafficShares } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../panel"
+import { typography } from "../../../../ui/typography"
 
 // "API requests": the gateway's requests by status class, its totals, and the busiest paths.
 
@@ -29,7 +30,7 @@ const total = (h: H, value: string, label: string, className?: string): Html =>
 				[h.Class(cn("font-mono text-lg font-semibold tabular-nums text-foreground", className))],
 				[value],
 			),
-			h.span([h.Class("text-2xs text-muted-foreground")], [label]),
+			typography(h, { size: "2xs", tone: "muted" }, [label]),
 		],
 	)
 

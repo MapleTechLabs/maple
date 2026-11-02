@@ -9,7 +9,7 @@ import * as DialogView from "../../../ui/dialog-view"
 import { errorState } from "../../../ui/error-state"
 import { httpSpanLabel } from "../../../ui/http-span-label"
 import * as Resizable from "../../../ui/resizable"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { skeleton, skeletonList, skeletonMeter } from "../../../ui/skeleton"
 import { traceIdBadge } from "../../../ui/trace-badges"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
 import { Message } from "./message"
@@ -18,6 +18,7 @@ import { loadedTrace, selectedSpanOf } from "./select"
 import * as SpanPanel from "./span-panel"
 import { anatomy, callout, traceViewTabs } from "./view"
 import { logsLink, replayLink } from "./view-header"
+import { vstackClass } from "../../../ui/stack"
 
 // The trace page in the list's peek sheet. The sheet, its footer and the keys are the list's.
 
@@ -41,7 +42,7 @@ const loading = (h: H, model: Model, inputs: PeekViewInputs): ReadonlyArray<Html
 	h.div(
 		[h.Class("flex-1 space-y-3 overflow-hidden p-4")],
 		[
-			skeleton(h, "h-1.5 w-full rounded-full"),
+			skeletonMeter(h),
 			skeletonList(h, {
 				rows: 6,
 				className: "gap-0 rounded-md border",
@@ -116,7 +117,12 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 						return [
 							h.div(
 								[
-									h.Class(cn("flex min-h-0 flex-1 flex-col", refreshingClass(isWaiting))),
+									h.Class(
+										cn(
+											vstackClass({ grow: true, className: "min-h-0" }),
+											refreshingClass(isWaiting),
+										),
+									),
 									...(isWaiting ? [h.AriaBusy(true)] : []),
 								],
 								[

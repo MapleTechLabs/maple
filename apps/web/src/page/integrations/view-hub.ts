@@ -26,6 +26,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { STATUS_NAMES } from "./update-status"
 import { entryPlate } from "./view-entry"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../ui/stack"
 
 // `IntegrationsSummary` and `IntegrationCatalog`.
 
@@ -35,8 +37,7 @@ type Select = (id: IntegrationId) => Message
 export const integrationsSummary = (h: H, model: Model): Html | undefined => {
 	const summary = summaryOf(model.statuses, model.nowMs)
 	if (summary === null) return undefined
-	return h.div(
-		[h.Class("flex items-center gap-2")],
+	return hstack(h, { gap: "2" },
 		[
 			badge(h, { variant: "meta", pill: true, className: "gap-1.5 px-2.5 font-normal" }, [
 				statusDot(h, { tone: "ok" }),
@@ -73,9 +74,9 @@ const connectedRow = (
 			h.span(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 sm:w-44 sm:flex-none 2xl:w-52")],
 				[
-					h.span([h.Class("truncate text-sm font-semibold")], [entry.name]),
+					typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
 					...(connected?.context
-						? [h.span([h.Class("truncate text-xs text-muted-foreground")], [connected.context])]
+						? [typography(h, { size: "xs", tone: "muted", truncate: true }, [connected.context])]
 						: []),
 				],
 			),
@@ -84,7 +85,7 @@ const connectedRow = (
 				[
 					h.Class(
 						cn(
-							"flex items-center gap-2",
+							hstackClass({ gap: "2" }),
 							connected?.stat ? "w-36 shrink-0" : "min-w-36 flex-1 justify-end",
 						),
 					),
@@ -94,14 +95,13 @@ const connectedRow = (
 					...(connected === null && overview.kind === "unavailable" && overview.reason === "failed"
 						? [
 								statusDot(h, { tone: "neutral" }),
-								h.span([h.Class("text-xs text-muted-foreground")], ["Unknown"]),
+								typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
 							]
 						: [
 								statusDot(h, {
 									tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
 								}),
-								h.span(
-									[h.Class("truncate text-xs")],
+								typography(h, { size: "xs", truncate: true },
 									[connected?.stateLabel ?? "Not configured"],
 								),
 							]),
@@ -158,13 +158,11 @@ export const newBadge = (h: H): Html => badge(h, { variant: "info", size: "sm" }
 const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"], onSelect: Select): Html =>
 	cardButton(h, { onClick: onSelect(entry.id), className: "flex items-center gap-4 p-4" }, [
 			entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" },
 				[
-					h.span(
-						[h.Class("flex min-w-0 items-center gap-2")],
+					hstack(h, { gap: "2", shrink: true, as: "span" },
 						[
-							h.span([h.Class("truncate text-sm font-semibold")], [entry.name]),
+							typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
 							...(entry.isNew === true ? [newBadge(h)] : []),
 						],
 					),
@@ -209,8 +207,7 @@ const firstStatusFailure = (model: Model): LoadFailure | null =>
 
 /** The hub's title and its one-line description, tight under the `<h1>` like every page header. */
 export const hubTitle = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-1")],
+	vstack(h, { gap: "1" },
 		[
 			pageTitle(h, { className: "leading-8" }, ["Integrations"]),
 			pageDescription(
@@ -220,7 +217,7 @@ export const hubTitle = (h: H): Html =>
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Sources())),
-							h.Class("text-foreground underline underline-offset-2"),
+							h.Class(typographyClass({ tone: "foreground", className: "underline underline-offset-2" })),
 						],
 						["Sources"],
 					),
@@ -264,12 +261,10 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 		[
 			...(connected.length > 0 || loading.length > 0
 				? [
-						h.section(
-							[h.Class("flex flex-col gap-2")],
+						vstack(h, { gap: "2", as: "section" },
 							[
 								// Unknown status must not read as healthy, so the header goes neutral.
-								h.div(
-									[h.Class("flex items-center justify-between gap-3")],
+								hstack(h, { gap: "3", justify: "between" },
 									[
 										eyebrow(h, { variant: "label" }, [
 											statusFailure === null ? "Connected" : "Destinations",
@@ -277,8 +272,7 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 										...(statusFailure === null
 											? []
 											: [
-													h.div(
-														[h.Class("flex items-center gap-2")],
+													hstack(h, { gap: "2" },
 														[
 															errorState(h, {
 																failure: statusFailure,
@@ -316,8 +310,7 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 					]
 				: []),
 			...shelves.map((shelf) =>
-				h.section(
-					[h.Class("flex flex-col gap-2")],
+				vstack(h, { gap: "2", as: "section" },
 					[
 						eyebrow(h, { variant: "label" }, [shelf.label]),
 						h.div(

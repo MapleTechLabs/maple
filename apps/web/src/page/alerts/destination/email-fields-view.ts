@@ -14,6 +14,8 @@ import {
 	visibleIds,
 } from "./email-fields"
 import type { DestinationForm } from "./form"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `EmailMemberPicker`'s `MultiSelectCombobox` (packages/ui/src/components/multi-select-combobox.tsx)
 // in chips mode: each chip and row shows the member's avatar and name, never the user id.
@@ -38,16 +40,17 @@ const avatar = <M>(h: HtmlBuilder<M>, option: MemberOption | undefined): Html =>
 	avatarFallback(h, { className: "size-5" }, initialsFrom(option?.label ?? ""))
 
 const memberItem = (h: H, option: MemberOption | undefined, value: string): ReadonlyArray<Html> => [
-	h.span(
-		[h.Class("flex min-w-0 items-center gap-2")],
-		[
-			avatar(h, option),
-			h.span([h.Class("min-w-0 flex-1 truncate")], [option?.label ?? value]),
-			...(option?.meta == null
-				? []
-				: [h.span([h.Class("shrink-0 text-muted-foreground text-xs tabular-nums")], [option.meta])]),
-		],
-	),
+	hstack(h, { gap: "2", shrink: true, as: "span" }, [
+		avatar(h, option),
+		typography(h, { truncate: true, className: "min-w-0 flex-1" }, [option?.label ?? value]),
+		...(option?.meta == null
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", numeric: true, className: "shrink-0" }, [
+						option.meta,
+					]),
+				]),
+	]),
 ]
 
 type Inputs<M> = Readonly<{

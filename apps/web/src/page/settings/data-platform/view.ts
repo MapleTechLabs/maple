@@ -32,6 +32,9 @@ import { settingsSection, settingsSections } from "../kit/section"
 import { type ConnectionField, Message, type Model, type Totals } from "./model"
 import { draftOf, isRunActive } from "./update"
 import { statusDot } from "../../../ui/status-dot"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -66,28 +69,25 @@ const connectionStatus = (h: H, settings: OrgClickHouseSettingsResponse, inputs:
 	return h.div(
 		[h.Class("flex flex-col gap-1 border-b px-4 py-3 text-xs")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					statusDot(h, { tone: isFailing ? "crit" : "ok" }),
-					h.span([], [isFailing ? "Connection error" : "Connected"]),
-					...(settings.lastSyncAt === null
-						? []
-						: [
-								h.span(
-									[h.Class("text-muted-foreground")],
-									[
-										"· last checked ",
-										relativeTime(h, {
-											value: settings.lastSyncAt,
-											nowMs: inputs.nowMs,
-											timeZone: inputs.timeZone,
-										}),
-									],
-								),
-							]),
-				],
-			),
+			hstack(h, { gap: "2" }, [
+				statusDot(h, { tone: isFailing ? "crit" : "ok" }),
+				h.span([], [isFailing ? "Connection error" : "Connected"]),
+				...(settings.lastSyncAt === null
+					? []
+					: [
+							h.span(
+								[h.Class("text-muted-foreground")],
+								[
+									"· last checked ",
+									relativeTime(h, {
+										value: settings.lastSyncAt,
+										nowMs: inputs.nowMs,
+										timeZone: inputs.timeZone,
+									}),
+								],
+							),
+						]),
+			]),
 			...(isFailing && settings.lastSyncError !== null
 				? [h.p([h.Class(cn("break-words pl-3.5", TONE_TEXT.crit))], [settings.lastSyncError])]
 				: []),
@@ -142,50 +142,42 @@ const connectionPanel = (
 		Message.ChangedConnection({ field: fieldName, value })
 	return panel(h, { className: "overflow-hidden" }, [
 		connectionStatus(h, settings, inputs),
-		h.div(
-			[h.Class("flex flex-col gap-4 p-4")],
-			[
+		vstack(h, { gap: "4", className: "p-4" }, [
+			textField(h, {
+				name: "url",
+				label: "ClickHouse URL",
+				placeholder: "https://your-clickhouse.example.com:8123",
+				value: draft.url,
+				isDisabled: isBusy,
+				description: "HTTP interface URL (port 8123 by default).",
+				onInput: onField("url"),
+			}),
+			grid(h, { sm: 2, gap: "3" }, [
 				textField(h, {
-					name: "url",
-					label: "ClickHouse URL",
-					placeholder: "https://your-clickhouse.example.com:8123",
-					value: draft.url,
+					name: "user",
+					label: "User",
+					value: draft.user,
 					isDisabled: isBusy,
-					description: "HTTP interface URL (port 8123 by default).",
-					onInput: onField("url"),
+					onInput: onField("user"),
 				}),
-				h.div(
-					[h.Class("grid gap-3 sm:grid-cols-2")],
-					[
-						textField(h, {
-							name: "user",
-							label: "User",
-							value: draft.user,
-							isDisabled: isBusy,
-							onInput: onField("user"),
-						}),
-						textField(h, {
-							name: "database",
-							label: "Database",
-							value: draft.database,
-							isDisabled: isBusy,
-							onInput: onField("database"),
-						}),
-					],
-				),
 				textField(h, {
-					name: "password",
-					label: "Password",
-					type: "password",
-					placeholder: settings.configured
-						? "Leave blank to keep the current password"
-						: "Optional",
-					value: model.password,
+					name: "database",
+					label: "Database",
+					value: draft.database,
 					isDisabled: isBusy,
-					onInput: (value) => Message.ChangedPassword({ value }),
+					onInput: onField("database"),
 				}),
-			],
-		),
+			]),
+			textField(h, {
+				name: "password",
+				label: "Password",
+				type: "password",
+				placeholder: settings.configured ? "Leave blank to keep the current password" : "Optional",
+				value: model.password,
+				isDisabled: isBusy,
+				onInput: (value) => Message.ChangedPassword({ value }),
+			}),
+		]),
 		h.div(
 			[
 				h.Class(
@@ -205,25 +197,19 @@ const connectionPanel = (
 							["Disconnect"],
 						)
 					: h.span([], []),
-				h.div(
-					[h.Class("flex items-center gap-3")],
-					[
-						h.span(
-							[h.Class("text-muted-foreground text-xs")],
-							["Saving runs a test query first."],
-						),
-						button(
-							h,
-							{
-								size: "sm",
-								isLoading: model.isSaving,
-								isDisabled: isBusy || !isValid,
-								attributes: [h.OnClick(Message.ClickedSave())],
-							},
-							["Save and test"],
-						),
-					],
-				),
+				hstack(h, { gap: "3" }, [
+					typography(h, { size: "xs", tone: "muted" }, ["Saving runs a test query first."]),
+					button(
+						h,
+						{
+							size: "sm",
+							isLoading: model.isSaving,
+							isDisabled: isBusy || !isValid,
+							attributes: [h.OnClick(Message.ClickedSave())],
+						},
+						["Save and test"],
+					),
+				]),
 			],
 		),
 		confirmDialog(h, {
@@ -279,7 +265,7 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 			size: 14,
 			className: cn("shrink-0", summary.tone),
 		}),
-		h.span([h.Class("truncate font-mono")], [entry.name]),
+		typography(h, { mono: true, truncate: true }, [entry.name]),
 		h.span([h.Class("text-muted-foreground")], [kindLabel(entry.kind)]),
 		h.span([h.Class(cn("ml-auto shrink-0", summary.tone))], [summary.text]),
 	]
@@ -304,7 +290,7 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 					icon(h, "ChevronRightIcon", {
 						size: 14,
 						className: cn(
-							"text-muted-foreground shrink-0 transition-transform",
+							typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }),
 							isExpanded && "rotate-90",
 						),
 					}),
@@ -380,7 +366,10 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 						),
 					],
 					[
-						h.dt([h.Class("text-muted-foreground text-2xs font-medium")], [label]),
+						h.dt(
+							[h.Class(typographyClass({ size: "2xs", tone: "muted", weight: "medium" }))],
+							[label],
+						),
 						h.dd(
 							[
 								h.Class(
@@ -420,7 +409,10 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 							icon(h, "ChevronRightIcon", {
 								size: 14,
 								className: cn(
-									"text-muted-foreground shrink-0 transition-transform",
+									typographyClass({
+										tone: "muted",
+										className: "shrink-0 transition-transform",
+									}),
 									model.showUpToDate && "rotate-90",
 								),
 							}),
@@ -510,13 +502,14 @@ const applyRunStatus = (h: H, status: OrgClickHouseApplySchemaStatus | null): Re
 									". Apply again once the cause is fixed.",
 								],
 							),
-							h.ul(
-								[h.Class("flex flex-col gap-1")],
+							vstack(
+								h,
+								{ gap: "1", as: "ul" },
 								status.skipped.map((item) =>
 									h.li(
 										[h.Key(item.id), h.Class("text-muted-foreground")],
 										[
-											h.span([h.Class("text-foreground font-mono")], [item.id]),
+											typography(h, { tone: "foreground", mono: true }, [item.id]),
 											": ",
 											item.reason,
 										],
@@ -543,10 +536,9 @@ const planList = (h: H, plan: ReturnType<typeof schemaApplyPlan>): Html => {
 		},
 	].filter((group) => group.items.length > 0)
 	if (groups.length === 0)
-		return h.p(
-			[h.Class("text-muted-foreground text-xs")],
-			["No tables or columns to add; only pending migrations run."],
-		)
+		return typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"No tables or columns to add; only pending migrations run.",
+		])
 	return h.div(
 		[h.Class("max-h-56 space-y-3 overflow-y-auto text-xs")],
 		groups.map((group) =>
@@ -613,8 +605,9 @@ const schemaSection = (h: H, model: Model, settings: OrgClickHouseSettingsRespon
 					),
 				],
 				[
-					h.span(
-						[h.Class("text-muted-foreground text-xs")],
+					typography(
+						h,
+						{ size: "xs", tone: "muted" },
 						settings.schemaVersion !== null && settings.lastSyncAt !== null
 							? [
 									"Last applied version",
@@ -716,7 +709,7 @@ const usageSection = (h: H, model: Model): Html => {
 					onEmpty: () => STATS.map((stat) => item(stat, skeleton(h, "h-[26px] w-24"))),
 					onFailure: () =>
 						STATS.map((stat) =>
-							item(stat, h.span([h.Class("text-sm text-muted-foreground")], [EMPTY_VALUE])),
+							item(stat, typography(h, { size: "sm", tone: "muted" }, [EMPTY_VALUE])),
 						),
 					onData: (totals) => STATS.map((stat) => item(stat, stat.format(totals[stat.key]))),
 				}),

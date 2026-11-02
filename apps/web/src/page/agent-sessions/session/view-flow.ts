@@ -32,6 +32,8 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The session flow: one lane per turn on the xyflow canvas.
 // TODO(list-navigation): the arrow-key node cursor is not ported.
@@ -68,35 +70,33 @@ const stepNode = (h: H, node: FlowNode, isSelected: boolean): ReadonlyArray<Html
 			],
 		},
 		[
-			h.span(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					icon(h, node.isErrored ? "CircleXmarkIcon" : CATEGORY_ICON[node.category], {
-						size: 12,
-						className: cn(
-							"shrink-0",
-							node.isErrored ? "text-severity-error" : CATEGORY_TEXT[node.category],
-						),
-					}),
-					h.span(
-						[h.Class("min-w-0 truncate text-xs"), h.Title(node.title)],
-						[shortTarget(node.title)],
+			hstack(h, { gap: "1.5", as: "span" }, [
+				icon(h, node.isErrored ? "CircleXmarkIcon" : CATEGORY_ICON[node.category], {
+					size: 12,
+					className: cn(
+						"shrink-0",
+						node.isErrored ? "text-severity-error" : CATEGORY_TEXT[node.category],
 					),
-					...(node.count > 1
-						? [
-								h.span(
-									[h.Class("shrink-0 text-2xs text-muted-foreground tabular-nums")],
-									["×", String(node.count)],
-								),
-							]
-						: []),
-				],
-			),
+				}),
+				typography(
+					h,
+					{ size: "xs", truncate: true, className: "min-w-0", attributes: [h.Title(node.title)] },
+					[shortTarget(node.title)],
+				),
+				...(node.count > 1
+					? [
+							h.span(
+								[h.Class("shrink-0 text-2xs text-muted-foreground tabular-nums")],
+								["×", String(node.count)],
+							),
+						]
+					: []),
+			]),
 			h.span(
 				[
 					h.Class(
 						cn(
-							"truncate text-2xs",
+							typographyClass({ size: "2xs", truncate: true }),
 							node.isErrored ? "text-severity-error" : "text-muted-foreground",
 						),
 					),
@@ -132,7 +132,9 @@ const laneLabel = (h: H, lane: FlowLane): Html => {
 						],
 						[formatDuration(lane.turn.durationMs)],
 					),
-					...(lane.turn.failed ? [h.p([h.Class("text-severity-error text-xs")], ["failed"])] : []),
+					...(lane.turn.failed
+						? [typography(h, { size: "xs", tone: "error", as: "p" }, ["failed"])]
+						: []),
 				],
 			),
 		],
@@ -250,27 +252,21 @@ const floor = (h: H, model: Model): Html =>
 						],
 						[
 							...LEGEND.map((category) =>
-								h.span(
-									[h.Key(category), h.Class("flex items-center gap-1.5")],
-									[
-										icon(h, CATEGORY_ICON[category], {
-											size: 12,
-											className: cn("shrink-0", CATEGORY_TEXT[category]),
-										}),
-										category,
-									],
-								),
-							),
-							h.span(
-								[h.Class("flex items-center gap-1.5")],
-								[
-									icon(h, "CircleXmarkIcon", {
+								hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(category)] }, [
+									icon(h, CATEGORY_ICON[category], {
 										size: 12,
-										className: "shrink-0 text-severity-error",
+										className: cn("shrink-0", CATEGORY_TEXT[category]),
 									}),
-									"error",
-								],
+									category,
+								]),
 							),
+							hstack(h, { gap: "1.5", as: "span" }, [
+								icon(h, "CircleXmarkIcon", {
+									size: 12,
+									className: "shrink-0 text-severity-error",
+								}),
+								"error",
+							]),
 						],
 					),
 					controls(h, model),

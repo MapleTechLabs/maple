@@ -32,6 +32,8 @@ import { skeleton } from "../../../ui/skeleton"
 import { statFigure } from "../../../ui/stat-figure"
 import { seriesLegend } from "../../kit/series-legend"
 import { Message, type Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -145,8 +147,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 pt-3")],
 				[
-					h.span(
-						[h.Class("text-2xs font-medium text-muted-foreground")],
+					typography(h, { size: "2xs", tone: "muted", weight: "medium" },
 						["Cumulative spend by feature"],
 					),
 					// Colors only: the amounts live in the figures and the cost breakdown.
@@ -232,7 +233,7 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html =>
 						"size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90 motion-reduce:transition-none",
 					attributes: [h.AriaHidden(true)],
 				}),
-				h.span([h.Class("text-xs font-medium")], ["Cost breakdown"]),
+				typography(h, { size: "xs", weight: "medium" }, ["Cost breakdown"]),
 				h.span(
 					[h.Class("truncate font-prose text-2xs text-muted-foreground")],
 					["What makes up the amount spent so far"],
@@ -291,11 +292,9 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 		h.div(
 			[h.Class("flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3")],
 			[
-				h.div(
-					[h.Class("flex items-center gap-2")],
+				hstack(h, { gap: "2" },
 					[
-						h.span(
-							[h.Class("text-sm font-medium")],
+						typography(h, { size: "sm", weight: "medium" },
 							[spend.planName === null ? "No plan" : sentenceCasePlanName(spend.planName)],
 						),
 						...(trial.planStatus === null

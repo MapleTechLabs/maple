@@ -25,6 +25,8 @@ import {
 	livePill,
 	type SessionsListOptions,
 } from "./sessions-parts"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // A session list row: its org button, tags and badges.
 
@@ -131,30 +133,29 @@ const userColumn = <M>(
 	return h.div(
 		[h.Class("relative min-w-0 flex-1 overflow-hidden")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					h.span(
-						[
-							h.Class(
-								cn("min-w-0 truncate text-sm font-medium", muted && "text-muted-foreground"),
-							),
-							h.Title(label),
-						],
-						[label],
-					),
-					...(isSessionLive(session, options.nowMs) ? [livePill(h, true)] : []),
-					startedAt(
-						h,
-						options,
-						session,
-						"ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden",
-					),
-				],
-			),
+			hstack(h, { gap: "2" }, [
+				h.span(
+					[
+						h.Class(cn("min-w-0 truncate text-sm font-medium", muted && "text-muted-foreground")),
+						h.Title(label),
+					],
+					[label],
+				),
+				...(isSessionLive(session, options.nowMs) ? [livePill(h, true)] : []),
+				startedAt(
+					h,
+					options,
+					session,
+					"ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden",
+				),
+			]),
 			truncatedText(
 				h,
-				{ text: entry, mono: secondary === entry, className: "mt-0.5 text-xs text-muted-foreground" },
+				{
+					text: entry,
+					mono: secondary === entry,
+					className: typographyClass({ size: "xs", tone: "muted", className: "mt-0.5" }),
+				},
 				[secondary],
 			),
 			h.div(
@@ -248,7 +249,7 @@ export const sessionListRow = <M>(
 							h.Class(
 								cn(
 									"whitespace-nowrap font-mono text-sm font-semibold tabular-nums",
-									lowSignal && "font-normal text-muted-foreground",
+									lowSignal && typographyClass({ tone: "muted", weight: "normal" }),
 								),
 							),
 						],
@@ -257,14 +258,11 @@ export const sessionListRow = <M>(
 					...(p95 !== undefined && p95 > 0 && durationMs !== null && durationMs > p95
 						? [longBadge(h, p95)]
 						: []),
-					h.span(
-						[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
-						[
-							countLabel(session.pageViews || 1, "page"),
-							" · ",
-							countLabel(session.clickCount, "click"),
-						],
-					),
+					typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
+						countLabel(session.pageViews || 1, "page"),
+						" · ",
+						countLabel(session.clickCount, "click"),
+					]),
 				],
 			),
 			deviceColumn(h, session),
@@ -275,7 +273,14 @@ export const sessionListRow = <M>(
 			),
 			h.div(
 				[h.Class(cn(COLUMNS.time, "relative items-center"))],
-				[startedAt(h, options, session, "whitespace-nowrap text-xs text-muted-foreground")],
+				[
+					startedAt(
+						h,
+						options,
+						session,
+						typographyClass({ size: "xs", tone: "muted", className: "whitespace-nowrap" }),
+					),
+				],
 			),
 		],
 	)
@@ -299,7 +304,7 @@ const deviceColumn = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 				[icon(h, deviceIconFor(session.deviceType), { className: "size-4" })],
 			),
 			...(session.country
-				? [h.span([h.Class("truncate text-xs text-muted-foreground")], [session.country])]
+				? [typography(h, { size: "xs", tone: "muted", truncate: true }, [session.country])]
 				: []),
 		],
 	)

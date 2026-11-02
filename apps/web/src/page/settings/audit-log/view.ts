@@ -37,6 +37,8 @@ import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
 import { ANYONE } from "./update"
 import { auditDetail, resourceHref } from "./view-detail"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass, vstack, vstackClass } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 type SettingsSearch = typeof SettingsSearchSchema.Type
@@ -155,7 +157,7 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 									onClick: Message.ClickedRangePreset({ value: option.key }),
 									className: cn(
 										"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-										option.key === activeKey ? "font-medium text-foreground" : "text-foreground-soft",
+										option.key === activeKey ? typographyClass({ tone: "foreground", weight: "medium" }) : "text-foreground-soft",
 									),
 									attributes: [h.Key(option.key)],
 								},
@@ -168,7 +170,7 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 							{
 								className: cn(
 									"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-									range.kind === "custom" ? "font-medium text-foreground" : "text-muted-foreground",
+									range.kind === "custom" ? typographyClass({ tone: "foreground", weight: "medium" }) : "text-muted-foreground",
 								),
 							},
 							["Custom range…"],
@@ -225,7 +227,7 @@ const actorCell = (h: H, entry: V2AuditLogEntry): Html => {
 	const actor = ACTOR_BADGES[entry.actor_type]
 	const name = actorDisplayName(entry)
 	return h.div(
-		[h.Class(cn(COL.actor, "flex items-center gap-1.5"))],
+		[h.Class(cn(COL.actor, hstackClass({ gap: "1.5" })))],
 		[
 			entry.actor_type === "user"
 				? avatarFallback(
@@ -260,8 +262,8 @@ const actionLabel = (h: H, action: string): ReadonlyArray<Html> => {
 	const label = auditActionLabel(action)
 	if (label === null) return [truncatedText(h, { mono: true, text: action, className: "text-xs" })]
 	return [
-		truncatedText(h, { text: label, className: "text-xs text-foreground" }),
-		truncatedText(h, { mono: true, text: action, className: "text-3xs text-muted-foreground" }),
+		truncatedText(h, { text: label, className: typographyClass({ size: "xs", tone: "foreground" }) }),
+		truncatedText(h, { mono: true, text: action, className: typographyClass({ size: "3xs", tone: "muted" }) }),
 	]
 }
 
@@ -269,7 +271,7 @@ const deniedBadge = (h: H) => badge(h, { variant: "crit", size: "sm", className:
 
 const resourceCell = (h: H, entry: V2AuditLogEntry): Html => {
 	const display = auditResourceDisplay(entry)
-	if (display === null) return h.span([h.Class("text-muted-foreground text-xs")], [EMPTY_VALUE])
+	if (display === null) return typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
 	if (display.link === null) return truncatedText(h, { text: display.text, className: "text-xs" })
 	return h.a(
 		[
@@ -310,7 +312,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 						[],
 					),
 					h.span(
-						[h.Class(cn(COL.time, "text-muted-foreground text-xs"))],
+						[h.Class(cn(COL.time, typographyClass({ size: "xs", tone: "muted" })))],
 						[
 							icon(h, "ChevronRightIcon", {
 								size: 12,
@@ -329,12 +331,11 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 					),
 					actorCell(h, entry),
 					h.div(
-						[h.Class(cn(COL.action, "flex min-w-0 flex-col"))],
+						[h.Class(cn(COL.action, vstackClass({ shrink: true })))],
 						[
-							h.div(
-								[h.Class("flex min-w-0 items-center gap-1.5")],
+							hstack(h, { gap: "1.5", shrink: true },
 								[
-									h.div([h.Class("flex min-w-0 flex-col")], actionLabel(h, entry.action)),
+									vstack(h, { shrink: true }, actionLabel(h, entry.action)),
 									...(isDenied ? [h.span([h.Class("@md:hidden")], [deniedBadge(h)])] : []),
 								],
 							),
@@ -342,7 +343,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 								? [
 										truncatedText(h, {
 											text: entry.denial_reason,
-											className: "text-muted-foreground text-2xs",
+											className: typographyClass({ size: "2xs", tone: "muted" }),
 										}),
 									]
 								: []),
@@ -430,11 +431,9 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			framed: false,
 		},
 		[
-			h.div(
-				[h.Class("flex flex-col gap-2")],
+			vstack(h, { gap: "2" },
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
+					hstack(h, { gap: "2", wrap: true },
 						[
 							dateRange(h, model, filters.range, inputs.timeZone),
 							personFilter(h, model, filters.actorId, inputs.apiKeys),
@@ -446,8 +445,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							}),
 						],
 					),
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-3")],
+					hstack(h, { gap: "3", wrap: true },
 						[
 							segmentedSelect(h, {
 								size: "sm",

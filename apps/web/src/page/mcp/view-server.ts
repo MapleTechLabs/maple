@@ -49,6 +49,10 @@ import {
 	toolColor,
 	volumeSpark,
 } from "./view-kit"
+import { typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
+import { columnClass } from "../../ui/column"
+import { swatch } from "../../ui/swatch"
 
 // `/mcp/:service`: the tools page's layout for one MCP server. Toolbar, scope, a metric strip that
 // picks the chart, the tools table, then who calls, why calls fail, the protocol and what is sent.
@@ -247,45 +251,36 @@ const toolRow = <M>(
 	options: ServerBodyOptions<M>,
 ): Html => {
 	const rate = errorRate(row)
-	return toolTableRow(
-		h,
-		{ onClick: options.onOpenTool(row.tool) },
-		[
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
-				[
-					h.span(
-						[
-							h.AriaHidden(true),
-							h.Class("size-2 shrink-0 rounded-xs"),
-							h.Style({ "background-color": toolColor(index) }),
-						],
-						[],
-					),
-					h.span([h.Class("block min-w-0 truncate font-mono text-xs text-foreground")], [row.tool]),
-				],
-			),
-			volumeSpark(h, options.env.spark, `mcp-tool-spark-${row.tool}`, row.spark),
-			numberCell(h, formatNumber(row.calls), "w-20 text-foreground"),
-			duration(h, row.p50, options.percentile === "p50", "hidden @min-[900px]/panel:block"),
-			duration(h, row.p90, options.percentile === "p90"),
-			duration(h, row.p95, options.percentile === "p95", "hidden @min-[900px]/panel:block"),
-			shareCell(h, { ratio: rate, max: maxRate, label: formatErrorRate(rate), tone: errorTone(rate) }),
-			h.span(
-				[h.Class("hidden w-28 shrink-0 pl-4 @min-[640px]/panel:block")],
-				[
-					row.topError === null
-						? h.span([h.Class("font-mono text-xs text-foreground-subtle")], [EMPTY_VALUE])
-						: errorTypeChip(h, row.topError),
-				],
-			),
-			lastSeenCell(h, row.lastCallMs, options.nowMs, options.env.timeZone),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
-				[icon(h, "ChevronRightIcon", { size: 14 })],
-			),
-		],
-	)
+	return toolTableRow(h, { onClick: options.onOpenTool(row.tool) }, [
+		hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
+			swatch(h, { ariaHidden: true, color: toolColor(index) }),
+			h.span([h.Class("block min-w-0 truncate font-mono text-xs text-foreground")], [row.tool]),
+		]),
+		volumeSpark(h, options.env.spark, `mcp-tool-spark-${row.tool}`, row.spark),
+		numberCell(h, formatNumber(row.calls), "w-20 text-foreground"),
+		duration(h, row.p50, options.percentile === "p50", "hidden @min-[900px]/panel:block"),
+		duration(h, row.p90, options.percentile === "p90"),
+		duration(h, row.p95, options.percentile === "p95", "hidden @min-[900px]/panel:block"),
+		shareCell(h, { ratio: rate, max: maxRate, label: formatErrorRate(rate), tone: errorTone(rate) }),
+		h.span(
+			[h.Class("hidden w-28 shrink-0 pl-4 @min-[640px]/panel:block")],
+			[
+				row.topError === null
+					? h.span([h.Class("font-mono text-xs text-foreground-subtle")], [EMPTY_VALUE])
+					: errorTypeChip(h, row.topError),
+			],
+		),
+		lastSeenCell(h, row.lastCallMs, options.nowMs, options.env.timeZone),
+		hstack(
+			h,
+			{
+				justify: "end",
+				as: "span",
+				className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+			},
+			[icon(h, "ChevronRightIcon", { size: 14 })],
+		),
+	])
 }
 
 const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
@@ -296,7 +291,7 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 			sectionTitle(h, "Tools", String(data.tools.length)),
 			toolTable(h, [
 				toolTableHead(h, [
-					th(h, { label: "Tool", width: "w-0 flex-1 min-w-0" }),
+					th(h, { label: "Tool", width: columnClass({ min: "0" }) }),
 					th(h, {
 						label: "Volume",
 						width: "w-28 shrink-0",
@@ -316,7 +311,10 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 						align: "right",
 						hidden: "hidden @min-[900px]/panel:flex",
 					}),
-					th(h, { label: "Failed", width: "w-36 shrink-0 pl-6" }),
+					th(h, {
+						label: "Failed",
+						width: columnClass({ width: "36", shrink: false, inset: "6" }),
+					}),
 					th(h, {
 						label: "Top error",
 						width: "w-28 shrink-0 pl-4",
@@ -487,10 +485,10 @@ const failureRow = <M>(h: HtmlBuilder<M>, row: McpFailureKind, calls: number): H
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2 text-xs")],
-						[row.label, ...row.codes.map((code) => attr(h, code))],
-					),
+					hstack(h, { gap: "2", wrap: true, className: typographyClass({ size: "xs" }) }, [
+						row.label,
+						...row.codes.map((code) => attr(h, code)),
+					]),
 					h.div([h.Class("mt-0.5 font-prose text-xs text-muted-foreground")], [row.detail]),
 				],
 			),
@@ -553,8 +551,7 @@ const coverageRow = <M>(h: HtmlBuilder<M>, row: McpCoverageRow): Html =>
 	)
 
 const methodsHead = <M>(h: HtmlBuilder<M>): Html => {
-	const label = (text: string, width: string) =>
-		eyebrow(h, { variant: "mono", className: width }, [text])
+	const label = (text: string, width: string) => eyebrow(h, { variant: "mono", className: width }, [text])
 	return h.div(
 		[h.Class("flex h-8 items-center gap-3 border-y border-border")],
 		[

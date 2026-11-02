@@ -5,12 +5,14 @@ import type { Keyed } from "../../data/keyed"
 import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
-import { item, itemActions, itemContent, itemMedia } from "../../ui/item"
-import { skeleton } from "../../ui/skeleton"
+import { itemActions, itemContent, mediaCard } from "../../ui/item"
+import { skeletonBlock } from "../../ui/skeleton"
 import { type IntegrationBrand, integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { Message, type StatusName } from "./message"
 import type { Model } from "./model"
 import { disconnectDialog, type SharedDisconnect } from "./view-disconnect"
+import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // The shell of a connected integration's card (Railway, Supabase) and its status-load states.
 
@@ -39,35 +41,31 @@ export const connectedIntegrationCard = (
 	model: Model,
 	options: ConnectedIntegrationCardOptions,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-				itemMedia(h, {}, [integrationIconPlate(h, options.brand)]),
-				itemContent(
-					h,
-					[
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
-							[heading(h, { level: 3, variant: "section" }, [options.title]), options.badge],
-						),
-						h.p([h.Class("text-xs text-muted-foreground")], options.summary),
-						...(options.notice === null ? [] : [options.notice]),
-						...(options.actionsAtEnd === true ? [] : [options.actions]),
-						disconnectDialog(h, model, options.integration),
-					],
-					"gap-2",
-				),
-				...(options.actionsAtEnd === true ? [itemActions(h, [options.actions])] : []),
-			]),
-			options.table,
-			...(options.footer === undefined ? [] : [options.footer]),
-		],
-	)
+	vstack(h, { gap: "4" }, [
+		mediaCard(h, integrationIconPlate(h, options.brand), [
+			itemContent(
+				h,
+				[
+					hstack(h, { gap: "2", wrap: true }, [
+						heading(h, { level: 3, variant: "section" }, [options.title]),
+						options.badge,
+					]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, options.summary),
+					...(options.notice === null ? [] : [options.notice]),
+					...(options.actionsAtEnd === true ? [] : [options.actions]),
+					disconnectDialog(h, model, options.integration),
+				],
+				"gap-2",
+			),
+			...(options.actionsAtEnd === true ? [itemActions(h, [options.actions])] : []),
+		]),
+		options.table,
+		...(options.footer === undefined ? [] : [options.footer]),
+	])
 
 /** Access is gone: says what stopped and how to resume. */
 export const integrationAlertNotice = (h: H, text: string): Html =>
-	h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [text])
+	typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [text])
 
 /** The last sync error, clamped to two lines with the full text on hover. */
 export const integrationErrorNotice = (h: H, label: string, error: string): Html =>
@@ -77,7 +75,7 @@ export const integrationErrorNotice = (h: H, label: string, error: string): Html
 	)
 
 export const integrationActions = (h: H, buttons: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex flex-wrap gap-2")], buttons)
+	hstack(h, { gap: "2", align: "stretch", wrap: true }, buttons)
 
 export const disconnectButton = (h: H, model: Model): Html =>
 	button(
@@ -98,8 +96,8 @@ export const integrationStatusCard = <S>(
 	options: Readonly<{ name: StatusName; failureTitle: string; render: (status: S) => Html }>,
 ): Html =>
 	AsyncData.match(status.data, {
-		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "32" }),
+		onLoading: () => skeletonBlock(h, { height: "32" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

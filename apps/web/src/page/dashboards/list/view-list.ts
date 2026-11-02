@@ -24,6 +24,8 @@ import type { ListDashboard, Model, Scope } from "./model"
 import { isReadOnly, rowMenuIdOf } from "./update"
 import { deleteDialog } from "./view-dialogs"
 import { tagFilterView } from "./view-tag-filter"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `DashboardList`: the dashboards as rows.
 
@@ -238,7 +240,7 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 								[
 									h.Class(
 										cn(
-											"truncate text-sm font-medium",
+											typographyClass({ size: "sm", weight: "medium", truncate: true }),
 											dashboard.name.trim() !== ""
 												? "text-foreground"
 												: "text-muted-foreground",
@@ -280,15 +282,16 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 								[
 									h.Class(
 										cn(
-											"font-mono text-2xs",
+											typographyClass({ size: "2xs", mono: true }),
 											isEmpty ? "text-severity-warn" : "text-foreground",
 										),
 									),
 								],
 								[isEmpty ? "no widgets" : widgets],
 							),
-							h.span(
-								[h.Class("text-muted-foreground truncate font-mono text-3xs")],
+							typography(
+								h,
+								{ size: "3xs", tone: "muted", mono: true, truncate: true },
 								isEmpty ? [] : [dashboard.readsShort],
 							),
 						],
@@ -345,11 +348,10 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 			h.span(
 				[h.Class("flex min-w-0 grow flex-wrap items-baseline gap-x-2.5 gap-y-0.5")],
 				[
-					h.span([h.Class("text-sm font-medium text-foreground")], ["New dashboard"]),
-					h.span(
-						[h.Class("text-muted-foreground text-2xs")],
-						["Start blank, or pick a template already wired to metrics you send."],
-					),
+					typography(h, { size: "sm", tone: "foreground", weight: "medium" }, ["New dashboard"]),
+					typography(h, { size: "2xs", tone: "muted" }, [
+						"Start blank, or pick a template already wired to metrics you send.",
+					]),
 				],
 			),
 			icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
@@ -368,27 +370,22 @@ const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
 					"Templates check what your services already send, so you can start from one that will render data immediately. Or build from an empty canvas.",
 				]),
 			]),
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-center gap-2")],
-				[
-					linkButton(
-						h,
-						{ size: "sm", href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })) },
-						["Browse templates"],
-					),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isDisabled: isReadOnly,
-							attributes: [h.OnClick(Message.ClickedCreate())],
-						},
-						["Create blank dashboard"],
-					),
-					docsLink(h, "dashboards"),
-				],
-			),
+			hstack(h, { gap: "2", justify: "center", wrap: true }, [
+				linkButton(h, { size: "sm", href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })) }, [
+					"Browse templates",
+				]),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isDisabled: isReadOnly,
+						attributes: [h.OnClick(Message.ClickedCreate())],
+					},
+					["Create blank dashboard"],
+				),
+				docsLink(h, "dashboards"),
+			]),
 		],
 		"py-16",
 	)
@@ -414,37 +411,34 @@ const nothingMatched = (h: H, model: Model): Html => {
 				]),
 			]),
 			emptyContent(h, [
-				h.div(
-					[h.Class("flex items-center gap-2")],
-					[
-						...(isSearching
-							? [
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											attributes: [h.OnClick(Message.ClickedClearSearch())],
-										},
-										["Clear search"],
-									),
-								]
-							: []),
-						...(tagsOf(model.search).length > 0
-							? [
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											attributes: [h.OnClick(Message.ClickedShowAllTags())],
-										},
-										["Show all"],
-									),
-								]
-							: []),
-					],
-				),
+				hstack(h, { gap: "2" }, [
+					...(isSearching
+						? [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedClearSearch())],
+									},
+									["Clear search"],
+								),
+							]
+						: []),
+					...(tagsOf(model.search).length > 0
+						? [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedShowAllTags())],
+									},
+									["Show all"],
+								),
+							]
+						: []),
+				]),
 			]),
 		],
 		"py-14",
@@ -529,7 +523,7 @@ export const listBody = (
 						h.div(
 							[h.Class("flex items-center gap-2 border-y border-border py-2 text-2xs")],
 							[
-								h.span([h.Class("font-mono text-foreground")], [String(sections.matched)]),
+								typography(h, { tone: "foreground", mono: true }, [String(sections.matched)]),
 								h.span(
 									[h.Class("text-muted-foreground")],
 									["of ", String(dashboards.length), " match name, description or tag"],

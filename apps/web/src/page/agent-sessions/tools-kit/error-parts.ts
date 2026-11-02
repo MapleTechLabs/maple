@@ -12,6 +12,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "../../../ui/heading"
 import { inlineCodeClassName } from "../../../ui/inline-code"
 import { statusDot } from "../../../ui/status-dot"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstackClass } from "../../../ui/stack"
 
 // The pieces the Errors table (and the error modal) draw a failure with.
 
@@ -56,7 +58,7 @@ const headingToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): ReadonlyArra
 		case "mask":
 			return [maskChip(h, token.label, token.raw, HEADING_MASK)]
 		case "at":
-			return [h.span([h.Class("font-normal text-muted-foreground")], [" at "])]
+			return [typography(h, { tone: "muted", weight: "normal" }, [" at "])]
 		case "break":
 			return [h.br([])]
 		case "path":
@@ -84,7 +86,7 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 	const tail = tokens.slice(pathIndex + 1)
 	return heading(
 		h,
-		{ level: 2, variant: "code", className: "flex min-w-0 flex-col gap-0.5" },
+		{ level: 2, variant: "code", className: vstackClass({ gap: "0.5", shrink: true }) },
 		[
 			h.span(
 				[h.Class(cn(HEADING, "line-clamp-2 break-words"))],
@@ -121,7 +123,7 @@ const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
 		case "text":
 			return [h.span([h.Class("text-foreground-soft")], [token.text])]
 		case "value":
-			return [h.span([h.Class("font-medium text-foreground")], [token.text])]
+			return [typography(h, { tone: "foreground", weight: "medium" }, [token.text])]
 		case "mask":
 			return [maskChip(h, token.label, token.raw)]
 		case "at":
@@ -129,7 +131,7 @@ const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
 		case "break":
 			return [h.span([h.Class("text-foreground-subtle")], [" ⏎ "])]
 		case "path":
-			return pathParts(h, token.parts, "font-medium text-foreground")
+			return pathParts(h, token.parts, typographyClass({ tone: "foreground", weight: "medium" }))
 	}
 }
 

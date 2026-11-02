@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { isExcluded } from "../../components/infra/planetscale/branch-selection"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { choiceCard } from "../../ui/choice-card"
+import { choiceCard, choiceCheckClass } from "../../ui/choice-card"
 import { button } from "../../ui/button"
 import * as DialogView from "../../ui/dialog-view"
 import * as Field from "../../ui/field"
@@ -11,6 +11,8 @@ import { skeleton } from "../../ui/skeleton"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { parsePatternList } from "./planetscale"
+import { typography } from "../../ui/typography"
+import { vstack } from "../../ui/stack"
 
 // `PlanetScaleOrgPicker` and `OptionCard` / `DrawnCheck`, shared by Choose data and the Edit data dialog.
 // The check is drawn at its end state.
@@ -21,15 +23,7 @@ const drawnCheck = (h: H, isChecked: boolean, className: string): Html =>
 	h.span(
 		[
 			h.AriaHidden(true),
-			h.Class(
-				cn(
-					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
-					isChecked
-						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-border-strong",
-					className,
-				),
-			),
+			h.Class(choiceCheckClass(isChecked, true, className)),
 		],
 		[
 			h.svg(
@@ -67,8 +61,7 @@ const optionCard = (h: H, name: string, isChecked: boolean): Html =>
 			h.div(
 				[h.Class("min-w-0 flex-1 pt-px")],
 				[
-					h.span(
-						[h.Class("block text-sm font-semibold")],
+					typography(h, { size: "sm", weight: "semibold", className: "block" },
 						[h.span([h.Class("truncate")], [name])],
 					),
 				],
@@ -135,14 +128,12 @@ export const orgChoices = (h: H, model: Model): Html => {
 	if (AsyncData.isIdle(organizations) || AsyncData.isLoading(organizations))
 		return skeleton(h, "h-24 w-full")
 	if (AsyncData.isFailure(organizations) || AsyncData.isStale(organizations))
-		return h.p(
-			[h.Class("text-xs text-muted-foreground")],
+		return typography(h, { size: "xs", tone: "muted", as: "p" },
 			[
 				"Couldn't list the authorized PlanetScale organizations. The authorization may have been revoked; reconnect to try again.",
 			],
 		)
-	return h.div(
-		[h.Class("flex flex-col gap-1.5"), h.Role("radiogroup"), h.AriaLabel("PlanetScale organization")],
+	return vstack(h, { gap: "1.5", attributes: [h.Role("radiogroup"), h.AriaLabel("PlanetScale organization")] },
 		organizations.data.organizations.map((org) => optionCard(h, org.name, card.selectedOrg === org.name)),
 	)
 }
@@ -153,8 +144,7 @@ export const branchFields = (h: H, model: Model): Html => {
 	const hasPatterns =
 		parsePatternList(model.planetscaleCard.includeBranches.value).length > 0 ||
 		parsePatternList(model.planetscaleCard.excludeBranches.value).length > 0
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
+	return vstack(h, { gap: "3" },
 		[
 			branchField(h, model, "include", {
 				id: "ps-include-branches",
@@ -180,11 +170,9 @@ export const branchFields = (h: H, model: Model): Html => {
 			...(preview === null || !hasPatterns
 				? []
 				: [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
 							[
-								h.span(
-									[h.Class("font-medium text-foreground")],
+								typography(h, { tone: "foreground", weight: "medium" },
 									[String(preview.kept), " of ", String(preview.total)],
 								),
 								" ",
@@ -210,8 +198,7 @@ export const branchFields = (h: H, model: Model): Html => {
 
 const dialogPicker = (h: H, model: Model): Html => {
 	const card = model.planetscaleCard
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(h, { gap: "4" },
 		[
 			orgChoices(h, model),
 			branchFields(h, model),

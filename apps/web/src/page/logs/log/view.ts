@@ -7,7 +7,7 @@ import { errorState } from "../../../ui/error-state"
 import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { keyValue, keyValueList } from "../../../ui/key-value"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonBlock } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import * as LogDetail from "../detail"
@@ -23,7 +23,7 @@ const bodyExcerpt = (body: string): string => {
 }
 
 const loading = (h: H): ReadonlyArray<Html> => [
-	skeleton(h, "h-24 w-full rounded-md"),
+	skeletonBlock(h, { height: "24" }),
 	h.div(
 		[h.Class("grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]")],
 		[skeleton(h, "h-64 w-full rounded-md"), skeleton(h, "h-64 w-full rounded-md")],

@@ -9,6 +9,7 @@ import { kbd } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import * as Popover from "../../../ui/popover"
 import { scrollArea } from "../../../ui/scroll-area"
+import { typography } from "../../../ui/typography"
 
 // A quick-pick menu: a popover with a type-to-filter input
 // (an inline, always-open Autocomplete, first match highlighted) and one row per choice; a digit
@@ -185,7 +186,7 @@ const row = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>, item: QuickPickItem,
 		},
 		[
 			h.span([h.Class("flex size-4 shrink-0 items-center justify-center")], [item.icon]),
-			h.span([h.Class("min-w-0 flex-1 truncate")], [item.label]),
+			typography(h, { truncate: true, className: "min-w-0 flex-1" }, [item.label]),
 			...(item.value === options.current
 				? [icon(h, "CheckIcon", { size: 14, className: "shrink-0 text-foreground" })]
 				: []),
@@ -193,11 +194,7 @@ const row = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>, item: QuickPickItem,
 				? []
 				: [
 						h.span(
-							[
-								h.Class(
-									"w-3 shrink-0 text-right text-2xs tabular-nums text-foreground-subtle",
-								),
-							],
+							[h.Class("w-3 shrink-0 text-right text-2xs tabular-nums text-foreground-subtle")],
 							[item.shortcut],
 						),
 					]),

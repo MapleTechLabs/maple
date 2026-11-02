@@ -16,6 +16,7 @@ import type { ConfigureModel } from "./gcp-configure-schema"
 import type { Model } from "./model"
 import { Message } from "./message"
 import { gcpCommand, SMALL } from "./view-gcp-parts"
+import { vstack } from "../../ui/stack"
 
 // `ScopeFields`: what kind of thing to connect, and its ID.
 
@@ -51,25 +52,22 @@ export const scopeFields = (
 		!isGcpProjectId(hostProjectId)
 	const overlap = gcpOverlapNote(configure.scopeType, existing)
 	return [
-		h.div(
-			[h.Class("flex flex-col gap-2")],
-			[
-				heading(h, { level: 3, variant: "subsection" }, ["What should Maple watch?"]),
-				ToggleGroup.view(h, {
-					model: configure.scopeGroup,
-					toParentMessage: (message) => Message.GotGcpScopeTypeMessage({ message }),
-					items: SCOPE_TYPES.map((scopeType) => ({
-						value: scopeType,
-						label: GCP_SCOPE_NAMES[scopeType],
-					})),
-					variant: "outline",
-					// Shrinks on a phone, where "Organization" otherwise runs past the card.
-					itemClassName: "min-w-0 flex-1 px-1 text-sm sm:px-3",
-					className: "w-full",
-				}),
-				h.p([h.Class(SMALL)], [scope.description]),
-			],
-		),
+		vstack(h, { gap: "2" }, [
+			heading(h, { level: 3, variant: "subsection" }, ["What should Maple watch?"]),
+			ToggleGroup.view(h, {
+				model: configure.scopeGroup,
+				toParentMessage: (message) => Message.GotGcpScopeTypeMessage({ message }),
+				items: SCOPE_TYPES.map((scopeType) => ({
+					value: scopeType,
+					label: GCP_SCOPE_NAMES[scopeType],
+				})),
+				variant: "outline",
+				// Shrinks on a phone, where "Organization" otherwise runs past the card.
+				itemClassName: "min-w-0 flex-1 px-1 text-sm sm:px-3",
+				className: "w-full",
+			}),
+			h.p([h.Class(SMALL)], [scope.description]),
+		]),
 		idField(h, configure, {
 			field: "scopeId",
 			control: "gcp-scope-id",

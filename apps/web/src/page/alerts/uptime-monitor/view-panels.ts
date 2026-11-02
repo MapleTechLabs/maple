@@ -45,6 +45,9 @@ import {
 import { Message } from "./message"
 import type { CheckPoint, CheckSample, CheckStats, Model, PhasePoint, UptimeWindow } from "./model"
 import { CHECK_HEALTH_FILL, uptimePanelBody } from "../shared/uptime-view"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { chartFrameClass } from "../../../ui/chart-frame"
 
 // The monitor page's panels: response time, the checks list and the side panels.
 
@@ -339,7 +342,7 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 				gradientPrefix: "uptime-latency",
 				showTooltip: true,
 			}),
-			className: "h-full w-full aspect-auto",
+			className: chartFrameClass("fill"),
 			legend: fixedMetricLegend(
 				h,
 				series.map((entry) => ({
@@ -437,7 +440,7 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 											...(isStatsRefreshing(model) ? [h.AriaBusy(true)] : []),
 											h.Class(
 												cn(
-													"flex flex-col gap-2",
+													vstackClass({ gap: "2" }),
 													refreshingClass(isStatsRefreshing(model)),
 												),
 											),
@@ -589,11 +592,9 @@ const checkBars = (
 const barsSlot = createLazy()
 
 const cardRow = (h: H, key: string, color: string, label: string, value: string): Html =>
-	h.span(
-		[h.Key(key), h.Class("flex items-center justify-between gap-4")],
+	hstack(h, { gap: "4", justify: "between", as: "span", attributes: [h.Key(key)] },
 		[
-			h.span(
-				[h.Class("flex items-center gap-1.5 text-muted-foreground")],
+			hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) },
 				[
 					h.span(
 						[h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })],
@@ -602,7 +603,7 @@ const cardRow = (h: H, key: string, color: string, label: string, value: string)
 					label,
 				],
 			),
-			h.span([h.Class("font-mono tabular-nums")], [value]),
+			typography(h, { mono: true, numeric: true }, [value]),
 		],
 	)
 
@@ -626,7 +627,7 @@ const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string):
 				[h.Class("flex items-center justify-between gap-4 font-medium")],
 				[
 					h.span([h.Class(sample.ok ? TONE_TEXT.info : TONE_TEXT.crit)], [result]),
-					h.span([h.Class("font-mono tabular-nums")], [formatMs(sample.durationMs)]),
+					typography(h, { mono: true, numeric: true }, [formatMs(sample.durationMs)]),
 				],
 			),
 			...(sample.phases === null
@@ -649,7 +650,7 @@ const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string):
 const formatPhaseMs = (ms: number): string => (ms < 10 ? `${ms.toFixed(1)} ms` : formatMs(ms))
 
 const legendItem = (h: H, key: string, swatch: Html, label: string): Html =>
-	h.span([h.Key(key), h.Class("flex items-center gap-1.5")], [swatch, label])
+	hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(key)] }, [swatch, label])
 
 const swatch = (h: H, color: string): Html =>
 	h.span([h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })], [])
@@ -728,8 +729,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 			return panel(h, {}, [
 				panelHeader(h, {
 					title: "Every check",
-					action: h.span(
-						[h.Class("text-xs text-muted-foreground tabular-nums")],
+					action: typography(h, { size: "xs", tone: "muted", numeric: true },
 						[
 							stats.samplesTruncated
 								? `Newest ${formatNumber(stats.samples.length)} checks`
@@ -742,7 +742,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 					h.div(
 						[
 							...(isStatsRefreshing(model) ? [h.AriaBusy(true)] : []),
-							h.Class(cn("flex flex-col gap-2", refreshingClass(isStatsRefreshing(model)))),
+							h.Class(cn(vstackClass({ gap: "2" }), refreshingClass(isStatsRefreshing(model)))),
 						],
 						[
 							h.div(
@@ -910,7 +910,7 @@ const PhaseChartView = Submodel.defineView<
 		chartId: "uptime-phases",
 		spec: inputs.spec,
 		ariaLabel: "Response time breakdown by phase",
-		className: "h-full w-full aspect-auto",
+		className: chartFrameClass("fill"),
 		legend: inputs.legend,
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) =>
@@ -1003,7 +1003,7 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 					h.Title(
 						`Each check is a span in the ${UPTIME_SERVICE} service, namespace ${MAPLE_SERVICES_NAMESPACE}.`,
 					),
-					h.Class("text-xs text-primary hover:underline active:underline"),
+					h.Class(typographyClass({ size: "xs", tone: "primary", className: "hover:underline active:underline" })),
 				],
 				["View all checks in Traces"],
 			),
@@ -1026,14 +1026,13 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 						h.li(
 							[h.Key(`${row.at}-${index}`), h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm"))],
 							[
-								h.span(
-									[h.Class("font-mono text-xs text-muted-foreground")],
+								typography(h, { size: "xs", tone: "muted", mono: true },
 									[formatAlertTime(row.at, timeZone)],
 								),
 								h.span(
 									[
 										h.Class(
-											cn("font-mono text-xs", row.ok ? TONE_TEXT.info : TONE_TEXT.crit),
+											cn(typographyClass({ size: "xs", mono: true }), row.ok ? TONE_TEXT.info : TONE_TEXT.crit),
 										),
 									],
 									[
@@ -1044,16 +1043,15 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 											: String(row.statusCode),
 									],
 								),
-								h.span(
-									[h.Class("font-mono text-xs tabular-nums")],
+								typography(h, { size: "xs", mono: true, numeric: true },
 									[formatMs(row.durationMs)],
 								),
 								h.span(
-									[h.Class(cn("truncate text-xs", TONE_TEXT.crit)), h.Title(row.result)],
+									[h.Class(cn(typographyClass({ size: "xs", truncate: true }), TONE_TEXT.crit)), h.Title(row.result)],
 									[row.result],
 								),
 								row.traceId === null
-									? h.span([h.Class("text-right text-xs text-muted-foreground")], ["–"])
+									? typography(h, { size: "xs", tone: "muted", className: "text-right" }, ["–"])
 									: h.a(
 											[
 												h.Href(traceHref(row.traceId)),
@@ -1135,7 +1133,7 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 					h,
 					"Service",
 					h.a(
-						[h.Href(serviceHref), h.Class("text-primary hover:underline active:underline")],
+						[h.Href(serviceHref), h.Class(typographyClass({ tone: "primary", className: "hover:underline active:underline" }))],
 						[monitor.service_name],
 					),
 				),
@@ -1160,8 +1158,7 @@ export const heartbeatPanel = (h: H, model: Model, pingUrl: string): Html =>
 				[h.Class("mb-3 text-sm text-muted-foreground")],
 				["Send a GET or POST here when the job succeeds. Add /fail to report a failure right away."],
 			),
-			h.div(
-				[h.Class("flex flex-col gap-3")],
+			vstack(h, { gap: "3" },
 				[
 					snippet(h, model, "url", "Ping URL", pingUrl),
 					snippet(

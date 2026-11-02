@@ -12,6 +12,8 @@ import { statRail, statRailItem } from "../../kit/stat-rail"
 import { SEVERITY_TOKEN } from "../kit/severity"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `IssueExceptionPanel` and `IssueStats`: what broke, then how often and since when.
 
@@ -41,52 +43,47 @@ export const exceptionPanel = (h: H, model: Model, issue: ErrorIssueDocument): H
 		panelHeader(h, {
 			title: "What broke",
 		}),
-		h.div(
-			[h.Class("flex flex-col gap-4 p-4")],
-			[
-				message
-					? h.p(
-							[
-								h.Class(
-									"max-h-48 min-w-0 overflow-y-auto break-words whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground",
-								),
-							],
-							[message],
-						)
-					: h.p(
-							[h.Class("text-sm text-muted-foreground")],
-							["This error carries no message, only its type and where it was raised."],
-						),
-				issueField(h, "Raised at", [
-					issue.topFrame
-						? h.div(
-								[h.Class("group/mono flex min-w-0 items-start gap-1.5")],
-								[
-									h.code(
-										[
-											h.Class(
-												"min-w-0 break-words font-mono text-xs leading-5 text-foreground-soft",
-											),
-										],
-										breakablePath(h, issue.topFrame),
-									),
-									CopyButton.view(h, {
-										model: model.fingerprintCopy,
-										value: issue.topFrame,
-										label: "top frame",
-										toParentMessage: (message) =>
-											Message.GotFingerprintCopyMessage({ message }),
-										className: COPY_CLASS,
-									}),
-								],
-							)
-						: h.span(
-								[h.Class("text-xs text-muted-foreground")],
-								["No stack frame was attributed to this fingerprint."],
+		vstack(h, { gap: "4", className: "p-4" }, [
+			message
+				? h.p(
+						[
+							h.Class(
+								"max-h-48 min-w-0 overflow-y-auto break-words whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground",
 							),
-				]),
-			],
-		),
+						],
+						[message],
+					)
+				: typography(h, { size: "sm", tone: "muted", as: "p" }, [
+						"This error carries no message, only its type and where it was raised.",
+					]),
+			issueField(h, "Raised at", [
+				issue.topFrame
+					? h.div(
+							[h.Class("group/mono flex min-w-0 items-start gap-1.5")],
+							[
+								h.code(
+									[
+										h.Class(
+											"min-w-0 break-words font-mono text-xs leading-5 text-foreground-soft",
+										),
+									],
+									breakablePath(h, issue.topFrame),
+								),
+								CopyButton.view(h, {
+									model: model.fingerprintCopy,
+									value: issue.topFrame,
+									label: "top frame",
+									toParentMessage: (message) =>
+										Message.GotFingerprintCopyMessage({ message }),
+									className: COPY_CLASS,
+								}),
+							],
+						)
+					: typography(h, { size: "xs", tone: "muted" }, [
+							"No stack frame was attributed to this fingerprint.",
+						]),
+			]),
+		]),
 	])
 }
 

@@ -19,6 +19,9 @@ import { formIntervalMinutes, intervalWindowIssue, shortestFittingInterval } fro
 import { Message } from "./message"
 import type { Model } from "./model"
 import { formSelect } from "./view-select"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
+import { queryPanelBar } from "../../kit/query-panel-bar"
 
 // `RawSqlEditorPanel` without the bucket control, and the alert's reducer row under it
 // (`RawQueryEditor`).
@@ -44,16 +47,14 @@ const REDUCER_OPTIONS = Object.entries(RAW_QUERY_REDUCER_LABELS).map(([value, te
 
 const header = (h: H, model: SqlView, sql: string): Html => {
 	const issue = rawSqlIssue(sql)
-	return h.div(
-		[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
-		[
+	return queryPanelBar(h, [
 			iconButton(
 				h,
 				{
 					size: "icon-xs",
 					label: model.isSqlCollapsed ? "Expand SQL" : "Collapse SQL",
 					hasTooltip: false,
-					className: "text-muted-foreground hover:text-foreground active:text-foreground",
+					className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
 				},
 				[icon(h, model.isSqlCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
@@ -66,7 +67,7 @@ const header = (h: H, model: SqlView, sql: string): Html => {
 				},
 				["sql"],
 			),
-			h.span([h.Class("text-2xs text-muted-foreground")], ["ClickHouse"]),
+			typography(h, { size: "2xs", tone: "muted" }, ["ClickHouse"]),
 			h.div([h.Class("flex-1")], []),
 			...(issue !== null && !model.isSqlCollapsed
 				? [
@@ -178,7 +179,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 				METER_TICKS.map((tickMs) =>
 					h.span(
 						[
-							h.Class(cn("absolute -translate-x-full whitespace-nowrap", tickMs === limitMs && "font-medium text-foreground")),
+							h.Class(cn("absolute -translate-x-full whitespace-nowrap", tickMs === limitMs && typographyClass({ tone: "foreground", weight: "medium" }))),
 							h.Style({ left: `${(tickMs / timing.probeLimitMs) * 100}%` }),
 						],
 						[formatQuerySeconds(tickMs)],
@@ -188,7 +189,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
 				[
-					h.p([h.Class("text-xs text-muted-foreground")], [meterNote(form, timing, interval, limitMs)]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [meterNote(form, timing, interval, limitMs)]),
 					...(shortest === null
 						? []
 						: [
@@ -217,7 +218,7 @@ const performanceHints = (h: H, sql: string): ReadonlyArray<Html> =>
 				icon(h, "BoltIcon", { size: 14, className: "mt-px shrink-0 text-severity-warn" }),
 				h.span(
 					[],
-					[h.span([h.Class("font-medium text-foreground")], [`Line ${hint.line}: `]), hint.message],
+					[typography(h, { tone: "foreground", weight: "medium" }, [`Line ${hint.line}: `]), hint.message],
 				),
 			],
 		),
@@ -246,11 +247,9 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm, timing: Ale
 								: [h.div([h.Class("p-3 space-y-3")], [editor(h, form.rawQuerySql), macros(h)])]),
 						],
 					),
-					h.div(
-						[h.Class("flex items-center gap-3")],
+					hstack(h, { gap: "3" },
 						[
-							h.span(
-								[h.Class("text-2xs text-muted-foreground ml-auto")],
+							typography(h, { size: "2xs", tone: "muted", className: "ml-auto" },
 								["Targets ", inlineCode(h, {}, ["alert rule"])],
 							),
 						],
@@ -260,8 +259,7 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm, timing: Ale
 			formSelect(h, model.reducerSelect, REDUCER_SELECT_ID, form.rawQueryReducer, REDUCER_OPTIONS, {
 				className: "h-8 w-40",
 				toView: (parts) =>
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-3")],
+					hstack(h, { gap: "3", wrap: true },
 						[
 							label(
 								h,
@@ -272,8 +270,7 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm, timing: Ale
 								["Reduce each window by"],
 							),
 							...parts,
-							h.p(
-								[h.Class("min-w-0 flex-1 text-xs text-muted-foreground")],
+							typography(h, { size: "xs", tone: "muted", as: "p", className: "min-w-0 flex-1" },
 								[
 									"Return a numeric ",
 									inlineCode(h, {}, ["value"]),
@@ -288,7 +285,7 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm, timing: Ale
 						],
 					),
 			}),
-			...(sampleWarning === null ? [] : [h.p([h.Class("text-xs text-severity-warn")], [sampleWarning])]),
+			...(sampleWarning === null ? [] : [typography(h, { size: "xs", tone: "warning", as: "p" }, [sampleWarning])]),
 			...(timing === null ? [] : [queryTimeMeter(h, form, timing)]),
 			...(timing !== null && isNearLimit(form, timing) ? performanceHints(h, form.rawQuerySql) : []),
 		],

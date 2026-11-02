@@ -1,11 +1,21 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
 import { activeRepositoriesOf } from "./derive"
 import { Message, type Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // No target yet: the on-ramp. Without a GitHub installation it points at GitHub; with one, at Add target.
 
@@ -23,10 +33,9 @@ export const auditSteps = (h: H): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "What one audit run does",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
-				["Runs stop at the org's monthly spend limit and report tokens and cost"],
-			),
+			action: typography(h, { size: "xs", tone: "muted" }, [
+				"Runs stop at the org's monthly spend limit and report tokens and cost",
+			]),
 		}),
 		h.ul(
 			// Steps wrap onto more rows as the column narrows, like the run's phase strip.
@@ -35,8 +44,8 @@ export const auditSteps = (h: H): Html =>
 				h.li(
 					[h.Key(step.title), h.Class("flex min-w-44 flex-1 flex-col gap-1.5 bg-card px-4 py-4")],
 					[
-						h.span([h.Class("text-sm font-medium")], [step.title]),
-						h.span([h.Class("text-xs text-muted-foreground")], [step.body]),
+						typography(h, { size: "sm", weight: "medium" }, [step.title]),
+						typography(h, { size: "xs", tone: "muted" }, [step.body]),
 					],
 				),
 			),
@@ -57,31 +66,23 @@ export const emptyOnRamp = (h: H, model: Model): Html => {
 				]),
 			]),
 			emptyContent(h, [
-				h.div(
-					[h.Class("flex flex-wrap items-center justify-center gap-2")],
-					[
-						isConnected
-							? model.isAdmin
-								? button(h, { attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
-										icon(h, "PlusIcon"),
-										"Add target",
-									])
-								: h.span(
-										[h.Class("text-sm text-muted-foreground")],
-										["An org admin can add the first target."],
-									)
-							: linkButton(h, { href: integrations }, [
-									icon(h, "GithubIcon"),
-									"Connect GitHub",
-								]),
-					],
-				),
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
-					["Read-only access to the repositories you pick. Target code is never executed."],
-				),
+				hstack(h, { gap: "2", justify: "center", wrap: true }, [
+					isConnected
+						? model.isAdmin
+							? button(h, { attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
+									icon(h, "PlusIcon"),
+									"Add target",
+								])
+							: typography(h, { size: "sm", tone: "muted" }, [
+									"An org admin can add the first target.",
+								])
+						: linkButton(h, { href: integrations }, [icon(h, "GithubIcon"), "Connect GitHub"]),
+				]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"Read-only access to the repositories you pick. Target code is never executed.",
+				]),
 			]),
 		],
-		"rounded-md border border-dashed md:py-14",
+		emptyFrameClass("dashed"),
 	)
 }

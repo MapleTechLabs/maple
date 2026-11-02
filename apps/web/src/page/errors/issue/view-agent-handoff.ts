@@ -12,6 +12,8 @@ import { icon, type IconName } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `GetItFixed`: the two ways to a fix, the user's own coding agent and Maple's investigation.
 
@@ -61,11 +63,12 @@ const lane = (
 				],
 			),
 			h.div([h.Class("flex flex-1 flex-col gap-1")], options.body),
-			h.div([h.Class("flex flex-wrap items-center gap-2")], options.actions),
+			hstack(h, { gap: "2", wrap: true }, options.actions),
 		],
 	)
 
-const lead = (h: H, text: string): Html => h.p([h.Class("text-sm font-medium text-foreground")], [text])
+const lead = (h: H, text: string): Html =>
+	typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [text])
 const note = (h: H, children: ReadonlyArray<Html | string>): Html =>
 	h.p([h.Class("max-w-[60ch] text-xs leading-5 text-muted-foreground")], children)
 
@@ -88,9 +91,7 @@ const agentLane = (h: H, model: Model, prompt: string): Html =>
 				copiedLabel: "Copied",
 				variant: "default",
 				size: "sm",
-				// The copy button's own muted ink is for ghost buttons; keep the fill's.
-				className:
-					"text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
+				keepsFillInk: true,
 				toParentMessage: (message) => Message.GotPromptCopyMessage({ message }),
 			}),
 			linkButton(

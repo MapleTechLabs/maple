@@ -9,6 +9,8 @@ import { textarea } from "../../../ui/textarea"
 import { Message, type Model, parentCategories, type TextField } from "./form"
 import { ALL_CATEGORIES } from "./state"
 import { RULES_COPY } from "./copy"
+import { typography } from "../../../ui/typography"
+import { vstackClass } from "../../../ui/stack"
 
 // The form's text fields and lenses (`ReviewRulesForm`).
 
@@ -132,7 +134,7 @@ export const lenses = (h: H, model: Model): Html => {
 	const current = model.state.categories ?? parentCategories(model)
 	const isRepository = model.mode === "repository"
 	return h.fieldset(
-		[h.Class("flex flex-col gap-2")],
+		[h.Class(vstackClass({ gap: "2" }))],
 		[
 			h.legend(
 				[h.Class("mb-2 flex w-full items-center justify-between gap-3 text-sm font-medium")],
@@ -185,7 +187,7 @@ export const lenses = (h: H, model: Model): Html => {
 					)
 				}),
 			),
-			h.p([h.Class("text-xs text-muted-foreground")], [RULES_COPY.lensesHint]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [RULES_COPY.lensesHint]),
 		],
 	)
 }

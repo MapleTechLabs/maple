@@ -33,6 +33,8 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { MAX_PREVIEW_WIDGETS } from "./update"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
 
@@ -119,75 +121,66 @@ const livePreview = (h: H, model: Model, timeZone: string): Html =>
 const previewBody = (h: H, model: Model, timeZone: string, variables: VariableValues): Html => {
 	const preview = { widgets: model.previewWidgets }
 	if (preview.widgets.length === 0)
-		return h.p(
-			[h.Class("text-muted-foreground text-xs")],
-			["This template starts you with an empty dashboard."],
-		)
+		return typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"This template starts you with an empty dashboard.",
+		])
 	const shown = preview.widgets.slice(0, MAX_PREVIEW_WIDGETS)
 	const hidden = preview.widgets.length - shown.length
 	const cols = model.previewWidth > 0 ? colsForWidth(model.previewWidth) : CANONICAL_COLS
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
-		[
-			h.div(
-				[
-					h.Class("grid gap-2"),
-					h.Style({ "grid-template-columns": `repeat(${cols}, 1fr)` }),
-					h.OnMount(MeasurePreview()),
-				],
-				shown.map((widget) =>
-					h.keyed("div")(
-						widget.id,
-						[
-							h.Class("min-w-0"),
-							h.Style({
-								"grid-column": `span ${Math.min(widget.layout.w, cols)}`,
-								height: `${heightFor(widget)}px`,
-							}),
-						],
-						[
-							widgetTile(
+	return vstack(h, { gap: "2" }, [
+		h.div(
+			[
+				h.Class("grid gap-2"),
+				h.Style({ "grid-template-columns": `repeat(${cols}, 1fr)` }),
+				h.OnMount(MeasurePreview()),
+			],
+			shown.map((widget) =>
+				h.keyed("div")(
+					widget.id,
+					[
+						h.Class("min-w-0"),
+						h.Style({
+							"grid-column": `span ${Math.min(widget.layout.w, cols)}`,
+							height: `${heightFor(widget)}px`,
+						}),
+					],
+					[
+						widgetTile(
+							h,
+							{
 								h,
-								{
-									h,
-									state: dataStateOf(
-										model.requests,
-										widget,
-										model.gates[widget.id] ?? null,
-									),
-									isEdit: false,
-									menu: null,
-									isMenuOpen: false,
-									hasGrip: false,
-									configure: null,
-									chart: model.charts[widget.id] ?? Chart.init(),
-									themeColors: model.themeColors,
-									chartRuntime: model.chartRuntime,
-									nowMs: model.nowMs,
-									timeZone,
-									tableSort: model.tableSorts[widget.id] ?? { key: null, dir: "desc" },
-									variables,
-									onChart: (message) =>
-										Message.GotChartMessage({ widgetId: widget.id, message }),
-									onSort: (field, isText) =>
-										Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
-								},
-								widget,
-							),
-						],
-					),
+								state: dataStateOf(model.requests, widget, model.gates[widget.id] ?? null),
+								isEdit: false,
+								menu: null,
+								isMenuOpen: false,
+								hasGrip: false,
+								configure: null,
+								chart: model.charts[widget.id] ?? Chart.init(),
+								themeColors: model.themeColors,
+								chartRuntime: model.chartRuntime,
+								nowMs: model.nowMs,
+								timeZone,
+								tableSort: model.tableSorts[widget.id] ?? { key: null, dir: "desc" },
+								variables,
+								onChart: (message) =>
+									Message.GotChartMessage({ widgetId: widget.id, message }),
+								onSort: (field, isText) =>
+									Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
+							},
+							widget,
+						),
+					],
 				),
 			),
-			...(hidden > 0
-				? [
-						h.p(
-							[h.Class("text-muted-foreground text-xs")],
-							[`${hidden} more ${pluralize(hidden, "widget")} below the fold.`],
-						),
-					]
-				: []),
-		],
-	)
+		),
+		...(hidden > 0
+			? [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`${hidden} more ${pluralize(hidden, "widget")} below the fold.`,
+					]),
+				]
+			: []),
+	])
 }
 
 /** `RequirementBlock`: what the org needs before the widgets fill in. */
@@ -203,119 +196,110 @@ const requirementBlock = (
 	const isReady = readiness?.ready !== false
 	const lastSeen = readiness?.lastSeen ?? null
 	return [
-		h.div(
-			[h.Class("flex flex-col gap-2.5")],
-			[
-				eyebrow(h, { variant: "label" }, ["What it needs"]),
-				h.div(
-					[h.Class("flex items-start gap-2.5")],
-					[
-						isReady
-							? h.span(
-									[
-										h.Class(
-											"bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-xs",
-										),
-									],
-									[icon(h, "CheckIcon", { size: 10, className: "text-background" })],
-								)
-							: h.span(
-									[h.Class("border-input size-4 shrink-0 rounded-full border-[1.5px]")],
-									[],
-								),
-						h.div(
-							[h.Class("flex min-w-0 grow flex-col gap-1")],
-							[
-								h.div(
-									[h.Class("flex flex-wrap items-baseline gap-2.5")],
-									[
-										...(readiness?.prefixLabel === null ||
-										readiness?.prefixLabel === undefined
-											? []
-											: [
-													h.span(
-														[
-															h.Class(
-																cn(
-																	"font-mono text-sm",
-																	isReady
-																		? "text-foreground"
-																		: "text-muted-foreground",
-																),
+		vstack(h, { gap: "2.5" }, [
+			eyebrow(h, { variant: "label" }, ["What it needs"]),
+			h.div(
+				[h.Class("flex items-start gap-2.5")],
+				[
+					isReady
+						? h.span(
+								[
+									h.Class(
+										"bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-xs",
+									),
+								],
+								[icon(h, "CheckIcon", { size: 10, className: "text-background" })],
+							)
+						: h.span([h.Class("border-input size-4 shrink-0 rounded-full border-[1.5px]")], []),
+					h.div(
+						[h.Class("flex min-w-0 grow flex-col gap-1")],
+						[
+							h.div(
+								[h.Class("flex flex-wrap items-baseline gap-2.5")],
+								[
+									...(readiness?.prefixLabel === null ||
+									readiness?.prefixLabel === undefined
+										? []
+										: [
+												h.span(
+													[
+														h.Class(
+															cn(
+																typographyClass({ size: "sm", mono: true }),
+																isReady
+																	? "text-foreground"
+																	: "text-muted-foreground",
 															),
-														],
-														[readiness.prefixLabel],
-													),
-												]),
-										h.span(
-											[
-												h.Class(
-													cn(
-														"text-sm",
-														isReady ? "text-foreground" : "text-muted-foreground",
-													),
+														),
+													],
+													[readiness.prefixLabel],
 												),
-											],
-											[
-												isReady
-													? requirement.kind === "telemetry"
-														? "trace data is arriving"
-														: "metrics are arriving"
-													: `no matching metrics in ${READINESS_WINDOW_LABEL}`,
-											],
-										),
-										...(requirement.kind !== "telemetry" && readiness !== undefined
-											? [
-													h.span(
-														[
-															h.Class(
-																"text-muted-foreground ml-auto shrink-0 font-mono text-2xs",
-															),
-														],
-														[
-															String(readiness.metricCount),
-															" ",
-															pluralize(readiness.metricCount, "metric"),
-															...(lastSeen === null ||
-															!Number.isFinite(toEpochMs(lastSeen))
-																? []
-																: [
-																		" · ",
-																		relativeTime(h, {
-																			value: lastSeen,
-																			nowMs,
-																			timeZone,
-																			prefix: "last seen",
-																			tooltip: "title",
-																		}),
-																	]),
-														],
-													),
-												]
-											: []),
-									],
-								),
-								h.p(
-									[h.Class("text-muted-foreground text-2xs")],
-									[
-										isReady ? "Collected by" : "Emitted by",
-										" ",
-										requirement.collector,
-										".",
-										...(!isReady &&
-										requirement.hint !== undefined &&
-										requirement.hint !== null &&
-										requirement.hint !== ""
-											? [` ${requirement.hint}`]
-											: []),
-									],
-								),
-							],
-						),
-					],
-				),
-			],
-		),
+											]),
+									h.span(
+										[
+											h.Class(
+												cn(
+													"text-sm",
+													isReady ? "text-foreground" : "text-muted-foreground",
+												),
+											),
+										],
+										[
+											isReady
+												? requirement.kind === "telemetry"
+													? "trace data is arriving"
+													: "metrics are arriving"
+												: `no matching metrics in ${READINESS_WINDOW_LABEL}`,
+										],
+									),
+									...(requirement.kind !== "telemetry" && readiness !== undefined
+										? [
+												h.span(
+													[
+														h.Class(
+															"text-muted-foreground ml-auto shrink-0 font-mono text-2xs",
+														),
+													],
+													[
+														String(readiness.metricCount),
+														" ",
+														pluralize(readiness.metricCount, "metric"),
+														...(lastSeen === null ||
+														!Number.isFinite(toEpochMs(lastSeen))
+															? []
+															: [
+																	" · ",
+																	relativeTime(h, {
+																		value: lastSeen,
+																		nowMs,
+																		timeZone,
+																		prefix: "last seen",
+																		tooltip: "title",
+																	}),
+																]),
+													],
+												),
+											]
+										: []),
+								],
+							),
+							typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+								isReady ? "Collected by" : "Emitted by",
+								" ",
+								requirement.collector,
+								".",
+								...(!isReady &&
+								requirement.hint !== undefined &&
+								requirement.hint !== null &&
+								requirement.hint !== ""
+									? [` ${requirement.hint}`]
+									: []),
+							]),
+						],
+					),
+				],
+			),
+		]),
 	]
 }
 
@@ -324,69 +308,62 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 	template.parameters.length === 0
 		? []
 		: [
-				h.div(
-					[h.Class("flex flex-col gap-2.5")],
-					[
-						eyebrow(h, { variant: "label" }, ["Parameters"]),
-						h.div(
-							[h.Class("flex max-w-95 flex-col gap-4")],
-							template.parameters.map((parameter) =>
-								field(
-									h,
-									{
-										className: "items-stretch gap-1.75",
-										state: IDLE,
-										attributes: [h.Key(parameter.key)],
-									},
-									[
-										h.div(
-											[h.Class("flex items-baseline gap-2")],
-											[
-												fieldLabel(
-													h,
-													{ ids: paramIds(parameter.key), state: IDLE },
-													parameter.label,
-												),
-												h.span(
-													[h.Class("text-muted-foreground text-2xs")],
-													[parameter.required ? "required" : "optional"],
-												),
-											],
+				vstack(h, { gap: "2.5" }, [
+					eyebrow(h, { variant: "label" }, ["Parameters"]),
+					h.div(
+						[h.Class("flex max-w-95 flex-col gap-4")],
+						template.parameters.map((parameter) =>
+							field(
+								h,
+								{
+									className: "items-stretch gap-1.75",
+									state: IDLE,
+									attributes: [h.Key(parameter.key)],
+								},
+								[
+									hstack(h, { gap: "2", align: "baseline" }, [
+										fieldLabel(
+											h,
+											{ ids: paramIds(parameter.key), state: IDLE },
+											parameter.label,
 										),
-										input(h, {
-											id: `template-param-${parameter.key}`,
-											attributes: [
-												h.Value(model.parameters[parameter.key] ?? ""),
-												...(parameter.placeholder === undefined ||
-												parameter.placeholder === null
-													? []
-													: [h.Placeholder(parameter.placeholder)]),
-												h.OnInput((value) =>
-													Message.ChangedParameter({ key: parameter.key, value }),
+										typography(h, { size: "2xs", tone: "muted" }, [
+											parameter.required ? "required" : "optional",
+										]),
+									]),
+									input(h, {
+										id: `template-param-${parameter.key}`,
+										attributes: [
+											h.Value(model.parameters[parameter.key] ?? ""),
+											...(parameter.placeholder === undefined ||
+											parameter.placeholder === null
+												? []
+												: [h.Placeholder(parameter.placeholder)]),
+											h.OnInput((value) =>
+												Message.ChangedParameter({ key: parameter.key, value }),
+											),
+										],
+									}),
+									...(parameter.description === undefined ||
+									parameter.description === null ||
+									parameter.description === ""
+										? []
+										: [
+												fieldDescription(
+													h,
+													{
+														ids: paramIds(parameter.key),
+														className: "text-2xs",
+														state: IDLE,
+													},
+													parameter.description,
 												),
-											],
-										}),
-										...(parameter.description === undefined ||
-										parameter.description === null ||
-										parameter.description === ""
-											? []
-											: [
-													fieldDescription(
-														h,
-														{
-															ids: paramIds(parameter.key),
-															className: "text-2xs",
-															state: IDLE,
-														},
-														parameter.description,
-													),
-												]),
-									],
-								),
+											]),
+								],
 							),
 						),
-					],
-				),
+					),
+				]),
 			]
 
 /** The sticky create row: Create, or Set up + Create it anyway for a gated template. */
@@ -472,61 +449,45 @@ export const detailPanel = (
 		template.id,
 		[h.Class("flex flex-col gap-6 bg-inherit p-8")],
 		[
-			h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					h.div(
-						[h.Class("flex items-center gap-3")],
+			vstack(h, { gap: "3" }, [
+				hstack(h, { gap: "3" }, [
+					h.span(
 						[
-							h.span(
-								[
-									h.Class(
-										"border-border bg-card flex size-8.5 shrink-0 items-center justify-center rounded-md border",
-									),
-								],
-								[icon(h, templateIcon(template.id, template.category), { size: 16 })],
-							),
-							h.div(
-								[h.Class("flex min-w-0 flex-col gap-1")],
-								[
-									heading(h, { level: 2, variant: "title" }, [template.name]),
-									h.div(
-										[h.Class("text-muted-foreground flex items-center gap-2 text-2xs")],
-										[
-											h.span(
-												[],
-												[CATEGORY_LABELS.get(template.category) ?? template.category],
-											),
-											h.span([h.Class("text-border")], ["/"]),
-											h.span(
-												[h.Class("font-mono")],
-												[
-													widgetCountLabel(template),
-													...(composition === "" ? [] : [` · ${composition}`]),
-												],
-											),
-										],
-									),
-								],
+							h.Class(
+								"border-border bg-card flex size-8.5 shrink-0 items-center justify-center rounded-md border",
 							),
 						],
+						[icon(h, templateIcon(template.id, template.category), { size: 16 })],
 					),
-					h.p(
-						[h.Class("text-muted-foreground max-w-140 text-sm leading-relaxed")],
-						[template.description],
-					),
-				],
-			),
-			h.div(
-				[h.Class("flex flex-col gap-2")],
-				[
-					livePreview(h, model, timeZone),
-					h.p(
-						[h.Class("text-foreground-subtle text-2xs")],
-						["That's the dashboard you'd get right now."],
-					),
-				],
-			),
+					vstack(h, { gap: "1", shrink: true }, [
+						heading(h, { level: 2, variant: "title" }, [template.name]),
+						h.div(
+							[h.Class("text-muted-foreground flex items-center gap-2 text-2xs")],
+							[
+								h.span([], [CATEGORY_LABELS.get(template.category) ?? template.category]),
+								h.span([h.Class("text-border")], ["/"]),
+								h.span(
+									[h.Class("font-mono")],
+									[
+										widgetCountLabel(template),
+										...(composition === "" ? [] : [` · ${composition}`]),
+									],
+								),
+							],
+						),
+					]),
+				]),
+				h.p(
+					[h.Class("text-muted-foreground max-w-140 text-sm leading-relaxed")],
+					[template.description],
+				),
+			]),
+			vstack(h, { gap: "2" }, [
+				livePreview(h, model, timeZone),
+				typography(h, { size: "2xs", tone: "subtle", as: "p" }, [
+					"That's the dashboard you'd get right now.",
+				]),
+			]),
 			...requirementBlock(h, template, readiness, model.nowMs ?? 0, timeZone),
 			...parameterFields(h, model, template),
 			createRow(h, model, template, isReady),

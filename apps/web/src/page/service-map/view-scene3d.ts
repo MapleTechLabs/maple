@@ -32,6 +32,8 @@ import {
 	WatchTheme,
 } from "./scene3d"
 import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
+import { hstack } from "../../ui/stack"
+import { layer } from "../../ui/layer"
 
 // The 3D viewport: the perspective bar, the
 // paper section with the canvas wrappers, the timber sign labels, the HUD, legend and camera
@@ -335,8 +337,7 @@ const overlays = <M>(
 				),
 			],
 			(["healthy", "elevated", "degraded"] as const).map((status) =>
-				h.span(
-					[h.Class("flex items-center gap-1.5")],
+				hstack(h, { gap: "1.5", as: "span" },
 					[
 						statusDot(h, {
 							tone: "custom",
@@ -413,21 +414,21 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 				[
 					scene,
 					// The island fades into the paper instead of stopping at the canvas edge.
-					h.div(
-						[
-							h.Class("pointer-events-none absolute inset-0"),
-							h.AriaHidden(true),
-							h.Style({
-								"background-image": `radial-gradient(ellipse at center, transparent 58%, ${palette.paper} 100%)`,
-							}),
-						],
+					layer(
+						h,
+						{
+							attributes: [
+								h.AriaHidden(true),
+								h.Style({
+									"background-image": `radial-gradient(ellipse at center, transparent 58%, ${palette.paper} 100%)`,
+								}),
+							],
+						},
 						[],
 					),
-					h.div(
-						[
-							h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
-							h.AriaLabel("Map nodes"),
-						],
+					layer(
+						h,
+						{ clip: true, attributes: [h.AriaLabel("Map nodes")] },
 						[
 							...nodeLabels(h, topology, selectedId, palette, toMessage),
 							...linkTags(

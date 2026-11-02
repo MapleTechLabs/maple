@@ -7,6 +7,7 @@ import * as SelectView from "../../../ui/select-view"
 import { searchInput } from "../../../ui/search-input"
 import { switchControl } from "../../../ui/switch"
 import { listToolbar } from "../../kit/list-toolbar"
+import { hstackClass } from "../../../ui/stack"
 
 // The tool filter toolbar and its facet selects.
 
@@ -96,7 +97,7 @@ export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>
 	const filters = h.div(
 		[
 			...(config.isWaiting ? [h.AriaBusy(true)] : []),
-			h.Class(cn("flex flex-wrap items-center gap-2", refreshingClass(config.isWaiting))),
+			h.Class(cn(hstackClass({ gap: "2", wrap: true }), refreshingClass(config.isWaiting))),
 		],
 		[
 			...config.selects,

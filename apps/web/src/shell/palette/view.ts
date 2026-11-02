@@ -19,6 +19,8 @@ import { type Glyph, groupEntries, type PaletteEntry } from "./entries"
 import { MeasurePaletteList } from "./command"
 import { Message, type Model } from "./model"
 import { type Context, shownEntries } from "./update"
+import { typographyClass } from "../../ui/typography"
+import { hstack, hstackClass } from "../../ui/stack"
 
 /**
  * Layout-free wrapper: group labels take the sidebar's uppercase tracked style, and a short scroll
@@ -57,10 +59,10 @@ const groupsOf = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<PaletteEntry>): R
 	}))
 
 const hint = <M>(h: HtmlBuilder<M>, key: string, text: string): Html =>
-	h.span(
-		[h.Class("flex items-center gap-1.5 text-muted-foreground")],
-		[kbd(h, "text-muted-foreground", [key]), text],
-	)
+	hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [
+		kbd(h, "text-muted-foreground", [key]),
+		text,
+	])
 
 /** `CommandEmpty`: `No results for “{query}”.`, the query its own text run. */
 const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>
@@ -102,7 +104,7 @@ export const paletteView = <M>(
 					[
 						commandList(h, model.list, groups, toList, {
 							isUnfiltered: true,
-							itemClassName: "flex items-center gap-2",
+							itemClassName: hstackClass({ gap: "2" }),
 							onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
 							empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
 							viewportAttributes: [

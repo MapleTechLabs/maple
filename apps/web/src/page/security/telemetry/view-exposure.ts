@@ -4,7 +4,14 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
@@ -31,6 +38,8 @@ import {
 	timelineValues,
 } from "./derive"
 import { type Exposure, Message, type Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The Exposure tab: probe paths a service answered, the week's totals, categories and sources.
 
@@ -44,7 +53,7 @@ const lastSeen = (h: H, clock: Clock, value: string): Html =>
 		timeZone: clock.timeZone,
 		variant: "orDate",
 		tooltip: "title",
-		className: "whitespace-nowrap text-xs text-muted-foreground",
+		className: typographyClass({ size: "xs", tone: "muted", className: "whitespace-nowrap" }),
 	})
 
 const count = (value: number): string => formatNumber(value)
@@ -69,13 +78,10 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 	panel(h, { className: "overflow-hidden border-severity-error-a3" }, [
 		panelHeader(h, {
 			className: "bg-severity-error-a1",
-			title: h.span(
-				[h.Class("flex items-center gap-2")],
-				[
-					icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
-					`${rows.length}${capped ? "+" : ""} probe ${rows.length === 1 && !capped ? "path" : "paths"} answered with a success`,
-				],
-			),
+			title: hstack(h, { gap: "2", as: "span" }, [
+				icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
+				`${rows.length}${capped ? "+" : ""} probe ${rows.length === 1 && !capped ? "path" : "paths"} answered with a success`,
+			]),
 		}),
 		h.p([h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")], [EXPOSED_COPY]),
 		table(h, { ariaLabel: "Probe paths answered with a success" }, [
@@ -136,7 +142,7 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 							tableCell(
 								h,
 								[categoryLabelOf(row.signature)],
-								cn("text-xs text-muted-foreground", WIDE_COLUMN),
+								cn(typographyClass({ size: "xs", tone: "muted" }), WIDE_COLUMN),
 							),
 							tableCell(h, [
 								badge(h, { variant: "crit", mono: true }, [String(row.httpStatus)]),
@@ -144,7 +150,10 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 							tableCell(
 								h,
 								[count(row.requests)],
-								cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
+								),
 							),
 							tableCell(h, [lastSeen(h, clock, row.lastSeen)], WIDE_COLUMN),
 							tableCell(
@@ -227,33 +236,29 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 					[h.Class("flex items-center justify-between gap-4 py-2")],
 					[
 						h.span([h.Class("font-medium")], [entry.service]),
-						h.span(
-							[h.Class("flex items-center gap-4")],
-							[
-								h.span(
-									[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
-									[`${entry.answered} of ${entry.probed} sensitive probe paths answered`],
-								),
-								...(entry.sampleTraceId === ""
-									? []
-									: [
-											textLink(
-												h,
-												{
-													tone: "muted",
-													className: "whitespace-nowrap text-xs",
-													href: hrefOf(
-														AppRoute.Trace({
-															traceId: entry.sampleTraceId,
-															search: {},
-														}),
-													),
-												},
-												["Sample trace"],
-											),
-										]),
-							],
-						),
+						hstack(h, { gap: "4", as: "span" }, [
+							typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+								`${entry.answered} of ${entry.probed} sensitive probe paths answered`,
+							]),
+							...(entry.sampleTraceId === ""
+								? []
+								: [
+										textLink(
+											h,
+											{
+												tone: "muted",
+												className: "whitespace-nowrap text-xs",
+												href: hrefOf(
+													AppRoute.Trace({
+														traceId: entry.sampleTraceId,
+														search: {},
+													}),
+												),
+											},
+											["Sample trace"],
+										),
+									]),
+						]),
 					],
 				),
 			),
@@ -282,10 +287,9 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Categories",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
-				["Answered counts 2xx responses, catch-all routes left out"],
-			),
+			action: typography(h, { size: "xs", tone: "muted" }, [
+				"Answered counts 2xx responses, catch-all routes left out",
+			]),
 		}),
 		table(h, { ariaLabel: "Probe categories" }, [
 			tableHeader(h, [
@@ -304,18 +308,26 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 						h,
 						[
 							tableCell(h, [row.label], "font-medium max-sm:whitespace-normal"),
-							tableCell(h, [count(row.requests)], "text-right font-mono tabular-nums"),
+							tableCell(
+								h,
+								[count(row.requests)],
+								typographyClass({ mono: true, numeric: true, className: "text-right" }),
+							),
 							tableCell(h, [answeredCell(h, row)], "text-right"),
 							tableCell(
 								h,
 								[String(row.services)],
-								cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
+								),
 							),
 							tableCell(
 								h,
 								[
-									h.span(
-										[h.Class("flex flex-wrap items-center gap-1.5")],
+									hstack(
+										h,
+										{ gap: "1.5", wrap: true, as: "span" },
 										row.topSignatures.map((signature) =>
 											h.span(
 												[
@@ -344,7 +356,7 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Top clients",
-			action: h.span([h.Class("text-xs text-muted-foreground")], ["Most requests first"]),
+			action: typography(h, { size: "xs", tone: "muted" }, ["Most requests first"]),
 		}),
 		table(h, { ariaLabel: "Top clients" }, [
 			tableHeader(h, [
@@ -363,7 +375,7 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 					tableRow(
 						h,
 						[
-							tableCell(h, [source.clientAddress], "font-mono text-xs"),
+							tableCell(h, [source.clientAddress], typographyClass({ size: "xs", mono: true })),
 							tableCell(
 								h,
 								[source.scanner === "" ? "Unnamed" : source.scanner],
@@ -382,11 +394,18 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 								],
 								WIDE_COLUMN,
 							),
-							tableCell(h, [count(source.requests)], "text-right font-mono tabular-nums"),
+							tableCell(
+								h,
+								[count(source.requests)],
+								typographyClass({ mono: true, numeric: true, className: "text-right" }),
+							),
 							tableCell(
 								h,
 								[String(source.signatures)],
-								cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
+								),
 							),
 							tableCell(h, [lastSeen(h, clock, source.lastSeen)], WIDE_COLUMN),
 						],
@@ -412,7 +431,7 @@ const exposureEmpty = (h: H): Html =>
 				]),
 			]),
 		],
-		"rounded-md border border-dashed md:py-14",
+		emptyFrameClass("dashed"),
 	)
 
 export const telemetryLoading = (h: H): ReadonlyArray<Html> => [

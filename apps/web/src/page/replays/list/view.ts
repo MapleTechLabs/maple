@@ -37,6 +37,8 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { filtersRail } from "./view-filters"
 import { warmAvatarTone } from "../../../ui/avatar-tone"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -45,8 +47,7 @@ const AUTO_LOAD_MIN_ROWS = 25
 const headerActions = (h: H, model: Model): Html => {
 	const facets = facetsOf(model)
 	const { search } = model
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
+	return hstack(h, { gap: "2", wrap: true },
 		[
 			...(facets === undefined
 				? []
@@ -111,20 +112,18 @@ const activeUserFilter = (
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.div(
-						[h.Class("flex items-baseline gap-2")],
+					hstack(h, { gap: "2", align: "baseline" },
 						[
-							h.span([h.Class("text-xs text-muted-foreground")], [config.label]),
+							typography(h, { size: "xs", tone: "muted" }, [config.label]),
 							truncatedText(h, {
 								text: config.userId,
 								mono: true,
 								tooltip: "none",
-								className: "text-sm font-medium",
+								className: typographyClass({ size: "sm", weight: "medium" }),
 							}),
 						],
 					),
-					h.span(
-						[h.Class("text-xs text-muted-foreground tabular-nums")],
+					typography(h, { size: "xs", tone: "muted", numeric: true },
 						[countLabel(config.count, "session"), " loaded"],
 					),
 				],
@@ -266,8 +265,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Replays",
 			filters: filtersRail(h, model),
-			actions: h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
+			actions: hstack(h, { gap: "2", wrap: true },
 				[headerActions(h, model), timeCluster],
 			),
 			sticky: replaysToolbar(h, {

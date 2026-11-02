@@ -8,6 +8,7 @@ import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../in
 import { collectingLabel, healthPill, SATURATION } from "../health"
 import type { ProjectView } from "./derive"
 import type { Message } from "./message"
+import { typography, typographyClass } from "../../../../ui/typography"
 
 // The project table and its loading state.
 
@@ -56,8 +57,8 @@ export const supabaseTableLoading = (h: H): Html =>
 		]),
 	)
 
-const MUTED = "font-mono text-2xs text-muted-foreground"
-const NUMBER = "font-mono text-xs tabular-nums text-foreground-soft"
+const MUTED = typographyClass({ size: "2xs", tone: "muted", mono: true })
+const NUMBER = typographyClass({ size: "xs", tone: "soft", mono: true, numeric: true })
 
 /** A utilisation bar and its percent; a project without metrics shows an empty track. */
 const usageCell = (h: H, label: string, fraction: number | null): Html =>
@@ -136,19 +137,22 @@ const row = (h: H, view: ProjectView): Html => {
 			h.div(
 				[h.Class("flex w-0 min-w-40 flex-1 flex-col gap-0.5")],
 				[
-					h.span(
-						[
-							h.Class(
-								"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-							),
-							h.Title(view.displayName),
-						],
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							weight: "medium",
+							mono: true,
+							truncate: true,
+							className: "transition-colors group-hover:text-primary",
+							attributes: [h.Title(view.displayName)],
+						},
 						[view.displayName],
 					),
-					h.span(
-						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
-						[view.region === "" ? view.ref : `${view.ref} · ${view.region}`],
-					),
+					typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+						view.region === "" ? view.ref : `${view.ref} · ${view.region}`,
+					]),
 				],
 			),
 			h.div([h.Class("w-20")], [healthPill(h, view.health)]),

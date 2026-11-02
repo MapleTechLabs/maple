@@ -15,6 +15,8 @@ import { bulletList, ciResultBadge, section, traceLink } from "./parts"
 import { type ReviewSheet, SheetMessage } from "./review-sheet"
 import { CI_RUNS_SHOWN } from "./review-sheet-update"
 import { emptyMessage } from "../../../ui/empty"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `ProductionSection`, `PostMergeSection`, `PullRequestCiRuns` and the review history.
 
@@ -30,8 +32,7 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 			...(breaks.length === 0
 				? []
 				: [
-						h.ul(
-							[h.Class("flex flex-col gap-1.5 text-sm")],
+						vstack(h, { gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
 							breaks.map((item) =>
 								h.li(
 									[...(item.dismissed ? [h.Class("text-muted-foreground")] : [])],
@@ -48,7 +49,7 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 											[item.dismissed ? "Still emitted elsewhere" : "Stops arriving"],
 										),
 										" ",
-										h.code([h.Class("font-mono text-xs")], [item.name]),
+										h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [item.name]),
 										" · ",
 										item.references.map((ref) => `${ref.kind} “${ref.name}”`).join(", "),
 									],
@@ -123,7 +124,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 	AsyncData.matchData(sheet.ciRuns.data, {
 		onEmpty: () => ciSection(h, [ciRunsSkeleton(h)]),
 		onFailure: () =>
-			ciSection(h, [h.p([h.Class("text-sm text-muted-foreground")], ["Couldn't load CI runs"])]),
+			ciSection(h, [typography(h, { size: "sm", tone: "muted", as: "p" }, ["Couldn't load CI runs"])]),
 		onData: (response) =>
 			response.runs.length === 0
 				? ciSection(h, [emptyMessage(h, {}, ["No CI runs in the last 90 days"])])
@@ -140,14 +141,13 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 									],
 									[
 										ciResultBadge(h, run.result, run.attempt, "w-32 shrink-0"),
-										h.span(
-											[h.Class("min-w-0 flex-1 truncate"), h.Title(run.pipeline)],
+										typography(h, { truncate: true, className: "min-w-0 flex-1", attributes: [h.Title(run.pipeline)] },
 											[run.pipeline],
 										),
 										truncatedId(h, {
 											value: run.revision,
 											kind: "sha",
-											className: "text-xs text-muted-foreground",
+											className: typographyClass({ size: "xs", tone: "muted" }),
 										}),
 										h.span(
 											[
@@ -165,8 +165,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 						...(response.nextCursor === null
 							? []
 							: [
-									h.p(
-										[h.Class("text-xs text-muted-foreground")],
+									typography(h, { size: "xs", tone: "muted", as: "p" },
 										[`Latest ${CI_RUNS_SHOWN} runs`],
 									),
 								]),
@@ -198,11 +197,10 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 								truncatedId(h, {
 									value: entry.headSha,
 									kind: "sha",
-									className: "text-xs text-muted-foreground",
+									className: typographyClass({ size: "xs", tone: "muted" }),
 								}),
 								h.span([h.Class(cn("flex-1", outcome.tone))], [outcome.label]),
-								h.span(
-									[h.Class("tabular-nums text-muted-foreground")],
+								typography(h, { tone: "muted", numeric: true },
 									[countLabel(entry.findings, "issue")],
 								),
 								relativeTime(h, {

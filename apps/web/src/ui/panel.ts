@@ -104,3 +104,7 @@ export const panelHeader = <M>(h: HtmlBuilder<M>, options: PanelHeaderOptions): 
 
 export const panelBody = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.div([h.Class(cn(panelBodyStyles, className)), h.DataAttribute("slot", "panel-body")], children)
+
+/** A chart's frame under a `panelHeader`: side padding, a little room above and more below. */
+export const panelChartBody = <M>(h: HtmlBuilder<M>, children: Children): Html =>
+	h.div([h.Class("px-4 pt-3 pb-4")], children)

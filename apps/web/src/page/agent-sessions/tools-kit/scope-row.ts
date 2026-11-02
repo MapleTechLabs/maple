@@ -3,6 +3,8 @@ import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { pressable } from "../../../ui/pressable"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The tool scope row: what the page is about, one click out of each.
 
@@ -31,7 +33,7 @@ const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
 			],
 		},
 		[
-			h.span([h.Class("text-2xs text-muted-foreground")], [chip.kind]),
+			typography(h, { size: "2xs", tone: "muted" }, [chip.kind]),
 			h.span([h.Class("truncate text-2xs text-primary")], [chip.value]),
 			icon(h, "XmarkIcon", {
 				size: 10,
@@ -51,27 +53,24 @@ export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html 
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					eyebrow(h, { variant: "mono" }, ["Scope"]),
-					...(config.chips.length === 0
-						? [h.span([h.Class("text-2xs text-foreground-subtle")], ["all tools · all models"])]
-						: [
-								...config.chips.map((chip) => chipButton(h, chip, config.onRemove(chip))),
-								button(
-									h,
-									{
-										variant: "link",
-										size: "xs",
-										className: "h-auto px-0.5 text-2xs text-muted-foreground sm:text-2xs",
-										attributes: [h.OnClick(config.onClearAll)],
-									},
-									["Clear all"],
-								),
-							]),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				eyebrow(h, { variant: "mono" }, ["Scope"]),
+				...(config.chips.length === 0
+					? [typography(h, { size: "2xs", tone: "subtle" }, ["all tools · all models"])]
+					: [
+							...config.chips.map((chip) => chipButton(h, chip, config.onRemove(chip))),
+							button(
+								h,
+								{
+									variant: "link",
+									size: "xs",
+									className: "h-auto px-0.5 text-2xs text-muted-foreground sm:text-2xs",
+									attributes: [h.OnClick(config.onClearAll)],
+								},
+								["Clear all"],
+							),
+						]),
+			]),
 			h.span(
 				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
 				[

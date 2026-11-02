@@ -4,6 +4,8 @@ import { getSmoothStepPath, Position } from "@xyflow/system"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { XY } from "../xyflow/geometry"
 import type { FlowEdgeData } from "./flow-graph"
+import { typography } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `TraceFlowEdge` (packages/ui `traces/flow-edge.tsx`).
 
@@ -23,7 +25,8 @@ const labelContent = <M>(
 ): ReadonlyArray<Html> | null => {
 	const { isError, isMissing, share, count } = data
 	if (!(hovered || isError || count > 1 || share >= LABEL_SHARE_THRESHOLD)) return null
-	if (isMissing) return hovered ? [h.span([h.Class("italic text-foreground-subtle")], ["no data"])] : null
+	if (isMissing)
+		return hovered ? [typography(h, { tone: "subtle", className: "italic" }, ["no data"])] : null
 	if (hovered) {
 		const sharePct = formatShare(share)
 		// Text runs stay split, so the DOM holds the same text nodes as the packages/ui flow edge.
@@ -108,19 +111,16 @@ export const traceFlowEdge = <M>(
 							h.Class("pointer-events-none overflow-visible"),
 						],
 						[
-							h.div(
-								[h.Class("flex h-full items-center justify-center")],
-								[
-									h.span(
-										[
-											h.Class(
-												"whitespace-nowrap rounded-sm border border-border-subtle bg-card/90 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm",
-											),
-										],
-										label,
-									),
-								],
-							),
+							hstack(h, { justify: "center", className: "h-full" }, [
+								h.span(
+									[
+										h.Class(
+											"whitespace-nowrap rounded-sm border border-border-subtle bg-card/90 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm",
+										),
+									],
+									label,
+								),
+							]),
 						],
 					),
 				]),

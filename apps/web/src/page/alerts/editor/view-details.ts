@@ -15,6 +15,7 @@ import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
+import { hstack } from "../../../ui/stack"
 
 // `DetailsSection` and `TagInput`: the rule's name, description and tags.
 
@@ -89,8 +90,7 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 	const state = fieldStateOf(form.name, model.mountedForm?.name)
 	const ids = idsOf("rule-name", false)
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		h.div(
-			[h.Class("flex items-center justify-between gap-2")],
+		hstack(h, { gap: "2", justify: "between" },
 			[
 				fieldLabel(h, { ids, state }, "Rule name"),
 				...(isSuggesting

@@ -17,7 +17,7 @@ import { errorState } from "../../../../ui/error-state"
 import { eyebrow } from "../../../../ui/eyebrow"
 import { icon } from "../../../../ui/icon"
 import { meter } from "../../../../ui/meter"
-import { skeleton } from "../../../../ui/skeleton"
+import { skeleton, skeletonBlock } from "../../../../ui/skeleton"
 import { serviceDot } from "../../../../ui/values"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
@@ -25,6 +25,8 @@ import type { StatementSpan } from "../data"
 import { Message, type Model } from "./model"
 import { type QueryPeek, statementTracesHref } from "./peek"
 import { appP95Tone, lockTone } from "./view-sql"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstack, hstackClass } from "../../../../ui/stack"
 
 // `GcpQueryPeekSheet`: one Query Insights statement, its callers and its slowest traced calls.
 
@@ -44,16 +46,13 @@ export type QueryPeekInputs = Readonly<{
 
 const DB_TRACING_DOCS = "https://maple.dev/docs/concepts/otel-conventions#database-queries"
 const SPAN_ROWS = 5
-const SUB = "text-2xs text-muted-foreground"
+const SUB = typographyClass({ size: "2xs", tone: "muted" })
 
 const sectionHead = (h: H, title: string, hint: string): Html =>
-	h.div(
-		[h.Class("flex items-baseline justify-between gap-3")],
-		[
-			heading(h, { level: 3, variant: "section", className: "shrink-0" }, [title]),
-			h.span([h.Class(cn(SUB, "truncate"))], [hint]),
-		],
-	)
+	hstack(h, { gap: "3", align: "baseline", justify: "between" }, [
+		heading(h, { level: 3, variant: "section", className: "shrink-0" }, [title]),
+		h.span([h.Class(cn(SUB, "truncate"))], [hint]),
+	])
 
 const header = (h: H, model: Model, peek: QueryPeek, inputs: QueryPeekInputs): Html => {
 	const where = inputs.where
@@ -63,7 +62,7 @@ const header = (h: H, model: Model, peek: QueryPeek, inputs: QueryPeekInputs): H
 		h,
 		"sheet",
 		[
-			eyebrow(h, { as: "div", className: "flex items-center gap-2" }, [
+			eyebrow(h, { as: "div", className: hstackClass({ gap: "2" }) }, [
 				"Statement",
 				h.span([h.Class("normal-case tracking-normal")], [`· ${where}`]),
 			]),
@@ -99,21 +98,17 @@ const header = (h: H, model: Model, peek: QueryPeek, inputs: QueryPeekInputs): H
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-1.5")],
-				[
-					heroChip(h, `hash ${peek.statement.queryHash}`),
-					heroChip(
-						h,
-						traced !== undefined
-							? `Query Insights + ${traced.serviceCount} ${traced.serviceCount === 1 ? "service" : "services"} traced`
-							: AsyncData.isSuccess(inputs.traceSide) ||
-								  AsyncData.isRefreshing(inputs.traceSide)
-								? "Query Insights only"
-								: "Query Insights",
-					),
-				],
-			),
+			hstack(h, { gap: "1.5", wrap: true }, [
+				heroChip(h, `hash ${peek.statement.queryHash}`),
+				heroChip(
+					h,
+					traced !== undefined
+						? `Query Insights + ${traced.serviceCount} ${traced.serviceCount === 1 ? "service" : "services"} traced`
+						: AsyncData.isSuccess(inputs.traceSide) || AsyncData.isRefreshing(inputs.traceSide)
+							? "Query Insights only"
+							: "Query Insights",
+				),
+			]),
 		],
 		"gap-2 pr-14",
 	)
@@ -173,12 +168,9 @@ const stats = (h: H, peek: QueryPeek): ReadonlyArray<Html> => {
 					h.div(
 						[h.Class("space-y-1 rounded-md border border-severity-error-a4 p-3")],
 						[
-							h.p(
-								[h.Class("text-xs font-medium text-foreground")],
-								[
-									`${wait.service} waits ${formatLatency(wait.appP95Ms)} for a query the database runs in ${formatLatency(wait.dbP95Ms)}`,
-								],
-							),
+							typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "p" }, [
+								`${wait.service} waits ${formatLatency(wait.appP95Ms)} for a query the database runs in ${formatLatency(wait.dbP95Ms)}`,
+							]),
 							h.p(
 								[h.Class(SUB)],
 								[
@@ -338,7 +330,7 @@ const notTraced = (h: H): Html =>
 /** A statement the traces did not match: still loading, failed, or not traced at all. */
 const untraced = (h: H, inputs: QueryPeekInputs): Html =>
 	AsyncData.matchData(inputs.traceSide, {
-		onEmpty: () => skeleton(h, "h-40 w-full rounded-md"),
+		onEmpty: () => skeletonBlock(h, { height: "40" }),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load what the traces saw", variant: "inline" }),
 		onData: () => notTraced(h),
@@ -349,10 +341,9 @@ const footer = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html =>
 		h,
 		"sheet",
 		[
-			h.span(
-				[h.Class("font-mono text-2xs tabular-nums text-muted-foreground")],
-				[`${peek.index + 1} of ${peek.count} statements`],
-			),
+			typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
+				`${peek.index + 1} of ${peek.count} statements`,
+			]),
 			...(peek.traced === undefined
 				? []
 				: [

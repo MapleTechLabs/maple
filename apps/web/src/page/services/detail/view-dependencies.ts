@@ -36,6 +36,9 @@ import {
 	tableSkeletonHead,
 	tableTitle,
 } from "./view-table-cells"
+import { typography } from "../../../ui/typography"
+import { hstack, vstackClass } from "../../../ui/stack"
+import { stripClass } from "../../../ui/rule"
 
 // `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge` (components/services/).
 // TODO(sampled-tooltip): an estimated rate's "Estimated ×N" tooltip is not ported (trigger only).
@@ -72,38 +75,30 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center gap-2.5 min-w-0")],
-						[
-							typeBadge(h, row.kind),
-							h.div(
-								[h.Class("flex min-w-0 flex-col leading-tight")],
-								[
-									h.span(
-										[
-											h.Class(
-												"flex min-w-0 items-center gap-1.5 text-xs text-foreground",
-											),
-										],
-										[
-											...(row.kind === "service"
-												? [serviceDot(h, { serviceName: row.name, size: "sm" })]
-												: []),
-											h.span([h.Class("truncate"), h.Title(row.name)], [row.name]),
-										],
-									),
-									...(row.subtitle === undefined
-										? []
-										: [
-												h.span(
-													[h.Class("truncate text-3xs text-foreground-subtle")],
-													[row.subtitle],
-												),
+					hstack(h, { gap: "2.5", shrink: true }, [
+						typeBadge(h, row.kind),
+						h.div(
+							[h.Class("flex min-w-0 flex-col leading-tight")],
+							[
+								h.span(
+									[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-foreground")],
+									[
+										...(row.kind === "service"
+											? [serviceDot(h, { serviceName: row.name, size: "sm" })]
+											: []),
+										h.span([h.Class("truncate"), h.Title(row.name)], [row.name]),
+									],
+								),
+								...(row.subtitle === undefined
+									? []
+									: [
+											typography(h, { size: "3xs", tone: "subtle", truncate: true }, [
+												row.subtitle,
 											]),
-								],
-							),
-						],
-					),
+										]),
+							],
+						),
+					]),
 				],
 				"max-w-0 py-0 pl-4 align-middle",
 			),
@@ -266,11 +261,13 @@ const loadingState = (h: H): Html =>
 		h.div(
 			[h.AriaBusy(true), h.Class("flex flex-col")],
 			Array.from({ length: 6 }, (_, index) =>
-				h.div(
-					[
-						h.Key(String(index)),
-						h.Class("flex h-11 items-center gap-3 border-b px-4 last:border-b-0"),
-					],
+				hstack(
+					h,
+					{
+						gap: "3",
+						className: stripClass("skeletonRow"),
+						attributes: [h.Key(String(index))],
+					},
 					[
 						skeleton(h, "h-4 w-16"),
 						skeleton(h, "h-3 flex-1"),
@@ -309,7 +306,7 @@ const dependenciesBody = (h: H, model: Model, bundle: DependencyBundle, isWaitin
 	const summary = dependencySummary(rows)
 	return h.div(
 		[
-			h.Class(cn("flex flex-col gap-3", refreshingClass(isWaiting))),
+			h.Class(cn(vstackClass({ gap: "3" }), refreshingClass(isWaiting))),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
 		[

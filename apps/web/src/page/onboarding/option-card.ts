@@ -1,7 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { choiceCard } from "../../ui/choice-card"
+import { choiceCard, choiceCheckClass } from "../../ui/choice-card"
 import { PIXEL_GLYPHS } from "../../ui/icons.generated"
+import { typography } from "../../ui/typography"
 
 // `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
 // its end state.
@@ -39,15 +40,7 @@ const drawnCheck = <M>(h: HtmlBuilder<M>, isChecked: boolean, className: string 
 	h.span(
 		[
 			h.AriaHidden(true),
-			h.Class(
-				cn(
-					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
-					isChecked
-						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-border-strong",
-					className,
-				),
-			),
+			h.Class(choiceCheckClass(isChecked, true, className)),
 		],
 		[
 			h.svg(
@@ -100,7 +93,9 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("min-w-0 flex-1 pt-px")],
 						[
-							h.span([h.Class("block text-sm font-semibold")], [options.title]),
+							typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+								options.title,
+							]),
 							h.span(
 								[h.Class("mt-1 block text-xs leading-relaxed text-muted-foreground")],
 								[options.description],

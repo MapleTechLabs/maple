@@ -2,6 +2,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { statusDot } from "../../../ui/status-dot"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `SettingsSaveBar`: pinned while a tab has unsaved edits. TODO(settings): its `UnsavedChangesGuard`
 // (confirm before navigating away, and the browser's beforeunload prompt) needs a root-level navigation
@@ -40,34 +42,31 @@ export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): Reado
 						h.span([h.Class("shrink-0 text-foreground")], ["Unsaved changes"]),
 						...(options.context === undefined
 							? []
-							: [h.span([h.Class("truncate text-muted-foreground")], [options.context])]),
+							: [typography(h, { tone: "muted", truncate: true }, [options.context])]),
 					],
 				),
-				h.div(
-					[h.Class("flex shrink-0 items-center gap-1.5")],
-					[
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								isDisabled: isPending,
-								attributes: [h.OnClick(options.onDiscard)],
-							},
-							["Discard"],
-						),
-						button(
-							h,
-							{
-								size: "sm",
-								isLoading: isPending,
-								isDisabled: options.isSaveDisabled ?? false,
-								attributes: [h.OnClick(options.onSave)],
-							},
-							[options.saveLabel ?? "Save"],
-						),
-					],
-				),
+				hstack(h, { gap: "1.5", className: "shrink-0" }, [
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							isDisabled: isPending,
+							attributes: [h.OnClick(options.onDiscard)],
+						},
+						["Discard"],
+					),
+					button(
+						h,
+						{
+							size: "sm",
+							isLoading: isPending,
+							isDisabled: options.isSaveDisabled ?? false,
+							attributes: [h.OnClick(options.onSave)],
+						},
+						[options.saveLabel ?? "Save"],
+					),
+				]),
 			],
 		),
 	]

@@ -73,6 +73,9 @@ import { findingBadge } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
 import { leadsLine, stopSummaryOf } from "../kit/outcome"
 import { emptyMessage } from "../../../ui/empty"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // The Overview tab: totals, the targets table, open leads and recent runs.
 
@@ -147,20 +150,17 @@ const spendTile = (h: H, model: Model): Html => {
 					["Edit limit"],
 				)
 			: undefined,
-		subline: h.span(
-			[h.Class("flex flex-col gap-1.5")],
-			[
-				meter(h, {
-					value: Math.min(settings.spentUsd, limit),
-					max: limit,
-					tone: isReached ? "warn" : undefined,
-					label: `${formatUsd(settings.spentUsd)} of ${formatUsd(limit)} spent this month`,
-				}),
-				isReached
-					? `Limit reached · runs resume ${monthDay(settings.resetsAt)}`
-					: `${formatUsd(limit - settings.spentUsd)} left · resets ${monthDay(settings.resetsAt)}`,
-			],
-		),
+		subline: vstack(h, { gap: "1.5", as: "span" }, [
+			meter(h, {
+				value: Math.min(settings.spentUsd, limit),
+				max: limit,
+				tone: isReached ? "warn" : undefined,
+				label: `${formatUsd(settings.spentUsd)} of ${formatUsd(limit)} spent this month`,
+			}),
+			isReached
+				? `Limit reached · runs resume ${monthDay(settings.resetsAt)}`
+				: `${formatUsd(limit - settings.spentUsd)} left · resets ${monthDay(settings.resetsAt)}`,
+		]),
 	})
 }
 
@@ -198,17 +198,14 @@ const kpis = (h: H, model: Model): Html => {
 					? coverageUnknown
 						? undefined
 						: "no run has mapped a repository yet"
-					: h.span(
-							[h.Class("flex flex-col gap-1.5")],
-							[
-								meter(h, {
-									value: coverage.closed,
-									max: coverage.total,
-									label: `${coverage.closed} of ${coverage.total} units closed`,
-								}),
-								`latest run of ${coverage.targets} ${coverage.targets === 1 ? "target" : "targets"}`,
-							],
-						),
+					: vstack(h, { gap: "1.5", as: "span" }, [
+							meter(h, {
+								value: coverage.closed,
+								max: coverage.total,
+								label: `${coverage.closed} of ${coverage.total} units closed`,
+							}),
+							`latest run of ${coverage.targets} ${coverage.targets === 1 ? "target" : "targets"}`,
+						]),
 		}),
 		statRailItem(h, {
 			eyebrow: "Targets",
@@ -250,7 +247,7 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 					[
 						h.Key(severity),
 						// Lifted over the row link so its title still shows on hover.
-						h.Class(cn("inline-flex items-center gap-1.5", ROW_LINK_LIFT)),
+						h.Class(cn(hstackClass({ gap: "1.5", inline: true }), ROW_LINK_LIFT)),
 						h.Title(countTitle(counts[severity], severity, unverified)),
 					],
 					[
@@ -280,21 +277,19 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 
 /** Names the open-findings dots once, in the panel header, so each row stays four numbers. */
 const severityLegend = (h: H): Html =>
-	h.span(
-		[h.Class("flex items-center gap-2.5"), h.AriaHidden(true)],
+	hstack(
+		h,
+		{ gap: "2.5", as: "span", attributes: [h.AriaHidden(true)] },
 		(["critical", "high", "medium", "low"] as const).map((severity) =>
-			h.span(
-				[h.Key(severity), h.Class("inline-flex items-center gap-1.5")],
-				[
-					statusDot(h, { tone: "custom", className: SEVERITY_FILL[severity] }),
-					SECURITY_SEVERITY_LABEL[severity],
-				],
-			),
+			hstack(h, { gap: "1.5", inline: true, as: "span", attributes: [h.Key(severity)] }, [
+				statusDot(h, { tone: "custom", className: SEVERITY_FILL[severity] }),
+				SECURITY_SEVERITY_LABEL[severity],
+			]),
 		),
 	)
 
 const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Html => {
-	if (run === undefined) return h.span([h.Class("text-xs text-muted-foreground")], ["No run yet"])
+	if (run === undefined) return typography(h, { size: "xs", tone: "muted" }, ["No run yet"])
 	const detail = isLive(run)
 		? `running for ${formatElapsed(model.nowMs - run.startedAt)}`
 		: run.status === "failed"
@@ -302,45 +297,35 @@ const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Htm
 			: run.status === "incomplete"
 				? stopSummaryOf(run.incompleteReason)
 				: `${formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)} · ${refLabel(run.sourceRef)}`
-	return h.div(
-		[h.Class("flex min-w-0 flex-col items-start gap-1")],
-		[
-			runStatusBadge(h, run),
-			h.span(
-				[
-					h.Class(cn("max-w-56 truncate text-xs text-muted-foreground", ROW_LINK_LIFT)),
-					h.Title(detail),
-				],
-				[detail],
-			),
-		],
-	)
+	return vstack(h, { gap: "1", align: "start", shrink: true }, [
+		runStatusBadge(h, run),
+		h.span(
+			[h.Class(cn("max-w-56 truncate text-xs text-muted-foreground", ROW_LINK_LIFT)), h.Title(detail)],
+			[detail],
+		),
+	])
 }
 
 const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Html => {
 	const detail = run === undefined ? null : latestDetailOf(model, run.id)
 	if (run === undefined || detail === null || detail.unitTotal === 0)
-		return h.span(
-			[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
-			[run === undefined ? "" : "not mapped"],
-		)
+		return typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
+			run === undefined ? "" : "not mapped",
+		])
 	const { closed, total } = coverageOf(detail)
-	return h.div(
-		[h.Class("flex items-center justify-end gap-2")],
-		[
-			meter(h, {
-				value: closed,
-				max: total,
-				tone: runToneOf(run),
-				className: "w-10",
-				label: `${closed} of ${total} units closed`,
-			}),
-			h.span(
-				[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
-				[`${closed} / ${total}`],
-			),
-		],
-	)
+	return hstack(h, { gap: "2", justify: "end" }, [
+		meter(h, {
+			value: closed,
+			max: total,
+			tone: runToneOf(run),
+			className: "w-10",
+			label: `${closed} of ${total} units closed`,
+		}),
+		h.span(
+			[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
+			[`${closed} / ${total}`],
+		),
+	])
 }
 
 /**
@@ -383,29 +368,30 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 	const leads = isFindingsKnown
 		? run === undefined || run.status === "failed"
 			? findings.length === 0
-				? h.span([h.Class("text-xs text-muted-foreground")], ["No completed run"])
+				? typography(h, { size: "xs", tone: "muted" }, ["No completed run"])
 				: leadCounts(h, findings)
 			: leadCounts(h, findings)
-		: h.span([h.Class("text-xs text-muted-foreground")], [findings === "forbidden" ? "Admins only" : ""])
+		: typography(h, { size: "xs", tone: "muted" }, [findings === "forbidden" ? "Admins only" : ""])
 	return tableRow(
 		h,
 		[
 			tableCell(h, [
 				// The name is the row's link, stretched over the whole row.
-				rowLink(h, { href, className: "flex min-w-0 items-center gap-2.5" }, [
+				rowLink(h, { href, className: hstackClass({ gap: "2.5", shrink: true }) }, [
 					icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-					h.span(
-						[h.Class("flex min-w-0 flex-col")],
-						[
-							repositoryName(h, target.repository, "text-sm font-medium"),
-							metaLine(h, parts, meta),
-							// Phones drop the run and leads columns, so their gist rides here.
-							h.span(
-								[h.Class("mt-1.5 flex flex-wrap items-center gap-2 sm:hidden")],
-								[...(run === undefined ? [] : [runStatusBadge(h, run)]), leads],
-							),
-						],
-					),
+					vstack(h, { shrink: true, as: "span" }, [
+						repositoryName(
+							h,
+							target.repository,
+							typographyClass({ size: "sm", weight: "medium" }),
+						),
+						metaLine(h, parts, meta),
+						// Phones drop the run and leads columns, so their gist rides here.
+						h.span(
+							[h.Class("mt-1.5 flex flex-wrap items-center gap-2 sm:hidden")],
+							[...(run === undefined ? [] : [runStatusBadge(h, run)]), leads],
+						),
+					]),
 				]),
 			]),
 			tableCell(h, [lastRunCell(h, model, run)], WIDE_COLUMN),
@@ -414,7 +400,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 			tableCell(
 				h,
 				[run === undefined ? "" : formatUsd(runTotalUsd(run))],
-				cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+				cn(typographyClass({ mono: true, numeric: true, className: "text-right" }), WIDE_COLUMN),
 			),
 			tableCell(
 				h,
@@ -495,20 +481,12 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 								: securitySeverityBadge(h, finding.overallSeverity),
 				],
 			),
-			h.span(
-				[h.Class("flex min-w-0 flex-col")],
-				[
-					h.span([h.Class("truncate text-sm")], [finding.record.title]),
-					h.span(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[
-							[repository, locationOf(finding.record) ?? ""]
-								.filter((part) => part !== "")
-								.join(" · "),
-						],
-					),
-				],
-			),
+			vstack(h, { shrink: true, as: "span" }, [
+				typography(h, { size: "sm", truncate: true }, [finding.record.title]),
+				typography(h, { size: "xs", tone: "muted", truncate: true }, [
+					[repository, locationOf(finding.record) ?? ""].filter((part) => part !== "").join(" · "),
+				]),
+			]),
 		],
 		`${finding.targetId}/${finding.fingerprint}`,
 	)
@@ -577,7 +555,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 	return panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Recent runs",
-			action: h.span([h.Class("text-xs text-muted-foreground")], ["Manual runs only for now"]),
+			action: typography(h, { size: "xs", tone: "muted" }, ["Manual runs only for now"]),
 		}),
 		runs.length === 0
 			? emptyMessage(h, {}, ["No runs yet. Start one from a target."])
@@ -598,22 +576,16 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 							h,
 							runHref(run),
 							[
-								h.span(
-									[h.Class("flex min-w-0 flex-1 flex-col")],
-									[
-										repositoryName(h, repository, "text-sm"),
-										h.span(
-											[h.Class("truncate text-xs text-muted-foreground")],
-											[
-												[
-													RUN_KIND_LABEL[run.kind].toLowerCase(),
-													PROFILE_LABEL[run.profile],
-													note,
-												].join(" · "),
-											],
-										),
-									],
-								),
+								vstack(h, { shrink: true, grow: true, as: "span" }, [
+									repositoryName(h, repository, "text-sm"),
+									typography(h, { size: "xs", tone: "muted", truncate: true }, [
+										[
+											RUN_KIND_LABEL[run.kind].toLowerCase(),
+											PROFILE_LABEL[run.profile],
+											note,
+										].join(" · "),
+									]),
+								]),
 								h.span([h.Class("shrink-0")], [runStatusBadge(h, run)]),
 								h.span(
 									[h.Class("w-20 text-right font-mono text-sm tabular-nums")],
@@ -657,10 +629,10 @@ export const overviewBody = (h: H, model: Model): ReadonlyArray<Html> =>
 				: [
 						kpis(h, model),
 						targetsPanel(h, model, targets),
-						h.div(
-							[h.Class("grid gap-6 lg:grid-cols-2")],
-							[topFindingsPanel(h, model, targets), recentRunsPanel(h, model, targets)],
-						),
+						grid(h, { lg: 2, gap: "6" }, [
+							topFindingsPanel(h, model, targets),
+							recentRunsPanel(h, model, targets),
+						]),
 					],
 	})
 
@@ -678,15 +650,12 @@ export const overviewActions = (h: H, model: Model): Html | undefined => {
 	const add = addTargetButton(h, model)
 	if (add === undefined) return undefined
 	if (settingsOf(model) === null) return add
-	return h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			button(
-				h,
-				{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedSpendAndModels())] },
-				[icon(h, "GearIcon"), "Spend & models"],
-			),
-			add,
-		],
-	)
+	return hstack(h, { gap: "2" }, [
+		button(
+			h,
+			{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedSpendAndModels())] },
+			[icon(h, "GearIcon"), "Spend & models"],
+		),
+		add,
+	])
 }

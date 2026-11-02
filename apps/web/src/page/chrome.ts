@@ -6,6 +6,7 @@ import { skeleton, skeletonList } from "../ui/skeleton"
 import { dashboardPage, pageBody, pageContent } from "./kit/dashboard-page"
 import { resourceNotFound } from "./kit/resource-not-found"
 import { resolveLegacySettingsTab } from "./settings/nav"
+import { vstack } from "../ui/stack"
 
 /**
  * Signed-in routes rendered without `DashboardLayout`: onboarding and auth handoffs with
@@ -39,10 +40,10 @@ export const placeholderContent = <Message>(h: HtmlBuilder<Message>): Html =>
 		pageContent(
 			h,
 			[
-				h.div(
-					[h.Class("flex flex-col gap-4 p-4")],
-					[skeleton(h, "h-7 w-48"), skeletonList(h, { rows: 6, rowClassName: "h-10", gap: "2" })],
-				),
+				vstack(h, { gap: "4", className: "p-4" }, [
+					skeleton(h, "h-7 w-48"),
+					skeletonList(h, { rows: 6, rowClassName: "h-10", gap: "2" }),
+				]),
 			],
 			[h.AriaBusy(true), h.AriaLabel("Loading")],
 		),

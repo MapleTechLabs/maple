@@ -21,14 +21,20 @@ import { DIMENSIONS, type DimensionDef, dimensionOf } from "./derive"
 import { type BreakdownSortKey, Message, type Model } from "./model"
 import { SCOPE_IDS } from "./view-sections"
 import { panelScope, type Trigger } from "./view-scope"
+import { typography } from "../../../../ui/typography"
+import { hstack, hstackClass } from "../../../../ui/stack"
+import { stripClass } from "../../../../ui/rule"
+import { columnClass } from "../../../../ui/column"
 
 // `CloudflareBreakdownPanel`: one ranked table per dimension, rows filter the page, and a live Cloudflare
 // lookup for the long tail.
 
 type H = HtmlBuilder<Message>
 
-const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
+const ROW_CLASS = hstackClass({
+	gap: "4",
+	className: stripClass("hoverRow"),
+})
 
 const warehouseTimeToMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
 
@@ -103,7 +109,7 @@ const table = (
 			isWaiting: options.isWaiting,
 		},
 		[
-			head(dimension.column, "key", "w-0 flex-1 min-w-56"),
+			head(dimension.column, "key", columnClass({ min: "56" })),
 			head("Requests", "requests", "w-28"),
 			head("Error rate", "errorRate", "w-24"),
 			head("Bandwidth", "bytes", "w-24", "hidden md:flex"),
@@ -254,10 +260,10 @@ const stored = (
 					data.totals.length,
 					// Below 99.5% the fold is actually hiding something; above it, saying so is noise.
 					data.coverage < 0.995 && data.totals.length > 0
-						? h.span(
-								[h.Class("font-mono text-3xs text-muted-foreground")],
-								[formatPercent(data.coverage), " of zone requests"],
-							)
+						? typography(h, { size: "3xs", tone: "muted", mono: true }, [
+								formatPercent(data.coverage),
+								" of zone requests",
+							])
 						: null,
 				),
 				table(h, {
@@ -296,10 +302,9 @@ const breakdownError = (h: H, dimension: DimensionDef): Html =>
 
 const live = (h: H, model: Model, dimension: DimensionDef): Html => {
 	const query = model.liveQuery ?? ""
-	const liveMeta = h.span(
-		[h.Class("font-mono text-3xs text-muted-foreground")],
-		["Live from Cloudflare · no history"],
-	)
+	const liveMeta = typography(h, { size: "3xs", tone: "muted", mono: true }, [
+		"Live from Cloudflare · no history",
+	])
 	const note = (text: ReadonlyArray<string>) =>
 		h.p([h.Class("px-3 pb-3 font-mono text-2xs text-muted-foreground")], text)
 	return AsyncData.match(model.liveTraffic.data, {
@@ -424,29 +429,27 @@ export const breakdownPanel = (
 				onChange: (next) => Message.ClickedDimension({ dimension: next }),
 			}),
 			children: [
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[
-						panelTitle(h, ["Breakdown"]),
-						...(isLive
-							? [
-									badge(
-										h,
-										{
-											variant: "meta",
-											size: "xs",
-											mono: true,
-											className: "bg-background/60 font-normal hover:text-foreground active:text-foreground",
-											onClick: Message.ClickedLeaveLive(),
-										},
-										["live", icon(h, "XmarkIcon")],
-									),
-								]
-							: scope === undefined
-								? []
-								: [scope]),
-					],
-				),
+				hstack(h, { gap: "2", wrap: true }, [
+					panelTitle(h, ["Breakdown"]),
+					...(isLive
+						? [
+								badge(
+									h,
+									{
+										variant: "meta",
+										size: "xs",
+										mono: true,
+										className:
+											"bg-background/60 font-normal hover:text-foreground active:text-foreground",
+										onClick: Message.ClickedLeaveLive(),
+									},
+									["live", icon(h, "XmarkIcon")],
+								),
+							]
+						: scope === undefined
+							? []
+							: [scope]),
+				]),
 			],
 		}),
 		isLive

@@ -12,6 +12,8 @@ import { skeleton } from "../../ui/skeleton"
 import { spinner } from "../../ui/spinner"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../ui/stack"
 
 // `GcpCommand`, `GcpOpenCloudShellButton`, `GcpCopyScriptButton`, `Script` and `Step`.
 
@@ -81,7 +83,7 @@ export const copyScriptButton = (
 		label,
 		idleLabel: `Copy ${label}`,
 		variant: "default",
-		className: "text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
+		keepsFillInk: true,
 		attributes: script === null ? [h.Disabled(true)] : [],
 	})
 
@@ -96,11 +98,9 @@ export const scriptBlock = (
 ): Html => {
 	const shown = model.gcpCard.isScriptShown
 	const text = options.script?.trimEnd() ?? null
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
+	return vstack(h, { gap: "2" },
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-3 gap-y-2")],
+			hstack(h, { wrap: true, className: "gap-x-3 gap-y-2" },
 				[
 					...leading,
 					copyScriptButton(h, model, options.id, options.script, options.label),
@@ -110,7 +110,7 @@ export const scriptBlock = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+								typographyClass({ size: "xs", tone: "muted", weight: "normal", hoverTone: "foreground", className: "h-auto p-0" }),
 								GCP_LINK,
 							),
 							attributes: [h.AriaExpanded(shown), h.OnClick(Message.ClickedGcpScriptToggle())],
@@ -122,11 +122,9 @@ export const scriptBlock = (
 			...(options.failure === null
 				? []
 				: [
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
+						hstack(h, { gap: "2", wrap: true },
 							[
-								h.p(
-									[h.Class("text-xs text-destructive-foreground"), h.Role("alert")],
+								typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
 									[options.failure.message],
 								),
 								button(
@@ -143,7 +141,7 @@ export const scriptBlock = (
 						),
 					]),
 			h.p(
-				[h.Class(cn(SMALL, "flex items-start gap-1.5"))],
+				[h.Class(cn(SMALL, hstackClass({ gap: "1.5", align: "start" })))],
 				[
 					icon(h, "LockIcon", { size: 12, className: "mt-1 shrink-0" }),
 					"Holds this connection's secret. Don't share or commit it.",
@@ -166,8 +164,7 @@ const scriptText = (h: H, label: string, text: string): Html =>
 				[h.Class("flex items-center justify-between px-3 py-1.5")],
 				[
 					eyebrow(h, {}, ["Bash"]),
-					h.span(
-						[h.Class("text-2xs text-muted-foreground")],
+					typography(h, { size: "2xs", tone: "muted" },
 						[countLabel(text.split("\n").length, "line")],
 					),
 				],
@@ -230,8 +227,7 @@ export const step = (
 			h.div(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-2.5")],
 				[
-					h.div(
-						[h.Class("flex flex-col gap-0.5")],
+					vstack(h, { gap: "0.5" },
 						[
 							heading(
 								h,

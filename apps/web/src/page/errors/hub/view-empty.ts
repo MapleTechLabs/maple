@@ -8,6 +8,7 @@ import { SEVERITY_LABEL } from "../kit/severity"
 import { hasErrorFilters, severityOf, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstack } from "../../../ui/stack"
 
 // The hub's empty state: what an empty view says, and what it offers.
 
@@ -41,7 +42,7 @@ const iconMedia = (h: H, name: IconName): Html =>
 	emptyMedia(h, { variant: "icon" }, [icon(h, name)])
 
 const actions = (h: H, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex flex-wrap items-center justify-center gap-2")], children)
+	hstack(h, { gap: "2", justify: "center", wrap: true }, children)
 
 /** A search with no matches: offer every tab, and the way out of the search. */
 const searchEmpty = (h: H, search: string, view: keyof typeof VIEW_LABEL): Html =>

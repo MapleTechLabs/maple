@@ -42,6 +42,7 @@ import {
 	type TipTrigger,
 } from "./view-sections"
 import { verdictCard } from "./view-verdict"
+import { hstack } from "../../../ui/stack"
 
 // The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
 
@@ -94,8 +95,7 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 			: [{ _tag: "Item" as const, value: "resolve", label: "Mark resolved", isDisabled: isBusy }]),
 	]
 	return detailActions(h, [
-		h.div(
-			[h.Class("flex items-center gap-2")],
+		hstack(h, { gap: "2" },
 			[
 				button(
 					h,

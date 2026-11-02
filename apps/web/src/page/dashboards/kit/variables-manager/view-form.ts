@@ -5,6 +5,7 @@ import { switchControl } from "../../../../ui/switch"
 import { METRIC_TYPE_LABELS, METRIC_TYPES, SOURCE_ITEMS, TYPE_OPTIONS, VARIABLE_TYPES } from "./derive"
 import { Message, type Model, type Variable } from "./model"
 import { itemsOf, selectField, textField } from "./view-fields"
+import { vstack } from "../../../../ui/stack"
 
 // `VariableForm` and `QuerySourceFields`: the expanded draft's controls.
 
@@ -59,8 +60,7 @@ const includeAllRow = (h: H, model: Model, variable: Variable): Html => {
 }
 
 export const variableForm = (h: H, model: Model, variable: Variable, error: string | null): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
+	vstack(h, { gap: "3" },
 		[
 			grid(h, [
 				textField(h, model, {

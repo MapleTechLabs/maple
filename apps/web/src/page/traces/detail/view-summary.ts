@@ -16,6 +16,7 @@ import { serviceDot } from "../../../ui/values"
 import { computeServiceShares, type ServiceShare } from "./derive"
 import { Message } from "./message"
 import type { LoadedTrace } from "./select"
+import { typographyClass } from "../../../ui/typography"
 
 // The trace anatomy strip, over the @maple/ui strip.
 // TODO(tooltip): spectrum segment tooltips, the commit hover card and the copy badge's feedback.
@@ -131,7 +132,10 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 								: h.span(
 										[
 											h.Class(
-												cn("font-mono font-medium", httpStatusColor(httpStatusCode)),
+												cn(
+													typographyClass({ weight: "medium", mono: true }),
+													httpStatusColor(httpStatusCode),
+												),
 											),
 										],
 										["HTTP ", String(httpStatusCode)],

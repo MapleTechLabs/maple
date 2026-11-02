@@ -24,6 +24,9 @@ import { segmentedSelect } from "../../../ui/segmented-select"
 import { alertsHref } from "../shared/links"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
+import { strip } from "../../../ui/rule"
 
 // `RuleDiagnosisPanel`: the rule's diagnosis.
 
@@ -88,39 +91,36 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 					className: "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left",
 				},
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2.5")],
+					hstack(h, { gap: "2.5", shrink: true },
 						[
 							stageIcon(h, verdict.status, 16),
 							h.div(
 								[h.Class("min-w-0")],
 								[
-									h.p(
-										[h.Class("text-sm font-medium")],
+									typography(h, { size: "sm", weight: "medium", as: "p" },
 										[verdict.status === "pass" ? "Rule is healthy" : "Why is this alert failing?"],
 									),
-									h.p([h.Class("truncate text-xs text-muted-foreground")], [verdict.summary]),
+									typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [verdict.summary]),
 								],
 							),
 						],
 					),
 					icon(h, "ChevronDownIcon", {
 						size: 16,
-						className: cn("shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180"),
+						className: cn(typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }), isOpen && "rotate-180"),
 					}),
 				],
 			),
 			...(isOpen
 				? [
-						h.div(
-							[h.Class("border-t px-4 py-2.5")],
+						strip(h, { kind: "foot" },
 							[
 								...(groupKeys.length > 0
 									? [
 											h.div(
 												[h.Class("mb-3 flex items-center gap-2")],
 												[
-													h.span([h.Class("shrink-0 text-xs text-muted-foreground")], ["Group"]),
+													typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, ["Group"]),
 													h.div(
 														[h.Class("-my-1 min-w-0 flex-1 overflow-x-auto py-1")],
 														[
@@ -188,8 +188,7 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
+			hstack(h, { gap: "2.5" },
 				[
 					stageIcon(h, stage.status, 14),
 					pressable(
@@ -199,11 +198,11 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 							className: "flex min-w-0 flex-1 items-baseline gap-2 text-left",
 						},
 						[
-							h.span([h.Class("shrink-0 text-xs font-medium")], [stage.label]),
+							typography(h, { size: "xs", weight: "medium", className: "shrink-0" }, [stage.label]),
 							h.span(
 								[
 									h.Class(
-										cn("truncate text-xs", stage.status === "fail" ? "text-severity-error" : "text-muted-foreground"),
+										cn(typographyClass({ size: "xs", truncate: true }), stage.status === "fail" ? "text-severity-error" : "text-muted-foreground"),
 									),
 								],
 								[stage.summary],

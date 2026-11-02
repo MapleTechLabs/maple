@@ -16,6 +16,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { optionsByNameOf, variablesOf } from "./plan"
 import { variableComboIdOf } from "./variable-update"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The variable selects: one chip per variable, and in
 // edit mode the `+` chip that opens the manager.
@@ -104,7 +106,7 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 						anchorSelector: anchor,
 						className: "min-w-52",
 						listClassName: "max-h-72 overflow-y-auto p-1",
-						itemClassName: (value) => (value === ALL_VALUE ? "text-xs" : "font-mono text-xs"),
+						itemClassName: (value) => (value === ALL_VALUE ? "text-xs" : typographyClass({ size: "xs", mono: true })),
 						renderItem: (value) =>
 							value === ALL_VALUE
 								? ["All", h.span([h.Class("ml-auto pl-4 text-3xs text-muted-foreground")], ["no filter"])]
@@ -187,8 +189,7 @@ export const variableSelects = (h: H, model: Model, context: PageContext, canMan
 	const variables = model.document?.variables ?? []
 	if (variables.length === 0 && !canManage) return []
 	return [
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
+		hstack(h, { gap: "1.5" },
 			[
 				...variables.map((variable) => control(h, model, context, variable)),
 				...(canManage

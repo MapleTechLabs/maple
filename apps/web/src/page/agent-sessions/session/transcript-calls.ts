@@ -14,6 +14,8 @@ import { clampedBody, messageBodyView, payloadCopyButton } from "./transcript-ki
 import { rowViewSwitch } from "./transcript-messages"
 import { avatar, CLOCK, clockOf, inlineNote, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
 import { failedBadge } from "./view-kit"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The transcript's model calls: `AssistantBlock`, `PromptBlock`, `StructureRow`.
 
@@ -36,8 +38,7 @@ const assistantError = (
 			...(message === ""
 				? []
 				: [
-						h.div(
-							[h.Class("flex items-start gap-1.5")],
+						hstack(h, { gap: "1.5", align: "start" },
 							[
 								h.div(
 									[h.Class("min-w-0 grow")],
@@ -71,7 +72,7 @@ const assistantError = (
 							],
 						),
 					]),
-			h.p([h.Class("text-muted-foreground text-xs")], ["No reply was produced by this call."]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, ["No reply was produced by this call."]),
 		],
 	)
 }
@@ -194,8 +195,7 @@ export const promptBlock = (
 			className: "pt-4",
 		},
 		[
-			h.div(
-				[h.Class("flex flex-col gap-1.5")],
+			vstack(h, { gap: "1.5" },
 				[
 					h.div(
 						[h.Class("flex h-6 items-center gap-2")],
@@ -262,8 +262,7 @@ export const structureRow = (
 	const meta = structureMeta(structure.span, category)
 	const { isSelected } = state
 	return row(h, { depth: structure.depth, className: "pt-0.5" }, [
-		h.div(
-			[h.Class("flex items-center gap-2.5")],
+		hstack(h, { gap: "2.5" },
 			[
 				pressable(
 					h,
@@ -285,7 +284,7 @@ export const structureRow = (
 						truncatedText(h, {
 							text: structure.label,
 							mono: true,
-							className: "font-medium text-foreground text-xs",
+							className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
 						}),
 						h.span([h.Class(cn(META, "shrink-0"))], [meta.shown]),
 						h.span([h.Class(cn(META, !isSelected && ON_HOVER))], [meta.onHover]),

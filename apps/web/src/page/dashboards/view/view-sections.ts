@@ -16,6 +16,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { sectionMenuIdOf } from "./section-update"
+import { hstackClass } from "../../../ui/stack"
 
 // A dashboard section's header, `SectionTabBar` and
 // `InlineEditableText`: the chevron, the renamable title, the tabs, "+" and the options menu.
@@ -256,7 +257,7 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, model, section, activeTabId, isEditable)])]
 						: []),
 					h.div(
-						[h.Class(cn("flex items-center gap-1", !hasTabs && "ml-auto"))],
+						[h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))],
 						[
 							...(isEditable && !isCollapsed
 								? [

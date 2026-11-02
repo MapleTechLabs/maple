@@ -15,6 +15,7 @@ import { detailTitle } from "../../kit/detail-header"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstack } from "../../../ui/stack"
 
 // The session header: what ran, when, on what.
 
@@ -67,18 +68,15 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 	const id = traceId ?? model.sessionId
 	return detailTitle(h, {
 		kind: [
-			h.span(
-				[h.Class("inline-flex items-center gap-1.5")],
-				[
-					icon(h, vendorIcon(vendorId), {
-						size: 12,
-						className: "shrink-0",
-						style: { color: vendorColor(vendorId) },
-						attributes: [h.AriaHidden(true)],
-					}),
-					"Agent session",
-				],
-			),
+			hstack(h, { gap: "1.5", inline: true, as: "span" }, [
+				icon(h, vendorIcon(vendorId), {
+					size: 12,
+					className: "shrink-0",
+					style: { color: vendorColor(vendorId) },
+					attributes: [h.AriaHidden(true)],
+				}),
+				"Agent session",
+			]),
 		],
 		title: [heading],
 		meta: [

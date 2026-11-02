@@ -15,6 +15,7 @@ import { integrationStep } from "./view-integration"
 import { integrationMeta, platformPicker } from "./view-picker"
 import { tokenStep } from "./view-token"
 import { trail } from "./view-trail"
+import { hstack } from "../../../ui/stack"
 
 // `NewSourcePage`.
 
@@ -37,34 +38,31 @@ const metaOf = (model: Model) =>
 /** The source's mark, its title and the trail under it; `titleId` names the drawer's dialog by it. */
 export const titleContent = (h: H, model: Model, titleId?: string): Html => {
 	const meta = metaOf(model)
-	return h.div(
-		[h.Class("flex items-center gap-4")],
-		[
-			...(meta === null
-				? []
-				: [
-						h.span(
-							[
-								h.AriaHidden(true),
-								h.Class(
-									"hidden size-12 shrink-0 items-center justify-center rounded-lg border bg-card sm:inline-flex",
-								),
-							],
-							[icon(h, meta.icon, { size: 22 })],
-						),
-					]),
-			h.div(
-				[h.Class("min-w-0 space-y-2")],
-				[
-					// In the drawer the title is the dialog's name, under the onboarding page's own h1.
-					titleId === undefined
-						? pageTitle(h, { title: titleOf(model) }, [titleOf(model)])
-						: pageTitle(h, { level: 2, attributes: [h.Id(titleId)] }, [titleOf(model)]),
-					trail(h, model),
-				],
-			),
-		],
-	)
+	return hstack(h, { gap: "4" }, [
+		...(meta === null
+			? []
+			: [
+					h.span(
+						[
+							h.AriaHidden(true),
+							h.Class(
+								"hidden size-12 shrink-0 items-center justify-center rounded-lg border bg-card sm:inline-flex",
+							),
+						],
+						[icon(h, meta.icon, { size: 22 })],
+					),
+				]),
+		h.div(
+			[h.Class("min-w-0 space-y-2")],
+			[
+				// In the drawer the title is the dialog's name, under the onboarding page's own h1.
+				titleId === undefined
+					? pageTitle(h, { title: titleOf(model) }, [titleOf(model)])
+					: pageTitle(h, { level: 2, attributes: [h.Id(titleId)] }, [titleOf(model)]),
+				trail(h, model),
+			],
+		),
+	])
 }
 
 const cancel = (h: H): Html =>

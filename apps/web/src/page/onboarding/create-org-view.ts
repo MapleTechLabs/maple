@@ -15,6 +15,10 @@ import { Message, type Model, MountDitherField } from "./create-org"
 import { optionCard } from "./option-card"
 import { REGION_CARDS } from "./quick-start-region-view"
 import { regionFlag } from "./region-flag"
+import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
+import { grid } from "../../ui/grid"
+import { layer } from "../../ui/layer"
 
 // The `/org-required` screen: the form on the left, a preview of the workspace being made on the right.
 
@@ -27,91 +31,77 @@ const nameOf = (name: string): string => name.trim() || "your organization"
 const initialOf = (name: string): string => nameOf(name).charAt(0).toUpperCase()
 
 const header = (h: H, email: string | null): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-4")],
-		[
-			h.div(
-				[h.Class("flex items-center gap-2 text-foreground")],
-				[
-					h.span(
-						[h.Class("text-primary"), h.AriaHidden(true)],
-						[icon(h, "MapleMark", { size: 20 })],
-					),
-					h.span([h.Class("font-display text-lg font-semibold tracking-tight")], ["maple"]),
-				],
-			),
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-3 text-xs")],
-				[
-					...(email === null ? [] : [h.span([h.Class("truncate text-muted-foreground")], [email])]),
-					textLink(
-						h,
-						{
-							tone: "muted",
-							className: "shrink-0 text-foreground underline-offset-4",
-							onClick: Message.ClickedSignOut(),
-						},
-						["Sign out"],
-					),
-				],
-			),
-		],
-	)
+	hstack(h, { gap: "4", justify: "between" }, [
+		h.div(
+			[h.Class("flex items-center gap-2 text-foreground")],
+			[
+				h.span([h.Class("text-primary"), h.AriaHidden(true)], [icon(h, "MapleMark", { size: 20 })]),
+				h.span([h.Class("font-display text-lg font-semibold tracking-tight")], ["maple"]),
+			],
+		),
+		h.div(
+			[h.Class("flex min-w-0 items-center gap-3 text-xs")],
+			[
+				...(email === null ? [] : [typography(h, { tone: "muted", truncate: true }, [email])]),
+				textLink(
+					h,
+					{
+						tone: "muted",
+						className: "shrink-0 text-foreground underline-offset-4",
+						onClick: Message.ClickedSignOut(),
+					},
+					["Sign out"],
+				),
+			],
+		),
+	])
 
 const nameField = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-2.5")],
-		[
-			label(h, { className: "text-sm sm:text-sm", attributes: [h.For("org-required-name")] }, [
-				"What should we call it?",
-			]),
-			h.div(
-				[h.Class("flex items-center gap-3")],
+	vstack(h, { gap: "2.5" }, [
+		label(h, { className: "text-sm sm:text-sm", attributes: [h.For("org-required-name")] }, [
+			"What should we call it?",
+		]),
+		hstack(h, { gap: "3" }, [
+			h.span(
 				[
-					h.span(
-						[
-							h.AriaHidden(true),
-							h.Class(
-								"flex size-12 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong font-display text-xl font-semibold text-foreground",
-							),
-						],
-						[initialOf(model.name)],
+					h.AriaHidden(true),
+					h.Class(
+						"flex size-12 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong font-display text-xl font-semibold text-foreground",
 					),
-					input(h, {
-						id: "org-required-name",
-						size: "lg",
-						className: "flex-1",
-						controlClassName: "h-12 leading-12 text-base sm:h-12 sm:leading-12 sm:text-base",
-						isDisabled: model.isCreating || model.createdOrgId !== null,
-						attributes: [
-							h.Maxlength(100),
-							h.Placeholder("Organization name"),
-							h.Required(true),
-							h.Autocomplete("organization"),
-							h.Value(model.name),
-							h.OnInput((value) => Message.ChangedName({ value })),
-						],
-					}),
 				],
+				[initialOf(model.name)],
 			),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				[
-					model.suggestedFrom === null
-						? "You can rename it whenever you like."
-						: `We guessed from ${model.suggestedFrom}. Rename it whenever you like.`,
+			input(h, {
+				id: "org-required-name",
+				size: "lg",
+				className: "flex-1",
+				controlClassName: "h-12 leading-12 text-base sm:h-12 sm:leading-12 sm:text-base",
+				isDisabled: model.isCreating || model.createdOrgId !== null,
+				attributes: [
+					h.Maxlength(100),
+					h.Placeholder("Organization name"),
+					h.Required(true),
+					h.Autocomplete("organization"),
+					h.Value(model.name),
+					h.OnInput((value) => Message.ChangedName({ value })),
 				],
-			),
-		],
-	)
+			}),
+		]),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			model.suggestedFrom === null
+				? "You can rename it whenever you like."
+				: `We guessed from ${model.suggestedFrom}. Rename it whenever you like.`,
+		]),
+	])
 
 const regionField = (h: H, model: Model): Html =>
 	h.fieldset(
 		[h.Class("flex min-w-0 flex-col gap-2.5")],
 		[
 			h.legend([h.Class("mb-2.5 text-sm font-medium")], ["Where should your data live?"]),
-			h.div(
-				[h.Class("grid gap-3 sm:grid-cols-2")],
+			grid(
+				h,
+				{ sm: 2, gap: "3" },
 				MapleRegion.literals.map((region) =>
 					optionCard(h, {
 						type: "radio",
@@ -127,10 +117,9 @@ const regionField = (h: H, model: Model): Html =>
 					}),
 				),
 			),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				["Pick once: the region can't be changed later."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Pick once: the region can't be changed later.",
+			]),
 		],
 	)
 
@@ -167,7 +156,7 @@ const orgRow = (h: H, options: OrgRowOptions): Html =>
 					]),
 			h.span(
 				[h.Class("min-w-0 flex-1 text-sm leading-snug text-muted-foreground line-clamp-2")],
-				[options.lead, " ", h.span([h.Class("font-medium text-foreground")], [options.name])],
+				[options.lead, " ", typography(h, { tone: "foreground", weight: "medium" }, [options.name])],
 			),
 			button(
 				h,
@@ -221,46 +210,35 @@ const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>)
 		[
 			nameField(h, model),
 			...(hasMultipleRegions ? [regionField(h, model)] : []),
-			h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					...(model.errorMessage === null
-						? []
-						: [
-								h.p(
-									[h.Role("alert"), h.Class(cn("text-xs", TONE_TEXT.crit))],
-									[model.errorMessage],
-								),
+			vstack(h, { gap: "3" }, [
+				...(model.errorMessage === null
+					? []
+					: [h.p([h.Role("alert"), h.Class(cn("text-xs", TONE_TEXT.crit))], [model.errorMessage])]),
+				button(
+					h,
+					{
+						type: "submit",
+						size: "lg",
+						className: "h-12 w-full text-title font-semibold",
+						isLoading: model.isCreating,
+						isDisabled:
+							model.name.trim() === "" || model.joiningId !== null || model.openingId !== null,
+					},
+					[
+						`${model.createdOrgId === null ? "Create" : "Open"} ${nameOf(model.name)}`,
+						icon(h, "ArrowRightIcon", { size: 16 }),
+					],
+				),
+				...memberships.map((organization) => membershipRow(h, model, organization)),
+				...(model.invitations ?? []).map((invitation) => invitationRow(h, model, invitation)),
+				...(model.invitationsError === null
+					? []
+					: [
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								`Couldn't check whether anyone invited you: ${model.invitationsError}`,
 							]),
-					button(
-						h,
-						{
-							type: "submit",
-							size: "lg",
-							className: "h-12 w-full text-title font-semibold",
-							isLoading: model.isCreating,
-							isDisabled:
-								model.name.trim() === "" ||
-								model.joiningId !== null ||
-								model.openingId !== null,
-						},
-						[
-							`${model.createdOrgId === null ? "Create" : "Open"} ${nameOf(model.name)}`,
-							icon(h, "ArrowRightIcon", { size: 16 }),
-						],
-					),
-					...memberships.map((organization) => membershipRow(h, model, organization)),
-					...(model.invitations ?? []).map((invitation) => invitationRow(h, model, invitation)),
-					...(model.invitationsError === null
-						? []
-						: [
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
-									[`Couldn't check whether anyone invited you: ${model.invitationsError}`],
-								),
-							]),
-				],
-			),
+						]),
+			]),
 		],
 	)
 
@@ -278,7 +256,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 	h.div(
 		[h.AriaHidden(true), h.Class("relative flex w-full max-w-[640px] flex-col items-center gap-5")],
 		[
-			h.span([h.Class("text-xs text-muted-foreground")], ["A peek at your new workspace"]),
+			typography(h, { size: "xs", tone: "muted" }, ["A peek at your new workspace"]),
 			h.div(
 				[h.Class("w-full overflow-hidden rounded-md border border-border bg-background")],
 				[
@@ -316,8 +294,9 @@ const workspacePreview = (h: H, model: Model): Html =>
 												: []),
 										],
 									),
-									h.div(
-										[h.Class("flex flex-col gap-0.5")],
+									vstack(
+										h,
+										{ gap: "0.5" },
 										NAV.map(([iconName, label], index) =>
 											h.div(
 												[
@@ -358,10 +337,9 @@ const workspacePreview = (h: H, model: Model): Html =>
 												[h.Class("text-ui font-medium")],
 												["Waiting for your first span"],
 											),
-											h.span(
-												[h.Class("text-xs text-muted-foreground")],
-												["Connect a service and it shows up here."],
-											),
+											typography(h, { size: "xs", tone: "muted" }, [
+												"Connect a service and it shows up here.",
+											]),
 										],
 									),
 								],
@@ -397,30 +375,24 @@ export const view = (
 							h.div(
 								[h.Class("flex max-w-lg flex-col gap-10 pt-4")],
 								[
-									h.div(
-										[h.Class("flex flex-col gap-3")],
-										[
-											h.p(
-												[h.Class("text-sm text-muted-foreground")],
-												["Welcome to Maple"],
-											),
-											heading(
-												h,
-												{ level: 1, variant: "display" },
-												["Give your team a home"],
-											),
-											h.p(
-												[
-													h.Class(
-														"max-w-md text-title leading-relaxed text-muted-foreground",
-													),
-												],
-												[
-													"Your traces, logs, dashboards and alerts live in one organization.",
-												],
-											),
-										],
-									),
+									vstack(h, { gap: "3" }, [
+										typography(h, { size: "sm", tone: "muted", as: "p" }, [
+											"Welcome to Maple",
+										]),
+										heading(h, { level: 1, variant: "display" }, [
+											"Give your team a home",
+										]),
+										h.p(
+											[
+												h.Class(
+													"max-w-md text-title leading-relaxed text-muted-foreground",
+												),
+											],
+											[
+												"Your traces, logs, dashboards and alerts live in one organization.",
+											],
+										),
+									]),
 									form(h, model, memberships),
 								],
 							),
@@ -431,8 +403,9 @@ export const view = (
 			h.div(
 				[h.Class("relative hidden h-dvh flex-1 border-l border-border bg-sidebar xl:block")],
 				[
-					h.div(
-						[h.Class("pointer-events-none absolute inset-0 overflow-hidden")],
+					layer(
+						h,
+						{ clip: true },
 						[
 							h.canvas(
 								[

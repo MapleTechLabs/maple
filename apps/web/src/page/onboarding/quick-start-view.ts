@@ -13,7 +13,7 @@ import {
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { choiceCard } from "../../ui/choice-card"
+import { choiceCard, choiceCheckClass } from "../../ui/choice-card"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
 import { heading } from "../../ui/heading"
@@ -35,6 +35,9 @@ import { Message, type Model, MountDitherField } from "./quick-start"
 import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quick-start-state"
 import { eyebrow, eyebrowVariants } from "../../ui/eyebrow"
 import { statusDot } from "../../ui/status-dot"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../ui/stack"
+import { layer } from "../../ui/layer"
 
 // `/quick-start`: each step's form on the left and, where it has one, a preview of what it sets up on
 // the right, over the dithered backdrop that spreads a little further every step.
@@ -43,7 +46,7 @@ type H = HtmlBuilder<Message>
 
 /** `OnboardingLayout`'s right cluster: the progress trail, then the account actions. */
 export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex items-center gap-3")], children)
+	hstack(h, { gap: "3" }, children)
 
 /**
  * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
@@ -76,7 +79,7 @@ const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 		[h.AriaLabel("Onboarding progress"), h.Class("hidden items-center gap-2 text-xs md:flex")],
 		[
 			h.ol(
-				[h.Class("flex items-center gap-2")],
+				[h.Class(hstackClass({ gap: "2" }))],
 				items.map((item, index) =>
 					h.li(
 						[
@@ -100,8 +103,7 @@ const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 										],
 										[item.label],
 									)
-								: h.span(
-										[h.Class("flex items-center gap-1.5 text-muted-foreground")],
+								: hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) },
 										[
 											icon(h, "CheckIcon", {
 												size: 12,
@@ -152,13 +154,7 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 		[
 			...(options.aside === null
 				? [
-						h.div(
-							[
-								h.AriaHidden(true),
-								h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
-							],
-							[canvas],
-						),
+						layer(h, { clip: true, attributes: [h.AriaHidden(true)] }, [canvas]),
 					]
 				: []),
 			h.div(
@@ -178,8 +174,7 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 							),
 						],
 						[
-							h.div(
-								[h.Class("flex items-center gap-2")],
+							hstack(h, { gap: "2" },
 								[
 									h.span(
 										[h.AriaHidden(true), h.Class("text-primary")],
@@ -210,13 +205,7 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 								),
 							],
 							[
-								h.div(
-									[
-										h.AriaHidden(true),
-										h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
-									],
-									[canvas],
-								),
+								layer(h, { clip: true, attributes: [h.AriaHidden(true)] }, [canvas]),
 								h.div(
 									[
 										h.Class(
@@ -257,24 +246,16 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 				[h.AriaHidden(true), h.Class("flex size-7 shrink-0 items-center justify-center")],
 				[icon(h, item.icon, { size: 18 })],
 			),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col")],
+			vstack(h, { shrink: true, grow: true, as: "span" },
 				[
-					h.span([h.Class("truncate text-sm font-medium")], [item.label]),
-					h.span([h.Class("truncate text-xs text-muted-foreground")], [item.description]),
+					typography(h, { size: "sm", weight: "medium", truncate: true }, [item.label]),
+					typography(h, { size: "xs", tone: "muted", truncate: true }, [item.description]),
 				],
 			),
 			h.span(
 				[
 					h.AriaHidden(true),
-					h.Class(
-						cn(
-							"flex size-4 shrink-0 items-center justify-center rounded-sm border",
-							isChecked
-								? "border-primary bg-primary text-primary-foreground"
-								: "border-input",
-						),
-					),
+					h.Class(choiceCheckClass(isChecked)),
 				],
 				isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
 			),
@@ -313,8 +294,7 @@ const languageGroup = (h: H, state: QuickStartState, query: string): Html => {
 		[h.Class("flex min-w-0 flex-col gap-3")],
 		[
 			h.legend([h.Class("sr-only")], ["Your code"]),
-			h.div(
-				[h.Class("flex items-center justify-between gap-4")],
+			hstack(h, { gap: "4", justify: "between" },
 				[
 					eyebrow(h, { variant: "label", attributes: [h.AriaHidden(true)] }, ["Your code"]),
 					searchInput(h, {
@@ -333,8 +313,7 @@ const languageGroup = (h: H, state: QuickStartState, query: string): Html => {
 						// Same height as the grid, so the section below stays put while typing.
 						[h.Class("flex h-[14rem] flex-col gap-3")],
 						[
-							h.p(
-								[h.Class("text-sm text-muted-foreground")],
+							typography(h, { size: "sm", tone: "muted", as: "p" },
 								[
 									`Nothing called "${query.trim()}" yet. Any OpenTelemetry SDK works with Maple:`,
 								],
@@ -377,7 +356,7 @@ const stepFooter = (h: H, children: ReadonlyArray<Html>, back: StepId | null = n
 		? h.div([h.Class(STEP_FOOTER_CLASS)], children)
 		: h.div(
 				[h.Class(cn(STEP_FOOTER_CLASS, "justify-between"))],
-				[backButton(h, back), h.div([h.Class("flex items-center gap-4")], children)],
+				[backButton(h, back), hstack(h, { gap: "4" }, children)],
 			)
 
 const stackStep = (h: H, state: QuickStartState, query: string, hasPlan: boolean): Html => {
@@ -386,8 +365,7 @@ const stackStep = (h: H, state: QuickStartState, query: string, hasPlan: boolean
 	return h.div(
 		[h.Class(STEP_BODY_CLASS)],
 		[
-			h.div(
-				[h.Class("flex flex-col gap-2.5")],
+			vstack(h, { gap: "2.5" },
 				[
 					heading(h, { level: 1, variant: "display" }, ["What are you running?"]),
 					h.p(
@@ -450,11 +428,9 @@ const INTENT_GLYPH = {
 /** What the picks fill in Maple, each surface with the picks behind it. */
 const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 	const surfaces = filledSurfaces(state.stack)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(h, { gap: "4" },
 		[
-			h.div(
-				[h.Class("flex flex-col gap-1")],
+			vstack(h, { gap: "1" },
 				[
 					eyebrow(h, { variant: "label" }, [`What ${orgName} gets`]),
 					h.span(
@@ -486,33 +462,25 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 									[h.Class("flex items-center gap-3.5 px-4 py-3")],
 									[
 										pixelGlyph(h, INTENT_GLYPH[surface.intent], true),
-										h.div(
-											[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+										vstack(h, { gap: "0.5", shrink: true, grow: true },
 											[
-												h.span(
-													[h.Class("text-sm font-medium")],
+												typography(h, { size: "sm", weight: "medium" },
 													[ONBOARDING_INTENTS[surface.intent].label],
 												),
-												h.span(
-													[h.Class("text-xs text-muted-foreground")],
+												typography(h, { size: "xs", tone: "muted" },
 													[ONBOARDING_INTENTS[surface.intent].title],
 												),
 											],
 										),
 										surface.sources.length === 0
-											? h.span(
-													[h.Class("shrink-0 text-2xs text-muted-foreground")],
+											? typography(h, { size: "2xs", tone: "muted", className: "shrink-0" },
 													["On everything"],
 												)
-											: h.span(
-													[
-														h.Class("flex shrink-0 items-center gap-1"),
-														h.Title(
+											: hstack(h, { gap: "1", as: "span", className: "shrink-0", attributes: [h.Title(
 															surface.sources
 																.map((source) => source.label)
 																.join(", "),
-														),
-													],
+														)] },
 													surface.sources.map((source) =>
 														h.span(
 															[
@@ -558,16 +526,14 @@ const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 				],
 				[icon(h, item.icon, { size: 18 })],
 			),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+			vstack(h, { gap: "0.5", shrink: true, grow: true },
 				[
-					h.span([h.Class("text-sm font-medium")], [item.label]),
-					h.span([h.Class("text-xs text-muted-foreground")], [item.description]),
+					typography(h, { size: "sm", weight: "medium" }, [item.label]),
+					typography(h, { size: "xs", tone: "muted" }, [item.description]),
 				],
 			),
 			isConnected
-				? h.div(
-						[h.Class("flex items-center gap-3")],
+				? hstack(h, { gap: "3" },
 						[
 							h.span(
 								[h.Class("flex items-center gap-1.5 text-sm text-severity-info")],
@@ -614,8 +580,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 	return h.div(
 		[h.Class(STEP_BODY_CLASS)],
 		[
-			h.div(
-				[h.Class("flex flex-col gap-2.5")],
+			vstack(h, { gap: "2.5" },
 				[
 					heading(h, { level: 1, variant: "display" }, ["Connect your stack"]),
 					h.p(
@@ -629,8 +594,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 			...(platforms.length === 0
 				? []
 				: [
-						h.section(
-							[h.Class("flex flex-col gap-3")],
+						vstack(h, { gap: "3", as: "section" },
 							[
 								eyebrow(h, { variant: "label", as: "h2" }, ["Providers"]),
 								h.ul(
@@ -644,13 +608,11 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 							],
 						),
 					]),
-			h.section(
-				[h.Class("flex flex-col gap-3")],
+			vstack(h, { gap: "3", as: "section" },
 				[
-					h.div(
-						[h.Class("flex items-center justify-between gap-3")],
+					hstack(h, { gap: "3", justify: "between" },
 						[
-							eyebrow(h, { variant: "label", as: "h2", className: "flex items-center gap-2" }, [
+							eyebrow(h, { variant: "label", as: "h2", className: hstackClass({ gap: "2" }) }, [
 								"Your code, with OpenTelemetry",
 							]),
 							// The languages picked, or every SDK there are snippets for when none was.
@@ -704,8 +666,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					}),
 					...(connect.keys._tag === "Failed"
 						? [
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
+								typography(h, { size: "xs", tone: "muted", as: "p" },
 									[
 										"Couldn't read your ingest key. An admin can copy it from Settings, Ingestion.",
 									],
@@ -748,14 +709,12 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 	}))
 	const arriving = rows.filter((row) => row.presence.status === "present").length
 	const providers = state.stack.platforms
-	return h.div(
-		[h.Class("flex flex-col gap-4"), h.AriaLive("polite")],
+	return vstack(h, { gap: "4", attributes: [h.AriaLive("polite")] },
 		[
 			h.div(
 				[h.Class("flex items-end justify-between gap-3")],
 				[
-					h.div(
-						[h.Class("flex flex-col gap-1")],
+					vstack(h, { gap: "1" },
 						[
 							eyebrow(h, { variant: "label" }, [`Arriving in ${orgName}`]),
 							h.span(
@@ -786,8 +745,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 				],
 				[
 					...rows.map((row) =>
-						h.li(
-							[h.Class("flex items-center gap-3 px-4 py-3")],
+						hstack(h, { gap: "3", as: "li", className: "px-4 py-3" },
 							[
 								h.span([h.Class("flex-1 text-sm")], [row.label]),
 								h.span(
@@ -813,8 +771,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 						),
 					),
 					...providers.map((platform) =>
-						h.li(
-							[h.Class("flex items-center gap-3 px-4 py-3")],
+						hstack(h, { gap: "3", as: "li", className: "px-4 py-3" },
 							[
 								h.span(
 									[h.AriaHidden(true), h.Class("flex")],
@@ -973,8 +930,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 							),
 						],
 					),
-					h.section(
-						[h.Class("flex flex-col gap-3")],
+					vstack(h, { gap: "3", as: "section" },
 						[
 							eyebrow(h, { variant: "label", as: "h2" }, ["Start with your own data"]),
 							h.ul(
@@ -997,8 +953,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 												],
 												[
 													pixelGlyph(h, card.glyph, false),
-													h.span(
-														[h.Class("flex flex-col gap-1")],
+													vstack(h, { gap: "1", as: "span" },
 														[
 															h.span(
 																[h.Class("text-title font-medium")],
@@ -1040,8 +995,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 					...(notConnected.length === 0 && arriving.length === signals.length
 						? []
 						: [
-								h.section(
-									[h.Class("flex flex-col gap-3")],
+								vstack(h, { gap: "3", as: "section" },
 									[
 										eyebrow(h, { variant: "label", as: "h2" }, ["Still waiting on"]),
 										h.ul(
@@ -1052,8 +1006,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 											],
 											[
 												...notConnected.map((platform) =>
-													h.li(
-														[h.Class("flex items-center gap-3 px-4 py-3")],
+													hstack(h, { gap: "3", as: "li", className: "px-4 py-3" },
 														[
 															h.span(
 																[h.AriaHidden(true), h.Class("flex")],
@@ -1093,12 +1046,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 												...(arriving.length > 0
 													? []
 													: [
-															h.li(
-																[
-																	h.Class(
-																		"flex items-center gap-3 px-4 py-3",
-																	),
-																],
+															hstack(h, { gap: "3", as: "li", className: "px-4 py-3" },
 																[
 																	icon(h, "ClockIcon", {
 																		size: 14,
@@ -1108,12 +1056,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 																		[h.Class("flex-1 text-sm")],
 																		["Your first span, log or metric"],
 																	),
-																	h.span(
-																		[
-																			h.Class(
-																				"flex items-center gap-1.5 text-xs text-muted-foreground",
-																			),
-																		],
+																	hstack(h, { gap: "1.5", as: "span", className: typographyClass({ size: "xs", tone: "muted" }) },
 																		[
 																			statusDot(h, { tone: "ok" }),
 																			"Listening",

@@ -42,6 +42,8 @@ import { Message, type Model } from "./model"
 import { phaseStrip, runActions, runStats, runTitle, stopBanner } from "./view-header"
 import { findingSheet, findingsSection } from "./view-findings"
 import { eventsPanel, gapsPanel, ledgerPanel } from "./view-panels"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `/security/code/runs/$runId`: what the run found first, by severity; how it ran (phases, totals,
 // ledger, events) below, folded once it finished.
@@ -107,57 +109,54 @@ const runDetails = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: s
 	]
 		.filter((part) => part !== null)
 		.join(" · ")
-	return h.section(
-		[h.AriaLabel("How the run ran"), h.Class("flex flex-col gap-4")],
-		[
-			cardButton(
-				h,
-				{
-					onClick: Message.ToggledDetails(),
-					className: "flex w-full items-center gap-2.5 p-4",
-					attributes: [h.AriaExpanded(isOpen)],
-				},
-				[
-					icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
-						size: 14,
-						className: "text-muted-foreground",
-					}),
-					h.span([h.Class("text-sm font-medium")], ["How the run ran"]),
-					h.span([h.Class("truncate text-xs text-muted-foreground")], [summary]),
-					h.span(
-						[h.Class("ml-auto shrink-0 text-xs text-muted-foreground")],
-						[isOpen ? "Hide" : "Phases, coverage, cost and events"],
+	return vstack(h, { gap: "4", as: "section", attributes: [h.AriaLabel("How the run ran")] }, [
+		cardButton(
+			h,
+			{
+				onClick: Message.ToggledDetails(),
+				className: "flex w-full items-center gap-2.5 p-4",
+				attributes: [h.AriaExpanded(isOpen)],
+			},
+			[
+				icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
+					size: 14,
+					className: "text-muted-foreground",
+				}),
+				typography(h, { size: "sm", weight: "medium" }, ["How the run ran"]),
+				typography(h, { size: "xs", tone: "muted", truncate: true }, [summary]),
+				h.span(
+					[h.Class("ml-auto shrink-0 text-xs text-muted-foreground")],
+					[isOpen ? "Hide" : "Phases, coverage, cost and events"],
+				),
+			],
+		),
+		...(isOpen
+			? [
+					phaseStrip(h, phasesOf(run, events)),
+					runStats(
+						h,
+						run,
+						AsyncData.hasData(model.findings.data) ? verdictsOf(resultsOf(model)) : null,
+						Option.match(AsyncData.getData(model.units.data), {
+							onNone: () => null,
+							onSome: (response) => areasOf(response.units),
+						}),
+						model.nowMs,
 					),
-				],
-			),
-			...(isOpen
-				? [
-						phaseStrip(h, phasesOf(run, events)),
-						runStats(
-							h,
-							run,
-							AsyncData.hasData(model.findings.data) ? verdictsOf(resultsOf(model)) : null,
-							Option.match(AsyncData.getData(model.units.data), {
-								onNone: () => null,
-								onSome: (response) => areasOf(response.units),
-							}),
-							model.nowMs,
-						),
-						run.unitTotal === 0
-							? eventsPanel(h, model, events, run, timeZone)
-							: h.div(
-									[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],
-									[
-										!live && gaps > 0 && !model.isLedgerOpen
-											? gapsPanel(h, model, run)
-											: ledgerPanel(h, model, run),
-										eventsPanel(h, model, events, run, timeZone),
-									],
-								),
-					]
-				: []),
-		],
-	)
+					run.unitTotal === 0
+						? eventsPanel(h, model, events, run, timeZone)
+						: h.div(
+								[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],
+								[
+									!live && gaps > 0 && !model.isLedgerOpen
+										? gapsPanel(h, model, run)
+										: ledgerPanel(h, model, run),
+									eventsPanel(h, model, events, run, timeZone),
+								],
+							),
+				]
+			: []),
+	])
 }
 
 const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: string): Html => {

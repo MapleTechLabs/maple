@@ -15,6 +15,9 @@ import type { LongRow } from "../../../../charts/infra-metric-series"
 import type { ZoneDns, ZoneSecurity } from "../data"
 import { Message, type Model } from "./model"
 import { panelScope, type Trigger } from "./view-scope"
+import { hstackClass } from "../../../../ui/stack"
+import { stripClass } from "../../../../ui/rule"
+import { columnClass } from "../../../../ui/column"
 
 // `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`.
 
@@ -30,8 +33,10 @@ export type SectionContext = Readonly<{
 /** Legend chips beyond this collapse into a `+N`, so the legend can never reflow the card header. */
 const MAX_LEGEND_CHIPS = 8
 
-const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
+const ROW_CLASS = hstackClass({
+	gap: "4",
+	className: stripClass("hoverRow"),
+})
 
 export const SCOPE_IDS = {
 	dns: "cf-scope-dns",
@@ -149,7 +154,7 @@ export const dnsSection = (
 			h,
 			{ ariaLabel: "Top DNS query names", isWaiting },
 			[
-				columnHead(h, { label: "Query name", width: "w-0 flex-1 min-w-56" }),
+				columnHead(h, { label: "Query name", width: columnClass({ min: "56" }) }),
 				columnHead(h, { label: "Queries", align: "right", width: "w-24" }),
 				columnHead(h, { label: "NXDOMAIN", align: "right", width: "w-28" }),
 			],
@@ -261,7 +266,7 @@ export const securitySection = (
 			h,
 			{ ariaLabel: "Top security rules", isWaiting },
 			[
-				columnHead(h, { label: "Rule", width: "w-0 flex-1 min-w-52" }),
+				columnHead(h, { label: "Rule", width: columnClass({ min: "52" }) }),
 				columnHead(h, { label: "Source", width: "w-32", hidden: "hidden md:flex" }),
 				columnHead(h, { label: "Action", width: "w-32" }),
 				columnHead(h, { label: "Host", width: "w-44", hidden: "hidden lg:flex" }),

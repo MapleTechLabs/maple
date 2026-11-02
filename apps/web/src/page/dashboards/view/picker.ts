@@ -20,6 +20,9 @@ import { sampleDataOf } from "../kit/chart-registry"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { CHART_STYLES, PICKER_SECTIONS, PICKER_TABS, type PickerSection } from "./picker-catalog"
+import { typography } from "../../../ui/typography"
+import { vstack, vstackClass } from "../../../ui/stack"
+import { chartFrameClass } from "../../../ui/chart-frame"
 
 // The widget picker and the presets' thumbnails.
 
@@ -27,21 +30,19 @@ type H = HtmlBuilder<Message>
 
 /** `PickerCard`: the thumbnail over its title and description. */
 const pickerCard = (h: H, title: string, description: string, onClick: Message, preview: Html): Html =>
-	cardButton(h, { onClick, className: "flex flex-col gap-3 p-4" }, [
+	cardButton(h, { onClick, className: vstackClass({ gap: "3", className: "p-4" }) }, [
 			preview,
-			h.div(
-				[h.Class("flex flex-col gap-0.5")],
+			vstack(h, { gap: "0.5" },
 				[
-					h.div([h.Class("text-xs font-medium")], [title]),
-					...(description === "" ? [] : [h.div([h.Class("text-2xs text-muted-foreground")], [description])]),
+					typography(h, { size: "xs", weight: "medium", as: "div" }, [title]),
+					...(description === "" ? [] : [typography(h, { size: "2xs", tone: "muted", as: "div" }, [description])]),
 				],
 			),
 		])
 
 /** `PickerSection`: a heading on the All tab, then a three-column grid of cards. */
 const pickerSection = (h: H, title: string, showHeading: boolean, cards: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
+	vstack(h, { gap: "3" },
 		[
 			...(showHeading ? [eyebrow(h, { as: "h3" }, [title])] : []),
 			h.div([h.Class("grid grid-cols-3 gap-3")], cards),
@@ -57,7 +58,7 @@ const previewFrame = (
 ): Html =>
 	h.div(
 		[h.Class(`aspect-[4/3] ${className}`)],
-		[h.div([h.Class("text-3xs text-muted-foreground")], title === undefined ? [] : [title]), ...children],
+		[typography(h, { size: "3xs", tone: "muted", as: "div" }, title === undefined ? [] : [title]), ...children],
 	)
 
 /** `ChartPreview`: the chart over its registry sample rows. */
@@ -76,7 +77,7 @@ const chartPreview = (h: H, model: Model, chartId: string, key: string): Html =>
 					timeZone: "UTC",
 					chartId,
 					data: sampleDataOf(chartId),
-					className: "h-full w-full aspect-auto",
+					className: chartFrameClass("fill"),
 				})
 	return h.div([h.Class("aspect-[4/3] w-full overflow-hidden")], [content])
 }
@@ -173,7 +174,7 @@ const presetPreview = (h: H, model: Model, entry: PickerSection, preset: WidgetP
 		case "markdown":
 			return markdownPreview(h, preset)
 		case "chart":
-			return previewFrame(h, preset.display.title, "flex flex-col gap-1.5", [
+			return previewFrame(h, preset.display.title, vstackClass({ gap: "1.5" }), [
 				chartPreview(h, model, preset.display.chartId ?? entry.defaultChartId, preset.id),
 			])
 	}

@@ -13,6 +13,8 @@ import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { statusDot } from "../../../ui/status-dot"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `SampleBody` of `ToolErrorModal`: what the call was handed and what it gave back, and where the
 // arguments confirm a schema failure, what is wrong with them.
@@ -40,7 +42,7 @@ const notRecorded = (h: H, what: "arguments" | "result"): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-1 rounded-md border border-dashed border-input p-3.5 font-mono")],
 		[
-			h.span([h.Class("text-xs text-muted-foreground")], ["Not recorded"]),
+			typography(h, { size: "xs", tone: "muted" }, ["Not recorded"]),
 			h.span(
 				[h.Class("text-2xs leading-[15px] text-foreground-subtle")],
 				["The span has no ", what, " attribute."],
@@ -265,7 +267,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 								h.span(
 									[h.Class("text-xs leading-4 text-foreground-soft")],
 									[
-										h.span([h.Class("font-medium text-foreground")], [hint.subject]),
+										typography(h, { tone: "foreground", weight: "medium" }, [hint.subject]),
 										" ",
 										hint.text,
 									],
@@ -283,8 +285,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 							],
 							[
 								statusDot(h, { tone: "custom", className: "mt-[5px] bg-muted-foreground" }),
-								h.span(
-									[h.Class("flex flex-col gap-1")],
+								vstack(h, { gap: "1", as: "span" },
 									[
 										h.span(
 											[h.Class("text-xs leading-4 text-foreground")],

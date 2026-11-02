@@ -11,6 +11,7 @@ import { buildLogJsonPayload } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
+import { hstack } from "../../../ui/stack"
 
 // The log's meta strip, as the drawer shows it.
 
@@ -36,8 +37,7 @@ export const metaStrip = (
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5 shrink-0")],
+			hstack(h, { gap: "1.5", className: "shrink-0" },
 				[
 					icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
 					h.span(

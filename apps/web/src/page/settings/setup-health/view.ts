@@ -13,7 +13,7 @@ import { icon, type IconName } from "../../../ui/icon"
 import { inlineCode, inlineCodeClassName } from "../../../ui/inline-code"
 import { panel } from "../../../ui/panel"
 import { refreshButton } from "../../../ui/refresh-button"
-import { skeleton } from "../../../ui/skeleton"
+import { skeletonBlock } from "../../../ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 import { settingsSection, settingsSections } from "../kit/section"
@@ -27,6 +27,8 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { linkButton } from "../../../ui/button"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -124,15 +126,13 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 						className: cn("mt-0.5 shrink-0", severity.text),
 						attributes: [h.AriaLabel(severity.label)],
 					}),
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-1.5")],
+					vstack(h, { gap: "1.5", shrink: true },
 						[
 							h.div(
 								[h.Class("flex flex-wrap items-center gap-x-2 gap-y-0.5")],
 								[
-									h.span([h.Class("text-sm font-medium")], [check.title]),
-									h.span(
-										[h.Class("text-foreground-subtle text-2xs")],
+									typography(h, { size: "sm", weight: "medium" }, [check.title]),
+									typography(h, { size: "2xs", tone: "subtle" },
 										[CATEGORY_LABEL[check.category]],
 									),
 								],
@@ -140,8 +140,7 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 							...(check.detail === null
 								? []
 								: [
-										h.p(
-											[h.Class("text-muted-foreground text-xs leading-relaxed")],
+										typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
 											[check.detail],
 										),
 									]),
@@ -160,12 +159,7 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 												),
 												...(check.affected_count > check.affected.length
 													? [
-															h.span(
-																[
-																	h.Class(
-																		"text-foreground-subtle text-2xs",
-																	),
-																],
+															typography(h, { size: "2xs", tone: "subtle" },
 																[
 																	"+",
 																	String(
@@ -205,8 +199,7 @@ const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: 
 					],
 				),
 				h.div([h.Class("grow")], []),
-				h.span(
-					[h.Class("text-foreground-subtle text-2xs")],
+				typography(h, { size: "2xs", tone: "subtle" },
 					[
 						"Last run ",
 						relativeTime(h, {
@@ -291,9 +284,8 @@ const findings = (h: H, audit: V2SetupAudit): Html => {
 						[h.Class("flex flex-col items-center gap-2 px-4 py-10 text-center")],
 						[
 							icon(h, "CircleCheckIcon", { size: 20, className: TONE_TEXT.info }),
-							h.p([h.Class("text-sm font-medium")], ["Everything checks out"]),
-							h.p(
-								[h.Class("text-muted-foreground text-xs")],
+							typography(h, { size: "sm", weight: "medium", as: "p" }, ["Everything checks out"]),
+							typography(h, { size: "xs", tone: "muted", as: "p" },
 								[
 									"Alerts can deliver, and your telemetry follows the conventions Maple reads.",
 								],
@@ -332,9 +324,8 @@ const passingDisclosure = (
 								"text-muted-foreground shrink-0 transition-transform group-data-panel-open:rotate-90",
 						}),
 						icon(h, "CircleCheckIcon", { size: 16, className: cn("shrink-0", TONE_TEXT.info) }),
-						h.span([h.Class("text-sm font-medium")], [label]),
-						h.span(
-							[h.Class("text-muted-foreground min-w-0 flex-1 text-xs")],
+						typography(h, { size: "sm", weight: "medium" }, [label]),
+						typography(h, { size: "xs", tone: "muted", className: "min-w-0 flex-1" },
 							["Checks are skipped only when telemetry could not be read"],
 						),
 					],
@@ -362,8 +353,7 @@ const passingDisclosure = (
 											...(check.status === "skip"
 												? [badge(h, { variant: "secondary", size: "xs" }, ["Skipped"])]
 												: []),
-											h.span(
-												[h.Class("text-foreground-subtle text-2xs")],
+											typography(h, { size: "2xs", tone: "subtle" },
 												[CATEGORY_LABEL[check.category]],
 											),
 										],
@@ -399,15 +389,13 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 	const audit = AsyncData.getOrElse(model.audit, () => null)
 	const top = AsyncData.match(model.audit, {
 		onIdle: () => [
-			h.div(
-				[h.Class("flex flex-col gap-4")],
-				[skeleton(h, "h-24 w-full rounded-md"), skeleton(h, "h-48 w-full rounded-md")],
+			vstack(h, { gap: "4" },
+				[skeletonBlock(h, { height: "24" }), skeletonBlock(h, { height: "48" })],
 			),
 		],
 		onLoading: () => [
-			h.div(
-				[h.Class("flex flex-col gap-4")],
-				[skeleton(h, "h-24 w-full rounded-md"), skeleton(h, "h-48 w-full rounded-md")],
+			vstack(h, { gap: "4" },
+				[skeletonBlock(h, { height: "24" }), skeletonBlock(h, { height: "48" })],
 			),
 		],
 		onFailure: (failure) => [

@@ -16,6 +16,8 @@ import {
 	ribbon,
 	toGraph,
 } from "./paths-layout"
+import { typographyClass } from "../ui/typography"
+import { chartFrameClass, chartNoData } from "../ui/chart-frame"
 
 // Port of `PathsChart` (packages/ui/src/components/charts/paths/paths-chart.tsx). The hovered node
 // id is the chart Model's `activeKey`; the measured box is its container size.
@@ -129,7 +131,7 @@ const nodeGroup = (
 								}),
 								h.Class(
 									cn(
-										"text-2xs font-medium",
+										typographyClass({ size: "2xs", weight: "medium" }),
 										node.kind === "event" ? "fill-foreground" : "fill-muted-foreground",
 									),
 								),
@@ -164,10 +166,7 @@ export const view = Submodel.defineView<Model, Message, PathsChartInputs>((model
 	const graph = width > 0 && height > 0 ? layoutPaths(nodes, links, width, height, reverse) : undefined
 	const anchor = nodes.find((node) => node.column === 0)
 	if (anchor === undefined || anchor.count <= 0)
-		return h.div(
-			[h.Class(cn("relative grid h-full w-full place-items-center", inputs.className))],
-			[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
-		)
+		return chartNoData(h, { className: inputs.className })
 	const columnSpan =
 		graph !== undefined && graph.columns.length > 1 ? (width - NODE_W) / (graph.columns.length - 1) : width
 	const roomChars = Math.floor((columnSpan * 0.7 - 20) / CHAR_W)
@@ -182,7 +181,7 @@ export const view = Submodel.defineView<Model, Message, PathsChartInputs>((model
 	const isLit = (link: PathLink) => hover !== null && (link.source === hover || link.target === hover)
 	return h.div(
 		[
-			h.Class(cn("relative h-full w-full select-none", inputs.className)),
+			h.Class(chartFrameClass("plot", inputs.className)),
 			h.OnMount(MeasureChartContainer()),
 			h.OnMouseLeave(Message.LeftChart()),
 			h.DataAttribute("slot", "paths-chart"),

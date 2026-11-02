@@ -30,6 +30,9 @@ import {
 	TRACE_LOG_LIMIT,
 } from "./panels"
 import { copyStatusOf } from "./update"
+import { hstack } from "../../../ui/stack"
+import { typographyClass } from "../../../ui/typography"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // The log's error banner, context panel and trace timeline.
 
@@ -149,7 +152,7 @@ const contextList = (
 					[
 						h.Class(
 							cn(
-								"min-w-0 flex-1 truncate",
+								typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
 								isCurrent
 									? "text-foreground"
 									: QUIET_SEVERITIES.has(row.severityText.toUpperCase())
@@ -204,8 +207,7 @@ export const contextPanel = (
 	return h.div(
 		[h.Class("flex h-full min-h-0 flex-col gap-1.5")],
 		[
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-2")],
+			hstack(h, { gap: "2", className: "shrink-0" },
 				[
 					heading(
 						h,
@@ -270,8 +272,9 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 	const spanNames = new Map(
 		spans._tag === "Some" ? spans.value.spanNames.map((span) => [span.spanId, span.spanName]) : [],
 	)
-	return h.div(
-		[h.Class("rounded-md border overflow-hidden")],
+	return borderedBox(
+		h,
+		{ overflow: "hidden" },
 		logs.map((log, index) => {
 			const isCurrent = isCurrentLog(log, current)
 			const relativeMs = new Date(log.timestamp).getTime() - traceStart

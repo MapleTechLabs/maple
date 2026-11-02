@@ -4,6 +4,7 @@ import { GCP_LOG_RUNTIMES } from "../../components/integrations/gcp-connector-st
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../ui/alert"
 import { button } from "../../ui/button"
+import { dividedList } from "../../ui/rule"
 import { field, fieldDescription, type FieldIds, fieldLabel, type FieldState } from "../../ui/field"
 import * as Checkbox from "../../ui/checkbox"
 import { labelIdOf } from "../../ui/choice"
@@ -12,6 +13,7 @@ import { OTEL_DOCS } from "./gcp-configure-copy"
 import { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { GCP_LINK } from "./view-gcp-parts"
+import { typographyClass } from "../../ui/typography"
 
 // `RuntimeFields`: the runtimes whose application output Google Cloud forwards.
 
@@ -73,7 +75,7 @@ export const runtimeFields = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+								typographyClass({ size: "xs", tone: "muted", weight: "normal", hoverTone: "foreground", className: "h-auto p-0" }),
 								GCP_LINK,
 							),
 							attributes: [h.OnClick(Message.ClickedGcpUseOpenTelemetry())],
@@ -82,8 +84,7 @@ export const runtimeFields = (
 					),
 				],
 			),
-			h.div(
-				[h.Class("divide-y rounded-md border")],
+			dividedList(h, { as: "div" },
 				GCP_LOG_RUNTIMES.map(({ value, label, hint }) =>
 					runtimeRow(h, forwardId, value, label, hint, runtimes.includes(value)),
 				),

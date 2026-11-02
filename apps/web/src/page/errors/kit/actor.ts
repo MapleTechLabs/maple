@@ -9,6 +9,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { avatarFallback } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { warmAvatarTone } from "../../../ui/avatar-tone"
+import { typography } from "../../../ui/typography"
 
 // Actor avatars and chips.
 // TODO(actor-directory): people should resolve through the Clerk member directory; here every
@@ -108,7 +109,7 @@ export const actorAvatar = <M>(
 
 /** `ActorChip`'s empty form. */
 export const noActor = <M>(h: HtmlBuilder<M>): Html =>
-	h.span([h.Class("text-xs text-muted-foreground")], [EMPTY_VALUE])
+	typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
 
 /** `ActorChip`: avatar and name; a person outside the directory has no detail, so no tooltip. */
 export const actorChip = <M>(h: HtmlBuilder<M>, actor: ActorDocument | null, className?: string): Html => {
@@ -124,6 +125,6 @@ export const actorChip = <M>(h: HtmlBuilder<M>, actor: ActorDocument | null, cla
 				),
 			),
 		],
-		[identityAvatar(h, identity), h.span([h.Class("truncate font-medium")], [identity.name])],
+		[identityAvatar(h, identity), typography(h, { weight: "medium", truncate: true }, [identity.name])],
 	)
 }

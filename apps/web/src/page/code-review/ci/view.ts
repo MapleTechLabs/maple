@@ -8,7 +8,7 @@ import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import type * as Select from "../../../ui/select"
@@ -27,6 +27,7 @@ import { runsList } from "./view-runs"
 import { ciSkeleton } from "../kit/skeletons"
 import { chartsRow, headlineStrip, RESULT_SERIES } from "./view-stats"
 import { jobsTable, workflowsTable } from "./view-tables"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `CodeReviewCiPage` and `CiAnalyticsView`.
 
@@ -60,12 +61,11 @@ const noCiRuns = (h: H): Html =>
 				["Open the GitHub integration"],
 			),
 		],
-		"rounded-md border border-dashed md:py-14",
+		emptyFrameClass("dashed"),
 	)
 
 const runsActions = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
+	hstack(h, { gap: "2", wrap: true },
 		[
 			...(model.search.branch
 				? [
@@ -110,11 +110,9 @@ const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, tim
 	const theme = model.themeColors
 	const time = { nowMs: model.frame.nowMs, timeZone }
 	if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return ciSkeleton(h)
-	return h.div(
-		[h.Class("flex flex-col gap-6")],
+	return vstack(h, { gap: "6" },
 		[
-			h.div(
-				[h.Class("flex flex-col gap-6")],
+			vstack(h, { gap: "6" },
 				[
 					headlineStrip(h, analytics.current, analytics.previous, windowLabel),
 					chartsRow(h, model, analytics, { theme, ...time }),
@@ -122,11 +120,9 @@ const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, tim
 					jobsTable(h, analytics.jobs),
 				],
 			),
-			h.section(
-				[h.Class("flex flex-col gap-3")],
+			vstack(h, { gap: "3", as: "section" },
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")],
+					hstack(h, { justify: "between", wrap: true, className: "gap-x-3 gap-y-2" },
 						[sectionHeading(h, { title: "Runs" }), runsActions(h, model)],
 					),
 					runsList(
@@ -166,7 +162,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 					noun: "CI runs",
 					description: "Widen the window or clear the filters.",
 					onClear: Message.ClickedClearFilters(),
-					className: "rounded-md border border-dashed md:py-14",
+					className: emptyFrameClass("dashed"),
 				})
 			return empty(
 				h,
@@ -176,7 +172,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 						emptyDescription(h, ["No GitHub Actions run finished in this window. Widen the window."]),
 					]),
 				],
-				"rounded-md border border-dashed md:py-14",
+				emptyFrameClass("dashed"),
 			)
 		},
 	})

@@ -7,6 +7,9 @@ import { Submodel } from "foldkit"
 import { truncatedText } from "../ui/truncated-text"
 import { Message, type Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
+import { typographyClass } from "../ui/typography"
+import { chartFrameClass, chartNoData } from "../ui/chart-frame"
+import { barFillClass } from "../ui/meter"
 
 // Port of `QueryBuilderHbarChart` (packages/ui/src/components/charts/hbar/query-builder-hbar-chart.tsx):
 // ranked DOM bars sized from the measured card. The hovered row is the chart Model's `activeKey`.
@@ -49,10 +52,7 @@ export const hbarBars = (source: ReadonlyArray<Record<string, unknown>>) => {
 export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model, inputs, h) => {
 	const bars = hbarBars(inputs.data)
 	if (bars.length === 0)
-		return h.div(
-			[h.Class(cn("relative h-full w-full grid place-items-center", inputs.className))],
-			[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
-		)
+		return chartNoData(h, { className: inputs.className })
 	const height = model.containerHeight
 	const maxRows = height > 0 ? Math.max(1, Math.floor((height - MORE_ROW_H) / ROW_FULL_H)) : bars.length
 	const truncated = bars.length > maxRows
@@ -71,7 +71,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 	const hover = Option.getOrNull(model.activeKey)
 	return h.div(
 		[
-			h.Class(cn("relative h-full w-full select-none", inputs.className)),
+			h.Class(chartFrameClass("plot", inputs.className)),
 			h.OnMount(MeasureChartContainer()),
 			h.OnMouseLeave(Message.LeftChart()),
 		],
@@ -107,7 +107,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 						[
 							truncatedText(h, {
 								text: bar.name,
-								className: bar.unnamed ? "italic text-muted-foreground" : "text-foreground-soft",
+								className: bar.unnamed ? typographyClass({ tone: "muted", className: "italic" }) : "text-foreground-soft",
 							}),
 							h.div(
 								[
@@ -116,7 +116,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 								],
 								[
 									h.div([
-										h.Class("absolute inset-y-0 left-0 rounded-xs"),
+										h.Class(barFillClass()),
 										h.Style({
 											width: `${bar.widthPct * 100}%`,
 											"background-color": bar.color,

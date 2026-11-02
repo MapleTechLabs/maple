@@ -28,6 +28,7 @@ import { detailTitleSkeleton } from "../../kit/detail-header"
 import { anomalySummary, anomalyTitle, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-body"
 import { linkIssueDialog } from "./view-link-dialog"
 import { anomalySidebar } from "./view-sidebar"
+import { hstack } from "../../../ui/stack"
 
 // The anomaly detail page over `ResultPage`.
 
@@ -38,12 +39,11 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 	const isStale = isStaleOpenIncident(incident, model.nowMs)
 	const tone = severityToneFor(incident)
 	const isBusy = model.busy !== null
-	return h.div(
-		[h.Class("flex items-center gap-2")],
+	return hstack(h, { gap: "2" },
 		[
 			badge(h, { variant: "outline", className: isStale ? SEVERITY_TONE.resolved.badge : tone.badge }, [
 				...(isOpen && !isStale
-					? [h.span([h.Class("flex items-center gap-1.5")], [statusDot(h, { tone: tone.tone }), incident.severity])]
+					? [hstack(h, { gap: "1.5", as: "span" }, [statusDot(h, { tone: tone.tone }), incident.severity])]
 					: isStale
 						? ["Stale · last seen ", relativeTime(h, { value: incident.lastTriggeredAt, nowMs: model.nowMs, timeZone })]
 						: [incident.resolveReason !== null ? RESOLVE_REASON_LABEL[incident.resolveReason] : "Resolved"]),
