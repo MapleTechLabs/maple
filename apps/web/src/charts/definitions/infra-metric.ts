@@ -22,7 +22,7 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { axisTickFormatter, axisTickValues, formatBytes } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
@@ -249,6 +249,17 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		marks: [
 			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
 			...thresholdMarks,
+			...(spec.stacked
+				? []
+				: series.map((name) =>
+						silenceBridges(
+							`${name}-silence`,
+							runsOf.get(name)?.silences ?? [],
+							at,
+							valueOf(name),
+							colorOf(name),
+						),
+					)),
 			...bands,
 			...lone,
 			...series.map((name) => focusDot(data, at, plottedOf(name), colorOf(name), chrome)),

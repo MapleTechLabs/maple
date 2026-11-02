@@ -44,6 +44,18 @@ describe("seriesRuns", () => {
 		})
 	})
 
+	test("each silence runs from one run's last reading to the next run's first", () => {
+		const { silences } = seriesRuns(
+			series(15 * MINUTE, [1, 2, null, null, 3, null, null, null, 4]),
+			(row) => row.value,
+			(row) => row.at,
+		)
+		expect(silences.map((silence) => [silence.from.value, silence.to.value])).toEqual([
+			[2, 3],
+			[3, 4],
+		])
+	})
+
 	test("rows without empty buckets still break when their timestamps are far apart", () => {
 		const rows = [0, 1, 2, 30, 31].map((minute) => ({
 			at: new Date(START + minute * MINUTE),

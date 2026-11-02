@@ -55,6 +55,13 @@ describe("latency chart with missing buckets", () => {
 		expect(lines(scene(), "p50LatencyMs")).toEqual([2, 2])
 	})
 
+	test("a longer silence is drawn as a faint dashed line between the two runs", () => {
+		const bridges = scene().flatMap((node) =>
+			node.kind === "polyline" && node.key.startsWith("p50LatencyMs-silence:") ? [node] : [],
+		)
+		expect(bridges.map((node) => [node.points.length, node.style?.strokeDasharray])).toEqual([[2, "2 4"]])
+	})
+
 	test("readings too far apart to share a line draw as dots", () => {
 		const nodes = scene()
 		// The focus dot carries a background ring; a lone-reading dot is a plain fill.

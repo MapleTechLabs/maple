@@ -1,3 +1,6 @@
+import { lineY } from "@tanstack/charts"
+import { decorative } from "@tanstack/charts/mark/decorative"
+
 /**
  * There is no `connectNulls`.
  *
@@ -8,8 +11,8 @@
  * mark sees it.
  *
  * Time-series lines bridge a short silence and break on a long one (see
- * `seriesRuns`). A chart that must show every silence as a gap (a workload that
- * stopped reporting) keeps its explicit null rows and skips this.
+ * `seriesRuns`); `silenceBridges` draws each long silence as a faint dashed line,
+ * so a quiet series still reads as one line without inventing readings.
  */
 /** What a series accessor can yield — a reading, or the absence of one. */
 export type SeriesValue = number | null | undefined
@@ -41,6 +44,13 @@ export interface SeriesRuns<T> {
 	readonly runs: ReadonlyArray<ReadonlyArray<T>>
 	/** Readings alone in their run: a line needs two, so these draw as dots. */
 	readonly lone: ReadonlyArray<T>
+	/** The silences between runs, from one run's last reading to the next run's first. */
+	readonly silences: ReadonlyArray<SeriesSilence<T>>
+}
+
+export interface SeriesSilence<T> {
+	readonly from: T
+	readonly to: T
 }
 
 /** The bucket width: the smallest step between consecutive rows. */
@@ -78,5 +88,41 @@ export function seriesRuns<T>(
 		}
 		return acc
 	}, [])
-	return { runs, lone: runs.flatMap((run) => (run.length === 1 ? run : [])) }
+	const silences = runs.flatMap((run, index) => {
+		const from = run.at(-1)
+		const to = runs[index + 1]?.[0]
+		return from === undefined || to === undefined ? [] : [{ from, to }]
+	})
+	return { runs, lone: runs.flatMap((run) => (run.length === 1 ? run : [])), silences }
+}
+
+/**
+ * The silences of a series as faint dashed straight lines in the series colour. Decorative,
+ * so the cursor and tooltip only ever land on real readings.
+ */
+export function silenceBridges<T>(
+	id: string,
+	silences: ReadonlyArray<SeriesSilence<T>>,
+	at: (row: T) => Date,
+	value: (row: T) => SeriesValue,
+	color: string,
+) {
+	const ends = silences.flatMap((silence, index) => [
+		{ key: String(index), row: silence.from },
+		{ key: String(index), row: silence.to },
+	])
+	return decorative(
+		lineY(ends, {
+			id,
+			x: (end) => at(end.row),
+			y: (end) => value(end.row),
+			// One segment per silence; the colour channel stays empty so no colour scale forms.
+			z: (end) => end.key,
+			color: () => null,
+			stroke: color,
+			strokeWidth: 1.25,
+			strokeOpacity: 0.55,
+			strokeDasharray: "2 4",
+		}),
+	)
 }

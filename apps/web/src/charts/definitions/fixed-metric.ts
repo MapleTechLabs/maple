@@ -2,7 +2,7 @@ import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartVal
 import { curveMonotoneX } from "d3-shape"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
-import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -353,6 +353,9 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	const definition = defineChart({
 		margin: marginOf(spec),
 		marks: [
+			...runs.map(({ entry, silences }) =>
+				silenceBridges(`${entry.key}-silence`, silences, at, gapValueOf(entry.key), entry.color),
+			),
 			...lines,
 			...runs.map(({ entry, lone }) =>
 				dot(lone, {

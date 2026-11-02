@@ -180,7 +180,9 @@ export {
 	dropNullPoints,
 	MAX_BRIDGED_GAP_MS,
 	seriesRuns,
+	silenceBridges,
 	type SeriesRuns,
+	type SeriesSilence,
 	type SeriesValue,
 } from "./series-gaps"
 export {

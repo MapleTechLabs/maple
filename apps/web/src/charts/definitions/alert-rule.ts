@@ -1,6 +1,6 @@
 import { focusCrosshair } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
 import { formatBucketLabel } from "@maple/ui/lib/format"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
@@ -68,6 +68,8 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 	const runsOf = (key: string) => seriesRuns(points, valueOf(key), at)
 	const loneDot = (key: string, fill: string) =>
 		dot(runsOf(key).lone, { x: at, y: valueOf(key), r: 2.5, fill })
+	const silences = (key: string, stroke: string) =>
+		silenceBridges(`${key}-silence`, runsOf(key).silences, at, valueOf(key), stroke)
 
 	const signalGradient = {
 		id: gradientId,
@@ -146,6 +148,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 				: []),
 			...(spec.hasGhost
 				? [
+						silences(GHOST_KEY, palette.muted),
 						...runsOf(GHOST_KEY).runs.map((run, index) =>
 							lineY(run, {
 								id: `${GHOST_KEY}:${index}`,
@@ -162,6 +165,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 				: []),
 			...(spec.isMultiSeries
 				? spec.seriesKeys.flatMap((key) => [
+						silences(key, color(key)),
 						...runsOf(key).runs.map((run, index) =>
 							lineY(run, {
 								id: `${key}:${index}`,
@@ -175,6 +179,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 						loneDot(key, color(key)),
 					])
 				: [
+						silences(SINGLE_KEY, palette.signal),
 						...runsOf(SINGLE_KEY).runs.flatMap((run, index) => [
 							areaY(run, {
 								id: `${SINGLE_KEY}-band:${index}`,

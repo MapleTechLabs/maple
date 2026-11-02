@@ -2,7 +2,7 @@ import { ANALYTICS_METRICS, findMetric } from "../../components/analytics/metric
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
@@ -51,8 +51,9 @@ export const buildAnalyticsTraffic = (
 		),
 		marks: [
 			...spec.series.flatMap((entry) => {
-				const { runs, lone } = seriesRuns(data, valueOf(entry.key), at)
+				const { runs, lone, silences } = seriesRuns(data, valueOf(entry.key), at)
 				return [
+					silenceBridges(`${entry.key}-silence`, silences, at, valueOf(entry.key), colorOf(entry.key)),
 					...runs.flatMap((run, index) => [
 						areaY(run, {
 							id: `${entry.key}-band:${index}`,

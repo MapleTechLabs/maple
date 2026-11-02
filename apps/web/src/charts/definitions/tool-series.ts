@@ -1,7 +1,7 @@
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { formatDurationNs, formatToolMetric } from "@maple/web-data/lib/tool-analytics"
@@ -77,8 +77,9 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 	const valueOf = (cell: Cell) => valueAt(cell.row, cell.key)
 	const marks = spec.series.flatMap((entry) => {
 		const cells = spec.rows.map((row) => ({ row, key: entry.key }))
-		const { runs, lone } = seriesRuns(cells, valueOf, at)
+		const { runs, lone, silences } = seriesRuns(cells, valueOf, at)
 		return [
+			silenceBridges(`${entry.key}-silence`, silences, at, valueOf, entry.color),
 			...runs.map((run, index) =>
 				lineY(run, {
 					id: `${entry.key}:${index}`,

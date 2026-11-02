@@ -3,7 +3,7 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns } from "@maple/ui/components/plot/series-gaps"
+import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
@@ -46,10 +46,11 @@ export const buildPlanetScaleMetric = (
 	const chrome = { border: spec.colors.border ?? "", background: spec.colors.background ?? "" }
 	const at = (point: MetricPoint) => point.date
 	const value = (point: MetricPoint) => point.value
-	const { runs, lone } = seriesRuns(data, value, at)
+	const { runs, lone, silences } = seriesRuns(data, value, at)
 	const definition = defineChart({
 		marks: [
 			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
+			silenceBridges("value-silence", silences, at, value, color),
 			...runs.map((run, index) =>
 				lineY(run, {
 					id: `value:${index}`,
