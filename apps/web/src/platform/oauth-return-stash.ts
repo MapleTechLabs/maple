@@ -7,6 +7,14 @@ import { Effect, Option, Schema } from "effect"
 
 const KEY = "maple:oauth-return"
 
+export class OAuthReturnStorageError extends Schema.TaggedError<OAuthReturnStorageError>()(
+	"@maple/web/OAuthReturnStorageError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const storageTry = <A>(message: string, thunk: () => A) =>
+	Effect.try({ try: thunk, catch: (cause) => new OAuthReturnStorageError({ message, cause }) })
+
 /** The state row's own lifetime: a return older than this can only fail. */
 const TTL_MS = 10 * 60_000
 
@@ -40,14 +48,16 @@ export const captureOAuthReturn = (env: {
 	Effect.gen(function* () {
 		if (Option.isNone(decodeOAuthReturnHash(env.hash))) return false
 		yield* Effect.sync(env.stripHash)
-		yield* Effect.try(() =>
+		yield* storageTry("Could not stash the OAuth return", () =>
 			env.storage.setItem(KEY, encodeStashed({ hash: env.hash, savedAt: env.now })),
 		).pipe(Effect.ignore)
 		return true
 	})
 
 const readStashed = (storage: ReturnStorage) =>
-	Effect.try(() => storage.getItem(KEY)).pipe(Effect.orElseSucceed(() => null))
+	storageTry("Could not read the OAuth return", () => storage.getItem(KEY)).pipe(
+		Effect.orElseSucceed(() => null),
+	)
 
 const decodeFresh = (raw: string, now: number): Option.Option<OAuthCompleteRequest> =>
 	decodeStashed(raw).pipe(
@@ -63,7 +73,9 @@ export const takeOAuthReturn = (
 	Effect.gen(function* () {
 		const raw = yield* readStashed(storage)
 		if (raw === null) return Option.none()
-		yield* Effect.try(() => storage.removeItem(KEY)).pipe(Effect.ignore)
+		yield* storageTry("Could not remove the OAuth return", () => storage.removeItem(KEY)).pipe(
+			Effect.ignore,
+		)
 		return decodeFresh(raw, now)
 	})
 

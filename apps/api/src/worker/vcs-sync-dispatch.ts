@@ -204,7 +204,8 @@ export const authorizeVcsSyncBatchRequest = Effect.fnUntraced(function* (env: Re
 	if (request.headers["cf-connecting-ip"] !== undefined) {
 		return yield* refused(404, "Not found")
 	}
-	const authorized = Option.match(yield* workerSecretFor(env, VCS_SYNC_HOP_SECRET), {
+	const hopSecret = yield* workerSecretFor(env, VCS_SYNC_HOP_SECRET)
+	const authorized = Option.match(hopSecret, {
 		onNone: () => false,
 		onSome: (expected) => isValidInternalBearer(request.headers["authorization"], expected),
 	})

@@ -54,18 +54,16 @@ const withApi = (answers: Readonly<Record<string, () => Response>>) => {
 	}
 	return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 		effect.pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					Layer.mock(WarehouseExecutor, {}),
-					Layer.effect(
-						MapleInternalHttp,
-						HttpApiClient.make(MapleInternalApi, { baseUrl: "http://api.test" }),
-					).pipe(
-						Layer.provide(FetchHttpClient.layer),
-						Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
-					),
+			Effect.provide([
+				Layer.mock(WarehouseExecutor, {}),
+				Layer.effect(
+					MapleInternalHttp,
+					HttpApiClient.make(MapleInternalApi, { baseUrl: "http://api.test" }),
+				).pipe(
+					Layer.provide(FetchHttpClient.layer),
+					Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
 				),
-			),
+			]),
 		)
 }
 

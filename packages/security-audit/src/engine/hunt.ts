@@ -3,7 +3,7 @@
  * before any hunter launches; a `deep` run repeats waves until a post-wave critic and a separate
  * final-clean critic both accept no work.
  */
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Schema } from "effect"
 import { criticPrompt, hunterPrompt } from "../prompts"
 import { type Candidate, candidateErrors, CriticResult, HunterResult } from "../results"
 import { ledgerErrors } from "../validators"
@@ -22,6 +22,7 @@ import {
 import type { AuditStoreError } from "./ports"
 import type { EngineState, Engine } from "./state"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const BUDGET_DEFER = "budget_cannot_reserve_critics_and_validation"
 /** A unit whose hunters returned unusable results this many times is deferred, not retried forever. */
 const MAX_UNIT_FAILURES = 2
@@ -224,7 +225,7 @@ const runCritic = (
 						? "No prior ledger exists."
 						: `Prior run ${engine.input.prior.runId}.`,
 				hunterUncovered: s.uncovered
-					.map((surface) => ({ surface, key: JSON.stringify(surface) }))
+					.map((surface) => ({ surface, key: encodeJson(surface) }))
 					.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
 					.map(({ surface }) => surface),
 			},

@@ -20,8 +20,8 @@ export type FlowFooterOptions = Readonly<{
 }>
 
 const FOOTER_CLASS = {
-	page: "sticky -bottom-4 -mx-1 mt-auto -mb-4 bg-background px-1",
-	drawer: "sticky bottom-0 -mx-6 mt-auto -mb-6 bg-popover px-6",
+	page: "sticky -bottom-4 z-10 -mx-1 mt-auto -mb-4 bg-background px-1",
+	drawer: "sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 bg-popover px-6",
 } satisfies Record<FlowHost, string>
 
 export const flowFooter = (h: H, options: FlowFooterOptions): Html =>

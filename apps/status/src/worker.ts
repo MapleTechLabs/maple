@@ -14,7 +14,7 @@ import { selfObservabilityEnv } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
-import { Clock, Effect, Layer } from "effect"
+import { Clock, Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { handleRequest } from "./handler"
 import { nativeStorage } from "./storage"
@@ -75,14 +75,11 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 			}).pipe(Effect.withSpan("status.request")),
 		}
 	}).pipe(
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			Layer.mergeAll(
-				Cloudflare.KV.ReadWriteNamespaceBinding,
-				Cloudflare.R2.ReadBucketBinding,
-				Cloudflare.Workers.RateLimitBinding,
-				WorkerTelemetry({ serviceName: "status" }),
-			),
-		),
+		Effect.provide([
+			Cloudflare.KV.ReadWriteNamespaceBinding,
+			Cloudflare.R2.ReadBucketBinding,
+			Cloudflare.Workers.RateLimitBinding,
+			WorkerTelemetry({ serviceName: "status" }),
+		]),
 	),
 ) {}

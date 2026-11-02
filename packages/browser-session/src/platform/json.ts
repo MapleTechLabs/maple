@@ -32,6 +32,7 @@ export function isJsonObject(value: unknown): value is Record<string, unknown> {
  */
 export function parseJsonObject(raw: string): Record<string, unknown> | undefined {
 	try {
+		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		const parsed: unknown = JSON.parse(raw)
 		return isJsonObject(parsed) ? parsed : undefined
 	} catch {
@@ -55,6 +56,7 @@ const LONE_SURROGATE_ESCAPE = /\\(?:\\|u[dD][89a-fA-F][0-9a-fA-F]{2})/g
  * in the output is a lone one.
  */
 export function stringifyWellFormed(value: unknown): string {
+	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const json = JSON.stringify(value) ?? "null"
 	return json.replace(LONE_SURROGATE_ESCAPE, (escape) => (escape === "\\\\" ? escape : "\\ufffd"))
 }

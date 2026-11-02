@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 import type { ListAiSessionsInput } from "@maple/web-data/warehouse/ai-sessions"
 import type { Types } from "effect"
@@ -5,6 +6,8 @@ import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { AgentSessionsSearch } from "../../../route/search"
 import type { Model, RangeKey, SessionRow } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // copied: agent-sessions-filter-inputs.ts (it imports a hook type through `@/`) and the paging
 // arithmetic of `useInfiniteAiSessions`.
@@ -164,8 +167,8 @@ export const countedFilters = (inputs: FilterInputs) => ({
 })
 
 /** `JSON.stringify` keys, like the hook's memo keys. */
-export const filterKeyOf = (inputs: FilterInputs): string => JSON.stringify(inputs)
-export const detailsKeyOf = (inputs: FilterInputs): string => JSON.stringify(countedFilters(inputs))
+export const filterKeyOf = (inputs: FilterInputs): string => encodeJson(inputs)
+export const detailsKeyOf = (inputs: FilterInputs): string => encodeJson(countedFilters(inputs))
 
 /** The rows as the pages returned them, before their details. */
 export const pageRows = (model: Model, filterKey: string): ReadonlyArray<SessionRow> => {

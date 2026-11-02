@@ -1,6 +1,7 @@
-import { Config, Effect, Option, Predicate } from "effect"
+import { Config, Effect, Option, Predicate, Schema } from "effect"
 import * as Flag from "effect/cli/Flag"
 import * as GlobalFlag from "effect/cli/GlobalFlag"
+import { encodeJson, encodeJsonPrettyEffect } from "@maple/local-server/json"
 import { bold, dim } from "./style"
 
 /**
@@ -24,7 +25,10 @@ export const OutputFormatSetting = GlobalFlag.Setting("format")({
 })
 
 export const printJson = (data: unknown) =>
-	Effect.sync(() => process.stdout.write(`${JSON.stringify(data, null, 2)}\n`))
+	encodeJsonPrettyEffect(data).pipe(
+		Effect.orDie,
+		Effect.flatMap((text) => Effect.sync(() => process.stdout.write(`${text}\n`))),
+	)
 
 const isFormat = (value: string | undefined): value is OutputFormat => value === "json" || value === "table"
 
@@ -162,7 +166,7 @@ export const formatByKey = (key: string, value: unknown): string => {
 	if (typeof value === "string") return formatTimestamp(value)
 	if (typeof value === "boolean") return value ? "yes" : "no"
 	if (Array.isArray(value)) return value.map((v) => formatByKey(key, v)).join(", ")
-	return JSON.stringify(value)
+	return encodeJson(value)
 }
 
 /** `p95Ms` -> `P95`, `avgDurationMs` -> `AVG DURATION`, `errorRate` -> `ERROR RATE`. */
@@ -235,7 +239,7 @@ export const autoTable = (
 		cell: (row) => {
 			const v = row[key]
 			if (!raw) return formatByKey(key, v)
-			return v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v)
+			return v === null || v === undefined ? "" : typeof v === "string" ? v : encodeJson(v)
 		},
 		align: flat.some((row) => typeof row[key] === "number") ? "right" : "left",
 		maxWidth: options?.maxWidth ?? 80,
@@ -257,7 +261,7 @@ export const autoSections = (data: unknown): ReadonlyArray<Section> => {
 		} else if (isScalar(value)) {
 			fields.push([key, formatByKey(key, value)])
 		} else {
-			fields.push([key, JSON.stringify(value)])
+			fields.push([key, encodeJson(value)])
 		}
 	}
 	return fields.length > 0 ? [{ body: renderFields(fields) }, ...sections] : sections
@@ -303,7 +307,10 @@ export const printResult = <A>(data: A, view?: View<A>): Effect.Effect<void> =>
 		if (format === "json") {
 			// Raw SQL rows stay as the query returned them.
 			const replacer = view?.raw ? undefined : utcTimestampReplacer()
-			process.stdout.write(`${JSON.stringify(data, replacer, 2)}\n`)
+			const text = yield* Schema.encodeEffect(
+				Schema.fromJsonString(Schema.Unknown, { replacer, space: 2 }),
+			)(data).pipe(Effect.orDie)
+			process.stdout.write(`${text}\n`)
 		} else if (!empty) {
 			const sections = view?.table
 				? view.table(data)

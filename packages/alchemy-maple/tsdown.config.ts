@@ -20,6 +20,7 @@ export default defineConfig({
 	// schema DDL is imported as text. Bun built-ins and every @effect/* package
 	// stay external: they must be the same versions as the user's `effect`.
 	loader: { ".sql": "text" },
+	// oxlint-disable-next-line effecttsgo/global-json -- build config: a define needs a JS literal
 	define: { __CHDB_VERSION__: JSON.stringify(libchdbVersion) },
 	deps: {
 		neverBundle: ["effect", /^@effect\//, "alchemy", "@maple-dev/effect-sdk", /^bun:/],

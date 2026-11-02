@@ -12,6 +12,7 @@ import { applyChatEvent, finalizeStreamingText, taskOf } from "./kit/fold"
 import { transcriptMarkdown } from "./kit/rich-text"
 import { initMinimap, updateMinimap } from "./kit/turn-minimap"
 import { TextPart } from "./kit/ui-message"
+import { isHighlighterReady } from "@maple/views/lib/highlight"
 import { highlight, highlightedFences, highlightKey } from "./kit/code-highlight"
 import {
 	AbortTurn,
@@ -161,8 +162,9 @@ const withHighlights = (
 	model: Model,
 	fences: ReadonlyArray<{ readonly language: string; readonly code: string }>,
 ): Model => {
+	// Plain tokens are not cached, so a parse after the highlighter loads colours these fences.
 	const missing = fences.filter((fence) => !(highlightKey(fence.language, fence.code) in model.highlights))
-	return missing.length === 0
+	return missing.length === 0 || !isHighlighterReady()
 		? model
 		: {
 				...model,

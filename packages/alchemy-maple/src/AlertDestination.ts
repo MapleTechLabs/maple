@@ -205,7 +205,8 @@ export const AlertDestinationProvider = () =>
 							),
 						)
 					if (fetched === undefined) return undefined
-					return toAttributes(yield* decodeWireDestination(fetched))
+					const decoded = yield* decodeWireDestination(fetched)
+					return toAttributes(decoded)
 				}),
 				list: Effect.fn(function* () {
 					const items = yield* listAll(api, "/v2/alerts/destinations")

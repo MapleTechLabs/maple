@@ -14,6 +14,11 @@ import {
 import { basename, join } from "node:path"
 import type { Chdb } from "../chdb"
 import { type ArchiveSignal } from "./signals"
+import { Schema } from "effect"
+
+const decodeJsonRecord = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
 
 // Bounded Parquet shard export from a restored checkpoint's scratch chDB.
 //
@@ -118,7 +123,7 @@ const readRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
 		.split("\n")
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0)
-		.map((line) => JSON.parse(line) as Record<string, unknown>)
+		.map((line) => decodeJsonRecord(line))
 
 const parseCount = (text: string): number => {
 	const row = readRows(text)[0]

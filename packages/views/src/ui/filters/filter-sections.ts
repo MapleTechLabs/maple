@@ -11,6 +11,7 @@ import { defineMessageUnion } from "foldkit/message"
 const STORAGE_KEY = "maple-filter-sections"
 const Remembered = Schema.Record(Schema.String, Schema.Boolean)
 const decodeRemembered = Schema.decodeUnknownOption(Schema.fromJsonString(Remembered))
+const encodeRemembered = Schema.encodeSync(Schema.fromJsonString(Remembered))
 
 export const SectionState = Schema.Struct({
 	isOpen: Schema.Boolean,
@@ -71,7 +72,7 @@ const SaveRemembered = Command.define("SaveRememberedFilterSections", {
 				Option.flatMap(readLocalStorage(STORAGE_KEY), decodeRemembered),
 				() => ({}),
 			)
-			writeLocalStorage(STORAGE_KEY, JSON.stringify({ ...current, [key]: isOpen }))
+			writeLocalStorage(STORAGE_KEY, encodeRemembered({ ...current, [key]: isOpen }))
 			return Message.CompletedSaveRemembered()
 		}),
 })

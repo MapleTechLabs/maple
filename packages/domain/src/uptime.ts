@@ -176,7 +176,9 @@ export const readJsonPath = (root: unknown, path: string): Option.Option<unknown
 		Option.some(root),
 	)
 
-const jsonText = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+const jsonText = (value: unknown): string => (typeof value === "string" ? value : encodeJson(value))
 
 const parseJson = (body: string | null): Option.Option<unknown> =>
 	body === null ? Option.none() : Option.liftThrowable(JSON.parse)(body)

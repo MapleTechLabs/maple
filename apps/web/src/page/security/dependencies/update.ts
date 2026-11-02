@@ -4,7 +4,8 @@ import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
-import { AppRoute, hrefOf } from "../../../route"
+import type { AppRoute } from "../../../route"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
@@ -19,9 +20,13 @@ import {
 	UpdateFinding,
 } from "./command"
 import {
+	ALL_REPOSITORIES,
+	dependenciesHref,
 	isScanPending,
+	PAGE_ROWS,
 	reasonErrorOf,
 	repositoriesOf,
+	scopeLabelOf,
 	selectedFindingOf,
 	settlePendingScans,
 	STATUS_FILTER_LABEL,
@@ -64,11 +69,26 @@ const readAll = (model: Model, context: PageContext, mode: Keyed.ReadMode): Retu
 		(next) => readFindings(next, context, mode),
 	])
 
-/** The repository select follows the URL; "all" when it names none. */
-const withRoute = (model: Model, route: SecurityDependenciesRoute): Model => ({
-	...model,
-	repositorySelect: { ...model.repositorySelect, value: route.search.repo ?? "all" },
-})
+/** Closed, the switcher reads the scope; open, it keeps what is being typed. */
+const withScopeLabel = (model: Model): Model => {
+	if (model.repositoryBox.isOpen) return model
+	const label = scopeLabelOf(model)
+	return { ...model, repositoryBox: { ...model.repositoryBox, selected: [label], inputValue: label } }
+}
+
+/** The scope and the pane follow the URL; the repositories table is every repository's alone. */
+const withRoute = (model: Model, route: SecurityDependenciesRoute): Model =>
+	withScopeLabel({
+		...model,
+		shownRows: PAGE_ROWS,
+		scope: route.search.repo ?? "all",
+		pane:
+			route.search.view === "advisories"
+				? "advisories"
+				: route.search.view === "repositories" && route.search.repo === undefined
+					? "repositories"
+					: "summary",
+	})
 
 export const initialModel = (): Model => ({
 	nowMs: 0,
@@ -76,7 +96,14 @@ export const initialModel = (): Model => ({
 	repositories: Keyed.idle(),
 	findings: Keyed.idle(),
 	statusSelect: Select.init("security-dependency-status", { value: "open", selectedIndex: 0 }),
-	repositorySelect: Select.init("security-dependency-repository", { value: "all", selectedIndex: 0 }),
+	scope: "all",
+	repositoryBox: Combobox.init("security-dependency-repository", "single", {
+		selected: [ALL_REPOSITORIES],
+	}),
+	pane: "summary",
+	expandedPackages: [],
+	fullPackages: [],
+	shownRows: PAGE_ROWS,
 	requestingScans: [],
 	pendingScans: [],
 	selectedId: null,
@@ -108,45 +135,57 @@ const selectStep = (
 	message: Select.Message,
 	write: (select: Select.Model) => Partial<Model>,
 	wrap: (message: Select.Message) => Message,
-	onChange?: (model: Model, value: string) => Return,
 ): Return => {
 	const next = Select.update(select, message)
-	const updated = { ...model, ...write(next.model) }
-	const commands = Command.mapMessages(next.commands ?? [], wrap)
-	if (next.outMessage === undefined || onChange === undefined) return { model: updated, commands }
-	const step = onChange(updated, next.outMessage.value)
+	return {
+		model: { ...model, ...write(next.model) },
+		commands: Command.mapMessages(next.commands ?? [], wrap),
+	}
+}
+
+/** A repository picked in the switcher is the same link as its matrix column; the current one stays put. */
+const scopePicked = (model: Model, label: string): Return => {
+	const repositoryId =
+		label === ALL_REPOSITORIES
+			? null
+			: (repositoriesOf(model).find((repository) => repository.fullName === label)?.id ?? null)
+	if (label !== ALL_REPOSITORIES && repositoryId === null) return { model: withScopeLabel(model) }
+	if ((repositoryId ?? "all") === model.scope) return { model }
+	return {
+		model,
+		outMessage: PageOutMessage.RequestedNavigation({
+			// One repository has no repositories table, so it opens on its upgrade plan.
+			url: dependenciesHref(repositoryId, model.pane === "repositories" ? "summary" : model.pane),
+			isReplace: false,
+		}),
+	}
+}
+
+const repositoryBoxStep = (model: Model, message: Combobox.Message): Return => {
+	const next = Combobox.update(model.repositoryBox, message)
+	const updated = { ...model, repositoryBox: next.model }
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotRepositoryBoxMessage({ message: inner }),
+	)
+	const step =
+		next.outMessage?._tag === "ChangedValue"
+			? scopePicked(updated, next.outMessage.value)
+			: // Closing without a pick puts the scope's name back.
+				{ model: next.model.isOpen ? updated : withScopeLabel(updated) }
 	return { ...step, commands: [...commands, ...(step.commands ?? [])] }
 }
 
-const dependenciesUrl = (repositoryId: string) =>
-	hrefOf(AppRoute.SecurityDependencies({ search: repositoryId === "all" ? {} : { repo: repositoryId } }))
-
-/** A repository picked in the toolbar is the same link as its table row; the current one stays put. */
-const repositoryChanged =
-	(previous: string) =>
-	(model: Model, value: string): Return =>
-		value === previous
-			? { model }
-			: {
-					model,
-					outMessage: PageOutMessage.RequestedNavigation({
-						url: dependenciesUrl(value),
-						isReplace: false,
-					}),
-				}
-
 /** A `?repo=` no connected repository answers to is dropped from the URL once they are read. */
 const dropUnknownRepository = (step: Return): Return => {
-	const { repositorySelect } = step.model
+	const { scope } = step.model
 	const repositories = Option.getOrNull(AsyncData.getData(step.model.repositories.data))
-	if (repositorySelect.value === "all" || repositories === null || step.outMessage !== undefined)
-		return step
-	return repositories.repositories.some((repository) => repository.id === repositorySelect.value)
+	if (scope === "all" || repositories === null || step.outMessage !== undefined) return step
+	return repositories.repositories.some((repository) => repository.id === scope)
 		? step
 		: {
 				...step,
 				outMessage: PageOutMessage.RequestedNavigation({
-					url: dependenciesUrl("all"),
+					url: dependenciesHref(null, step.model.pane),
 					isReplace: true,
 				}),
 			}
@@ -195,7 +234,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchRepositories: ({ key, result }) =>
 			dropUnknownRepository(
 				afterRepositories(
-					{ ...model, repositories: Keyed.accept(model.repositories, key, result) },
+					withScopeLabel({ ...model, repositories: Keyed.accept(model.repositories, key, result) }),
 					context,
 				),
 			),
@@ -244,18 +283,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model,
 				model.statusSelect,
 				inner,
-				(statusSelect) => ({ statusSelect }),
+				// Another status is another list, read from its top.
+				(statusSelect) => ({ statusSelect, shownRows: PAGE_ROWS }),
 				(next) => Message.GotStatusSelectMessage({ message: next }),
 			),
-		GotRepositorySelectMessage: ({ message: inner }) =>
-			selectStep(
-				model,
-				model.repositorySelect,
-				inner,
-				(repositorySelect) => ({ repositorySelect }),
-				(next) => Message.GotRepositorySelectMessage({ message: next }),
-				repositoryChanged(model.repositorySelect.value),
-			),
+		GotRepositoryBoxMessage: ({ message: inner }) => repositoryBoxStep(model, inner),
+		ClickedShowAllRepositories: ({ key }) => ({
+			model: { ...model, fullPackages: [...model.fullPackages, key] },
+		}),
+		ClickedShowMoreRows: () => ({ model: { ...model, shownRows: model.shownRows + PAGE_ROWS } }),
+		ClickedPackage: ({ key }) => ({
+			model: {
+				...model,
+				expandedPackages: model.expandedPackages.includes(key)
+					? model.expandedPackages.filter((expanded) => expanded !== key)
+					: [...model.expandedPackages, key],
+			},
+		}),
 		ClickedFinding: ({ findingId }) =>
 			sheetStep(
 				{ ...model, selectedId: findingId, reason: Field.init(), isReasonSubmitted: false },

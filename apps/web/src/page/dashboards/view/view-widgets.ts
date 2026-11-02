@@ -18,6 +18,9 @@ import * as Popover from "@maple/views/ui/popover"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { isAlertable } from "./widget-actions"
 import { moveValue } from "./move-target"
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The open dashboard's tiles: their actions menu and the context the shared tiles read.
 
@@ -273,7 +276,7 @@ const MAX_TILE_MEMOS = 256
 /** The board's variables keep their object while their values do: a fresh one per render would miss every tile. */
 let lastVariables: Readonly<{ json: string; values: VariableValues }> | null = null
 const stableVariables = (values: VariableValues): VariableValues => {
-	const json = JSON.stringify(values)
+	const json = encodeJson(values)
 	if (lastVariables?.json === json) return lastVariables.values
 	lastVariables = { json, values }
 	return values

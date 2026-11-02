@@ -20,6 +20,8 @@ import * as Sessions from "./sessions"
 import * as TraceDetail from "./trace-detail"
 import * as Traces from "./traces"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 // Every page: its Model in the root, its Messages lifted, one entry per route.
 
 /** Before the first route resolves, the page slot holds this. */
@@ -64,7 +66,7 @@ export type PageMessage = typeof PageMessage.Type
 export type PageReturn = Update.ReturnWithOutMessage<PageModel, PageMessage, PageOutMessage, Resources>
 
 /** The page instance survives while this is unchanged; a search change arrives as `locationChanged`. */
-export const pageKeyOf = (route: AppRoute): string => JSON.stringify(route)
+export const pageKeyOf = (route: AppRoute): string => encodeJson(route)
 
 const lift = <M>(
 	result: Readonly<{

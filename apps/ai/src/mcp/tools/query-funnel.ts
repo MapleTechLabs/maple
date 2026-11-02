@@ -14,6 +14,7 @@ import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -257,7 +258,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const first = steps[0]
 			const last = steps[steps.length - 1]
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
-			const stepsJson = JSON.stringify(output.definition)
+			const stepsJson = stringifyJson(output.definition)
 			return {
 				title: `Funnel (${steps.length} step${steps.length === 1 ? "" : "s"}, by ${output.keyBy}, within ${output.windowSeconds}s)`,
 				scope: [["Time range", `${output.timeRange.start} to ${output.timeRange.end}`]],

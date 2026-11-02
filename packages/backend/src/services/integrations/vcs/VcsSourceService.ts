@@ -231,7 +231,8 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 
 			const listRepositories = Effect.fn("VcsSourceService.listRepositories")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const entries = yield* repositoriesFor(yield* activeInstallations(orgId))
+				const installations = yield* activeInstallations(orgId)
+				const entries = yield* repositoriesFor(installations)
 				return entries
 					.map(({ repository }) => ({
 						provider: repository.provider,

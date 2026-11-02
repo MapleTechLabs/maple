@@ -27,6 +27,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 // `ScrapeTargetsSection`'s state changes.
 
 type Return = PageReturn<Model, Message>
@@ -213,11 +215,11 @@ export const isFormValid = (form: ScrapeForm): boolean =>
 
 const credentialsOf = (form: ScrapeForm): string | null => {
 	if (form.authType === "bearer")
-		return form.token.value.trim() === "" ? null : JSON.stringify({ token: form.token.value.trim() })
+		return form.token.value.trim() === "" ? null : encodeJson({ token: form.token.value.trim() })
 	if (form.authType === "basic")
 		return form.username.value.trim() === "" && form.password.value.trim() === ""
 			? null
-			: JSON.stringify({ username: form.username.value.trim(), password: form.password.value.trim() })
+			: encodeJson({ username: form.username.value.trim(), password: form.password.value.trim() })
 	return null
 }
 

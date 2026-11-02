@@ -1,7 +1,8 @@
 import { Option, Schema } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { Span, SpanNode } from "./types"
-import { trySync } from "./try-sync"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const toTraceId = Schema.decodeSync(TraceId)
 const toSpanId = Schema.decodeSync(SpanId)
@@ -29,7 +30,7 @@ export interface SpanHierarchyRow {
 export function parseAttributes(value: string | null | undefined): Record<string, string> {
 	if (!value) return {}
 	const parsed = Option.filter(
-		trySync<unknown>(() => JSON.parse(value)),
+		decodeJson(value),
 		(decoded): decoded is Record<string, string> => decoded !== null && typeof decoded === "object",
 	)
 	return Option.getOrElse(parsed, (): Record<string, string> => ({}))

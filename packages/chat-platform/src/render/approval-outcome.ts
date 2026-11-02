@@ -14,12 +14,15 @@ const MAX_DECISION_CHARS = 80
 /** What a sentence is never cut below, even next to a long link. */
 const MIN_TEXT_CHARS = 40
 
+const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+
 export const approvalOutcome = (
 	output: unknown,
 	isError: boolean,
 	context: ChatRenderContext,
 ): ChatApprovalOutcome => {
-	const recorded = typeof output === "string" ? output : (JSON.stringify(output) ?? "")
+	const recorded =
+		typeof output === "string" ? output : Option.getOrElse(encodeJsonOption(output), () => "")
 	// `ChatSession.settleProposal` and `applyChatProposal` both open the result with the decision.
 	const [first = "", ...rest] = recorded.split("\n")
 	const decision = truncate(first.trim(), MAX_DECISION_CHARS)

@@ -211,7 +211,8 @@ const handler = Effect.gen(function* () {
  */
 export const ClerkWebhookRoute = HttpRouter.use((router) =>
 	Effect.gen(function* () {
-		yield* router.add("POST", ROUTE, yield* handler)
+		const routeHandler = yield* handler
+		yield* router.add("POST", ROUTE, routeHandler)
 	}),
 )
 

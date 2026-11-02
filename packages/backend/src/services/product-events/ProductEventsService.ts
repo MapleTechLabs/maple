@@ -108,6 +108,8 @@ export const toProductEventLine = (event: ProductEventInput, nowMs: number): Pro
 	}
 }
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 const toError = (message: string) => (cause: unknown) =>
 	new ProductEventsError({
 		message: cause instanceof Error ? `${message}: ${cause.message}` : message,
@@ -129,9 +131,12 @@ export const makeProductEvents = (options: {
 
 	const post = (line: ProductEventLine): Effect.Effect<void, ProductEventsError> =>
 		Effect.gen(function* () {
+			const body = yield* encodeJson(line).pipe(
+				Effect.mapError(toError("Product event could not be encoded")),
+			)
 			const request = HttpClientRequest.post(url, {
 				headers: { Authorization: `Bearer ${ingestKey}` },
-			}).pipe(HttpClientRequest.bodyText(`${JSON.stringify(line)}\n`, "application/x-ndjson"))
+			}).pipe(HttpClientRequest.bodyText(`${body}\n`, "application/x-ndjson"))
 			const response = yield* options.httpClient
 				.execute(request)
 				.pipe(Effect.mapError(toError("Product event request failed")))

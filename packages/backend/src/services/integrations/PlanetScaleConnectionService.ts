@@ -153,6 +153,7 @@ const toPersistenceError = (error: unknown) =>
 	})
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const decodeStoredDiscoveryConfig = (row: ScrapeTargetRow) =>
 	Schema.decodeUnknownEffect(DiscoveryConfigSchema)(row.discoveryConfigJson).pipe(
@@ -749,12 +750,15 @@ export class PlanetScaleConnectionService extends Context.Service<
 					}),
 				)
 			}
+			const authCredentials = yield* encodeJson({ tokenId, tokenSecret: request.tokenSecret }).pipe(
+				Effect.orDie,
+			)
 			yield* scrapeTargetsService.update(
 				orgId,
 				target.id,
 				{
 					authType: "token",
-					authCredentials: JSON.stringify({ tokenId, tokenSecret: request.tokenSecret }),
+					authCredentials,
 					enabled: true,
 				},
 				{ allowManaged: true },

@@ -39,7 +39,7 @@ import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
-import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
+import { Cause, Config, Effect, Option, Ref } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
@@ -286,20 +286,17 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		return { fetch }
 	}).pipe(
 		// The init is the entry point: the cron source needs the host Worker.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			Layer.mergeAll(
-				Cloudflare.Hyperdrive.ConnectBinding,
-				Cloudflare.Email.SendBinding,
-				Cloudflare.KV.ReadWriteNamespaceBinding,
-				Cloudflare.R2.ReadWriteBucketBinding,
-				Cloudflare.Workers.CronEventSourceLive,
-				FetchHttpClient.layer,
-				WorkerTelemetry({
-					serviceName: "alerting",
-					anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
-				}),
-			),
-		),
+		Effect.provide([
+			Cloudflare.Hyperdrive.ConnectBinding,
+			Cloudflare.Email.SendBinding,
+			Cloudflare.KV.ReadWriteNamespaceBinding,
+			Cloudflare.R2.ReadWriteBucketBinding,
+			Cloudflare.Workers.CronEventSourceLive,
+			FetchHttpClient.layer,
+			WorkerTelemetry({
+				serviceName: "alerting",
+				anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+			}),
+		]),
 	),
 ) {}

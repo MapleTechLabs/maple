@@ -75,10 +75,13 @@ const assertJsonValue = Schema.decodeUnknownSync(
 	),
 )
 
+const UnknownJson = Schema.fromJsonString(Schema.Unknown)
+const encodeJson = Schema.encodeSync(UnknownJson)
+
 /** Stable JSON encoding for outbox collision checks and cross-host fixtures. */
 export const canonicalJson = (value: JsonValue): string => {
 	assertJsonValue(value)
-	return JSON.stringify(canonicalizeJson(value))
+	return encodeJson(canonicalizeJson(value))
 }
 
 export interface ValidatedMapleCloudEvent {
@@ -98,7 +101,7 @@ export const validateMapleCloudEvent = (
 ): Result.Result<ValidatedMapleCloudEvent, CloudEventInvalid> =>
 	Result.gen(function* () {
 		const event = yield* Schema.decodeUnknownResult(MapleCloudEventSchema)(candidate)
-		const eventJson = JSON.stringify(canonicalizeJson(event))
+		const eventJson = yield* Schema.encodeResult(UnknownJson)(canonicalizeJson(event))
 		const byteLength = Buffer.byteLength(eventJson, "utf8")
 		yield* Schema.decodeUnknownResult(
 			Schema.Number.check(

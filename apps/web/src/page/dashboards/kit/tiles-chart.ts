@@ -51,16 +51,33 @@ export const CHART_WIDGETS = {
 	hbar: { defaultChartId: "query-builder-hbar" },
 } satisfies Readonly<Record<string, ChartWidgetOptions>>
 
-const primitiveRows = (rows: Rows): ReadonlyArray<Primitive> =>
+/** Converted rows by source rows, so a chart re-rendered over the same answer gets the same array. */
+const primitiveCache = new WeakMap<Rows, ReadonlyArray<Primitive>>()
+
+const primitiveRows = (rows: Rows): ReadonlyArray<Primitive> => {
+	const cached = primitiveCache.get(rows)
+	if (cached !== undefined) return cached
+	const converted = toPrimitiveRows(rows)
+	primitiveCache.set(rows, converted)
+	return converted
+}
+
+const toPrimitiveRows = (rows: Rows): ReadonlyArray<Primitive> =>
 	rows.map((row) =>
 		Object.fromEntries(
-			Object.entries(row).flatMap(([key, value]): ReadonlyArray<readonly [string, string | number | boolean]> =>
-				typeof value === "string" || typeof value === "boolean"
-					? [[key, value] as const]
-					: // `asFiniteNumber`: a null or NaN reading is plotted as 0, the key kept in place.
-						typeof value === "number" || value === null
-						? [[key, typeof value === "number" && Number.isFinite(value) ? value : 0] as const]
-						: [],
+			Object.entries(row).flatMap(
+				([key, value]): ReadonlyArray<readonly [string, string | number | boolean]> =>
+					typeof value === "string" || typeof value === "boolean"
+						? [[key, value] as const]
+						: // `asFiniteNumber`: a null or NaN reading is plotted as 0, the key kept in place.
+							typeof value === "number" || value === null
+							? [
+									[
+										key,
+										typeof value === "number" && Number.isFinite(value) ? value : 0,
+									] as const,
+								]
+							: [],
 			),
 		),
 	)
@@ -135,7 +152,9 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 					mark: render.category,
 					...(render.category === "area" ? { stacked: display.stacked === true } : undefined),
 					curveType: display.curveType === "monotone" ? "monotone" : "linear",
-					...(presentation?.showPoints === undefined ? undefined : { showPoints: presentation.showPoints }),
+					...(presentation?.showPoints === undefined
+						? undefined
+						: { showPoints: presentation.showPoints }),
 					seriesStats: presentation?.seriesStats === true,
 					axis: axisSpecOf(widget, theme),
 				},
@@ -177,9 +196,15 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 							...(tooltip === undefined ? undefined : { tooltip }),
 							...(display.unit === undefined ? undefined : { unit: display.unit }),
 							...(display.pie?.donut === undefined ? undefined : { donut: display.pie.donut }),
-							...(display.pie?.innerRadius === undefined ? undefined : { innerRadius: display.pie.innerRadius }),
-							...(display.pie?.showLabels === undefined ? undefined : { showLabels: display.pie.showLabels }),
-							...(display.pie?.showPercent === undefined ? undefined : { showPercent: display.pie.showPercent }),
+							...(display.pie?.innerRadius === undefined
+								? undefined
+								: { innerRadius: display.pie.innerRadius }),
+							...(display.pie?.showLabels === undefined
+								? undefined
+								: { showLabels: display.pie.showLabels }),
+							...(display.pie?.showPercent === undefined
+								? undefined
+								: { showPercent: display.pie.showPercent }),
 						},
 					})
 		case "histogram":
@@ -195,10 +220,18 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 							className,
 							...(tooltip === undefined ? undefined : { tooltip }),
 							...(display.unit === undefined ? undefined : { unit: display.unit }),
-							...(display.yAxis?.logScale === undefined ? undefined : { logScale: display.yAxis.logScale }),
-							...(display.histogram?.bucketCount === undefined ? undefined : { bucketCount: display.histogram.bucketCount }),
-							...(display.histogram?.bucketWidth === undefined ? undefined : { bucketWidth: display.histogram.bucketWidth }),
-							...(display.histogram?.logScaleY === undefined ? undefined : { logScaleY: display.histogram.logScaleY }),
+							...(display.yAxis?.logScale === undefined
+								? undefined
+								: { logScale: display.yAxis.logScale }),
+							...(display.histogram?.bucketCount === undefined
+								? undefined
+								: { bucketCount: display.histogram.bucketCount }),
+							...(display.histogram?.bucketWidth === undefined
+								? undefined
+								: { bucketWidth: display.histogram.bucketWidth }),
+							...(display.histogram?.logScaleY === undefined
+								? undefined
+								: { logScaleY: display.histogram.logScaleY }),
 						},
 					})
 		case "heatmap":
@@ -236,7 +269,11 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 				viewInputs: { data, className, direction: display.paths?.direction },
 			})
 		case "hbar":
-			return h.submodel({ ...common, view: HbarChart.view, viewInputs: { data, className, unit: display.unit } })
+			return h.submodel({
+				...common,
+				view: HbarChart.view,
+				viewInputs: { data, className, unit: display.unit },
+			})
 	}
 }
 
@@ -259,7 +296,12 @@ export type RegistryChartInputs<M> = Readonly<{
  */
 export const registryChartView = <M>(h: HtmlBuilder<M>, inputs: RegistryChartInputs<M>): Html => {
 	const category = chartCategoryOf(inputs.chartId) ?? "line"
-	const widget: Widget = { id: inputs.slot, visualization: "chart", dataSource: null, display: { chartId: inputs.chartId } }
+	const widget: Widget = {
+		id: inputs.slot,
+		visualization: "chart",
+		dataSource: null,
+		display: { chartId: inputs.chartId },
+	}
 	const ctx: TileContext<M> = {
 		h,
 		state: { _tag: "Loading" },
@@ -277,7 +319,12 @@ export const registryChartView = <M>(h: HtmlBuilder<M>, inputs: RegistryChartInp
 		onChart: inputs.onChart,
 		onSort: () => inputs.onChart(Chart.Message.LeftChart()),
 	}
-	return chartView(h, ctx, widget, { category, data: inputs.data, className: inputs.className, legend: undefined })
+	return chartView(h, ctx, widget, {
+		category,
+		data: inputs.data,
+		className: inputs.className,
+		legend: undefined,
+	})
 }
 
 /** One chart widget: the frame, the empty state when nothing is chartable, else the chart. */
@@ -292,7 +339,9 @@ export const chartWidgetTile = <M>(
 	const skeleton = chartSkeleton(h, category === undefined ? "line" : skeletonOf(category, widget))
 	const state = ctx.state
 	const data: Rows | undefined =
-		state._tag === "Ready" && state.data !== null && state.data._tag === "Rows" ? state.data.rows : undefined
+		state._tag === "Ready" && state.data !== null && state.data._tag === "Rows"
+			? state.data.rows
+			: undefined
 	const legend = widget.display.chartPresentation?.legend ?? options.defaultLegend
 	const isTimeseries = category === "line" || category === "area" || category === "bar"
 	const hoists = isTimeseries && legend !== "visible" && legend !== "right"
@@ -306,7 +355,9 @@ export const chartWidgetTile = <M>(
 					: serviceLegend(chartId, data, theme, ctx.timeZone, ctx.nowMs)
 				: category === "bar"
 					? hoistedSeries(bucketBarSeries(primitiveRows(data)), theme).map((item) =>
-							item.label === OTHER_LABEL ? { ...item, color: resolveColor(theme, "--muted-foreground") } : item,
+							item.label === OTHER_LABEL
+								? { ...item, color: resolveColor(theme, "--muted-foreground") }
+								: item,
 						)
 					: hoistedSeries(data, theme)
 	const options_ = frame(ctx, widget, { loadingSkeleton: skeleton, legendItems })
@@ -316,7 +367,25 @@ export const chartWidgetTile = <M>(
 		if (isServiceChart(chartId))
 			return theme === null || ctx.nowMs === null || !isChartRuntimeReady(ctx.chartRuntime)
 				? [skeleton]
-				: [serviceChart(h, ctx, widget, chartId, data, theme, ctx.nowMs, options.className ?? chartFrameClass("fill"))]
-		return [chartView(h, ctx, widget, { category, data, className: options.className ?? chartFrameClass("fill"), legend })]
+				: [
+						serviceChart(
+							h,
+							ctx,
+							widget,
+							chartId,
+							data,
+							theme,
+							ctx.nowMs,
+							options.className ?? chartFrameClass("fill"),
+						),
+					]
+		return [
+			chartView(h, ctx, widget, {
+				category,
+				data,
+				className: options.className ?? chartFrameClass("fill"),
+				legend,
+			}),
+		]
 	})
 }

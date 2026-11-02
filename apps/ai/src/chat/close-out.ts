@@ -60,13 +60,14 @@ export const withToolTranscript = (history: ReadonlyArray<ChatMessage>): Readonl
 // A result with a UI payload is stored as `{ text, ui }` (`events.ts`); only the text is for a model.
 const UiResult = Schema.Struct({ text: Schema.String, ui: Schema.Unknown })
 const modelText = Schema.decodeUnknownOption(UiResult)
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 const renderToolValue = (value: unknown): string => {
 	const text =
 		typeof value === "string"
 			? value
 			: Option.match(modelText(value), {
-					onNone: () => JSON.stringify(value),
+					onNone: () => Option.getOrElse(encodeJson(value), () => String(value)),
 					onSome: (result) => result.text,
 				})
 	return text.length > CLOSE_OUT_TOOL_OUTPUT_CHARS ? `${text.slice(0, CLOSE_OUT_TOOL_OUTPUT_CHARS)}…` : text

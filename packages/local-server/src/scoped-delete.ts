@@ -534,14 +534,13 @@ const affectedHours = (
 		}
 		if (rebuild.method === "service-map-rollup" && hours.size > 0) {
 			// Only sealed hours: an open hour is still the rollup loop's to seal.
-			const sealed = new Set(
-				yield* distinctHours(
-					db,
-					"service_map_edges_hourly",
-					"Hour",
-					`${hourOf("Hour")} IN (${hourList([...hours])})`,
-				),
+			const sealedHours = yield* distinctHours(
+				db,
+				"service_map_edges_hourly",
+				"Hour",
+				`${hourOf("Hour")} IN (${hourList([...hours])})`,
 			)
+			const sealed = new Set(sealedHours)
 			for (const hour of hours) if (!sealed.has(hour)) hours.delete(hour)
 		}
 		return [...hours].sort((a, b) => a - b)
@@ -706,14 +705,13 @@ const readPending = (dataDir: string) =>
 		const path = pendingDeletePath(dataDir)
 		if (!existsSync(path)) return Option.none<PendingDelete>()
 		const text = yield* run("read pending delete", () => readRealFile(path, "pending delete journal"))
-		return Option.some(
-			yield* Schema.decodeUnknownEffect(Schema.fromJsonString(PendingDelete))(text).pipe(
-				Effect.mapError(
-					(cause) =>
-						new ScopedDeleteError({ message: `malformed pending delete journal ${path}`, cause }),
-				),
+		const pending = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(PendingDelete))(text).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ScopedDeleteError({ message: `malformed pending delete journal ${path}`, cause }),
 			),
 		)
+		return Option.some(pending)
 	})
 
 const writeFile = (label: string, f: () => Promise<void>) =>
@@ -792,12 +790,13 @@ export const resumePendingDelete = (db: Db, manifest: LocalSchemaManifest, dataD
 		yield* assertPlanSound(manifest)
 		yield* assertSubject(pending.value.request)
 		// A restored checkpoint can bring the rows back; recompute their hours too.
+		const nowMs = yield* Clock.currentTimeMillis
 		const current = yield* planHours(
 			db,
 			manifest,
 			resolvePlan(manifest, pending.value.request),
 			pending.value.request,
-			yield* Clock.currentTimeMillis,
+			nowMs,
 		)
 		const rebuildHours: Record<string, number[]> = {}
 		for (const table of new Set([

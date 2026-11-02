@@ -76,9 +76,9 @@ const POLL_NOW_TIMEOUT = Duration.seconds(20)
 
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 const decodeUserId = Schema.decodeUnknownSync(UserId)
-const decodeServices = Schema.decodeUnknownOption(
-	Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
-)
+const ServicesJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
+const decodeServices = Schema.decodeUnknownOption(ServicesJson)
+const encodeServices = Schema.encodeSync(ServicesJson)
 
 const SYSTEM_USER_ID = decodeUserId("system-railway-metrics")
 
@@ -269,7 +269,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 										projectName: environment.projectName,
 										environmentId: environment.environmentId,
 										environmentName: environment.environmentName,
-										servicesJson: JSON.stringify(environment.services),
+										servicesJson: encodeServices(environment.services),
 										enabled: true,
 										createdAt: now,
 										updatedAt: now,
@@ -281,7 +281,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 											projectId: environment.projectId,
 											projectName: environment.projectName,
 											environmentName: environment.environmentName,
-											servicesJson: JSON.stringify(environment.services),
+											servicesJson: encodeServices(environment.services),
 											enabled: true,
 											updatedAt: now,
 										}),

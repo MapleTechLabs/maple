@@ -61,7 +61,9 @@
 		// alchemy declaration beside it is what the root stack yields.
 		"apps/sandbox": {
 			"entry": ["src/worker.ts", "alchemy.run.ts"],
-			"ignoreDependencies": ["cloudflare"]
+			"ignoreDependencies": ["cloudflare"],
+			// The probe's TLS test makes its certificate with the system openssl, skipping where there is none.
+			"ignoreBinaries": ["openssl"]
 		},
 		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
 		"apps/web": {

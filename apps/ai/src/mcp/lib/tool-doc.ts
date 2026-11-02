@@ -7,6 +7,7 @@
  * registry checks each one against its target tool's schema before it reaches a model.
  */
 import { fencedBlock, formatTable, tableCell } from "./format"
+import { stringifyJson } from "./json"
 
 export type ToolArgValue = string | number | boolean | ReadonlyArray<string>
 
@@ -82,11 +83,9 @@ export const doc = {
 }
 
 const formatArg = (value: ToolArgValue): string =>
-	typeof value === "string"
-		? JSON.stringify(value)
-		: Array.isArray(value)
-			? JSON.stringify(value)
-			: String(value)
+	typeof value === "string" || Array.isArray(value)
+		? (stringifyJson(value) ?? String(value))
+		: String(value)
 
 export const formatNextCall = (call: NextCall): string => {
 	const args = Object.entries(call.args).map(([key, value]) => `${key}=${formatArg(value)}`)

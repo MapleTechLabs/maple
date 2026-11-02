@@ -18,6 +18,12 @@ import { runConfirmed } from "./gcp-configure-derive"
 import { configureConnector } from "./update-gcp-configure"
 import { backoffPollTicks, pollTicks, whenPresent } from "../../data/poll"
 
+/** The popup's document could not be written: it is already on the provider's cross-origin page. */
+export class PopupDocumentError extends Schema.TaggedError<PopupDocumentError>()(
+	"@maple/web/integrations/PopupDocumentError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
 const POPUP_TICK_MS = 500
@@ -44,9 +50,16 @@ const openPopup = (name: string, features: string, label: string) =>
 			popup === null
 				? Effect.void
 				: Effect.ignore(
-						Effect.try(() => {
-							popup.document.write(interimDocument(label))
-							popup.document.close()
+						Effect.try({
+							try: () => {
+								popup.document.write(interimDocument(label))
+								popup.document.close()
+							},
+							catch: (cause) =>
+								new PopupDocumentError({
+									message: "could not write the popup's placeholder",
+									cause,
+								}),
 						}),
 					),
 		),
