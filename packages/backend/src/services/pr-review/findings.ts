@@ -214,11 +214,22 @@ const renderChanges = (changes: PullRequestDelta | undefined): ReadonlyArray<str
 }
 
 const RECHECK =
-	"A fix since the last full pass has not been checked against the rest of the pull request: review the whole diff."
+	"A defect is open, or was fixed since the last full pass: review the whole diff, so a fix is checked against the rest of the pull request."
+
+/** Every file is due, so what changed is a starting point and never parses as a scope. */
+const renderRecheck = (changes: PullRequestDelta | undefined): ReadonlyArray<string> => {
+	const paths = changes?.paths ?? []
+	return paths.length === 0
+		? [RECHECK]
+		: [
+				RECHECK,
+				`Start with what changed since then: ${paths.slice(0, MAX_LISTED_CHANGES).join(", ")}${paths.length > MAX_LISTED_CHANGES ? `, and ${paths.length - MAX_LISTED_CHANGES} more` : ""}.`,
+			]
+}
 
 /**
  * The kickoff section for a later push: what changed since, and what is still open. With
- * `recheck`, a defect was fixed since the last whole-diff pass, so this pass is due every file.
+ * `recheck`, a defect is open or was fixed since the last whole-diff pass, so this pass is due every file.
  */
 export const renderFollowUp = (input: {
 	readonly previousSha: string
@@ -228,7 +239,7 @@ export const renderFollowUp = (input: {
 }): ReadonlyArray<string> => {
 	const lines = [
 		`This pull request was reviewed before, at ${input.previousSha.slice(0, 7)}.`,
-		...(input.recheck === true ? [RECHECK] : renderChanges(input.changes)),
+		...(input.recheck === true ? renderRecheck(input.changes) : renderChanges(input.changes)),
 	]
 	if (input.open.length === 0) {
 		lines.push("No finding from earlier reviews is still open.")

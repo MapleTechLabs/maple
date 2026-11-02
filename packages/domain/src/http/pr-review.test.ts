@@ -356,8 +356,9 @@ describe("confidencePrReview", () => {
 	const score = (...args: Parameters<typeof reportWith>) =>
 		confidencePrReview(reportWith(...args))?.confidence
 
-	it("reads 10 for a clean change, whatever its notes or a medium risk", () => {
+	it("reads 10 for a clean change, whatever its notes or its risk", () => {
 		assert.equal(score([], { tests: "covered", risk: "low" }), 10)
+		assert.equal(score([], { tests: "covered", risk: "high" }), 10)
 		assert.equal(score([], { tests: "covered", risk: "medium" }), 10)
 		assert.equal(score([], { tests: "not_needed", risk: "medium" }), 10)
 		assert.equal(score([finding("info"), finding("info")], { tests: "covered", risk: "medium" }), 10)
@@ -366,7 +367,7 @@ describe("confidencePrReview", () => {
 
 	it("takes whole points off for untested behavior, a high-risk area and unobservable work", () => {
 		assert.equal(score([], { tests: "partial", risk: "medium" }), 9)
-		assert.equal(score([], { tests: "covered", risk: "high" }), 9)
+		assert.equal(score([], { tests: "partial", risk: "high" }), 8)
 		assert.equal(score([], { tests: "missing", risk: "low" }), 8)
 		assert.equal(score([], { tests: "covered", risk: "low", unobservable: true }), 9)
 		assert.equal(score([], { tests: "missing", risk: "high", unobservable: true }), 6)
