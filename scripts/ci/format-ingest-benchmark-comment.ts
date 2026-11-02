@@ -3,9 +3,6 @@
 // mean median + min/max), CRITERION_OUTPUT, COMMENT_OUTPUT, GITHUB_SHA.
 // The first line is a stable marker so the workflow updates its comment in place.
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { Schema } from "effect"
-
-const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 const MARKER = "<!-- ingest-bench-comment -->"
 // oxlint-disable-next-line no-control-regex
@@ -108,7 +105,7 @@ const absoluteTable = (head: ReadonlyArray<Run>): Array<string> => [
 ]
 
 const runsJson = (runs: ReadonlyArray<Run>): string =>
-	runs.length === 0 ? "no runs captured" : encodeJsonPretty(runs)
+	runs.length === 0 ? "no runs captured" : JSON.stringify(runs, null, 2)
 
 const details = (summary: string, runs: ReadonlyArray<Run>): Array<string> => [
 	`<details><summary>${summary}</summary>`,

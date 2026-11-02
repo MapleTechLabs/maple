@@ -2,7 +2,6 @@
 // Vitest stays the authority on discovery and shard assignment; see docs/ci-performance.md.
 import { $ } from "bun"
 import path from "node:path"
-import { Schema } from "effect"
 
 const ROOT = path.resolve(import.meta.dir, "../..")
 
@@ -222,15 +221,12 @@ export const plan = (suites: ReadonlyArray<Suite>): { include: Array<Lane> } => 
 }
 
 // CHANGED_FILES is a JSON array of paths; unset plans every suite.
-const decodeChangedFiles = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)))
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
 if (import.meta.main) {
 	const files = await trackedFiles()
 	const workspaces = await discoverWorkspaces(files)
 	const raw = process.env.CHANGED_FILES
 	const affected = raw
-		? affectedWorkspaces(workspaces, decodeChangedFiles(raw), await turboRootInputs())
+		? affectedWorkspaces(workspaces, JSON.parse(raw), await turboRootInputs())
 		: undefined
 	const suites = suitesOf(workspaces, files).filter((s) => affected === undefined || affected.has(s.name))
 	console.error(
@@ -238,5 +234,5 @@ if (import.meta.main) {
 			? "Planning every suite"
 			: `Affected suites: ${suites.map((s) => s.name).join(", ") || "none"}`,
 	)
-	console.log(encodeJson(plan(suites)))
+	console.log(JSON.stringify(plan(suites)))
 }

@@ -67,6 +67,17 @@
 				"effecttsgo/any-unknown-in-error-context": "off"
 			}
 		},
+		// CI runs these before `bun install`, so they cannot import effect.
+		{
+			"files": [
+				"scripts/bun-test-guard.ts",
+				"scripts/ci/plan-tests.ts",
+				"scripts/ci/format-ingest-benchmark-comment.ts"
+			],
+			"rules": {
+				"effecttsgo/global-json": "off"
+			}
+		},
 		// Tests may use host globals and intentionally incomplete layers; production code may not.
 		{
 			"files": [
