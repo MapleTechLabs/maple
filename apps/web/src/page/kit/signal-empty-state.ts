@@ -5,6 +5,7 @@ import { button, linkButton } from "@maple/views/ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { docsLink as kitDocsLink } from "@maple/views/ui/docs-link"
 import type { PresenceState, TelemetrySignalKind } from "./signal-presence"
 
 // `SignalEmptyState`, `FilteredEmpty` and `DocsLink`/`EmptyActions`. Presence comes from the
@@ -70,17 +71,7 @@ const SIGNAL_COPY = {
 
 /** `DocsLink`. */
 export const docsLink = <M>(h: HtmlBuilder<M>, page: DocsPage, label = "Read the docs"): Html =>
-	h.a(
-		[
-			h.Class(
-				"inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground active:text-foreground hover:underline active:underline",
-			),
-			h.Href(docsUrl(page)),
-			h.Target("_blank"),
-			h.Rel("noopener noreferrer"),
-		],
-		[label, icon(h, "ExternalLinkIcon", { size: 12 })],
-	)
+	kitDocsLink(h, docsUrl(page), label)
 
 /** `EmptyActions`. */
 export const emptyActions = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>

@@ -1,5 +1,7 @@
 import * as Timeline from "@maple/web/page/traces/detail/timeline"
-import type { TraceData } from "@maple/web/page/traces/detail/trace-data"
+import type { TraceData } from "@maple/views/traces/trace-data"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import { LOG_LIMIT } from "@maple/views/traces/span-panel/command"
 import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
@@ -11,11 +13,11 @@ import type { LoadFailure } from "../../data/local-query"
 import type { Resources } from "../../platform/resources"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams } from "../contract"
-import { FetchTrace } from "./command"
+import { FetchTrace, ReadSpanLog } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { enterTab, selectedSpanOf, selectInTab, TAB_VALUES, viewOf } from "./tabs"
-import { initPanel, refetchPanel, updatePanel } from "./update-panel"
+import * as LogSheet from "../kit/log-sheet/update"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -51,10 +53,14 @@ const syncPanel = (model: Model, context: PageContext): UpdateReturn =>
 			const span = selectedSpanOf(trace, context)
 			if (span === undefined) return { model: { ...model, panel: null } }
 			if (model.panel !== null && model.panel.span.spanId === span.spanId) return { model }
-			const next = initPanel(span, context.env.apiBase)
+			const next = SpanPanel.init({
+				span,
+				traceStartTime: trace.traceStartTime ?? "",
+				totalDurationMs: trace.totalDurationMs,
+			})
 			// The panel component stays mounted across selections, so its tab does too.
-			const panel = model.panel === null ? next.panel : { ...next.panel, tabs: model.panel.tabs }
-			return { model: { ...model, panel }, commands: next.commands }
+			const panel = model.panel === null ? next.model : { ...next.model, tabs: model.panel.tabs }
+			return { model: { ...model, panel }, commands: liftPanel(next.commands) }
 		},
 	})
 
@@ -86,6 +92,7 @@ export const init = (
 			waterfall: null,
 			flow: null,
 			panel: null,
+			maybeLogSheet: Option.none(),
 			pointer: null,
 		},
 		commands: [FetchTrace({ key, traceId, apiBase: context.env.apiBase, readsCache: true })],
@@ -118,12 +125,12 @@ const selectSpan = (model: Model, context: PageContext, spanId: string): UpdateR
 const refresh = (model: Model, context: PageContext): UpdateReturn => {
 	if (model.isRefreshing || model.trace.key === null) return { model }
 	const trace = Option.getOrElse(request(model.trace, model.trace.key, true), () => model.trace)
-	const panel = model.panel === null ? null : refetchPanel(model.panel, context.env.apiBase)
+	const panel = model.panel === null ? null : SpanPanel.refresh(model.panel)
 	return {
-		model: { ...model, trace, isRefreshing: true, panel: panel === null ? null : panel.panel },
+		model: { ...model, trace, isRefreshing: true, panel: panel === null ? null : panel.model },
 		commands: [
 			FetchTrace({ key: model.trace.key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false }),
-			...(panel?.commands ?? []),
+			...liftPanel(panel?.commands),
 		],
 		outMessage: PageOutMessage.RefetchedInPlace(),
 	}
@@ -168,14 +175,43 @@ const settleTrace = (model: Model, context: PageContext, key: string, result: Re
 	return hadData && !changed ? { model: next } : onLoaded(next, context)
 }
 
-const panelStep = (model: Model, context: PageContext, message: Message): UpdateReturn => {
+const liftPanel = (commands: SpanPanel.Return["commands"]): Commands =>
+	Command.mapMessages(commands ?? [], (message) => Message.GotSpanPanelMessage({ message }))
+
+const liftSheet = (model: Model, step: LogSheet.UpdateReturn): UpdateReturn => ({
+	model: { ...model, maybeLogSheet: Option.some(step.model) },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotLogSheetMessage({ message })),
+})
+
+/** The panel's step; close, a parent span or a log row are the page's to act on. */
+const panelStep = (model: Model, context: PageContext, message: SpanPanel.Message): UpdateReturn => {
 	if (model.panel === null) return { model }
-	const next = updatePanel(model.panel, message)
-	const stepped: UpdateReturn = { model: { ...model, panel: next.panel }, commands: next.commands }
-	const outcome = next.outcome
-	if (outcome === undefined || outcome._tag === "None") return stepped
-	if (outcome._tag === "Close") return chain(stepped, (m) => setParams(m, context, { spanId: null }))
-	return chain(stepped, (m) => selectSpan(m, context, outcome.spanId))
+	const { span } = model.panel
+	const next = SpanPanel.update(model.panel, message)
+	const stepped: UpdateReturn = { model: { ...model, panel: next.model }, commands: liftPanel(next.commands) }
+	const out = next.outMessage
+	if (out === undefined) return stepped
+	return SpanPanel.OutMessage.match<UpdateReturn>(out, {
+		Closed: () => chain(stepped, (m) => setParams(m, context, { spanId: null })),
+		SelectedSpanId: ({ spanId }) => chain(stepped, (m) => selectSpan(m, context, spanId)),
+		SelectedLog: ({ key }) => ({
+			...stepped,
+			commands: [
+				...(stepped.commands ?? []),
+				ReadSpanLog({
+					traceId: span.traceId,
+					spanId: span.spanId,
+					startTime: span.startTime,
+					durationMs: span.durationMs,
+					limit: LOG_LIMIT,
+					key,
+					apiBase: context.env.apiBase,
+				}),
+			],
+		}),
+		// Local renders the attributes without filter actions.
+		RequestedAttributeFilter: () => stepped,
+	})
 }
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
@@ -238,18 +274,17 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const picked = Option.getOrUndefined(flowModel.selectedSpanId)
 			return child._tag === "ClickedSpanNode" && picked !== undefined ? selectSpan(next, context, picked) : { model: next }
 		},
-		SucceededFetchSpanDetail: () => panelStep(model, context, message),
-		FailedFetchSpanDetail: () => panelStep(model, context, message),
-		SucceededFetchSpanLogs: () => panelStep(model, context, message),
-		FoundCachedSpanDetail: () => panelStep(model, context, message),
-		FoundCachedSpanLogs: () => panelStep(model, context, message),
-		FailedFetchSpanLogs: () => panelStep(model, context, message),
-		GotSpanPanelMessage: () => panelStep(model, context, message),
-		GotPanelTabsMessage: () => panelStep(model, context, message),
-		ClickedSpanLog: () => panelStep(model, context, message),
-		GotLogSheetMessage: () => panelStep(model, context, message),
-		GotAttributesMessage: () => panelStep(model, context, message),
-		CompletedWriteClipboard: () => panelStep(model, context, message),
-		ElapsedCopyStatus: () => panelStep(model, context, message),
+		GotSpanPanelMessage: ({ message: child }) => panelStep(model, context, child),
+		FoundSpanLog: ({ log }) => liftSheet(model, LogSheet.openLog(model.maybeLogSheet, log)),
+		FailedReadSpanLog: () => {
+			if (model.panel === null) return { model }
+			const next = SpanPanel.refresh(model.panel)
+			return { model: { ...model, panel: next.model }, commands: liftPanel(next.commands) }
+		},
+		GotLogSheetMessage: ({ message: child }) =>
+			Option.match(model.maybeLogSheet, {
+				onNone: () => ({ model }),
+				onSome: (sheet) => liftSheet(model, LogSheet.update(sheet, child)),
+			}),
 		CompletedFocusSpanPanel: () => ({ model }),
 	})

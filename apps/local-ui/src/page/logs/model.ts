@@ -8,11 +8,11 @@ import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
 import { Copies } from "../kit/copies"
 import * as LogSheet from "../kit/log-sheet/model"
-import { LocalLog } from "../kit/log-sheet/model"
+import { LocalLog } from "../../lib/log-shape"
 
 // apps/local-ui/src/lib/log-shape.ts and the logs hooks, as Schemas.
 
-export { LocalLog } from "../kit/log-sheet/model"
+export { LocalLog } from "../../lib/log-shape"
 
 export const LogPages = Schema.Struct({ pages: Schema.Array(Schema.Array(LocalLog)), hasNextPage: Schema.Boolean })
 export type LogPages = typeof LogPages.Type

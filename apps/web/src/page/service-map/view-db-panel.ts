@@ -30,7 +30,7 @@ import {
 } from "./view-db-sections"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { sidePanelFrame } from "../kit/side-panel"
+import { sidePanelFrame } from "@maple/views/ui/side-panel"
 import { grid } from "@maple/views/ui/grid"
 
 // The database detail panel.

@@ -6,9 +6,10 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Resizable from "@maple/views/ui/resizable"
 import * as Tabs from "@maple/views/ui/tabs"
 import { ProductEvent } from "./model"
-import * as SpanPanel from "./span-panel"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 import * as Timeline from "./timeline"
-import { SpanEvents, TraceData } from "./trace-data"
+import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
 import * as Waterfall from "./waterfall"
 
 export const TraceView = Schema.Literals(["waterfall", "timeline", "flow"])
@@ -41,6 +42,7 @@ export const Message = defineMessageUnion({
 	GotWaterfallMessage: { message: Waterfall.Message },
 	GotFlowMessage: { message: TraceFlow.Message },
 	GotSpanPanelMessage: { message: SpanPanel.Message },
+	GotSpanInfraMessage: { message: InfraCorrelation.Message },
 	ClickedCopyTraceId: {},
 	CompletedCopyTraceId: { isOk: Schema.Boolean },
 })

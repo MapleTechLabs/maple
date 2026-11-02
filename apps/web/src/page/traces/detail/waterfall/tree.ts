@@ -1,4 +1,4 @@
-import type { SpanNodeData } from "../trace-data"
+import type { SpanNodeData } from "@maple/views/traces/trace-data"
 
 // Pure tree walks over the Model's span tree for `SpanHierarchy`.
 

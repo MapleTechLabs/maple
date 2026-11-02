@@ -20,7 +20,7 @@ import {
 } from "@maple/ui/components/traces/trace-timeline-types"
 import { summarizeClockSkew } from "@maple/ui/lib/span-tree"
 import { Command } from "foldkit"
-import { type SpanEvents, type SpanNodeData, type TraceData, toSpanNode } from "../trace-data"
+import { type SpanEvents, type SpanNodeData, type TraceData, toSpanNode } from "@maple/views/traces/trace-data"
 import { FocusSearch, ReadSidebarWidth, ScrollToRow } from "./command"
 import {
 	collectParentIdsByLevel,

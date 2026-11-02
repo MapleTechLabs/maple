@@ -1,4 +1,4 @@
-import type { SpanNodeData } from "@maple/web/page/traces/detail/trace-data"
+import type { SpanNodeData } from "@maple/views/traces/trace-data"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { calculateSelfTime, getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration, formatPercent } from "@maple/ui/lib/format"

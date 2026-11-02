@@ -4,28 +4,10 @@ import * as Tabs from "@maple/views/ui/tabs"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { Option, Schema } from "effect"
 import { Copies } from "../copies"
+import { LocalLog, logKey } from "../../../lib/log-shape"
 
 // The log detail sheet as data, shared by the
 // Logs page and the span panel's Logs tab.
-
-/** `LocalLog` (lib/log-shape.ts): one log row, attribute maps already decoded. */
-export const LocalLog = Schema.Struct({
-	/** The stored `DateTime64(9)` value with its nanoseconds: shown verbatim and the keyset cursor. */
-	timestamp: Schema.String,
-	severityText: Schema.String,
-	severityNumber: Schema.Number,
-	serviceName: Schema.String,
-	body: Schema.String,
-	traceId: Schema.String,
-	spanId: Schema.String,
-	recordIdentity: Schema.String,
-	logAttributes: Schema.Record(Schema.String, Schema.String),
-	resourceAttributes: Schema.Record(Schema.String, Schema.String),
-})
-export type LocalLog = typeof LocalLog.Type
-
-export const logKey = (log: LocalLog): string =>
-	`${log.timestamp}|${log.serviceName}|${log.traceId}|${log.spanId}|${log.recordIdentity}`
 
 export const SHEET_ID = "log-detail-sheet"
 const TOOLTIP_ID = "log-detail-tooltip"

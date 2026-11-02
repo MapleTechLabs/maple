@@ -14,7 +14,7 @@ import { writeClipboard } from "../../kit/clipboard"
 import { listQueryOf } from "./list-query"
 import { Message } from "./message"
 import { ProductEvent } from "./model"
-import { SpanEvents, TraceData } from "./trace-data"
+import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
 
 /** `decodeTraceIdParam`: a pasted id may carry whitespace; anything still undecodable is not found. */
 export const decodeTraceId = (raw: string): Option.Option<TraceId> =>

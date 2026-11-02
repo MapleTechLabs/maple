@@ -15,9 +15,9 @@ import { sheetDetailHeader } from "../../kit/sheet-detail-header"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { loadedTrace, selectedSpanOf } from "./select"
-import * as SpanPanel from "./span-panel"
 import { anatomy, callout, traceViewTabs } from "./view"
 import { logsLink, replayLink } from "./view-header"
+import { spanPanelSubmodel } from "./view-span-panel"
 import { vstackClass } from "@maple/views/ui/stack"
 
 // The trace page in the list's peek sheet. The sheet, its footer and the keys are the list's.
@@ -169,20 +169,12 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 															? []
 															: [
 																	[
-																		h.submodel({
-																			slotId: `peek-span-panel:${selected.spanId}`,
-																			model: panel,
-																			view: SpanPanel.view,
-																			viewInputs: {
-																				timeZone: inputs.timeZone,
-																			},
-																			toParentMessage: (
-																				message: SpanPanel.Message,
-																			) =>
-																				Message.GotSpanPanelMessage({
-																					message,
-																				}),
-																		}),
+																		spanPanelSubmodel(
+																			h,
+																			model,
+																			`peek-span-panel:${selected.spanId}`,
+																			inputs.timeZone,
+																		),
 																	],
 																]),
 													],

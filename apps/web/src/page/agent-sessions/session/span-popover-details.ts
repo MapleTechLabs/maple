@@ -21,12 +21,13 @@ import { icon } from "@maple/views/ui/icon"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import type { Message as PanelMessage } from "../../traces/detail/span-panel/message"
-import type { PanelState } from "../../traces/detail/span-panel/model"
-import { attributesSection } from "../../traces/detail/span-panel/attributes"
-import { copyableValue } from "../../traces/detail/span-panel/copy"
-import { errorSection } from "../../traces/detail/span-panel/error-section"
-import { spanLogs } from "../../traces/detail/span-panel/view-tabs"
+import type { Message as PanelMessage } from "@maple/views/traces/span-panel/message"
+import type { PanelState } from "@maple/views/traces/span-panel/model"
+import { attributesSection } from "@maple/views/traces/span-panel/attributes"
+import { copyableValue } from "@maple/views/traces/span-panel/copy"
+import { errorSection } from "@maple/views/traces/span-panel/error-section"
+import { spanLogs } from "@maple/views/traces/span-panel/view-tabs"
+import { docsUrl } from "../../../lib/docs"
 import { Message as SessionMessage, type Message } from "./message"
 import type { Model } from "./model"
 import { payloadCard } from "./span-popover-messages"
@@ -231,7 +232,7 @@ const resourceAttributesView = Submodel.defineView<PanelState, PanelMessage, Pan
 
 /** `LogsSection`: the trace panel's span logs, read once the tab is open. */
 const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { timeZone }, p) =>
-	p.div([p.Class("overflow-hidden rounded-md border border-border-subtle")], [spanLogs(p, state, timeZone)]),
+	p.div([p.Class("overflow-hidden rounded-md border border-border-subtle")], [spanLogs(p, state, timeZone, docsUrl("logs"))]),
 )
 
 /** The call's own settings and identity, shown only where the span reported them. */

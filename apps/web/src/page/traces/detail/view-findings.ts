@@ -11,7 +11,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { serviceDot } from "@maple/views/ui/values"
 import { Message } from "./message"
 import type { ProductEvent } from "./model"
-import { type SpanNodeData, toSpanNode } from "./trace-data"
+import { type SpanNodeData, toSpanNode } from "@maple/views/traces/trace-data"
 import { typography } from "@maple/views/ui/typography"
 
 // The trace's error callout and product events.

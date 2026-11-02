@@ -1,12 +1,13 @@
 import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
 import * as Timeline from "@maple/web/page/traces/detail/timeline"
-import { TraceData } from "@maple/web/page/traces/detail/trace-data"
+import { TraceData } from "@maple/views/traces/trace-data"
 import type { FlowGraph } from "@maple/views/service-map/trace-flow/trace-flow"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
-import { PanelModel } from "./panel-model"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import * as LogSheet from "../kit/log-sheet/model"
 
 // The trace detail page.
 
@@ -29,7 +30,9 @@ export const Model = Schema.TaggedStruct("TraceDetailPage", {
 	waterfall: Schema.NullOr(Waterfall.Model),
 	flow: Schema.NullOr(Schema.Struct({ graph: FlowGraphData, model: TraceFlow.Model })),
 	/** The span panel, mounted while the hash's `spanId` names a span of the trace. */
-	panel: Schema.NullOr(PanelModel),
+	panel: Schema.NullOr(SpanPanel.Model),
+	/** `LogDetailSheet` over the span panel, once a Logs-tab row was clicked. */
+	maybeLogSheet: Schema.Option(LogSheet.Model),
 	/** Where the span tooltip anchors (the last pointer move), none before the first. */
 	pointer: Schema.NullOr(Schema.Struct({ x: Schema.Number, y: Schema.Number })),
 })

@@ -6,7 +6,7 @@ import {
 	computeExpandOneLevel,
 } from "@maple/ui/components/traces/auto-collapse"
 import type { Command } from "foldkit"
-import { type TraceData, toSpanNode } from "../trace-data"
+import { type TraceData, toSpanNode } from "@maple/views/traces/trace-data"
 import { Message, type Model, OutMessage } from "./model"
 import { collectParentIdsByLevel, countSpans } from "./tree"
 

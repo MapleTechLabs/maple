@@ -1,9 +1,9 @@
 import { Option } from "effect"
 import { Command, type Update } from "foldkit"
-import * as SpanPanel from "../../page/traces/detail/span-panel"
+import * as SpanPanel from "@maple/views/traces/span-panel"
 import { findSpan } from "../../page/traces/detail/select"
 import * as Timeline from "../../page/traces/detail/timeline"
-import type { TraceData } from "../../page/traces/detail/trace-data"
+import type { TraceData } from "@maple/views/traces/trace-data"
 import * as Waterfall from "../../page/traces/detail/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
@@ -76,10 +76,8 @@ const selectSpan = (model: Model, spanId: string): Return => {
 		onSome: ([trace, found]) =>
 			SpanPanel.init({
 				span: found,
-				traceId: trace.traceId,
 				traceStartTime: trace.traceStartTime ?? "",
 				totalDurationMs: trace.totalDurationMs,
-				orgId: "",
 			}).model,
 	})
 	const next: Model = { ...model, selectedSpanId: spanId, panel }

@@ -35,8 +35,8 @@ import { type Model, SESSION_VIEWS, type SpansPage } from "./model"
 import { layoutLanes, MAX_ZOOM, MIN_ZOOM } from "./flow-layout"
 import { freshLists, land, moveCursor, type SpanKey } from "./navigation"
 import * as Dialog from "@maple/views/ui/dialog"
-import type { Message as SpanPanelMessage } from "../../traces/detail/span-panel/message"
-import * as SpanPanel from "../../traces/detail/span-panel/update"
+import type { Message as SpanPanelMessage } from "@maple/views/traces/span-panel/message"
+import * as SpanPanel from "@maple/views/traces/span-panel/update"
 import { SPAN_DIALOG_ID } from "./span-popover"
 import {
 	checkedCloseFocus,

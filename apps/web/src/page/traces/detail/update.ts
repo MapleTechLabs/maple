@@ -28,10 +28,11 @@ import { withListQuery } from "./list-query"
 import { Message, type TraceView } from "./message"
 import type { Model } from "./model"
 import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
-import * as SpanPanel from "./span-panel"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 import { splitLayout } from "./split"
 import * as Timeline from "./timeline"
-import { toSpanNode } from "./trace-data"
+import { toSpanNode } from "@maple/views/traces/trace-data"
 import * as Waterfall from "./waterfall"
 
 type Return = PageReturn<Model, Message>
@@ -113,24 +114,35 @@ const syncPanel = (model: Model, context: PageContext, trace: LoadedTrace): Retu
 			model: {
 				...model,
 				spanPanel: null,
+				spanInfra: null,
 				split: withLayout(model.split, splitLayout(1, model.splitWidth)),
 			},
 		}
 	const next = SpanPanel.init({
 		span,
-		traceId: model.traceId,
 		traceStartTime: trace.traceStartTime,
 		totalDurationMs: trace.data.totalDurationMs,
-		orgId: context.orgId,
 	})
 	return {
 		model: {
 			...model,
 			spanPanel: next.model,
+			spanInfra: InfraCorrelation.init(`span-${span.spanId}-infra`, context.orgId),
 			split: withLayout(model.split, splitLayout(2, model.splitWidth)),
 		},
 		commands: liftPanel(next.commands),
 	}
+}
+
+/** `TraceAttributeFilterProvider`: a fresh list query carrying only this attribute. */
+const attributeFilterUrl = (scope: "span" | "resource", key: string, value: string, isExclude: boolean) => {
+	const entry = isExclude ? { key, value, negated: true } : { key, value }
+	return hrefOf(
+		AppRoute.Traces({
+			search:
+				scope === "resource" ? { resourceAttributeFilters: [entry] } : { attributeFilters: [entry] },
+		}),
+	)
 }
 
 /** A panel joining or leaving the group lays it out from the panels' `defaultSize`s again. */
@@ -275,6 +287,7 @@ export const init = (route: Route, context: PageContext, isPeek = false): Return
 		waterfall: null,
 		flow: null,
 		spanPanel: null,
+		spanInfra: null,
 		isPeek,
 	}
 	const requested = requestHierarchy(model, context)
@@ -457,9 +470,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (out === undefined) return lifted
 			if (out._tag === "Closed") return chain(lifted, closeSpanPanel)
 			if (out._tag === "SelectedSpanId") return chain(lifted, (m) => selectSpan(m, out.spanId))
+			// TODO(log-sheet): a log row should open the log detail sheet; it is not wired here yet.
+			if (out._tag === "SelectedLog") return lifted
 			return {
 				...lifted,
-				outMessage: PageOutMessage.RequestedNavigation({ url: out.url, isReplace: false }),
+				outMessage: PageOutMessage.RequestedNavigation({
+					url: attributeFilterUrl(out.scope, out.key, out.value, out.isExclude),
+					isReplace: false,
+				}),
+			}
+		},
+		GotSpanInfraMessage: ({ message: inner }) => {
+			if (model.spanInfra === null) return { model }
+			const next = InfraCorrelation.update(model.spanInfra, inner)
+			return {
+				model: { ...model, spanInfra: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotSpanInfraMessage({ message })),
 			}
 		},
 	})

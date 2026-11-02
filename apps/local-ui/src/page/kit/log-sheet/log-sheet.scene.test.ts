@@ -4,7 +4,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message } from "./message"
-import type { LocalLog } from "./model"
+import type { LocalLog } from "../../../lib/log-shape"
 import { isOpen, openLog, update } from "./update"
 import { view as sheetView } from "./view"
 

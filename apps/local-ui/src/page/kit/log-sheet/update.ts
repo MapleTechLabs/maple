@@ -6,7 +6,8 @@ import type { Option } from "effect"
 import { Command, type Update } from "foldkit"
 import { updateCopy } from "../copies"
 import { Message } from "./message"
-import { type LocalLog, type Model, withLog } from "./model"
+import type { LocalLog } from "../../../lib/log-shape"
+import { type Model, withLog } from "./model"
 
 export type UpdateReturn = Update.Return<Model, Message>
 

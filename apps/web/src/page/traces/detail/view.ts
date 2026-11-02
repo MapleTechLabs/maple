@@ -21,15 +21,15 @@ import { backToTracesHref } from "./list-query"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
-import * as SpanPanel from "./span-panel"
 import { MeasureSplit } from "./split"
 import { spanSheetOf } from "./update"
-import type { TraceData } from "./trace-data"
+import type { TraceData } from "@maple/views/traces/trace-data"
 import * as Timeline from "./timeline"
 import { headerActions, titleContent } from "./view-header"
 import { errorCallout, productEvents, traceErrors } from "./view-findings"
 import { detailLoading, traceNotFound } from "./view-states"
 import { anatomyStrip } from "./view-summary"
+import { spanPanelSubmodel } from "./view-span-panel"
 import * as Waterfall from "./waterfall"
 import { vstackClass } from "@maple/views/ui/stack"
 
@@ -136,16 +136,9 @@ const lazyCallout = (h: HtmlBuilder<Message>, data: TraceData, selectedSpanId: s
 
 const spanPanelView = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html | null => {
 	const selected = selectedSpanOf(model)
-	const panel = model.spanPanel
-	return panel === null || selected === undefined
+	return selected === undefined
 		? null
-		: h.submodel({
-				slotId: `span-panel:${selected.spanId}`,
-				model: panel,
-				view: SpanPanel.view,
-				viewInputs: { timeZone: inputs.context.timeZone },
-				toParentMessage: (message: SpanPanel.Message) => Message.GotSpanPanelMessage({ message }),
-			})
+		: spanPanelSubmodel(h, model, `span-panel:${selected.spanId}`, inputs.context.timeZone)
 }
 
 /** Below `md` the trace takes the full width and the span floats over it in a bottom sheet. */
