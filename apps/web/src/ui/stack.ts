@@ -96,6 +96,14 @@ const element = <M>(
 	}
 }
 
+/** `hstack`'s classes, for an element the kit already renders (a link, a table cell, a `pressable`). */
+export const hstackClass = (options: Omit<StackOptions<never>, "as" | "attributes">): string =>
+	stackClass("row", options)
+
+/** `vstack`'s classes, for an element the kit already renders. */
+export const vstackClass = (options: Omit<StackOptions<never>, "as" | "attributes">): string =>
+	stackClass("col", options)
+
 /** A flex row, items centred unless `align` says otherwise. */
 export const hstack = <M>(
 	h: HtmlBuilder<M>,
