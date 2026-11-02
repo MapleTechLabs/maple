@@ -200,7 +200,9 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 					emptyDescription(h, [
 						presence.lastSeenMs === null
 							? `Maple is receiving ${copy.noun}, just none in this window.`
-							: `Maple last received ${copy.noun} ${formatRelativeTime(presence.lastSeenMs, options.nowMs)}. Widen the range to see them.`,
+							: options.onWidenRange === undefined
+								? `Maple last received ${copy.noun} ${formatRelativeTime(presence.lastSeenMs, options.nowMs)}.`
+								: `Maple last received ${copy.noun} ${formatRelativeTime(presence.lastSeenMs, options.nowMs)}. Widen the range to see them.`,
 					]),
 				]),
 				...contentOf(h, detail, actions.length === 0 ? [] : [emptyActions(h, actions)]),
