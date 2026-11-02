@@ -43,7 +43,8 @@ const LOG_BODY = JSON.stringify(
 	2,
 )
 
-const FENCE_HIGHLIGHTS = { [highlightKey("py", FENCE)]: highlight("py", FENCE) }
+// Read per render: the tokens are plain until the highlighter has loaded.
+const fenceHighlights = () => ({ [highlightKey("py", FENCE)]: highlight("py", FENCE) })
 
 export const codeSection = <M>(
 	h: HtmlBuilder<M>,
@@ -59,7 +60,7 @@ export const codeSection = <M>(
 		fenceBlock(
 			h,
 			{
-				highlights: FENCE_HIGHLIGHTS,
+				highlights: fenceHighlights(),
 				onCopy,
 				onDownload: onCopy,
 			},

@@ -1,4 +1,4 @@
-import { highlightCode, type Lang, resolveLang } from "../../../lib/highlight"
+import { highlightCode, type Lang } from "../../../lib/highlight"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../ui/copy-button"
@@ -64,7 +64,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 											? escapeHtml(options.code)
 											: highlightCode(
 													options.code,
-													options.lang ?? resolveLang(options.language ?? ""),
+													options.lang ?? options.language ?? "",
 												),
 									),
 								],

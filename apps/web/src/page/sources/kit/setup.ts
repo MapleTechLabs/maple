@@ -1,5 +1,4 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
-import { resolveLang } from "../../../lib/highlight"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
@@ -50,28 +49,36 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 			const step = Tabs.update(model.tabs, inner)
 			return {
 				model: { ...model, tabs: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotTabsMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotTabsMessage({ message: child }),
+				),
 			}
 		},
 		GotEndpointCopyMessage: ({ message: inner }) => {
 			const step = CopyButton.update(model.endpointCopy, inner)
 			return {
 				model: { ...model, endpointCopy: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotEndpointCopyMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotEndpointCopyMessage({ message: child }),
+				),
 			}
 		},
 		GotHeaderCopyMessage: ({ message: inner }) => {
 			const step = CopyButton.update(model.headerCopy, inner)
 			return {
 				model: { ...model, headerCopy: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotHeaderCopyMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotHeaderCopyMessage({ message: child }),
+				),
 			}
 		},
 		GotCodeCopyMessage: ({ message: inner }) => {
 			const step = CopyButton.update(model.codeCopy, inner)
 			return {
 				model: { ...model, codeCopy: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotCodeCopyMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotCodeCopyMessage({ message: child }),
+				),
 			}
 		},
 	})
@@ -105,7 +112,8 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 							value: ingestUrl,
 							copyLabel: "OTLP endpoint",
 							copy: model.endpointCopy,
-							toCopyMessage: (message) => toParentMessage(Message.GotEndpointCopyMessage({ message })),
+							toCopyMessage: (message) =>
+								toParentMessage(Message.GotEndpointCopyMessage({ message })),
 						}),
 					],
 				),
@@ -115,7 +123,11 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 						eyebrow(h, {}, ["Header"]),
 						token === null
 							? h.div(
-									[h.Class("bg-surface-sunken text-muted-foreground rounded-md border px-3 py-2 font-mono text-xs")],
+									[
+										h.Class(
+											"bg-surface-sunken text-muted-foreground rounded-md border px-3 py-2 font-mono text-xs",
+										),
+									],
 									["Authorization: Bearer ", shown],
 								)
 							: copyableField(h, {
@@ -123,7 +135,8 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 									value: `Authorization: Bearer ${token}`,
 									copyLabel: "Header",
 									copy: model.headerCopy,
-									toCopyMessage: (message) => toParentMessage(Message.GotHeaderCopyMessage({ message })),
+									toCopyMessage: (message) =>
+										toParentMessage(Message.GotHeaderCopyMessage({ message })),
 								}),
 					],
 				),
@@ -140,7 +153,8 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 												slotId: `${config.idPrefix}-snippet-tabs`,
 												model: model.tabs,
 												view: TabsView.view,
-												toParentMessage: (message) => toParentMessage(Message.GotTabsMessage({ message })),
+												toParentMessage: (message) =>
+													toParentMessage(Message.GotTabsMessage({ message })),
 												viewInputs: {
 													variant: "underline",
 													labels: snippets.map((entry) => entry.label),
@@ -152,9 +166,10 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 								codeBlock(h, {
 									code: snippet.code,
 									language: snippets.length > 1 ? snippet.language : snippet.label,
-									lang: resolveLang(snippet.language),
+									lang: snippet.language,
 									copy: model.codeCopy,
-									toCopyMessage: (message) => toParentMessage(Message.GotCodeCopyMessage({ message })),
+									toCopyMessage: (message) =>
+										toParentMessage(Message.GotCodeCopyMessage({ message })),
 								}),
 							],
 						),
@@ -163,7 +178,9 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 				? [
 						h.p(
 							[h.Class("text-muted-foreground text-xs")],
-							["The token is only shown when the source is created or rolled. Roll it to get a new one."],
+							[
+								"The token is only shown when the source is created or rolled. Roll it to get a new one.",
+							],
 						),
 					]
 				: []),
