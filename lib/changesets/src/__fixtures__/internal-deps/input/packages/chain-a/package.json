@@ -1,7 +1,0 @@
-{
-	"name": "chain-a",
-	"version": "3.0.0",
-	"dependencies": {
-		"exact": "1.0.0"
-	}
-}

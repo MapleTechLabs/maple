@@ -1,7 +1,0 @@
-{
-	"name": "@x/tool-a",
-	"version": "0.1.0",
-	"dependencies": {
-		"@x/sdk": "workspace:*"
-	}
-}

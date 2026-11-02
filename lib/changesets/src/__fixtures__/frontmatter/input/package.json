@@ -1,7 +1,0 @@
-{
-	"name": "fm-root",
-	"private": true,
-	"workspaces": [
-		"packages/*"
-	]
-}

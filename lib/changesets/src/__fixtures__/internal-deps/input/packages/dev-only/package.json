@@ -1,7 +1,0 @@
-{
-	"name": "dev-only",
-	"version": "1.0.0",
-	"devDependencies": {
-		"core": "1.0.0"
-	}
-}

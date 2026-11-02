@@ -1,5 +1,0 @@
----
-"core": patch
----
-
-Core fix.

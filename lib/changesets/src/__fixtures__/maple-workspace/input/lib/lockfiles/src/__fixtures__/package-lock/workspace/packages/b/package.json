@@ -1,8 +1,0 @@
-{
-	"name": "@fx/b",
-	"version": "1.0.0",
-	"dependencies": {
-		"@fx/a": "*",
-		"express": "4.17.1"
-	}
-}

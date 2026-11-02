@@ -1,7 +1,0 @@
-{
-	"name": "nolog-root",
-	"private": true,
-	"workspaces": [
-		"packages/*"
-	]
-}

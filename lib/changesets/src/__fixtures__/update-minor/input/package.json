@@ -1,7 +1,0 @@
-{
-	"name": "minor-root",
-	"private": true,
-	"workspaces": [
-		"packages/*"
-	]
-}

@@ -19,9 +19,9 @@
         "@effect/sql-pg": "4.1.0",
         "@effect/tsgo": "0.63.0",
         "@effect/vitest": "catalog:effect",
+        "@maple-dev/changesets": "0.1.0",
         "@maple-dev/effect-orm": "0.8.0",
         "@maple/alchemy-portless": "workspace:*",
-        "@maple/changesets": "workspace:*",
         "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
@@ -433,21 +433,6 @@
     "lib/cache": {
       "name": "@maple/cache",
       "dependencies": {
-        "effect": "catalog:effect",
-      },
-      "devDependencies": {
-        "@types/node": "catalog:tooling",
-        "typescript": "catalog:tooling",
-        "vitest": "catalog:",
-      },
-    },
-    "lib/changesets": {
-      "name": "@maple/changesets",
-      "bin": {
-        "changeset": "./src/bin.ts",
-      },
-      "dependencies": {
-        "@effect/platform-node": "catalog:effect",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -1539,6 +1524,8 @@
 
     "@maple-dev/browser": ["@maple-dev/browser@workspace:packages/browser"],
 
+    "@maple-dev/changesets": ["@maple-dev/changesets@0.1.0", "", { "dependencies": { "@effect/platform-node": "^4.1.0", "effect": "^4.1.0" }, "bin": { "changeset": "dist/bin.mjs" } }, "sha512-YbtxLLiVjldk/YjmnYOPL1xC6XYINkCOmPaWFEDfqfOmeg9icsKsPWPbePo8fZ9zQPxs2LWz3+yEV7PECGnrGQ=="],
+
     "@maple-dev/effect-clickhouse-http": ["@maple-dev/effect-clickhouse-http@workspace:lib/effect-clickhouse-http"],
 
     "@maple-dev/effect-orm": ["@maple-dev/effect-orm@0.8.0", "", { "peerDependencies": { "effect": "^4.0.6" }, "bin": { "ch-bench": "dist/benchmark/bin.mjs", "effect-orm": "dist/kit/bin.mjs" } }, "sha512-NQxCs+HKZT/nUVleiWjDv8yXJGZ8i3byb36B6qNObgJF0XHCLK/GgvfZjVTDWLsqKagOxy7M/ggN89SXZwrVxg=="],
@@ -1570,8 +1557,6 @@
     "@maple/browser-session": ["@maple/browser-session@workspace:packages/browser-session"],
 
     "@maple/cache": ["@maple/cache@workspace:lib/cache"],
-
-    "@maple/changesets": ["@maple/changesets@workspace:lib/changesets"],
 
     "@maple/chat-bot": ["@maple/chat-bot@workspace:apps/chat-bot"],
 

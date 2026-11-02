@@ -1,5 +1,0 @@
----
-"pub": major
----
-
-Pub major.

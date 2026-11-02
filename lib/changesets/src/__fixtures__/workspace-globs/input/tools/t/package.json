@@ -1,7 +1,0 @@
-{
-	"name": "tool-t",
-	"version": "1.0.0",
-	"dependencies": {
-		"lib-b": "1.0.0"
-	}
-}

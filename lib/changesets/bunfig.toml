@@ -1,3 +1,0 @@
-# Vitest package: `bun test` fails fast here (scripts/bun-test-guard.ts).
-[test]
-preload = ["../../scripts/bun-test-guard.ts"]

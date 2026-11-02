@@ -41,8 +41,6 @@
 		"packages/email/components",
 		"apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json",
 		"scripts/oxlint-plugins/anti-slop/**",
-		// Differential-test fixtures: their exact bytes are what @changesets/cli read and wrote.
-		"lib/changesets/src/__fixtures__",
 		"CLAUDE.md",
 	],
 }
