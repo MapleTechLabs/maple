@@ -587,10 +587,9 @@ export const describeChdbOpenFailure = (raw: string, version: string = MAPLE_VER
 
 /**
  * Acquire a chDB connection as a scoped resource: `Chdb.open` (which bootstraps
- * the schema) on acquire, `close()` as a finalizer. Open failures — a missing
- * libchdb, a NULL connection, a rejected bootstrap — surface as a typed
- * `ChdbError` instead of an unhandled throw. The synchronous `query`/`exec`
- * methods are unchanged; only the lifecycle is Effect-managed.
+ * the schema) on acquire, `close()` as a finalizer. A synchronous exit hook also
+ * closes it if the host exits before scope teardown. Open failures surface as
+ * a typed `ChdbError`; the synchronous `query`/`exec` methods are unchanged.
  */
 export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError, Scope.Scope> =>
 	Effect.acquireRelease(
@@ -601,18 +600,22 @@ export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError
 				// here until a clean close, a crash leaves the store potentially
 				// inconsistent — mark it so the next `maple start` can auto-recover.
 				markStoreOpen(options.dataDir)
-				return db
+				const close = () => {
+					// Never clear the sentinel unless chDB closed successfully.
+					db.close()
+					markStoreClosed(options.dataDir)
+				}
+				process.once("exit", close)
+				return { db, close }
 			},
 			catch: (error) =>
 				new ChdbError({
 					message: describeChdbOpenFailure(error instanceof Error ? error.message : String(error)),
 				}),
 		}),
-		(db) =>
+		({ close }) =>
 			Effect.sync(() => {
-				// Clear the sentinel only AFTER a clean close: if close() throws, leave
-				// the marker so the next start auto-resets rather than risking a crash.
-				db.close()
-				markStoreClosed(options.dataDir)
+				process.removeListener("exit", close)
+				close()
 			}),
-	)
+	).pipe(Effect.map(({ db }) => db))
