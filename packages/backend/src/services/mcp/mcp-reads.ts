@@ -687,7 +687,8 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 				...aggregate,
 				context: "mcpSessionCoverage",
 			}),
-			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientsQuery(), params), {
+			// Every MCP request, not only tool calls: a session can hold just initialize and tools/list.
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientReachQuery(), params), {
 				...aggregate,
 				context: "mcpSessionClients",
 			}),
@@ -772,7 +773,10 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 		inSession: sumBy(calls, (row) => row.inSession),
 		isUserActivityCut,
 		sessions,
-		allClients: clientItems(allClients),
+		allClients: clientItems(
+			allClients.map((row) => ({ client: row.client, kind: row.kind, calls: row.calls, errors: 0 })),
+			allClients,
+		),
 	})
 })
 
