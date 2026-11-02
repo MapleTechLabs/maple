@@ -27,14 +27,20 @@ const serverPage = (search: Parameters<typeof AppRoute.McpServer>[0]["search"]) 
 
 describe("widerPreset", () => {
 	it("offers the first preset longer than the window shown", () => {
-		expect(widerPreset(window(1))).toBe("1w")
-		expect(widerPreset(window(7))).toBe("1mo")
-		expect(widerPreset(window(30))).toBe("3mo")
+		expect(widerPreset(window(1), undefined)).toBe("1w")
+		expect(widerPreset(window(7), undefined)).toBe("1mo")
+		expect(widerPreset(window(30), undefined)).toBe("3mo")
+	})
+
+	it("steps from the preset shown, though snapping left its window a little short", () => {
+		const snappedWeek = { startTime: "2026-08-01 06:00:00", endTime: "2026-08-08 00:00:00" }
+		expect(widerPreset(snappedWeek, "1w")).toBe("1mo")
+		expect(widerPreset(window(90), "3mo")).toBeUndefined()
 	})
 
 	it("never narrows a long custom range, and stops at three months", () => {
-		expect(widerPreset(window(90))).toBeUndefined()
-		expect(widerPreset(window(120))).toBeUndefined()
+		expect(widerPreset(window(90), undefined)).toBeUndefined()
+		expect(widerPreset(window(120), undefined)).toBeUndefined()
 	})
 })
 
