@@ -104,7 +104,7 @@ export const behindToast = () =>
 	})
 
 /** A transaction's settlement as an Effect; a rejection keeps its cause for the message. */
-const settled = <A>(promise: () => Promise<A>): Effect.Effect<WriteSync, DashboardWriteError> =>
+export const settled = <A>(promise: () => Promise<A>): Effect.Effect<WriteSync, DashboardWriteError> =>
 	Effect.tryPromise({
 		try: promise,
 		catch: (cause) => new DashboardWriteError({ message: errorMessageOf(cause), cause }),
