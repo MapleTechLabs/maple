@@ -263,6 +263,8 @@ export class McpSessionsResponse extends Schema.Class<McpSessionsResponse>("McpS
 	),
 	/** The window's tool calls, those carrying `mcp.session.id` and those naming a user: none of either means no sessions view. */
 	toolCalls: Schema.Number,
+	/** The window's other MCP requests (`initialize`, `tools/list`...): a server can answer those and call no tool. */
+	otherRequests: Schema.Number,
 	withSession: Schema.Number,
 	withUser: Schema.Number,
 	/** Tool calls in a session of either kind: carrying a session id, a user, or both. */

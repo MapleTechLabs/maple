@@ -546,8 +546,11 @@ const USER_SESSION_LOOKAHEAD_MS = 86_400_000
 export const USER_SESSION_GAP_MS = 30 * 60_000
 
 const USER_SESSION_PREFIX = "user:"
-/** 9999-12-31T23:59:59.999Z: the last instant a four-digit-year warehouse time can hold. */
-const LATEST_KEY_START_MS = 253_402_300_799_999
+/**
+ * The latest key start a page can read: a day before 9999-12-31T23:59:59.999Z, the last instant a
+ * four-digit-year warehouse time holds, so the start and its lookahead both format.
+ */
+const LATEST_KEY_START_MS = 253_402_300_799_999 - USER_SESSION_LOOKAHEAD_MS
 
 /** base64url: no `/`, `:` or `%`, which the key's separator and the route path would trip on. */
 const toKeyPart = (value: string): string =>
@@ -760,6 +763,10 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 			users: activeBy.get(bucket)?.users ?? 0,
 		})),
 		toolCalls: sumBy(calls, (row) => row.spans),
+		otherRequests: sumBy(
+			summary.filter((row) => row.method !== TOOLS_CALL),
+			(row) => row.spans,
+		),
 		withSession: sumBy(calls, (row) => row.withSession),
 		withUser: sumBy(calls, (row) => row.withUser),
 		inSession: sumBy(calls, (row) => row.inSession),

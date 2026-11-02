@@ -393,7 +393,12 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 		onData: (response) => {
 			if (window === undefined) return sessionsLoading(h)
 			if (response.toolCalls === 0)
-				return quietWindow(h, { service, window: windowWords(window), widen: widenOf(model) })
+				return quietWindow(h, {
+					service,
+					window: windowWords(window),
+					hasOtherSpans: response.otherRequests > 0,
+					widen: widenOf(model),
+				})
 			if (response.withSession === 0 && response.withUser === 0)
 				return noSessionsState(h, { service, onInstrument: openInstrumentDocs })
 			return chartsReady(h, model, (theme) =>
@@ -439,7 +444,13 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 	const first = data?.requests[0]
 	const userLabel = data?.userName ?? data?.user ?? undefined
 	const isUserSession = data?.source === "user"
-	const title = isUserSession && userLabel !== undefined ? `${userLabel} on ${data.client}` : sessionId
+	// A user session's id is a key the page reads back: until its read lands, it is just "User session".
+	const title =
+		isUserSession && userLabel !== undefined
+			? `${userLabel} on ${data.client}`
+			: sessionId.startsWith("user:")
+				? "User session"
+				: sessionId
 	const description =
 		data === undefined || first === undefined
 			? `MCP session on ${service}`

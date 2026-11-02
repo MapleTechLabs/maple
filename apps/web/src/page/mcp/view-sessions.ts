@@ -93,9 +93,16 @@ const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: Sessions
 						[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
 						[row.sessionId],
 					)
-				: h.span(
-						[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground")],
-						["user session"],
+				: // Who it was, since the User column hides in a narrow panel.
+					h.span(
+						[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
+						[
+							h.span(
+								[h.Class("truncate text-foreground")],
+								[row.userName ?? row.user ?? "anonymous"],
+							),
+							h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["user session"]),
+						],
 					),
 			userCell(h, row.user, row.userName),
 			h.span(
