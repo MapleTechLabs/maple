@@ -2,12 +2,12 @@ import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
-import { button } from "../../ui/button"
-import * as Field from "../../ui/field"
-import { icon } from "../../ui/icon"
-import { input } from "../../ui/input"
-import { skeleton } from "../../ui/skeleton"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import * as Field from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
+import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	type CheckRow,
 	flowColumns,
@@ -29,8 +29,8 @@ import type { Model } from "./model"
 import { ingestPanel, roleName } from "./view-aws"
 import { dataPicker, NAMESPACE_LABEL } from "./view-aws-choose"
 import { methodSelect, SMALL, setupBody } from "./view-aws-setup"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack, vstackClass } from "../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
 
 // AWS in the connect flow: deploy a read-only role, pick regions and services, then deploy the
 // metric stream and watch the first delivery.

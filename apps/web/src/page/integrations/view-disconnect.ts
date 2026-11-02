@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { confirmDialog } from "../../ui/confirm-dialog"
-import type * as Dialog from "../../ui/dialog"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import type * as Dialog from "@maple/views/ui/dialog"
 import { type DisconnectProvider, disconnectSpec, disconnectTitle } from "./disconnect"
 import { Message } from "./message"
 import type { Model } from "./model"

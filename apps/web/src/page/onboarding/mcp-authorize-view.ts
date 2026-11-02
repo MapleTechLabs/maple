@@ -1,11 +1,11 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../ui/alert"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { middleTruncate } from "../../ui/middle-truncate"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { type AuthorizationInfo, Message, type Model } from "./mcp-authorize"
-import { typography } from "../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 

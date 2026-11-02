@@ -8,9 +8,9 @@ import { errorSection } from "@maple/web/page/traces/detail/span-panel/error-sec
 import type { Message } from "@maple/web/page/traces/detail/span-panel/message"
 import type { Model } from "@maple/web/page/traces/detail/span-panel/model"
 import { panelHeader } from "@maple/web/page/traces/detail/span-panel/view-header"
-import { badge } from "@maple/web/ui/display"
-import { icon } from "@maple/web/ui/icon"
-import { keyValue, keyValueList } from "@maple/web/ui/key-value"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 

@@ -1,5 +1,5 @@
 import type { FrameworkId } from "../components/quick-start/sdk-snippets"
-import type { IconName } from "../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import type { DocsPage } from "./docs"
 import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "./onboarding-intent"
 

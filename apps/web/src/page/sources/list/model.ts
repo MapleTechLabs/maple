@@ -1,8 +1,8 @@
 import { V2SourceUsageSummary } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SourceList } from "../kit/data"
 
 // `/sources`.

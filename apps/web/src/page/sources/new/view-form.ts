@@ -1,10 +1,10 @@
 import type { PushSourcePlatform } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { collapsible } from "../../../ui/collapsible"
+import { button } from "@maple/views/ui/button"
+import { collapsible } from "@maple/views/ui/collapsible"
 import { flowColumns, stepCard } from "../../kit/connect-flow"
-import { type FieldIds, type FieldState, field, fieldLabel, input } from "../../../ui/field"
-import { icon } from "../../../ui/icon"
+import { type FieldIds, type FieldState, field, fieldLabel, input } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
 import { defaultSourceName } from "../kit/platforms"
 import { rulesOutcome } from "../kit/rules"
 import * as RulesView from "../kit/rules-view"
@@ -12,7 +12,7 @@ import { Message } from "./message"
 import type { FlowHost, Model } from "./model"
 import { flowFooter } from "./view-footer"
 import { howItWorksRail } from "./view-push-rail"
-import { typography } from "../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // `CreateSourceForm`: the Name step. Create submits; the token shows on Send data.
 

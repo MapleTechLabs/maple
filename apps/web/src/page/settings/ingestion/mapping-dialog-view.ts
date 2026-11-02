@@ -1,16 +1,16 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Autocomplete from "../../../ui/autocomplete"
-import { badge } from "../../../ui/display"
-import { eyebrow } from "../../../ui/eyebrow"
-import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
-import * as Field from "../../../ui/field"
-import { formDialog } from "../../../ui/form-dialog"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
-import { panel } from "../../../ui/panel"
-import * as SelectView from "../../../ui/select-view"
+import * as Autocomplete from "@maple/views/ui/autocomplete"
+import { badge } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "@maple/views/ui/field"
+import * as Field from "@maple/views/ui/field"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel } from "@maple/views/ui/panel"
+import * as SelectView from "@maple/views/ui/select-view"
 import {
 	isFormValid,
 	type KeyField,
@@ -20,7 +20,7 @@ import {
 	type SelectField,
 	sourceContextOf,
 } from "./mapping-dialog"
-import { hstack } from "../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 

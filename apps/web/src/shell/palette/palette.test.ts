@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import * as Combobox from "../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import { browseEntries, paletteEntries } from "./entries"
 import { Message, type Model, OutMessage } from "./model"
 import { type Context, open, shownEntries, update } from "./update"

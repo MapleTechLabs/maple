@@ -7,7 +7,7 @@ import { click, Command, expect as expectView, given, role, scene } from "foldki
 import { describe, test } from "vitest"
 import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
 import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
-import * as CopyButton from "../../../ui/copy-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import type { PageContext } from "../../contract"
 import { CreateInvestigation } from "./command"
 import { Message } from "./message"

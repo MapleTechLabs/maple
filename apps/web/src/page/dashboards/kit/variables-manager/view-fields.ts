@@ -1,10 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Field from "../../../../ui/field"
-import { field, fieldDescription, type FieldIds, fieldError, fieldLabel, type FieldState } from "../../../../ui/field"
-import { input } from "../../../../ui/input"
-import * as SelectView from "../../../../ui/select-view"
-import type * as Select from "../../../../ui/select"
-import { textarea } from "../../../../ui/textarea"
+import * as Field from "@maple/views/ui/field"
+import { field, fieldDescription, type FieldIds, fieldError, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import { input } from "@maple/views/ui/input"
+import * as SelectView from "@maple/views/ui/select-view"
+import type * as Select from "@maple/views/ui/select"
+import { textarea } from "@maple/views/ui/textarea"
 import { type FormField, Message, type Model } from "./model"
 
 // The `<Field className="items-stretch gap-1.5">` cells of `VariableForm`.

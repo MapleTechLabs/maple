@@ -11,12 +11,12 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { load } from "foldkit/navigation"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import { AppRoute, hrefOf } from "../route"
-import { alert, alertAction, alertDescription, alertTitle } from "../ui/alert"
-import { button, linkButton } from "../ui/button"
-import { iconButton } from "../ui/icon-button"
-import { icon } from "../ui/icon"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button, linkButton } from "@maple/views/ui/button"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { icon } from "@maple/views/ui/icon"
 import { Message } from "./message"
-import { hstackClass } from "../ui/stack"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The Clerk-mode billing banners above the page body:
 // subscription ended, payment failed and the usage quota, all read from the Autumn customer.

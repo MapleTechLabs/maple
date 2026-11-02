@@ -2,9 +2,9 @@ import { AiTriageSettingsDocument, AttachResult, OpenRouterKeyDocument } from "@
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 
 // The AI tab: `ModelProviderSection`, `AutoTriageSection` and `AiEscalationCard`.
 

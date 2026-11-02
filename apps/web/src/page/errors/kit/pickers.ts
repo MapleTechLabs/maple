@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { pressable } from "../../../ui/pressable"
+import { pressable } from "@maple/views/ui/pressable"
 import type { QuickPickItem } from "./quick-pick"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityIcon } from "./severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"

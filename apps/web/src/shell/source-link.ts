@@ -6,8 +6,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { platformMeta } from "../page/sources/kit/platforms"
 import { sourceHref, toPublicSourceId } from "../page/sources/kit/shared"
 import { AppRoute, hrefOf } from "../route"
-import { linkButton } from "../ui/button"
-import { icon } from "../ui/icon"
+import { linkButton } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 
 // The top bar's link from a page to the source its data came from.
 

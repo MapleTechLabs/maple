@@ -1,7 +1,7 @@
 import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
 import { Duration, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
-import * as LogsStream from "../../../ui/logs/logs-stream"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import type { PageSubscriptionInput } from "../../contract"
 import { searchPreset } from "../../kit/time-controls"
 import { Message } from "./message"

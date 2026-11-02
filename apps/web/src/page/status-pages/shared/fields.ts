@@ -7,10 +7,10 @@ import {
 	type FieldIds,
 	fieldLabel,
 	type FieldState,
-} from "../../../ui/field"
-import { input } from "../../../ui/input"
-import { nativeOption, nativeSelect } from "../../../ui/native-select"
-import { textarea } from "../../../ui/textarea"
+} from "@maple/views/ui/field"
+import { input } from "@maple/views/ui/input"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { textarea } from "@maple/views/ui/textarea"
 
 // The labelled inputs the status page forms share: label over control, hint or error under it.
 

@@ -10,7 +10,7 @@ import {
 import { compareVersions } from "@maple/lockfiles/versions"
 import { Duration, Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { type Model, type PendingScan, type StatusFilter, StatusFilter as StatusFilterSchema } from "./model"
 
 // What the Dependencies tab shows, read off its two slots.

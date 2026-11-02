@@ -4,10 +4,10 @@ import { GCP_SCOPE_NAMES, gcpScopeLabel } from "../../components/integrations/gc
 import { gcpRemovalList } from "../../components/integrations/gcp-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
-import * as DialogView from "../../ui/dialog-view"
-import { icon } from "../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { icon } from "@maple/views/ui/icon"
 import { relativeTime } from "../kit/relative-time"
 import { IAC_DOCS } from "./gcp-configure-copy"
 import { Message } from "./message"
@@ -16,7 +16,7 @@ import { gcpConnectors, neverReported } from "./update-gcp"
 import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } from "./view-gcp-parts"
 import { disconnectConfirm } from "./view-disconnect"
 import { removalItem } from "./view-gcp-setup-methods"
-import { typographyClass } from "../../ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
 

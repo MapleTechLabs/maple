@@ -7,9 +7,9 @@ import {
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
-import { linkButton } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { linkButton } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import {
 	integrationConnectCta,
 	integrationEmpty,

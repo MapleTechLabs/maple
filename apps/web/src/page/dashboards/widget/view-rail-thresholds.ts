@@ -1,14 +1,14 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { colorInput } from "../../../ui/color-input"
-import { field, fieldGroupLabel, type FieldState } from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
+import { button } from "@maple/views/ui/button"
+import { colorInput } from "@maple/views/ui/color-input"
+import { field, fieldGroupLabel, type FieldState } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
-import { typographyClass } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 

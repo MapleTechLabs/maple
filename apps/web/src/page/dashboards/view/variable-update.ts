@@ -1,7 +1,7 @@
 import { pickDashboardControlParams, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
 import { Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Combobox from "../../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"

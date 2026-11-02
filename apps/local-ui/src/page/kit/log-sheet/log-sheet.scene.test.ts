@@ -1,6 +1,6 @@
 import { Option } from "effect"
-import * as Dialog from "@maple/web/ui/dialog"
-import * as Tabs from "@maple/web/ui/tabs"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tabs from "@maple/views/ui/tabs"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message } from "./message"

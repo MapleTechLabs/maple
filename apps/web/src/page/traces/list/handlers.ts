@@ -1,6 +1,6 @@
 import { type PageReturn, PageOutMessage } from "../../contract"
 import { AppRoute, hrefOf } from "../../../route"
-import { parseRange } from "../../../ui/filters/range-format"
+import { parseRange } from "@maple/views/ui/filters/range-format"
 import { WaitDurationDebounce } from "./command"
 import { removeTraceFilterChips, type Search, traceFilterChips, WIDEN_TIME_PRESET } from "./derive"
 import type { Facet, Message, SortKey } from "./message"

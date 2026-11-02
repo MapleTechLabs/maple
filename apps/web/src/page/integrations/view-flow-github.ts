@@ -2,10 +2,10 @@ import type { GithubIntegrationStatus, GithubRepoSummary } from "@maple/domain/h
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import { meter } from "../../ui/meter"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { meter } from "@maple/views/ui/meter"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import {
 	type CheckRow,
@@ -25,10 +25,10 @@ import type { Model } from "./model"
 import { githubStatusOf } from "./update-github"
 import { githubDeactivated, githubInstallationPicker, githubReconnectButton } from "./view-github"
 import { SYNC_PRESENTATION } from "./view-github-repos"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack, vstack } from "../../ui/stack"
-import { stripClass } from "../../ui/rule"
-import { columnClass } from "../../ui/column"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
 

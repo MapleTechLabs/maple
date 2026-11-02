@@ -14,9 +14,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
-import { toLoadFailure } from "../../data/load-failure"
-import * as ServiceMap from "../../service-map/map/service-map"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { PageOutMessage, type PageContext } from "../contract"
 import { CompleteReloadSpin, FetchBundle, FetchFacets, ResolveWindow } from "./command"
 import { Message } from "./message"

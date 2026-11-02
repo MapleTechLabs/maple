@@ -9,12 +9,12 @@ import {
 	whatsWrong,
 } from "../../../lib/agent-sessions/tool-error-display"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { eyebrow } from "../../../ui/eyebrow"
-import { statusDot } from "../../../ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
-import { typography } from "../../../ui/typography"
-import { vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // `SampleBody` of `ToolErrorModal`: what the call was handed and what it gave back, and where the
 // arguments confirm a schema failure, what is wrong with them.

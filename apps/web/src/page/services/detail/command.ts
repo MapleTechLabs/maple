@@ -15,7 +15,7 @@ import { getServiceDependenciesBundle } from "@maple/web-data/warehouse/service-
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Predicate, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readIsAdmin } from "../../alerts/shared/commands"

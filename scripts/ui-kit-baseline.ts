@@ -31,6 +31,7 @@ const lint = Bun.spawnSync(
 		"--format",
 		"json",
 		"apps/web/src",
+		"packages/views/src",
 		"packages/ui/src",
 	],
 	{ cwd: root, env: { ...process.env, MAPLE_UI_BASELINE: "off" }, stdout: "pipe", stderr: "inherit" },

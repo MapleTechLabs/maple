@@ -5,7 +5,7 @@ import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { GCP_METRIC_GROUPS, gcpMetricPointAttributes } from "@maple/domain/gcp-metrics"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-import type { ChartUnit } from "../chart-units"
+import type { ChartUnit } from "@maple/views/lib/infra-chart-units"
 import {
 	failedShare,
 	gcpMetricReader,

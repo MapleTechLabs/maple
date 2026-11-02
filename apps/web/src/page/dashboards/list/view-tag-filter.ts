@@ -1,13 +1,13 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as Combobox from "../../../ui/combobox"
-import { hiddenInput, inputField, listPopup } from "../../../ui/combobox-view"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { isMounted } from "../../../ui/overlay/transition"
-import { hstack } from "../../../ui/stack"
-import { typography } from "../../../ui/typography"
+import { button } from "@maple/views/ui/button"
+import * as Combobox from "@maple/views/ui/combobox"
+import { hiddenInput, inputField, listPopup } from "@maple/views/ui/combobox-view"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { isMounted } from "@maple/views/ui/overlay/transition"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `TagFilterMenu`'s `MultiSelectCombobox` in `mode="trigger"`: the Tags button, and its popup with
 // the tag search, the tag list and "Clear tags".

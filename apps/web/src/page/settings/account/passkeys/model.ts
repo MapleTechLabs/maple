@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Dialog from "../../../../ui/dialog"
-import * as Menu from "../../../../ui/menu"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import { AccountPasskey, AccountUser } from "../user"
 
 // The Passkeys tab.

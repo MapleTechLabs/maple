@@ -2,8 +2,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { inputControlChromeStyles, inputControlLayoutStyles, inputStyles } from "@maple/ui/styles/ui/input"
 import { labelStyles } from "@maple/ui/styles/ui/label"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import type * as Dialog from "../../../ui/dialog"
+import { button } from "@maple/views/ui/button"
+import type * as Dialog from "@maple/views/ui/dialog"
 import {
 	dialogDescription,
 	dialogFooter,
@@ -11,7 +11,7 @@ import {
 	dialogPanel,
 	dialogTitle,
 	view as dialogView,
-} from "../../../ui/dialog-view"
+} from "@maple/views/ui/dialog-view"
 import { Message } from "./model"
 
 // Dialog-like overlays, each open on mount.

@@ -1,10 +1,10 @@
 import { SECURITY_AUDIT_MODELS } from "@maple/domain/security-audit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as Select from "../../../ui/select"
-import * as SelectView from "../../../ui/select-view"
+import type * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
 import { modelLabel } from "./format"
-import { typography } from "../../../ui/typography"
-import { vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // The two model pickers both dialogs show: which model hunts, and which one verifies.
 

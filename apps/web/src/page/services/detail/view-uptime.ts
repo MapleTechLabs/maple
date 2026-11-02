@@ -1,15 +1,15 @@
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import { panel, panelHeader } from "../../../ui/panel"
-import { textLink } from "../../../ui/text-link"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { textLink } from "@maple/views/ui/text-link"
 import { monitorHref, newMonitorHref, uptimeTabHref } from "../../alerts/shared/uptime-commands"
 import { displayStatus, formatShare, targetLine, uptimeShare } from "../../alerts/shared/uptime-derive"
 import { recentChecksStrip, uptimePanelBody, uptimeStatusChip } from "../../alerts/shared/uptime-view"
 import type { Message } from "./message"
 import type { Model } from "./model"
-import { typography } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The Overview's Uptime card: this service's monitors, checked from outside.
 

@@ -6,17 +6,17 @@ import {
 	isGcpResourceNumber,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
-import { alert, alertDescription } from "../../ui/alert"
-import * as Field from "../../ui/field"
-import { icon } from "../../ui/icon"
-import * as ToggleGroup from "../../ui/toggle-group"
+import { heading } from "@maple/views/ui/heading"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import * as Field from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { PROJECT_ID_RULE, SCOPE_TYPES, SCOPES } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import type { Model } from "./model"
 import { Message } from "./message"
 import { gcpCommand, SMALL } from "./view-gcp-parts"
-import { vstack } from "../../ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 
 // `ScopeFields`: what kind of thing to connect, and its ID.
 

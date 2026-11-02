@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { choiceCard, choiceCheckClass } from "../../ui/choice-card"
-import { PIXEL_GLYPHS } from "../../ui/icons.generated"
-import { typography } from "../../ui/typography"
+import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
+import { PIXEL_GLYPHS } from "@maple/views/ui/icons.generated"
+import { typography } from "@maple/views/ui/typography"
 
 // `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
 // its end state.

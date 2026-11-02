@@ -1,9 +1,9 @@
 import type { GithubRepoSummary, VcsRepositoryId } from "@maple/domain/http"
 import { Option } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import type { LoadFailure } from "../../data/load-failure"
-import * as Dialog from "../../ui/dialog"
-import * as Popover from "../../ui/popover"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Popover from "@maple/views/ui/popover"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	branchPopoverId,

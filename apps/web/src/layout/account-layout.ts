@@ -1,5 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 
 const WEBSITE_URL = "https://maple.dev"
 const DOCS_URL = "https://maple.dev/docs"

@@ -4,8 +4,8 @@ import {
 	type ChartHostOptions,
 	createChartHost as createProductionHost,
 	hostFor,
-} from "../../charts/chart-host"
-import type { ChartSpec } from "../../charts/chart-spec"
+} from "@maple/views/charts/chart-host"
+import type { ChartSpec } from "@maple/views/charts/chart-spec"
 import type { SpikeSpec } from "./spike-spec"
 import { buildAreaSpike, buildLineSpike } from "./spike-timeseries"
 import { buildStackedBarSceneSpike, buildStackedBarSpike } from "./spike-stacked-bar"

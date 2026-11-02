@@ -4,7 +4,7 @@ import { relativeTime } from "../../../kit/relative-time"
 import { sheetDetailHeader } from "../../../kit/sheet-detail-header"
 import { hostStatusBadge } from "../../kit/status"
 import type { PodRow } from "../pod-data"
-import { typographyClass } from "../../../../ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The peek's `SheetDetailHeader`: the "Pod" eyebrow, the mono title with its status, and the
 // workload chips.

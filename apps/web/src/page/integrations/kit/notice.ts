@@ -1,5 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { panel } from "../../../ui/panel"
+import { panel } from "@maple/views/ui/panel"
 
 /** One line of integration state ("Railway is not connected.") with an optional trailing action. */
 export const integrationNotice = <M>(

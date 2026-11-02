@@ -1,8 +1,8 @@
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon, type IconName } from "../../../ui/icon"
-import { statusDot } from "../../../ui/status-dot"
-import { typographyClass } from "../../../ui/typography"
+import { badge } from "@maple/views/ui/display"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { typographyClass } from "@maple/views/ui/typography"
 
 /** Turn failures read red with the agent glyph; tool failures amber with the gear. */
 export const TURN_CHIP = typographyClass({

@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { statusDot } from "../../../ui/status-dot"
-import { typography } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { button } from "@maple/views/ui/button"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `SettingsSaveBar`: pinned while a tab has unsaved edits. TODO(settings): its `UnsavedChangesGuard`
 // (confirm before navigating away, and the browser's beforeunload prompt) needs a root-level navigation

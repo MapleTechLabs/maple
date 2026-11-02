@@ -2,7 +2,7 @@ import { DashboardDocument, DashboardId, DashboardVersionId } from "@maple/domai
 import type { V2Dashboard } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { errorMessageOf } from "../kit/store"
 import { Message } from "./message"

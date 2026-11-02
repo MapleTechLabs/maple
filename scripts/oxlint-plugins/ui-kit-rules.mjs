@@ -1,6 +1,6 @@
 /**
  * Kit-first rules for the dashboard (`apps/web`), wired into the `maple` plugin. Pages compose the
- * kit (`apps/web/src/ui`, `apps/web/src/page/kit`) instead of rebuilding controls from raw elements
+ * kit (`packages/views/src/ui`, `apps/web/src/page/kit`) instead of rebuilding controls from raw elements
  * or the kit's style exports; values come from tokens. See "Build from the kit" in
  * `docs/design-rules.md`.
  *
@@ -111,7 +111,7 @@ const noRawHeading = ratcheted("no-raw-heading", {
 const noKitStylesInPages = ratcheted("no-kit-styles-in-pages", {
 	description: "Pages call kit components instead of rebuilding them from their styles.",
 	message:
-		"`{{source}}` is a kit component's styling. Call its wrapper in apps/web/src/ui (or page/kit) instead; if the wrapper lacks an option you need, add it there.",
+		"`{{source}}` is a kit component's styling. Call its wrapper in packages/views/src/ui (or page/kit) instead; if the wrapper lacks an option you need, add it there.",
 	collect: (_context, push) => ({
 		ImportDeclaration(node) {
 			const source = node.source.value

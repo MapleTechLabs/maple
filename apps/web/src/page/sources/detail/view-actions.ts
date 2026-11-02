@@ -1,15 +1,15 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { type ConfirmDialogOptions, confirmDialog } from "../../../ui/confirm-dialog"
-import { icon } from "../../../ui/icon"
-import * as MenuView from "../../../ui/menu-view"
+import { button } from "@maple/views/ui/button"
+import { type ConfirmDialogOptions, confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { icon } from "@maple/views/ui/icon"
+import * as MenuView from "@maple/views/ui/menu-view"
 import { deleteConsequences } from "../kit/integration"
 import { integrationPlatformOf } from "../kit/shared"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { PAUSE_CHOICES, PAUSE_MENU_ID } from "./update"
-import { typography } from "../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // `SourceActions`, `IntegrationActions` and `PauseMenu`.
 

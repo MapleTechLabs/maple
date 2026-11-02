@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
-import * as Select from "../../ui/select"
-import { type SelectOption, view as selectView } from "../../ui/select-view"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import * as Select from "@maple/views/ui/select"
+import { type SelectOption, view as selectView } from "@maple/views/ui/select-view"
 import { Message, type Model } from "./model"
 
 // The small pieces the lab's query and formula cards share.

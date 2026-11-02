@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { searchInput } from "../../../ui/search-input"
-import { typography, typographyClass } from "../../../ui/typography"
-import { fillRule } from "../../../ui/rule"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { searchInput } from "@maple/views/ui/search-input"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { fillRule } from "@maple/views/ui/rule"
 
 // Shared by the dashboards list and the template gallery.
 

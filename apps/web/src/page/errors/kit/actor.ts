@@ -6,10 +6,10 @@ import { AGENT_ACCENT } from "@maple/ui/lib/tone"
 import { shortId as truncateId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { avatarFallback } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { warmAvatarTone } from "../../../ui/avatar-tone"
-import { typography } from "../../../ui/typography"
+import { avatarFallback } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { typography } from "@maple/views/ui/typography"
 
 // Actor avatars and chips.
 // TODO(actor-directory): people should resolve through the Clerk member directory; here every

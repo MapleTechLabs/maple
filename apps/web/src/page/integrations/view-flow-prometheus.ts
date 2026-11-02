@@ -1,10 +1,10 @@
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
+import { heading } from "@maple/views/ui/heading"
 import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
-import { button } from "../../ui/button"
-import { inlineCode } from "../../ui/inline-code"
+import { button } from "@maple/views/ui/button"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import {
 	type CheckRow,
 	flowColumns,
@@ -33,8 +33,8 @@ import type { Model } from "./model"
 import { hostnameOf } from "./prometheus"
 import { isFormValid, parsedInterval } from "./update-prometheus"
 import { authField, credentialFields, textField } from "./view-prometheus-form"
-import { typography } from "../../ui/typography"
-import { vstack, vstackClass } from "../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
 
 // Prometheus and WarpStream in the connect flow: save and probe an endpoint, name it, then watch
 // the first scheduled scrape land.

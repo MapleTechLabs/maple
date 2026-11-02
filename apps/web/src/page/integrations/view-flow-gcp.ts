@@ -8,9 +8,9 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
-import { button } from "../../ui/button"
-import { skeleton } from "../../ui/skeleton"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	type CheckRow,
 	choiceTiles,
@@ -37,7 +37,7 @@ import { logFilter } from "./view-gcp-configure-filter"
 import { methodSetup } from "./view-gcp-configure-method"
 import { scriptSection } from "./view-gcp-configure-run"
 import { scopeFields } from "./view-gcp-configure-scope"
-import { vstack } from "../../ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 
 // Google Cloud in the connect flow: a scope by ID and how to apply the setup, what to collect,
 // then the setup itself and a checklist that ticks as Google Cloud reports back.

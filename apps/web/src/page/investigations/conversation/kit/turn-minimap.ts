@@ -3,9 +3,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { icon } from "../../../../ui/icon"
-import { iconButton } from "../../../../ui/icon-button"
-import { pressable } from "../../../../ui/pressable"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { pressable } from "@maple/views/ui/pressable"
 import { isMachineTurn, messageText, type TranscriptRow } from "./transcript-rows"
 
 // The turn minimap: one marker per human turn down the transcript's gutter, lit while its turn

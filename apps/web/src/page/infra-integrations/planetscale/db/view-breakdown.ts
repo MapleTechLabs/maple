@@ -2,10 +2,10 @@ import type { BranchCandidate } from "../../../../components/infra/planetscale/b
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { pressable } from "../../../../ui/pressable"
-import { panel, panelHeader } from "../../../../ui/panel"
-import { segmentedSelect } from "../../../../ui/segmented-select"
-import { skeleton, skeletonList } from "../../../../ui/skeleton"
+import { pressable } from "@maple/views/ui/pressable"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
@@ -18,8 +18,8 @@ import {
 } from "../../../../components/infra/planetscale/metrics"
 import { formatWholePercent } from "../../../../components/infra/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
-import { typography, typographyClass } from "../../../../ui/typography"
-import { columnClass } from "../../../../ui/column"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { columnClass } from "@maple/views/ui/column"
 
 // `PlanetScaleBranchBreakdownPanel`.
 

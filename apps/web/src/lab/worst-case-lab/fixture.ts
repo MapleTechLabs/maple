@@ -6,8 +6,8 @@ import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { Option, Schema } from "effect"
 import type { ActorIdentity } from "../../page/errors/kit/actor"
 import { TraceData } from "../../page/traces/detail/trace-data"
-import { logTimeFormat, toLogRowView } from "../../ui/logs/log-row-view"
-import type { LogRowView } from "../../ui/logs/log-row-view"
+import { logTimeFormat, toLogRowView } from "@maple/views/ui/logs/log-row-view"
+import type { LogRowView } from "@maple/views/ui/logs/log-row-view"
 import type { WorstCaseMode } from "./model"
 
 // The lab's reads of the `worst-case-*` fixtures, shaped for the views.

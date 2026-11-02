@@ -6,7 +6,7 @@ import {
 	SupabaseConnectRequest,
 } from "@maple/domain/http"
 import { Context, Effect, Result, Schema, Stream } from "effect"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 
 // `IntegrationConnectProvider` and `useOAuthPopupFlow`.

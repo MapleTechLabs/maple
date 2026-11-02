@@ -5,7 +5,7 @@ import {
 	STAT_AGGREGATES,
 } from "@maple/domain/http"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { input } from "../../../ui/input"
+import { input } from "@maple/views/ui/input"
 import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
@@ -22,8 +22,8 @@ import {
 } from "./view-rail"
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
-import { hstack } from "../../../ui/stack"
-import { grid } from "../../../ui/grid"
+import { hstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // Each non-timeseries panel type's `ConfigPanel` over the `WidgetSettings` fields.
 

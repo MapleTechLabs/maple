@@ -1,10 +1,10 @@
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { type DocsPage, docsUrl } from "../../lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
-import { icon, type IconName } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PresenceState, TelemetrySignalKind } from "./signal-presence"
 
 // `SignalEmptyState`, `FilteredEmpty` and `DocsLink`/`EmptyActions`. Presence comes from the

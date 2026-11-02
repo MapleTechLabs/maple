@@ -1,13 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { eyebrowVariants } from "../../../ui/eyebrow"
-import { backdropBar } from "../../../ui/meter"
-import { panelHeader } from "../../../ui/panel"
-import { ariaSort, sortButton, tableCell, tableHead } from "../../../ui/table"
+import { eyebrowVariants } from "@maple/views/ui/eyebrow"
+import { backdropBar } from "@maple/views/ui/meter"
+import { panelHeader } from "@maple/views/ui/panel"
+import { ariaSort, sortButton, tableCell, tableHead } from "@maple/views/ui/table"
 import { Message } from "./message"
 import type { SortState } from "../../kit/table-sort"
 import type { SortTable } from "./model-tabs"
-import { typography } from "../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // The shared cells of the tab tables.
 

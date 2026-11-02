@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../../ui/button"
-import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { typography } from "../../../ui/typography"
-import { vstackClass } from "../../../ui/stack"
+import { linkButton } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { typography } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
 

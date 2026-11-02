@@ -39,9 +39,9 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
-import { meter, segmentedBar } from "../../../../ui/meter"
-import { skeleton } from "../../../../ui/skeleton"
-import { textLinkClass } from "../../../../ui/text-link"
+import { meter, segmentedBar } from "@maple/views/ui/meter"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { textLinkClass } from "@maple/views/ui/text-link"
 import {
 	columnHead,
 	dataTable,
@@ -71,9 +71,9 @@ import {
 	workloadHref,
 	workloadRow,
 } from "./view-rows"
-import { typography, typographyClass } from "../../../../ui/typography"
-import { hstackClass } from "../../../../ui/stack"
-import { columnClass } from "../../../../ui/column"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 

@@ -14,9 +14,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { LoadCloudflare } from "./command"
-import * as Dialog from "../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../contract"
 import { SaveCloudflareZones } from "./cloudflare"
 import { Message } from "./message"

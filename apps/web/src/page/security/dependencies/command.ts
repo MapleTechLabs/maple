@@ -2,7 +2,7 @@ import { DependencyFindingId, DependencyFindingTriageStatus } from "@maple/domai
 import { VcsRepositoryId } from "@maple/domain/http"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { readIsAdmin } from "../../alerts/shared/commands"
 import { Message } from "./model"

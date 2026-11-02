@@ -5,12 +5,12 @@ import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { anomalyRow } from "../../anomalies/kit/row"
 import { sectionHeading } from "../../kit/section-heading"
 import type { Model } from "./model"
-import { hstack, vstack } from "../../../ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The related anomalies section and the open anomaly badge.
 

@@ -3,7 +3,7 @@ import { getMetricAttributeValues } from "@maple/web-data/warehouse/metrics"
 import { getResourceAttributeValues, getSpanAttributeValues } from "@maple/web-data/warehouse/traces"
 import { Effect, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { caretEvents, listboxEvents, placeCaret } from "./where-autocomplete"
 import { WhereFieldMessage } from "./where-field"
 

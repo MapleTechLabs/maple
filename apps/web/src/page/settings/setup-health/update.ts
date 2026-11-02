@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { PageReturn } from "../../contract"
 import { Message, type Model } from "./model"

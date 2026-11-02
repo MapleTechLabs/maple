@@ -1,12 +1,12 @@
 import type { SecurityAuditFinding } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { eyebrow } from "../../../ui/eyebrow"
-import { panel, panelHeader } from "../../../ui/panel"
+import { badge } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { panel, panelHeader } from "@maple/views/ui/panel"
 import type { FindingRecord } from "./format"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The finding's own record: what is wrong, the trace, how it is exploited, how to fix it.
 

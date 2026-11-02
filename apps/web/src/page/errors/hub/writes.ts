@@ -9,7 +9,7 @@ import {
 } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { Effect, Exit, Schema } from "effect"
-import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { PageOutMessage } from "../../contract"
 import { WORKFLOW_LABEL } from "../kit/workflow"

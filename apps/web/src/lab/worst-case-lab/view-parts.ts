@@ -7,7 +7,7 @@ import { heroChip } from "../../page/infra/kit/hero-chip"
 import { podTable } from "../../page/infra/kubernetes/pod-table"
 import { FINDINGS_LIST_CLASS, findingRow } from "../../page/infra/overview/view-findings"
 import { sortRowsBy } from "../../page/kit/table-sort"
-import { listFooter } from "../../ui/list-footer"
+import { listFooter } from "@maple/views/ui/list-footer"
 import { Message, type Model } from "./model"
 
 // `WcSection`, `Narrow`, `FormattersSection` and `InfraSection`.

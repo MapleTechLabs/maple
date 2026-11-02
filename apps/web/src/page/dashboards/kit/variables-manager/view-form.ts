@@ -1,11 +1,11 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { inlineCode } from "../../../../ui/inline-code"
-import { settingRow } from "../../../../ui/setting-row"
-import { switchControl } from "../../../../ui/switch"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { settingRow } from "@maple/views/ui/setting-row"
+import { switchControl } from "@maple/views/ui/switch"
 import { METRIC_TYPE_LABELS, METRIC_TYPES, SOURCE_ITEMS, TYPE_OPTIONS, VARIABLE_TYPES } from "./derive"
 import { Message, type Model, type Variable } from "./model"
 import { itemsOf, selectField, textField } from "./view-fields"
-import { vstack } from "../../../../ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 
 // `VariableForm` and `QuerySourceFields`: the expanded draft's controls.
 

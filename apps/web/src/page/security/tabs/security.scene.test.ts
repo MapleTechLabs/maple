@@ -12,7 +12,7 @@ import { Cause, Effect, Fiber, Option, Result, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	findingsOf,
 	githubStatusOf,
@@ -24,9 +24,9 @@ import {
 	targetsOf,
 } from "../../../lab/security-fixture"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Select from "../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 import type { PageContext } from "../../contract"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"

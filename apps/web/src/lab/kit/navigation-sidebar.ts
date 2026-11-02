@@ -1,5 +1,5 @@
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 import {
 	sidebarContent,
 	sidebarDesktop,
@@ -20,7 +20,7 @@ import {
 	sidebarSeparator,
 	type SidebarState,
 	sidebarWrapper,
-} from "../../ui/sidebar"
+} from "@maple/views/ui/sidebar"
 
 // `SidebarFrame`: a layout-contained frame holds the sidebar's
 // fixed container, so an expanded and a collapsed sidebar sit side by side.

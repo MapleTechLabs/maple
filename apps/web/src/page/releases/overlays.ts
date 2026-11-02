@@ -2,8 +2,8 @@ import { Duration, Effect, type Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../../platform/resources"
-import * as HoverCard from "../../ui/hover-card"
-import * as Tooltip from "../../ui/tooltip"
+import * as HoverCard from "@maple/views/ui/hover-card"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import {
 	ARM_DELAY_MS,
 	type CommitDetail,

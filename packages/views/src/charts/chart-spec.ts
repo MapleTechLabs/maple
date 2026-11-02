@@ -443,7 +443,7 @@ export const ChartSpec = defineTaggedUnion({
 		showTooltip: Schema.Boolean,
 	},
 	/**
-	 * A `/lab/charts` prototype, drawn by the lab's own host (`lab/charts/spike-host.ts`): the arm
+	 * A `/lab/charts` prototype, drawn by the lab's own host (`apps/web/src/lab/charts/spike-host.ts`): the arm
 	 * names its fixture and definition; the legend's emphasis and the resolved tokens ride along.
 	 */
 	LabSpike: {

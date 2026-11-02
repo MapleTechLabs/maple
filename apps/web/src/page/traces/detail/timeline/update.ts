@@ -1,4 +1,4 @@
-import * as Select from "../../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import {
 	collectAllCollapsibleIds,
 	collectDescendantParentIds,

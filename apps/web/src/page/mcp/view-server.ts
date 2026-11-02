@@ -4,10 +4,10 @@ import { cn } from "@maple/ui/lib/utils"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../ui/empty"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import { meter } from "../../ui/meter"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { meter } from "@maple/views/ui/meter"
 import { selectableTile } from "../agent-sessions/tools-kit/metric-strip"
 import type { ToolPercentile } from "../agent-sessions/tools-kit/model"
 import {
@@ -50,10 +50,10 @@ import {
 	volumeSpark,
 	RESULT_LANE,
 } from "./view-kit"
-import { typographyClass } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
-import { columnClass } from "../../ui/column"
-import { swatch } from "../../ui/swatch"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
+import { swatch } from "@maple/views/ui/swatch"
 
 // `/mcp/:service`: the tools page's layout for one MCP server. Toolbar, scope, a metric strip that
 // picks the chart, the tools table, then who calls, why calls fail, the protocol and what is sent.

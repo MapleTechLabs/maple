@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
-import { pageTitle } from "../../ui/page-layout"
-import { skeleton } from "../../ui/skeleton"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { skeleton } from "@maple/views/ui/skeleton"
 
 // `DetailHeader`'s title side and `DetailHeaderSkeleton`.
 // The page passes the result as `dashboardPage`'s `titleContent`, its actions as `actions`.

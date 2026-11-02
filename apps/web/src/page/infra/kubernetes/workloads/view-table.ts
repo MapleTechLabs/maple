@@ -3,9 +3,9 @@ import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { skeleton, skeletonLine } from "../../../../ui/skeleton"
-import { truncatedText } from "../../../../ui/truncated-text"
-import { emptyValue } from "../../../../ui/values"
+import { skeleton, skeletonLine } from "@maple/views/ui/skeleton"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { emptyValue } from "@maple/views/ui/values"
 import {
 	columnHead,
 	dataTable,
@@ -21,9 +21,9 @@ import type { SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import { Message, type WorkloadSortKey } from "./message"
 import type { WorkloadKind, WorkloadRow } from "./model"
-import { typography, typographyClass } from "../../../../ui/typography"
-import { hstack } from "../../../../ui/stack"
-import { column, columnClass } from "../../../../ui/column"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { column, columnClass } from "@maple/views/ui/column"
 
 // `WorkloadTable` / `WorkloadTableLoading`.
 

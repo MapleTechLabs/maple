@@ -1,12 +1,12 @@
 import { formatNumber } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../data/load-failure"
-import { delta } from "../../ui/delta"
-import { skeleton } from "../../ui/skeleton"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { delta } from "@maple/views/ui/delta"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { Model, UsageTotals } from "./model"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
-import { typography } from "../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // The service usage cards.
 

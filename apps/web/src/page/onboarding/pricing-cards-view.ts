@@ -3,15 +3,15 @@ import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../../
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "../../ui/card"
-import { badge, separator } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { eyebrow, eyebrowVariants } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
-import { panel } from "../../ui/panel"
-import { spinner } from "../../ui/spinner"
+import { button } from "@maple/views/ui/button"
+import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "@maple/views/ui/card"
+import { badge, separator } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { panel } from "@maple/views/ui/panel"
+import { spinner } from "@maple/views/ui/spinner"
 import { Message, type Model } from "./pricing-cards"
 import {
 	ENTERPRISE_DATA_FEATURES,
@@ -24,8 +24,8 @@ import {
 	getScenario,
 	PLATFORM_FEATURE_ICONS,
 } from "./pricing-plans"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 

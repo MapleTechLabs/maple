@@ -16,7 +16,7 @@ import type { BuiltChart } from "./built-chart"
 import { roundCapDasharray, SERIES_STROKE_WIDTH } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
 
-// The alert rule chart's definition. The view half is `page/alerts/shared/rule-chart.ts`.
+// The alert rule chart's definition. The view half is `apps/web/src/page/alerts/shared/rule-chart.ts`.
 
 type AlertRuleSpec = Extract<ChartSpec, { readonly _tag: "AlertRule" }>
 type SignalPoint = Record<string, unknown> & { t: number; at: Date }

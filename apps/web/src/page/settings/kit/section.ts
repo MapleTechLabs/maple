@@ -1,10 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../../ui/heading"
-import { panel } from "../../../ui/panel"
+import { heading } from "@maple/views/ui/heading"
+import { panel } from "@maple/views/ui/panel"
 import { sectionHeading } from "../../kit/section-heading"
-import { emptyMessage } from "../../../ui/empty"
-import { typography, typographyClass } from "../../../ui/typography"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `SettingsSection`, `SettingsSections`, `AdminOnlyNote`.
 

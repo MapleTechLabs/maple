@@ -6,15 +6,15 @@ import { cn } from "@maple/ui/lib/utils"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHeader, tableRow } from "../../../ui/table"
-import { errorRateValue, latencyValue, serviceDot } from "../../../ui/values"
+import { badge } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHeader, tableRow } from "@maple/views/ui/table"
+import { errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
 import {
 	type DependencyRow,
 	dependencyRows,
@@ -36,9 +36,9 @@ import {
 	tableSkeletonHead,
 	tableTitle,
 } from "./view-table-cells"
-import { typography } from "../../../ui/typography"
-import { hstack, vstackClass } from "../../../ui/stack"
-import { stripClass } from "../../../ui/rule"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge` (components/services/).
 // TODO(sampled-tooltip): an estimated rate's "Estimated ×N" tooltip is not ported (trigger only).

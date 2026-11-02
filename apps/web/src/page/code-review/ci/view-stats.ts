@@ -3,16 +3,16 @@ import { rateChange, successRate } from "../../../components/code-review/ci/ci-f
 import { bucketIso, formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as AreaChart from "../../../charts/area-chart"
-import * as BarChart from "../../../charts/bar-chart"
-import type * as Chart from "../../../charts/chart"
-import type { ThemeColors } from "../../../charts/theme-colors"
-import { delta, relativeChange } from "../../../ui/delta"
+import * as AreaChart from "@maple/views/charts/area-chart"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import type * as Chart from "@maple/views/charts/chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { delta, relativeChange } from "@maple/views/ui/delta"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { changeOf } from "../analytics/view-stats"
 import { analyticsPanel, chartFrame } from "../kit/analytics-panel"
 import { Message, type Model } from "./model"
-import { grid } from "../../../ui/grid"
+import { grid } from "@maple/views/ui/grid"
 
 // `HeadlineStrip`, `RunsCard` and `DurationCard`.
 

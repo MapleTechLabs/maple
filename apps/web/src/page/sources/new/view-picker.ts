@@ -1,16 +1,16 @@
 import type { PushSourcePlatform } from "@maple/domain/primitives"
-import { cardButton } from "../../../ui/card-button"
+import { cardButton } from "@maple/views/ui/card-button"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { statusDot } from "../../../ui/status-dot"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { DATA_INTEGRATIONS, type DataIntegration } from "../../integrations/embed"
 import { HEALTH_TONE, overviewOf } from "../../integrations/derive"
 import { PLATFORMS, platformTile, PUSH_PLATFORMS, type PlatformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typography } from "../../../ui/typography"
-import { hstack, vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `PlatformPicker`: the Source step.
 

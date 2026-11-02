@@ -6,10 +6,10 @@ import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import { switchControl } from "../../ui/switch"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { switchControl } from "@maple/views/ui/switch"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { healthPill, isReadPending, lifecycleOf, projectHealth } from "../infra-integrations/supabase/health"
@@ -26,10 +26,10 @@ import {
 	integrationErrorNotice,
 	integrationStatusCard,
 } from "./view-integration-card"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstackClass, vstack } from "../../ui/stack"
-import { stripClass } from "../../ui/rule"
-import { columnClass } from "../../ui/column"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // The Supabase card: connect, then the organization's projects and their switches.
 

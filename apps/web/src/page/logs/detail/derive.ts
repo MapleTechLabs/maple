@@ -1,5 +1,5 @@
 import { getActiveInfraCorrelations } from "../../../components/infra/infra-correlations"
-import type { LogRecord } from "../../../ui/logs/log-row-view"
+import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 
 // Pure readings of a log for the sheet: its severity label, JSON payload, tabs and timestamp.
 

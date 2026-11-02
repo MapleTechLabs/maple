@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { typography } from "../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 /** The workspace card of `/cli-login` and `/mcp-authorize`; `trailing` is the Clerk switcher. */
 export const workspaceCard = <M>(h: HtmlBuilder<M>, name: string, trailing: ReadonlyArray<Html>): Html =>

@@ -1,6 +1,6 @@
 import { Effect, Option, Result, Schema } from "effect"
 import { Command, File } from "foldkit"
-import * as Dialog from "../../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { signOutOfClerk } from "../../../../platform/clerk"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import { checkImage, clickFileInput } from "../../kit/image-dropzone"

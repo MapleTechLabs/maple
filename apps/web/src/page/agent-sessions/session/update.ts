@@ -9,10 +9,10 @@ import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { AgentSessionSearch } from "../../../route/search"
-import * as Canvas from "../../../service-map/xyflow/canvas"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Popover from "../../../ui/popover"
-import * as Tabs from "../../../ui/tabs"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { missingDetection } from "../kit/detected-models"
 import {
@@ -29,12 +29,12 @@ import {
 	ScrollToTools,
 } from "./command"
 import { loadedSpans, progressOf, sessionData, viewOf } from "./derive"
-import { INITIAL_LOCALE } from "../../kit/locale"
+import { INITIAL_LOCALE } from "@maple/views/lib/locale"
 import { Message } from "./message"
 import { type Model, SESSION_VIEWS, type SpansPage } from "./model"
 import { layoutLanes, MAX_ZOOM, MIN_ZOOM } from "./flow-layout"
 import { freshLists, land, moveCursor, type SpanKey } from "./navigation"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { Message as SpanPanelMessage } from "../../traces/detail/span-panel/message"
 import * as SpanPanel from "../../traces/detail/span-panel/update"
 import { SPAN_DIALOG_ID } from "./span-popover"
@@ -47,7 +47,7 @@ import {
 	popoverMarkdownTexts,
 	stepCloseTooltip,
 } from "./span-popover-update"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { disclosed } from "./payload-view"
 import { markdownTexts, textHash, transcriptRows } from "./transcript-rows"
 

@@ -2,11 +2,11 @@ import { MAX_EMAIL_MEMBER_RECIPIENTS } from "@maple/web-data/alerts/form-utils"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Combobox from "../../../ui/combobox"
-import { chipsView } from "../../../ui/combobox-view"
-import { avatarFallback } from "../../../ui/display"
-import { field, fieldDescription, fieldError, type FieldIds, fieldLabel } from "../../../ui/field"
-import type { FieldState } from "../../../ui/input"
+import * as Combobox from "@maple/views/ui/combobox"
+import { chipsView } from "@maple/views/ui/combobox-view"
+import { avatarFallback } from "@maple/views/ui/display"
+import { field, fieldDescription, fieldError, type FieldIds, fieldLabel } from "@maple/views/ui/field"
+import type { FieldState } from "@maple/views/ui/input"
 import {
 	Message as EmailMessage,
 	type MemberOption,
@@ -14,8 +14,8 @@ import {
 	visibleIds,
 } from "./email-fields"
 import type { DestinationForm } from "./form"
-import { typography } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `EmailMemberPicker`'s `MultiSelectCombobox` (packages/ui/src/components/multi-select-combobox.tsx)
 // in chips mode: each chip and row shows the member's avatar and name, never the user id.

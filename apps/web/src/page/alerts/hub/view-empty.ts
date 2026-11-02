@@ -1,15 +1,15 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../../ui/button"
-import { cardButtonClass } from "../../../ui/card-button"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
+import { button, linkButton } from "@maple/views/ui/button"
+import { cardButtonClass } from "@maple/views/ui/card-button"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 import { alertsHref, createHref } from "../shared/links"
 import { ALERT_TEMPLATES, type AlertTemplate, type AlertTemplateId } from "../shared/templates"
-import { typography } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `AlertsEmptyState`: zero rules.
 

@@ -1,16 +1,16 @@
 import type { V2AwsConnection, V2AwsSetup } from "@maple/domain/http/v2"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../ui/copy-button"
-import { errorState } from "../../ui/error-state"
-import { segmentedSelect } from "../../ui/segmented-select"
-import { skeleton } from "../../ui/skeleton"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { errorState } from "@maple/views/ui/error-state"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { codeBlock } from "../settings/kit/code-block"
 import type { AwsSetupMethod, AwsSetupPart } from "./aws"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
-import { typographyClass } from "../../ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The AWS stack's setup, by method: shared by the connected card and the connect flow.
 

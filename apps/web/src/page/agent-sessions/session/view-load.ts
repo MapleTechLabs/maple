@@ -3,13 +3,13 @@ import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../ui/error-state"
-import { meter } from "../../../ui/meter"
-import { spinner } from "../../../ui/spinner"
+import { errorState } from "@maple/views/ui/error-state"
+import { meter } from "@maple/views/ui/meter"
+import { spinner } from "@maple/views/ui/spinner"
 import type { LoadProgress } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { hstack } from "../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // The session load indicator: how far a large session has loaded.
 

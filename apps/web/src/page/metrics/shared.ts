@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../ui/display"
+import { badge } from "@maple/views/ui/display"
 
 // Pieces both metrics pages read: the catalog row, the type badge and the type colours.
 

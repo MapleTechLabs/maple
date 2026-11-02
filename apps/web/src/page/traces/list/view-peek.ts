@@ -1,14 +1,14 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../../ui/button"
-import * as DialogView from "../../../ui/dialog-view"
-import { kbd } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
+import { linkButton } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { kbd } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
 import * as PeekBody from "../detail/view-peek"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { peekPosition, traceHrefFrom } from "./peek"
-import { hstack } from "../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // The trace peek sheet's frame: the sheet, the trace page's
 // peek body, and the footer that walks the list and opens the page.

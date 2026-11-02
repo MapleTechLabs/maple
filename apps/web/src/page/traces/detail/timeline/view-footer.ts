@@ -1,12 +1,12 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { kbd } from "../../../../ui/display"
-import { textLink } from "../../../../ui/text-link"
-import { serviceDot } from "../../../../ui/values"
+import { button } from "@maple/views/ui/button"
+import { kbd } from "@maple/views/ui/display"
+import { textLink } from "@maple/views/ui/text-link"
+import { serviceDot } from "@maple/views/ui/values"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typography } from "../../../../ui/typography"
-import { hstack } from "../../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The Timeline's footer (key hints and the service legend) and its shortcuts sheet.
 

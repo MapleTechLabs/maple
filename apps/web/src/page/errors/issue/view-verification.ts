@@ -6,12 +6,12 @@ import { cn } from "@maple/ui/lib/utils"
 import { DateTime, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { textLinkClass } from "../../../ui/text-link"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { textLinkClass } from "@maple/views/ui/text-link"
 import { sectionHeading } from "../../kit/section-heading"
-import { hstack } from "../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // The issue verification card: the post-merge fix check.
 

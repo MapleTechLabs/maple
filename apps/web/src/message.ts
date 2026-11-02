@@ -10,7 +10,7 @@ import * as SignIn from "./page/sign-in"
 import { ClerkSnapshot } from "./platform/clerk"
 import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 
 /** Why the stored self-hosted session did not resolve to a signed-in tenant. */
 export const SessionCheckFailure = Schema.Literals(["NoToken", "Rejected", "Unreachable"])

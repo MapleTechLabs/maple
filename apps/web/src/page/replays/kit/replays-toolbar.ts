@@ -3,10 +3,10 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { filterChip } from "../../../ui/filter-chip"
-import { searchInput } from "../../../ui/search-input"
+import { filterChip } from "@maple/views/ui/filter-chip"
+import { searchInput } from "@maple/views/ui/search-input"
 import { listToolbar } from "../../kit/list-toolbar"
-import { hstackClass } from "../../../ui/stack"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The replays toolbar: the URL search and the triage chips.
 // TODO(tooltip): the chips' hover tooltips.

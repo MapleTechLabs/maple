@@ -27,7 +27,7 @@ import { settingsTab } from "../../page/sources/detail/view-tabs"
 import * as Destination from "../../page/alerts/destination/dialog"
 import * as DestinationView from "../../page/alerts/destination/view"
 import { AppRoute } from "../../route"
-import * as Dialog from "../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { defineLab } from "../define"
 
 // `/lab/settings-dialogs?item=`: the disconnect, delete and create dialogs and the settings danger

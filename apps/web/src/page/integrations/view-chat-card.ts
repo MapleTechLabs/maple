@@ -1,11 +1,11 @@
 import type { ChatConnectorId } from "@maple/domain/primitives"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
-import { button } from "../../ui/button"
-import { errorState } from "../../ui/error-state"
-import { itemContent, mediaCard } from "../../ui/item"
-import { statusDot } from "../../ui/status-dot"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { itemContent, mediaCard } from "@maple/views/ui/item"
+import { statusDot } from "@maple/views/ui/status-dot"
 import {
 	integrationEmpty,
 	integrationEmptyCard,
@@ -22,8 +22,8 @@ import { chatConnectorStatus } from "./update-chat"
 import { chatCardLoading, identityRow, monoGlyph } from "./view-chat"
 import { disconnectConfirm } from "./view-disconnect"
 import { entryBrand } from "./view-entry"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack, vstack } from "../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `ChatIntegrationCard`.
 // TODO(clerk): `useIsOrgAdmin` (self-hosted is the root admin) and `WorkspaceSettings`, which renders

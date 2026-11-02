@@ -3,9 +3,9 @@ import { countLabel } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import type { IconName } from "../../../ui/icon"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import type { IconName } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { SessionListItem, SessionRow } from "./session-row"
 
 // Shared parts of the sessions list and its pills.

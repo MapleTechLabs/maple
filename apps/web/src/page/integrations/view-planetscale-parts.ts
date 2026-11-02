@@ -7,14 +7,14 @@ import {
 } from "../../components/integrations/planetscale-setup-steps"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button } from "../../ui/button"
-import { statusDot } from "../../ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
-import { strip } from "../../ui/rule"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { strip } from "@maple/views/ui/rule"
 
 // `PlanetScaleMetricsHealth`.
 

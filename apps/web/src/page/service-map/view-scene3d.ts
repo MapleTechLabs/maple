@@ -12,15 +12,15 @@ import type { Edge3D, Topology3D } from "../../components/service-map/three/type
 import { Option } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as ServiceMap from "../../service-map/map/service-map"
-import { button } from "../../ui/button"
-import { heading } from "../../ui/heading"
-import { icon } from "../../ui/icon"
-import { iconButton } from "../../ui/icon-button"
-import { middleTruncate } from "../../ui/middle-truncate"
-import { pressable } from "../../ui/pressable"
-import { statusDot } from "../../ui/status-dot"
-import * as ToggleGroup from "../../ui/toggle-group"
+import type * as ServiceMap from "@maple/views/service-map/map/service-map"
+import { button } from "@maple/views/ui/button"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { pressable } from "@maple/views/ui/pressable"
+import { statusDot } from "@maple/views/ui/status-dot"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { machineBadge } from "./badge"
 import {
 	COMMAND_ATTRIBUTE,
@@ -32,8 +32,8 @@ import {
 	WatchTheme,
 } from "./scene3d"
 import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
-import { hstack } from "../../ui/stack"
-import { layer } from "../../ui/layer"
+import { hstack } from "@maple/views/ui/stack"
+import { layer } from "@maple/views/ui/layer"
 
 // The 3D viewport: the perspective bar, the
 // paper section with the canvas wrappers, the timber sign labels, the HUD, legend and camera

@@ -11,10 +11,10 @@ import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/securit
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { SeverityBucket } from "../kit/findings"
 import { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"
 

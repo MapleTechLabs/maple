@@ -8,8 +8,8 @@ import { RUNTIME_PRODUCTS } from "@maple/domain/runtime-posture"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { badge } from "../../../ui/display"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { badge } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -17,13 +17,13 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
-import { panel, panelHeader } from "../../../ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { textLink } from "../../../ui/text-link"
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { textLink } from "@maple/views/ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { NARROW_TWO_COLUMNS, ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
@@ -41,8 +41,8 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { telemetryLoading } from "./view-exposure"
-import { typography, typographyClass } from "../../../ui/typography"
-import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // The Runtimes tab: versions with critical CVEs to upgrade now, then each service's runtime and
 // version against its release cycle and known vulnerabilities, worst first.

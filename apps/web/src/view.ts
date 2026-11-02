@@ -21,9 +21,9 @@ import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
 import { resolveSourceLink, type SourceLink } from "./shell/source-link"
-import { heading } from "./ui/heading"
-import * as ToastView from "./ui/toast-view"
-import { typography } from "./ui/typography"
+import { heading } from "@maple/views/ui/heading"
+import * as ToastView from "@maple/views/ui/toast-view"
+import { typography } from "@maple/views/ui/typography"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
 const placeholder = (model: Model, h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>

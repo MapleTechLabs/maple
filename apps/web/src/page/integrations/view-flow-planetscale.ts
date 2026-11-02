@@ -2,12 +2,12 @@ import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
+import { heading } from "@maple/views/ui/heading"
 import { derivePlanetScaleSetup, metricsAuthOf } from "../../components/integrations/planetscale-setup-steps"
-import { button } from "../../ui/button"
-import * as Field from "../../ui/field"
-import { icon } from "../../ui/icon"
-import { input } from "../../ui/input"
+import { button } from "@maple/views/ui/button"
+import * as Field from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
 import {
 	type CheckRow,
 	choiceTiles,
@@ -33,8 +33,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import type { PlanetscaleMetricsMethod } from "./planetscale"
 import { branchFields, branchPreviewOf, orgChoices } from "./view-planetscale-picker"
-import { typography } from "../../ui/typography"
-import { hstack, vstack, vstackClass } from "../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // PlanetScale in the connect flow: authorize (optionally a metrics token), pick the organization
 // and branches, then watch access, the inventory and the first metrics land.

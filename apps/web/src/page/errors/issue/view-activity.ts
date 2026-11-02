@@ -8,11 +8,11 @@ import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { badge, kbd, kbdGroup } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { panel } from "../../../ui/panel"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import { badge, kbd, kbdGroup } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { panel } from "@maple/views/ui/panel"
+import { textarea } from "@maple/views/ui/textarea"
 import { messageResponse } from "../../code-review/kit/markdown"
 import { relativeTime } from "../../kit/relative-time"
 import { type ActorIdentity, identityAvatar, resolveActorIdentity } from "../kit/actor"
@@ -26,8 +26,8 @@ import {
 	renderPayload,
 } from "./activity-format"
 import { Message } from "./message"
-import { typography } from "../../../ui/typography"
-import { spaced } from "../../../ui/spaced"
+import { typography } from "@maple/views/ui/typography"
+import { spaced } from "@maple/views/ui/spaced"
 
 // The issue timeline and the comment composer.
 

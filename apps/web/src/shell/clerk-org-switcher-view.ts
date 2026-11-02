@@ -6,18 +6,18 @@ import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ClerkOrganization } from "../platform/clerk"
-import { warmAvatarTone } from "../ui/avatar-tone"
-import { avatarFallback, badge } from "../ui/display"
-import { label } from "../ui/label"
-import { spinner } from "../ui/spinner"
-import { icon } from "../ui/icon"
-import * as MenuView from "../ui/menu-view"
-import { button } from "../ui/button"
-import * as DialogView from "../ui/dialog-view"
-import { field, fieldDescription, fieldLabel } from "../ui/field"
-import { input } from "../ui/input"
-import * as RadioGroup from "../ui/radio-group"
-import type { Align, Side } from "../ui/overlay/position"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { avatarFallback, badge } from "@maple/views/ui/display"
+import { label } from "@maple/views/ui/label"
+import { spinner } from "@maple/views/ui/spinner"
+import { icon } from "@maple/views/ui/icon"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { button } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
+import { input } from "@maple/views/ui/input"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import type { Align, Side } from "@maple/views/ui/overlay/position"
 import {
 	ALL_NAMESPACES,
 	CREATE_VALUE,
@@ -29,7 +29,7 @@ import {
 	ORG_PREFIX,
 } from "./clerk-org-switcher"
 import { hasNamespaceSearch, namespaceRows, namespaceSearchRow, noNamespacesMatch } from "./namespace-search"
-import { typography } from "../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 /** The namespace submenu's data (`NamespaceScopeList`), sidebar switcher only. */
 export type NamespaceScope = Readonly<{

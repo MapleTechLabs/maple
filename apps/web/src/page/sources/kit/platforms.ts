@@ -1,7 +1,7 @@
 import type { PushSourcePlatform, SourcePlatform } from "@maple/domain/primitives"
 import { PUSH_SOURCE_PLATFORMS } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
 
 // `PLATFORMS`, `PlatformTile`.
 

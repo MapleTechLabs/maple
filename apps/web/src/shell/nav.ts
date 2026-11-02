@@ -1,6 +1,6 @@
 import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "../components/infra/kubernetes/views"
 import { Schema } from "effect"
-import type { IconName } from "../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 
 // The sidebar's nav tree and helpers, with generated icon names.
 

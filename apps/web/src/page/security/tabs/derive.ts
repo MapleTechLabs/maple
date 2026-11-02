@@ -9,7 +9,7 @@ import type {
 import type { SecurityAuditFindingStatus } from "@maple/domain/security-audit"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { SecurityFindingsSearch } from "../../../route/search"
 import { type Gate, gateOf, isLive, isSameMonth, locationOf } from "../kit/format"
 import { bucketOf, type BucketCounts, countsFromRun, isUnverified, SEVERITY_BUCKETS } from "../kit/findings"

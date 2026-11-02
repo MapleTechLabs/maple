@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import {
 	empty,
 	emptyContent,
@@ -9,13 +9,13 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { panel, panelHeader } from "../../../ui/panel"
+} from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelHeader } from "@maple/views/ui/panel"
 import { activeRepositoriesOf } from "./derive"
 import { Message, type Model } from "./model"
-import { typography } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // No target yet: the on-ramp. Without a GitHub installation it points at GitHub; with one, at Add target.
 

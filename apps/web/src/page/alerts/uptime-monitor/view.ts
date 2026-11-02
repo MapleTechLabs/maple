@@ -3,11 +3,11 @@ import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
-import { skeleton } from "../../../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
@@ -25,8 +25,8 @@ import { uptimeStatusChip } from "../shared/uptime-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { monitorOf } from "./update"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import {
 	CHART_TOKENS,
 	type ChartContext,
@@ -39,8 +39,8 @@ import {
 	responseTimePanel,
 	setupPanel,
 } from "./view-panels"
-import { typography } from "../../../ui/typography"
-import { vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // `/alerts/uptime/$monitorId`: the header, the incident block when down, then the panels.
 

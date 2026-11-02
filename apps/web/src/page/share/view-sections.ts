@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { DashboardSection } from "@maple/widgets/dashboard"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { pressable } from "../../ui/pressable"
-import { emptyMessage } from "../../ui/empty"
-import { icon } from "../../ui/icon"
-import { iconButton } from "../../ui/icon-button"
+import { pressable } from "@maple/views/ui/pressable"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
 import { Message } from "./message"
-import { hstackClass } from "../../ui/stack"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // `DashboardSectionView` with `readOnly`: the chevron, the title and the tabs, no editing; the classes are
 // the editable header's.

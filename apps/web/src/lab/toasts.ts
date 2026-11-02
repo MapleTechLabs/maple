@@ -1,8 +1,8 @@
 import { Option } from "effect"
 import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Toast from "../ui/toast"
-import * as ToastView from "../ui/toast-view"
+import * as Toast from "@maple/views/ui/toast"
+import * as ToastView from "@maple/views/ui/toast-view"
 
 // Every lab page has the app's toasts too: a lab Model holds `toasts` and its
 // view renders the page inside `#app` with both Notifications regions after it.

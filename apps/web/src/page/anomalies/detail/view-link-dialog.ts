@@ -2,8 +2,8 @@ import type { AnomalyIncidentDocument, ErrorIssueDocument } from "@maple/domain/
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Combobox from "../../../ui/combobox"
-import { textLink } from "../../../ui/text-link"
+import * as Combobox from "@maple/views/ui/combobox"
+import { textLink } from "@maple/views/ui/text-link"
 import {
 	commandEmpty,
 	commandGroup,
@@ -11,16 +11,16 @@ import {
 	commandInput,
 	commandListbox,
 	commandOption,
-} from "../../../ui/command"
-import { view as dialogView } from "../../../ui/dialog-view"
-import { scrollArea } from "../../../ui/scroll-area"
-import { spinner } from "../../../ui/spinner"
+} from "@maple/views/ui/command"
+import { view as dialogView } from "@maple/views/ui/dialog-view"
+import { scrollArea } from "@maple/views/ui/scroll-area"
+import { spinner } from "@maple/views/ui/spinner"
 import { relativeTime } from "../../kit/relative-time"
 import { workflowRingIcon } from "../../errors/kit/workflow"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `AnomalyLinkIssueDialog`: a command
 // dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.

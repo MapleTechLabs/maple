@@ -9,17 +9,17 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TracesSearch } from "../../../route/search"
 
 type Search = typeof TracesSearch.Type
-import { httpSpanLabel } from "../../../ui/http-span-label"
-import { truncatedText } from "../../../ui/truncated-text"
-import { servicePills, traceStatusBadge } from "../../../ui/trace-badges"
-import { button } from "../../../ui/button"
-import { laneTableCell, rowLink, tableCell, tableRow } from "../../../ui/table"
-import { latencyValue } from "../../../ui/values"
+import { httpSpanLabel } from "@maple/views/ui/http-span-label"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { servicePills, traceStatusBadge } from "@maple/views/ui/trace-badges"
+import { button } from "@maple/views/ui/button"
+import { laneTableCell, rowLink, tableCell, tableRow } from "@maple/views/ui/table"
+import { latencyValue } from "@maple/views/ui/values"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
-import { typography, typographyClass } from "../../../ui/typography"
-import { vstack } from "../../../ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // One row of the traces table.
 

@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../ui/heading"
+import { heading } from "@maple/views/ui/heading"
 
 // `<AuthLayout>`: the centred brand card of the signed-out and interstitial screens (CLI login, MCP consent,
 // unsubscribe, org required).

@@ -1,13 +1,13 @@
 import { formatBytes, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../../../ui/copy-button"
-import { detailRailGroup, detailRailMetaRow } from "../../../../ui/detail-rail"
-import { icon, type IconName } from "../../../../ui/icon"
-import { textLink } from "../../../../ui/text-link"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { detailRailGroup, detailRailMetaRow } from "@maple/views/ui/detail-rail"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { textLink } from "@maple/views/ui/text-link"
 import type { ZoneRow } from "../data"
 import type { ZoneRailDns } from "./derive"
 import { Message, type Model, type ZoneTab } from "./model"
-import { typography } from "../../../../ui/typography"
+import { typography } from "@maple/views/ui/typography"
 
 // `CloudflareZoneRail`.
 

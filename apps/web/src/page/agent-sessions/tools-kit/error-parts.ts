@@ -9,11 +9,11 @@ import type {
 } from "../../../lib/agent-sessions/tool-error-display"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { heading } from "../../../ui/heading"
-import { inlineCodeClassName } from "../../../ui/inline-code"
-import { statusDot } from "../../../ui/status-dot"
-import { typography, typographyClass } from "../../../ui/typography"
-import { vstackClass } from "../../../ui/stack"
+import { heading } from "@maple/views/ui/heading"
+import { inlineCodeClassName } from "@maple/views/ui/inline-code"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // The pieces the Errors table (and the error modal) draw a failure with.
 

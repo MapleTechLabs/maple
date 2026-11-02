@@ -1,9 +1,9 @@
 import { dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
 import { getDbStyle } from "@maple/ui/components/service-map/service-map-db-style"
-import { humanizeDbSystem, pickAttr } from "../../../../service-map/trace-flow/cloud-platforms"
-import { DB_ICON } from "../../../../service-map/map/node-card"
-import { resolveRuntimeGlyph } from "../../../../service-map/map/runtime"
-import type { IconName } from "../../../../ui/icon"
+import { humanizeDbSystem, pickAttr } from "@maple/views/service-map/trace-flow/cloud-platforms"
+import { DB_ICON } from "@maple/views/service-map/map/node-card"
+import { resolveRuntimeGlyph } from "@maple/views/service-map/map/runtime"
+import type { IconName } from "@maple/views/ui/icon"
 import { modelVendorIcon } from "../../../agent-sessions/kit/vendor"
 
 // The marks a waterfall row carries: what the span called (gen_ai, then db, messaging, rpc,

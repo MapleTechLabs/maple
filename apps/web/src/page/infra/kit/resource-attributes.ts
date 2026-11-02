@@ -1,10 +1,10 @@
 import { Schema } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../../ui/copy-button"
-import { detailRailGroup, detailRailMetaRow } from "../../../ui/detail-rail"
-import { skeleton } from "../../../ui/skeleton"
-import { typography } from "../../../ui/typography"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { detailRailGroup, detailRailMetaRow } from "@maple/views/ui/detail-rail"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { typography } from "@maple/views/ui/typography"
 
 // `ResourceAttributesCard` / `ResourceAttributesCardSkeleton` and `DetailRail.MetaRow` with its copy buttons.
 // TODO(tooltip): a row's `tooltip` renders its trigger; the hover popup is not wired yet.

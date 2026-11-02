@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import type { IconName } from "../../../ui/icons.generated"
+import { icon } from "@maple/views/ui/icon"
+import type { IconName } from "@maple/views/ui/icons.generated"
 import type { SourceId } from "./model"
 
 // `SOURCE_TITLE` and `SourceMark`: the sidebar's marks.

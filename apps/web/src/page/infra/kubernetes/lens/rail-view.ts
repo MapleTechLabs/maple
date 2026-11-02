@@ -6,13 +6,13 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { laneLink } from "../../../../ui/lane-link"
-import { eyebrow } from "../../../../ui/eyebrow"
-import { skeletonList } from "../../../../ui/skeleton"
-import { serviceDot } from "../../../../ui/values"
+import { laneLink } from "@maple/views/ui/lane-link"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { serviceDot } from "@maple/views/ui/values"
 import type { TimeSearch } from "../../kit/view-tabs"
 import type { Model } from "./rail"
-import { typography, typographyClass } from "../../../../ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `ServiceLensRail` and the rail rows `useServiceLensRail` folds out of the join.
 

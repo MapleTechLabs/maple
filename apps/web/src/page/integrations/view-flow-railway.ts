@@ -1,7 +1,7 @@
 import type { RailwayIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
+import { button } from "@maple/views/ui/button"
 import {
 	type CheckRow,
 	flowColumns,

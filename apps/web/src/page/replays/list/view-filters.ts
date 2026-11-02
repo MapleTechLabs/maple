@@ -8,8 +8,8 @@ import {
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
-import * as FilterSections from "../../../ui/filters/filter-sections"
+import { type FilterOption, filterSection } from "@maple/views/ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -19,12 +19,12 @@ import {
 	filterSidebarLoading,
 	filterSidebarDivider,
 	filterSidebarGroupLabel,
-} from "../../../ui/filters/filter-sidebar"
-import { type RangePreset, rangeFilterSection } from "../../../ui/filters/range-filter-section"
-import { percentilePresets, toLogBuckets } from "../../../ui/filters/range-distribution"
-import type { IconName } from "../../../ui/icon"
-import { searchInput } from "../../../ui/search-input"
-import { statusDot } from "../../../ui/status-dot"
+} from "@maple/views/ui/filters/filter-sidebar"
+import { type RangePreset, rangeFilterSection } from "@maple/views/ui/filters/range-filter-section"
+import { percentilePresets, toLogBuckets } from "@maple/views/ui/filters/range-distribution"
+import type { IconName } from "@maple/views/ui/icon"
+import { searchInput } from "@maple/views/ui/search-input"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { browserIconFor, deviceIconFor } from "../kit/sessions-parts"
 import { hasSidebarFilters, selectedTags } from "./derive"
 import { type Facet, Message, type Range } from "./message"

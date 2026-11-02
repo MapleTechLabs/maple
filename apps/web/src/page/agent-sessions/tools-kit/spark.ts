@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import * as Sparkline from "../../../charts/sparkline"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
 
 // The line spark the tool tables and panels draw per row.
 

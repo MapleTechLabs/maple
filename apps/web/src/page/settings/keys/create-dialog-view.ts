@@ -1,17 +1,17 @@
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { button } from "../../../ui/button"
-import * as DialogView from "../../../ui/dialog-view"
-import { emptyMessage } from "../../../ui/empty"
-import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
-import * as Field from "../../../ui/field"
-import { formDialogForm } from "../../../ui/form-dialog"
-import { inlineCode } from "../../../ui/inline-code"
-import { searchInput } from "../../../ui/search-input"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import * as SelectView from "../../../ui/select-view"
+import { badge } from "@maple/views/ui/display"
+import { button } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "@maple/views/ui/field"
+import * as Field from "@maple/views/ui/field"
+import { formDialogForm } from "@maple/views/ui/form-dialog"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { searchInput } from "@maple/views/ui/search-input"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import * as SelectView from "@maple/views/ui/select-view"
 import {
 	type AccessMode,
 	blockedReason,
@@ -24,8 +24,8 @@ import {
 	selectedFamilyCount,
 } from "./create-dialog"
 import { secretReveal } from "./secret-reveal"
-import { typography } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 

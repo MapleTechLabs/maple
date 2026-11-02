@@ -7,10 +7,10 @@ import { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Field from "../../../ui/field"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Field from "@maple/views/ui/field"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 
 // `/security/code/findings/$targetId/$fingerprint`: one finding with its triage.
 

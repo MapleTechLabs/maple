@@ -1,17 +1,17 @@
 import { shortId } from "@maple/ui/lib/ids"
-import { encodeLogKey } from "../../../lib/log-key"
+import { encodeLogKey } from "@maple/views/lib/log-key"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { linkButton } from "../../../ui/button"
-import { copyButton } from "../../../ui/copy-button"
-import { icon } from "../../../ui/icon"
-import type { LogRecord } from "../../../ui/logs/log-row-view"
+import { linkButton } from "@maple/views/ui/button"
+import { copyButton } from "@maple/views/ui/copy-button"
+import { icon } from "@maple/views/ui/icon"
+import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { buildLogJsonPayload } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
-import { hstack } from "../../../ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 
 // The log's meta strip, as the drawer shows it.
 

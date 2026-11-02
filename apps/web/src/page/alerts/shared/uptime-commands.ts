@@ -8,7 +8,7 @@ import {
 	V2UptimeMonitorUpdateParams,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Ref, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 import type { AlertsUptimeNewSearch } from "../../../route/search"

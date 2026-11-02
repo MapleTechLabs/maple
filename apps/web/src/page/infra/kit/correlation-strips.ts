@@ -1,21 +1,21 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import type { ChartEventMarker } from "../../../charts/event-marker-spec"
-import * as InfraMetricChart from "../../../charts/infra-metric-chart"
+import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
+import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
 import {
 	type ChartUnit,
 	formatValueWithUnit,
 	type LongRow,
 	transformRows,
 	UNNAMED_SERIES_KEY,
-} from "../../../charts/infra-metric-series"
-import type { ThemeColors } from "../../../charts/theme-colors"
-import { LINKED_CURSOR_STYLE } from "../../../charts/linked-cursor"
-import { panel } from "../../../ui/panel"
+} from "@maple/views/charts/infra-metric-series"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LINKED_CURSOR_STYLE } from "@maple/views/charts/linked-cursor"
+import { panel } from "@maple/views/ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
-import { typography } from "../../../ui/typography"
-import { hstackClass, vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
 
 // `CorrelationStrips`: signals stacked on one time axis under one linked cursor, each with its label, source
 // and window summary.

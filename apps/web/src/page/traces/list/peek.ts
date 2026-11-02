@@ -1,7 +1,7 @@
 import { Command, type Update } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TraceDetail from "../detail/update"
 import type { Message as DetailMessage } from "../detail/message"

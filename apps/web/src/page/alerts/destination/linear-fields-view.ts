@@ -1,10 +1,10 @@
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option } from "effect"
-import { button } from "../../../ui/button"
-import { field, fieldDescription, fieldError, type FieldIds, fieldLabel } from "../../../ui/field"
-import type { FieldState } from "../../../ui/input"
-import * as SelectView from "../../../ui/select-view"
+import { button } from "@maple/views/ui/button"
+import { field, fieldDescription, fieldError, type FieldIds, fieldLabel } from "@maple/views/ui/field"
+import type { FieldState } from "@maple/views/ui/input"
+import * as SelectView from "@maple/views/ui/select-view"
 import { providerOf } from "../shared/providers"
 import type { DestinationForm } from "./form"
 import {
@@ -14,8 +14,8 @@ import {
 	type Model as LinearModel,
 	TEAM_SELECT_ID,
 } from "./linear-fields"
-import { typography } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `LinearFields`' view: a team picker, or connecting Linear in a popup (admins only).
 

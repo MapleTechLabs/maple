@@ -17,7 +17,7 @@ import {
 	pageHeaderActions,
 	pageHeader as layoutHeader,
 	pageTitle,
-} from "../../ui/page-layout"
+} from "@maple/views/ui/page-layout"
 
 // The dashboard page below the shell's top bar:
 // `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.

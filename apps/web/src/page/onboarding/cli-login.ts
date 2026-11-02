@@ -5,7 +5,7 @@ import { defineTaggedUnion } from "foldkit/schema"
 import { modifyFields } from "foldkit/struct"
 import { MapleApiClient } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
-import * as OtpField from "../../ui/otp-field"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { endpointMessage, localeTimeOf } from "./request"
 
 // `/cli-login`: approve a terminal's device code.

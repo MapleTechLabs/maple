@@ -12,7 +12,7 @@ import { update } from "./page-update"
 import { ProductEdit } from "./product-edit"
 import { setDataSource } from "./edits"
 import { targetIndex } from "./list-column-drag"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { init } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")

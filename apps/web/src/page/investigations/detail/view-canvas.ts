@@ -17,8 +17,8 @@ import {
 import { getSmoothStepPath, Position } from "@xyflow/system"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { DEFAULT_GESTURES } from "../../../service-map/xyflow/attach"
-import * as Canvas from "../../../service-map/xyflow/canvas"
+import { DEFAULT_GESTURES } from "@maple/views/service-map/xyflow/attach"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
 import {
 	edgesLayer,
 	flowCanvas,
@@ -26,21 +26,21 @@ import {
 	flowHandle,
 	flowNode,
 	nodesLayer,
-} from "../../../service-map/xyflow/view"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { pressable } from "../../../ui/pressable"
-import { skeleton, skeletonMeter } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+} from "@maple/views/service-map/xyflow/view"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
+import { skeleton, skeletonMeter } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { relativeTime } from "../../kit/relative-time"
 import { NODE_LINK_ATTRIBUTE } from "../clicks"
 import { MountNodeLinks } from "./command"
 import { CONTROL_GUTTER, fitScale, graphOf, HEADING_GUTTER } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { hstack, hstackClass } from "../../../ui/stack"
-import { typography } from "../../../ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
 

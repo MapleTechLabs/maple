@@ -1,7 +1,7 @@
 import type { V2DashboardTemplate, V2DashboardTemplatePreview } from "@maple/domain/http/v2"
 import { ALL_VALUE, type ResolvedVariable, type VariableValues } from "@maple/query-engine"
 import { countLabel } from "@maple/ui/lib/format"
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import type { MetricSeen } from "./model"
 
 /** The empty-dashboard template, pinned below the list and excluded from every count. */

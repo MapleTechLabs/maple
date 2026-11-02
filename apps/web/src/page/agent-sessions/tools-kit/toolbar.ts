@@ -1,13 +1,13 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { label } from "../../../ui/label"
-import * as Select from "../../../ui/select"
-import * as SelectView from "../../../ui/select-view"
-import { searchInput } from "../../../ui/search-input"
-import { switchControl } from "../../../ui/switch"
+import { label } from "@maple/views/ui/label"
+import * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
+import { searchInput } from "@maple/views/ui/search-input"
+import { switchControl } from "@maple/views/ui/switch"
 import { listToolbar } from "../../kit/list-toolbar"
-import { hstackClass } from "../../../ui/stack"
+import { hstackClass } from "@maple/views/ui/stack"
 
 // The tool filter toolbar and its facet selects.
 

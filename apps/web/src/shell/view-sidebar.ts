@@ -5,10 +5,10 @@ import { hasMultipleRegions } from "../lib/region"
 import { Option, Record } from "effect"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { warmAvatarTone } from "../ui/avatar-tone"
-import { avatarFallback, badge, kbd } from "../ui/display"
-import { menuTriggerAttributes } from "../ui/dropdown-menu"
-import { icon } from "../ui/icon"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { avatarFallback, badge, kbd } from "@maple/views/ui/display"
+import { menuTriggerAttributes } from "@maple/views/ui/dropdown-menu"
+import { icon } from "@maple/views/ui/icon"
 import {
 	sidebarFooter,
 	sidebarHeader,
@@ -16,14 +16,14 @@ import {
 	sidebarMenuBadge,
 	sidebarMenuButton,
 	sidebarMenuItem,
-} from "../ui/sidebar"
+} from "@maple/views/ui/sidebar"
 import { isSameMenu, triggerIdOf } from "./menus"
 import { Menu, Message } from "./message"
 import type { Model, ShellClerk } from "./model"
 import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
-import { typography } from "../ui/typography"
-import { identityLabel } from "../ui/identity-label"
+import { typography } from "@maple/views/ui/typography"
+import { identityLabel } from "@maple/views/ui/identity-label"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 

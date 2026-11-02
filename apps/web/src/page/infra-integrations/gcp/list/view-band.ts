@@ -9,7 +9,7 @@ import {
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
-import { statusDot } from "../../../../ui/status-dot"
+import { statusDot } from "@maple/views/ui/status-dot"
 
 // The band specs and `GcpHealthDot`.
 

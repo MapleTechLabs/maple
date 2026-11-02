@@ -2,8 +2,8 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { listFooter } from "../../../ui/list-footer"
+import { badge } from "@maple/views/ui/display"
+import { listFooter } from "@maple/views/ui/list-footer"
 import {
 	ROW_LINK_LIFT,
 	rowLink,
@@ -13,16 +13,16 @@ import {
 	tableHead,
 	tableHeader,
 	tableRow,
-} from "../../../ui/table"
-import { tableSkeleton } from "../../../ui/table-skeleton"
-import { truncatedText } from "../../../ui/truncated-text"
-import { emptyValue, serviceDot } from "../../../ui/values"
+} from "@maple/views/ui/table"
+import { tableSkeleton } from "@maple/views/ui/table-skeleton"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { emptyValue, serviceDot } from "@maple/views/ui/values"
 import { metricTypeBadge, type MetricRow } from "../shared"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
-import { vstack } from "../../../ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 

@@ -3,7 +3,7 @@ import { Option } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, iconColor } from "../ui/icon"
+import { icon, iconColor } from "@maple/views/ui/icon"
 import {
 	sidebarGroup,
 	sidebarGroupContent,
@@ -14,7 +14,7 @@ import {
 	sidebarMenuSub,
 	sidebarMenuSubButton,
 	sidebarMenuSubItem,
-} from "../ui/sidebar"
+} from "@maple/views/ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Message } from "./message"
 import { type Model, type ShellClerk, shellProbe, shellSurfaces } from "./model"

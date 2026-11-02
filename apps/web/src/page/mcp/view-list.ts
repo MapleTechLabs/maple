@@ -1,9 +1,9 @@
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { serviceDot } from "../../ui/values"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { serviceDot } from "@maple/views/ui/values"
 import {
 	errorTone,
 	shareCell,
@@ -25,9 +25,9 @@ import {
 	sectionTitle,
 	volumeSpark,
 } from "./view-kit"
-import { typographyClass } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
-import { columnClass } from "../../ui/column"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
 
 // `/mcp`: every service that answers MCP requests, one row each.
 

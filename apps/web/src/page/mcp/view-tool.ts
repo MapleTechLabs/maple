@@ -2,10 +2,10 @@ import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../ui/empty"
+import { emptyMessage } from "@maple/views/ui/empty"
 import { filteredEmpty } from "../kit/signal-empty-state"
-import { icon } from "../../ui/icon"
-import { miniBars } from "../../ui/mini-bars"
+import { icon } from "@maple/views/ui/icon"
+import { miniBars } from "@maple/views/ui/mini-bars"
 import {
 	shareCell,
 	th,
@@ -37,9 +37,9 @@ import {
 	seriesRows,
 	RESULT_LANE,
 } from "./view-kit"
-import { typography, typographyClass } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
-import { columnClass } from "../../ui/column"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
 
 // `/mcp/:service/tools/:tool`: the agent tool detail page for one MCP tool. Four charts, the
 // failures grouped by `error.type` (and message, once the server records one), then the calls.

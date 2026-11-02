@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { detailRailGroup, detailRailRow } from "../../../ui/detail-rail"
-import { panel, panelHeader, panelChartBody } from "../../../ui/panel"
-import { skeleton, skeletonBlock, skeletonList } from "../../../ui/skeleton"
+import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
+import { panel, panelHeader, panelChartBody } from "@maple/views/ui/panel"
+import { skeleton, skeletonBlock, skeletonList } from "@maple/views/ui/skeleton"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { tabOf } from "./derive"
@@ -11,8 +11,8 @@ import type { Model } from "./model"
 import { headerActions, issueTabs } from "./view-header"
 import { statRailLoading } from "../../kit/stat-rail"
 import { issueField } from "./view-overview"
-import { hstack, vstack } from "../../../ui/stack"
-import { strip } from "../../../ui/rule"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { strip } from "@maple/views/ui/rule"
 
 // The issue detail skeleton and the not-found state.
 

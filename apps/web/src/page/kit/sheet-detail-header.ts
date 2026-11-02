@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { dialogDescription, dialogHeader, dialogTitle } from "../../ui/dialog-view"
+import { dialogDescription, dialogHeader, dialogTitle } from "@maple/views/ui/dialog-view"
 import { detailEyebrow } from "./detail-header"
 
 // `SheetDetailHeader`: a detail sheet's

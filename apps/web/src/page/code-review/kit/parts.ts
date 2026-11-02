@@ -4,11 +4,11 @@ import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { linkButton } from "../../../ui/button"
-import { badge } from "../../../ui/display"
+import { linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
 import { sectionHeading } from "../../kit/section-heading"
-import { typography } from "../../../ui/typography"
-import { hstackClass, vstack } from "../../../ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
 
 // Small pieces the Code Review tabs share: the sheet `Section`, `BulletList`, `CiResultBadge` and
 // `TraceLink`.

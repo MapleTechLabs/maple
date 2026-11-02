@@ -1,8 +1,8 @@
 import type { ChatWorkspaceId } from "@maple/domain/primitives"
 import { Option } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import type { LoadFailure } from "../../data/load-failure"
-import * as Dialog from "../../ui/dialog"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { chatConnectorOf, chatManifestOf, integrationOfSearch } from "./catalog"
 import {

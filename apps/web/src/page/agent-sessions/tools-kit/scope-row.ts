@@ -1,10 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { pressable } from "../../../ui/pressable"
-import { typography } from "../../../ui/typography"
-import { hstack } from "../../../ui/stack"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The tool scope row: what the page is about, one click out of each.
 

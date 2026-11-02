@@ -4,12 +4,12 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { columnHead, dataTable } from "../kit/data-table"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
-import { columnClass } from "../../../ui/column"
+import { columnClass } from "@maple/views/ui/column"
 
 // `PodRestartsStat` and `PodContainerRestarts`.
 
