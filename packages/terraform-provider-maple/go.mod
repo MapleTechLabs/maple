@@ -1,6 +1,6 @@
 module github.com/MapleTechLabs/terraform-provider-maple
 
-go 1.26.0
+go 1.26.10
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
