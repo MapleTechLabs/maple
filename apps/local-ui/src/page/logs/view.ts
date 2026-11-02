@@ -1,13 +1,15 @@
+import { errorState } from "@maple/views/ui/error-state"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { toKitFailure } from "../../data/local-query"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
+import { listSkeleton } from "../kit/placeholders"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { errorState, listSkeleton } from "../kit/view-states"
 import { activeFilterCount, filtersOf, type LogFilters, modeOf } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -49,19 +51,28 @@ const listContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInpu
 			}),
 		],
 	})
-	if (isPending(model.logs)) return [listSkeleton(h, { variant: "table" }), ...sheet]
+	if (isPending(model.logs)) return [listSkeleton(h, "table", 8), ...sheet]
 	const failure = failureWithoutData(model.logs)
 	if (Option.isSome(failure))
-		return [errorState(h, { label: "logs", failure: failure.value, onRetry: Message.ClickedRefresh() }), ...sheet]
+		return [
+			errorState(h, {
+				failure: toKitFailure(failure.value, "logs"),
+				onRetry: Message.ClickedRefresh(),
+			}),
+			...sheet,
+		]
 	if (rowsOf(model).length === 0) return [emptyState(h, model, inputs, filters), ...sheet]
 	return [logStream(h, model, filters.search, inputs.context.timeFormat), ...chipCard(h, model), ...sheet]
 }
 
 const patternsContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): Html => {
-	if (isPending(model.patterns)) return listSkeleton(h, { variant: "table" })
+	if (isPending(model.patterns)) return listSkeleton(h, "table", 8)
 	const failure = failureWithoutData(model.patterns)
 	if (Option.isSome(failure))
-		return errorState(h, { label: "log patterns", failure: failure.value, onRetry: Message.ClickedRefresh() })
+		return errorState(h, {
+			failure: toKitFailure(failure.value, "log patterns"),
+			onRetry: Message.ClickedRefresh(),
+		})
 	return Option.match(AsyncData.getData(model.patterns.data), {
 		onNone: () => emptyState(h, model, inputs, filters),
 		onSome: (data) =>

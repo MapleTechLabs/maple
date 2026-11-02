@@ -1,17 +1,19 @@
 import { formatErrorRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
+import { toKitFailure } from "../../data/local-query"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
+import { emptyNotice, listSkeleton } from "../kit/placeholders"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { refreshButton, timeRangeSelect, toolbar, toolbarStat, toolbarStats } from "../kit/toolbar"
-import { emptyState, errorState, listSkeleton } from "../kit/view-states"
 import { errorsFiltersOf } from "./command"
 import { cardOf } from "./load"
 import { Message } from "./message"
@@ -34,16 +36,20 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const rows = Option.getOrElse(AsyncData.getData(model.byType.data), () => [])
 	const tracesPresence = inputs.presenceOf("traces")
 	const content = (): Html => {
-		if (isPending(model.byType)) return listSkeleton(h, { variant: "card", rows: 6 })
+		if (isPending(model.byType)) return listSkeleton(h, "card", 6)
 		const failure = failureWithoutData(model.byType)
 		if (Option.isSome(failure))
-			return errorState(h, { label: "errors", failure: failure.value, onRetry: Message.ClickedRefresh() })
+			return errorState(h, {
+				failure: toKitFailure(failure.value, "errors"),
+				onRetry: Message.ClickedRefresh(),
+			})
 		if (rows.length === 0)
 			return activeFilterCount === 0 && Option.exists(tracesPresence, (presence) => presence.status === "present")
-				? emptyState(h, {
+				? emptyNotice(h, {
 						icon: icon(h, "CircleWarningIcon"),
 						title: "No errors in this range",
-						hint: ["Errors appear when spans arrive with an Error status. None did in the selected window."],
+						hint:
+							"Errors appear when spans arrive with an Error status. None did in the selected window.",
 					})
 				: signalEmptyState(h, {
 						signal: "traces",

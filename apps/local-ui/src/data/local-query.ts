@@ -2,6 +2,7 @@ import type { CompiledQuery, CompiledQueryInput } from "@maple/query-engine/ch"
 import { executeLocalQuery, LOCAL_ORG_ID, type LocalQueryError } from "@maple/query-engine/local"
 import { Duration, Effect, type Option, Schedule, Schema } from "effect"
 import type { HttpClient } from "effect/http"
+import type { LoadFailure as KitLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeBounds } from "../lib/time"
 
 // Local queries as Effects: compile, POST `/local/query`, decode the rows.
@@ -9,6 +10,20 @@ import type { TimeBounds } from "../lib/time"
 /** A failed load as the Model keeps it: the text `ErrorState` shows (`error.message`). */
 export const LoadFailure = Schema.Struct({ message: Schema.String })
 export type LoadFailure = typeof LoadFailure.Type
+
+/**
+ * The kit `ErrorState`'s failure for a local load: "Couldn't load <subject>", the query's own
+ * message, and Try again without the auto-retry (the query already retried a dropped request).
+ */
+export const toKitFailure = (failure: LoadFailure, subject: string): KitLoadFailure => ({
+	_tag: "@maple/local/errors/LoadFailed",
+	type: "api_error",
+	code: "local_query_failed",
+	title: `Couldn’t load ${subject}`,
+	message: failure.message,
+	retryable: false,
+	recovery: "retry",
+})
 
 const failureOf = (error: { readonly message: string }): LoadFailure => ({ message: error.message })
 

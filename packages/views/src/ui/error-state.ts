@@ -19,6 +19,8 @@ import {
 	type RetryBudget,
 } from "./auto-retry-budget"
 import { button } from "./button"
+import { emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "./empty"
+import { icon } from "./icon"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -65,174 +67,6 @@ export const failureKind = (failure: LoadFailure): FailureKind => {
 
 const attr = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
 	Object.entries(entries).map(([name, value]) => h.Attribute(name, value))
-
-/** The shared 200x56 box: two faint rails the signal runs between. */
-const glyphFrame = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.svg(
-		attr(h, {
-			width: "176",
-			height: "50",
-			viewBox: "0 0 200 56",
-			fill: "none",
-			"aria-hidden": "true",
-			class: "shrink-0",
-		}),
-		[
-			h.line(
-				attr(h, {
-					x1: "4",
-					y1: "12",
-					x2: "196",
-					y2: "12",
-					class: "stroke-border",
-					"stroke-width": "1",
-					opacity: "0.5",
-				}),
-			),
-			h.line(
-				attr(h, {
-					x1: "4",
-					y1: "44",
-					x2: "196",
-					y2: "44",
-					class: "stroke-border",
-					"stroke-width": "1",
-					opacity: "0.5",
-				}),
-			),
-			...children,
-		],
-	)
-
-/** `DroppedSignalGlyph`: a signal line that cuts out, the break, and a dashed trail. */
-const droppedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
-	glyphFrame(h, [
-		h.polyline(
-			attr(h, {
-				points: "6,32 20,30 32,33 44,28 56,31 68,27 80,31 92,29 104,33 116,30",
-				fill: "none",
-				class: "stroke-muted-foreground",
-				"stroke-width": "2",
-				"stroke-linecap": "round",
-				"stroke-linejoin": "round",
-				opacity: "0.7",
-			}),
-		),
-		h.line(
-			attr(h, {
-				x1: "130",
-				y1: "30",
-				x2: "194",
-				y2: "30",
-				class: "stroke-severity-error",
-				"stroke-width": "1.5",
-				"stroke-dasharray": "3 5",
-				"stroke-linecap": "round",
-				opacity: "0.45",
-			}),
-		),
-		h.circle(attr(h, { cx: "118", cy: "30", r: "5.5", class: "fill-severity-error", opacity: "0.35" })),
-		h.circle(attr(h, { cx: "118", cy: "30", r: "2.5", class: "fill-severity-error" })),
-	])
-
-/** `NarrowedSignalGlyph`: scattered lines funnelled into one, the request needs narrowing. */
-const narrowedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
-	glyphFrame(h, [
-		...["17", "22.5", "28", "33.5", "39"].map((y) =>
-			h.line(
-				attr(h, {
-					x1: "6",
-					y1: y,
-					x2: "86",
-					y2: y,
-					class: "stroke-muted-foreground",
-					"stroke-width": "1.5",
-					"stroke-linecap": "round",
-					opacity: "0.35",
-				}),
-			),
-		),
-		h.polyline(
-			attr(h, {
-				points: "92,16 108,28 92,40",
-				fill: "none",
-				class: "stroke-muted-foreground",
-				"stroke-width": "2",
-				"stroke-linecap": "round",
-				"stroke-linejoin": "round",
-				opacity: "0.7",
-			}),
-		),
-		h.line(
-			attr(h, {
-				x1: "124",
-				y1: "28",
-				x2: "194",
-				y2: "28",
-				class: "stroke-muted-foreground",
-				"stroke-width": "2",
-				"stroke-linecap": "round",
-				opacity: "0.7",
-			}),
-		),
-		h.circle(attr(h, { cx: "116", cy: "28", r: "5.5", class: "fill-severity-warn", opacity: "0.35" })),
-		h.circle(attr(h, { cx: "116", cy: "28", r: "2.5", class: "fill-severity-warn" })),
-	])
-
-/** `LockedSignalGlyph`: a signal line that stops at a lock, with no trail past it. */
-const lockedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
-	glyphFrame(h, [
-		h.polyline(
-			attr(h, {
-				points: "6,32 20,30 32,33 44,28 56,31 68,27 80,31",
-				fill: "none",
-				class: "stroke-muted-foreground",
-				"stroke-width": "2",
-				"stroke-linecap": "round",
-				"stroke-linejoin": "round",
-				opacity: "0.7",
-			}),
-		),
-		h.path(
-			attr(h, {
-				d: "M93 25 V21 a7 7 0 0 1 14 0 V25",
-				class: "stroke-muted-foreground",
-				"stroke-width": "2",
-				"stroke-linecap": "round",
-			}),
-		),
-		h.rect(
-			attr(h, {
-				x: "88",
-				y: "25",
-				width: "24",
-				height: "15",
-				rx: "3",
-				class: "stroke-muted-foreground",
-				"stroke-width": "2",
-			}),
-		),
-		h.circle(attr(h, { cx: "100", cy: "32.5", r: "2.25", class: "fill-severity-error" })),
-		h.line(
-			attr(h, {
-				x1: "124",
-				y1: "32",
-				x2: "194",
-				y2: "32",
-				class: "stroke-border",
-				"stroke-width": "1.5",
-				"stroke-dasharray": "3 5",
-				"stroke-linecap": "round",
-			}),
-		),
-	])
-
-const glyphFor = <M>(h: HtmlBuilder<M>, kind: FailureKind): Html =>
-	kind === "access"
-		? lockedSignalGlyph(h)
-		: kind === "fixable"
-			? narrowedSignalGlyph(h)
-			: droppedSignalGlyph(h)
 
 const tickAttributes = <M>(h: HtmlBuilder<M>, size: number) =>
 	attr(h, {
@@ -509,7 +343,10 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 						h.p([h.Class("font-prose text-xs font-medium text-foreground")], [heading]),
 					],
 				),
-				h.p([h.Class("font-prose text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
+				h.p(
+					[h.Class("font-prose text-xs whitespace-pre-wrap break-words text-muted-foreground")],
+					[message],
+				),
 				...retry("outline", "mt-1 w-fit"),
 			],
 		)
@@ -534,7 +371,10 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					[h.Class("min-w-0 flex-1 basis-56 space-y-0.5")],
 					[
 						h.p([h.Class("font-prose text-sm font-medium text-foreground")], [heading]),
-						h.p([h.Class("font-prose line-clamp-2 text-xs text-muted-foreground")], [message]),
+						h.p(
+							[h.Class("font-prose line-clamp-2 text-xs break-words text-muted-foreground")],
+							[message],
+						),
 					],
 				),
 				...retry("outline", "shrink-0"),
@@ -542,12 +382,13 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 		)
 	}
 
-	// Fills a short card, but caps at a compact block at the top of a viewport-tall list area.
+	const actions = retry("outline")
+	// The empty state's layout with a warning tile; `py-12` at every width keeps it inside short cards.
 	return h.div(
 		[
 			h.Class(
 				cn(
-					"flex h-full max-h-70 flex-col items-center justify-center gap-4 rounded-md border border-dashed px-6 py-8 text-center",
+					"flex h-full min-w-0 flex-col items-center justify-center gap-6 px-6 py-12 text-center text-balance",
 					options.className,
 				),
 			),
@@ -556,22 +397,12 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			...autoRetry,
 		],
 		[
-			h.div([h.Class("rounded-md border bg-card/50 p-3")], [glyphFor(h, kind)]),
-			h.div(
-				[h.Class("max-w-md space-y-1")],
-				[
-					h.p([h.Class("font-prose text-sm font-medium text-foreground")], [heading]),
-					h.p(
-						[
-							h.Class(
-								"font-prose text-ui text-balance whitespace-pre-wrap text-muted-foreground",
-							),
-						],
-						[message],
-					),
-				],
-			),
-			...retry("outline"),
+			emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { className: "text-destructive" })]),
+			emptyHeader(h, [
+				emptyTitle(h, [heading]),
+				emptyDescription(h, [message], "font-mono text-xs whitespace-pre-wrap wrap-anywhere"),
+			]),
+			...(actions.length === 0 ? [] : [emptyContent(h, actions)]),
 		],
 	)
 }

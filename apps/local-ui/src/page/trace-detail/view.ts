@@ -1,3 +1,5 @@
+import { errorState } from "@maple/views/ui/error-state"
+import { toKitFailure } from "../../data/local-query"
 import type { TimeFormat } from "../kit/local-time"
 import * as Timeline from "@maple/web/page/traces/detail/timeline"
 import type { TraceData } from "@maple/web/page/traces/detail/trace-data"
@@ -13,7 +15,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
 import type { PageViewInputs } from "../kit/inputs"
 import { refreshButton } from "../kit/toolbar"
-import { errorState } from "../kit/view-states"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { loadedTrace } from "./update"
@@ -135,7 +136,11 @@ const hoverTooltip = (h: H, model: Model, trace: TraceData | undefined): Readonl
 const body = (h: H, model: Model, timeFormat: TimeFormat): Html => {
 	if (isPending(model.trace)) return traceDetailLoading(h)
 	const failure = failureWithoutData(model.trace)
-	if (Option.isSome(failure)) return errorState(h, { label: "trace", failure: failure.value, onRetry: Message.ClickedRefresh() })
+	if (Option.isSome(failure))
+		return errorState(h, {
+			failure: toKitFailure(failure.value, "trace"),
+			onRetry: Message.ClickedRefresh(),
+		})
 	return Option.match(loadedTrace(model), {
 		onNone: () => traceNotFound(h, model.traceId),
 		onSome: (trace) => loadedBody(h, model, trace, timeFormat),

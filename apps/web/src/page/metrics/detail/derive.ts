@@ -61,26 +61,6 @@ export const summarizeCatalogRows = (
 export const defaultAggregation = (metricType: QueryBuilderMetricType, isMonotonic: boolean): string =>
 	resetAggregationForMetricType(metricType === "sum" ? "rate" : "avg", metricType, isMonotonic)
 
-/** `chartUnitFromOtel`: OTel unit strings onto the chart formatter's vocabulary. */
-export const chartUnitFromOtel = (unit: string): string | undefined => {
-	switch (unit) {
-		case "ns":
-			return "duration_ns"
-		case "us":
-			return "duration_us"
-		case "ms":
-			return "duration_ms"
-		case "s":
-			return "duration_s"
-		case "By":
-		case "by":
-		case "bytes":
-			return "bytes"
-		default:
-			return undefined
-	}
-}
-
 /** `buildMetricExplorerDraft`: the stable-id draft the chart, breakdown and actions share. */
 export const buildMetricExplorerDraft = (summary: CatalogSummary, state: QueryState): MetricsQueryDraft => ({
 	id: "metrics-explorer-a",

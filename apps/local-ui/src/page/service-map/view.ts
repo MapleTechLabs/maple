@@ -1,13 +1,14 @@
 import { cn } from "@maple/ui/lib/utils"
 import { serviceMapLoading } from "@maple/views/service-map/map/loading"
+import { errorState } from "@maple/views/ui/error-state"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { toKitFailure } from "../../data/local-query"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { refreshButton, timeRangeSelect, toolbar, toolbarStat, toolbarStats } from "../kit/toolbar"
-import { errorState } from "../kit/view-states"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { mapCanvas } from "./view-map"
@@ -19,7 +20,10 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs):
 	if (isPending(model.data)) return serviceMapLoading(h)
 	const failure = failureWithoutData(model.data)
 	if (Option.isSome(failure))
-		return errorState(h, { label: "the service map", failure: failure.value, onRetry: Message.ClickedRetry() })
+		return errorState(h, {
+			failure: toKitFailure(failure.value, "the service map"),
+			onRetry: Message.ClickedRetry(),
+		})
 	return Option.match(AsyncData.getData(model.data.data), {
 		onNone: () => null,
 		onSome: (data) => mapCanvas(h, model, data, Option.getOrUndefined(model.maybeMap), inputs),

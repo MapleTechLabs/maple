@@ -1,3 +1,5 @@
+import { errorState } from "@maple/views/ui/error-state"
+import { toKitFailure } from "../../data/local-query"
 import { WIDEST_RANGE } from "../../lib/time"
 import * as Chart from "@maple/views/charts/chart"
 import { AREA_CHART_TOKENS } from "@maple/views/charts/area-chart"
@@ -11,8 +13,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
+import { emptyNotice } from "../kit/placeholders"
 import { seriesChart } from "../kit/series-chart"
-import { emptyState, errorState } from "../kit/view-states"
 import { boundsOf, chartOf, topSpanNames } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -28,9 +30,9 @@ const quiet = (h: HtmlBuilder<Message>, range: string): Html =>
 	h.div(
 		[h.Class("flex h-full flex-col items-center justify-center gap-3")],
 		[
-			emptyState(h, {
+			emptyNotice(h, {
 				title: "No spans from this service in this range",
-				hint: ["Widen the time range, or send some traffic to this service."],
+				hint: "Widen the time range, or send some traffic to this service.",
 			}),
 			...(range !== WIDEST_RANGE
 				? [button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedWidenRange())] }, ["Widen to 30 days"])]
@@ -49,7 +51,10 @@ const loaded = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, s
 			? []
 			: [
 					Option.isSome(goldenFailure)
-						? errorState(h, { label: "service charts", failure: goldenFailure.value, onRetry: Message.ClickedRetryGoldenSignals() })
+						? errorState(h, {
+								failure: toKitFailure(goldenFailure.value, "service charts"),
+								onRetry: Message.ClickedRetryGoldenSignals(),
+							})
 						: goldenSignals(
 								h,
 								model,
@@ -84,7 +89,10 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs):
 	if (isPending(model.overview)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
 	const failure = failureWithoutData(model.overview)
 	if (Option.isSome(failure))
-		return errorState(h, { label: "service", failure: failure.value, onRetry: Message.ClickedRetryOverview() })
+		return errorState(h, {
+			failure: toKitFailure(failure.value, "service"),
+			onRetry: Message.ClickedRetryOverview(),
+		})
 	const overview = Option.getOrNull(AsyncData.getData(model.overview.data))
 	return overview === null ? quiet(h, rangeOf(inputs.context)) : loaded(h, model, inputs, overview.stats)
 }

@@ -1,17 +1,18 @@
 import { cn } from "@maple/ui/lib/utils"
+import { errorState } from "@maple/views/ui/error-state"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { table, tableBody, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
+import { toKitFailure } from "../../data/local-query"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { errorState } from "../kit/view-states"
 import { activeFilterCount, filtersOf } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -45,7 +46,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			return tableSkeleton(h, { className: "rounded-none border-0", rows: 12, columns: SKELETON_COLUMNS })
 		const failure = failureWithoutData(model.traces)
 		if (Option.isSome(failure))
-			return errorState(h, { label: "traces", failure: failure.value, onRetry: Message.ClickedRefresh() })
+			return errorState(h, {
+				failure: toKitFailure(failure.value, "traces"),
+				onRetry: Message.ClickedRefresh(),
+			})
 		if (rows.length === 0)
 			return signalEmptyState(h, {
 				signal: "traces",

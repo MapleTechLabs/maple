@@ -1,7 +1,7 @@
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { traceIdBadge } from "@maple/views/ui/trace-badges"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyState } from "../kit/view-states"
+import { emptyNotice } from "../kit/placeholders"
 import type { Message } from "./message"
 
 /** `TraceDetailLoading`: shaped like the loaded page (strip, spectrum bar, waterfall rows). */
@@ -39,8 +39,8 @@ export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
 
 /** No spans for this id: outside retention, or not arrived yet. */
 export const traceNotFound = (h: HtmlBuilder<Message>, traceId: string): Html =>
-	emptyState(h, {
+	emptyNotice(h, {
 		title: "Trace not found",
-		hint: ["It may be outside the store's retention, or its spans have not arrived yet."],
+		hint: "It may be outside the store's retention, or its spans have not arrived yet.",
 		action: traceIdBadge(h, traceId, { size: "default", className: "text-xs" }),
 	})
