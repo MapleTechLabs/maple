@@ -89,7 +89,7 @@
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
 		"knip": "^6.43.0",
-		"oxfmt": "^0.72.0",
+		"oxfmt": "^0.75.0",
 		"oxlint": "1.90.0",
 		"oxlint-tsgolint": "7.0.2005",
 		"portless": "^0.15.12",
