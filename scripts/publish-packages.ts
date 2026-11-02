@@ -13,19 +13,35 @@ import { appendFileSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { Glob } from "bun"
+import { Schema } from "effect"
 
-interface Manifest {
-	readonly name: string
+// Private apps carry no `version`; only publishable manifests must.
+const WorkspaceManifest = Schema.Struct({
+	name: Schema.String,
+	version: Schema.optionalKey(Schema.String),
+	private: Schema.optionalKey(Schema.Boolean),
+	publishConfig: Schema.optionalKey(Schema.Struct({ access: Schema.optionalKey(Schema.String) })),
+	dependencies: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+	peerDependencies: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+})
+type WorkspaceManifest = typeof WorkspaceManifest.Type
+
+interface Manifest extends WorkspaceManifest {
 	readonly version: string
-	readonly private?: boolean
-	readonly publishConfig?: { readonly access?: string }
-	readonly dependencies?: Readonly<Record<string, string>>
-	readonly peerDependencies?: Readonly<Record<string, string>>
 }
 
-interface Candidate {
+const decodeWorkspaceManifest = Schema.decodeUnknownSync(Schema.fromJsonString(WorkspaceManifest))
+const decodeChangesetConfig = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ ignore: Schema.optionalKey(Schema.Array(Schema.String)) })),
+)
+const decodeRootManifest = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ workspaces: Schema.Array(Schema.String) })),
+)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+interface Candidate<M extends WorkspaceManifest = Manifest> {
 	readonly dir: string
-	readonly manifest: Manifest
+	readonly manifest: M
 }
 
 const root = resolve(import.meta.dir, "..")
@@ -49,18 +65,14 @@ const fail = (message: string): never => {
 	process.exit(1)
 }
 
-const changesetConfig: { readonly ignore?: ReadonlyArray<string> } = JSON.parse(
-	readFileSync(join(root, ".changeset/config.json"), "utf8"),
-)
+const changesetConfig = decodeChangesetConfig(readFileSync(join(root, ".changeset/config.json"), "utf8"))
 const ignored = new Set(changesetConfig.ignore ?? [])
-const rootManifest: { readonly workspaces: ReadonlyArray<string> } = JSON.parse(
-	readFileSync(join(root, "package.json"), "utf8"),
-)
+const rootManifest = decodeRootManifest(readFileSync(join(root, "package.json"), "utf8"))
 
-const workspaces: ReadonlyArray<Candidate> = rootManifest.workspaces.flatMap((pattern) =>
+const workspaces: ReadonlyArray<Candidate<WorkspaceManifest>> = rootManifest.workspaces.flatMap((pattern) =>
 	Array.from(new Glob(`${pattern}/package.json`).scanSync({ cwd: root })).map((file) => ({
 		dir: join(root, file, ".."),
-		manifest: JSON.parse(readFileSync(join(root, file), "utf8")),
+		manifest: decodeWorkspaceManifest(readFileSync(join(root, file), "utf8")),
 	})),
 )
 
@@ -78,16 +90,22 @@ const reportRelease = ({ name, version }: Manifest) => {
 	if (!run(["git", "tag", "-a", tag, "-m", tag]).ok) fail(`git tag failed for ${tag}`)
 	console.log(`New tag: ${tag}`)
 	if (outputFile) {
-		appendFileSync(outputFile, `${JSON.stringify({ type: "git-tag", tag, packageName: name })}\n`)
+		appendFileSync(outputFile, `${encodeJson({ type: "git-tag", tag, packageName: name })}\n`)
 	}
 }
 
-const publishable = workspaces.filter(
-	({ manifest }) =>
-		manifest.private !== true &&
-		manifest.publishConfig?.access === "public" &&
-		!ignored.has(manifest.name),
-)
+const publishable: ReadonlyArray<Candidate> = workspaces.flatMap(({ dir, manifest }) => {
+	if (
+		manifest.private === true ||
+		manifest.publishConfig?.access !== "public" ||
+		ignored.has(manifest.name)
+	)
+		return []
+	const { version } = manifest
+	return version === undefined
+		? fail(`${manifest.name} is public but has no version`)
+		: [{ dir, manifest: { ...manifest, version } }]
+})
 const [published, pending] = publishable.reduce<[Array<Candidate>, Array<Candidate>]>(
 	([onNpm, notOnNpm], candidate) =>
 		isOnNpm(candidate.manifest) ? [[...onNpm, candidate], notOnNpm] : [onNpm, [...notOnNpm, candidate]],

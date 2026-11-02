@@ -9,6 +9,7 @@ import {
 	type RawSqlDisplayType,
 	type WidgetTypeMeta,
 } from "@maple/domain/http"
+import { stringifyJson } from "./json"
 
 /**
  * One decision, one field.
@@ -72,7 +73,7 @@ export const resolvePanelType = (input: PanelTypeInput): PanelTypeResolution => 
 			: ""
 		return {
 			ok: false,
-			error: `\`panel_type\` must be exactly one of: ${panelTypeList}. Got: ${JSON.stringify(panelTypeRaw)}.${hint}`,
+			error: `\`panel_type\` must be exactly one of: ${panelTypeList}. Got: ${stringifyJson(panelTypeRaw)}.${hint}`,
 			example: '{ "panel_type": "bar" }',
 		}
 	}
@@ -80,7 +81,7 @@ export const resolvePanelType = (input: PanelTypeInput): PanelTypeResolution => 
 	if (!panelTypeRaw && visualizationRaw && !isMcpVisualization(visualizationRaw)) {
 		return {
 			ok: false,
-			error: `\`visualization\` must be one of: ${[...new Set(MCP_PANEL_TYPES.map((p) => WIDGET_TYPES[p].visualization))].map((v) => `"${v}"`).join(", ")}. Got: ${JSON.stringify(visualizationRaw)}. Prefer \`panel_type\`, which takes one of: ${panelTypeList}.`,
+			error: `\`visualization\` must be one of: ${[...new Set(MCP_PANEL_TYPES.map((p) => WIDGET_TYPES[p].visualization))].map((v) => `"${v}"`).join(", ")}. Got: ${stringifyJson(visualizationRaw)}. Prefer \`panel_type\`, which takes one of: ${panelTypeList}.`,
 			example: '{ "panel_type": "line" }',
 		}
 	}

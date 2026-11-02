@@ -24,7 +24,7 @@
  * live request. No `mcp-session-id` is issued, so clients never send one back
  * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
-import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Ref, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Ref, Schema, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -54,6 +54,8 @@ const SYNTHETIC_INITIALIZE_ID = "__maple/mcp/synthetic-initialize"
  * credential, which the authorization middleware has already resolved.
  */
 const SYNTHETIC_CLIENT_INFO = { name: "maple-stateless-transport", version: "1" }
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const syntheticInitialize = (protocolVersion: string) => ({
 	jsonrpc: "2.0",
@@ -293,9 +295,10 @@ export const layerStatelessMcpHttp = (options: {
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.
 					if (!messages.some(isInitializeMessage)) {
-						const synthetic = parser.decode(
-							JSON.stringify(syntheticInitialize(options.protocol.protocolVersion)),
-						) as ReadonlyArray<FromClientEncoded>
+						const initializeJson = yield* encodeJson(
+							syntheticInitialize(options.protocol.protocolVersion),
+						).pipe(Effect.orDie)
+						const synthetic = parser.decode(initializeJson) as ReadonlyArray<FromClientEncoded>
 						yield* Effect.forEach(synthetic, (message) => write(message, true), { discard: true })
 					}
 

@@ -7,18 +7,28 @@ export const SYSTEM_VALUE = "__system__"
 const DEFAULT_TIMEZONE = "UTC"
 
 const decodeStored = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String))
+const encodeStored = Schema.encodeSync(Schema.fromJsonString(Schema.String))
+
+export class TimeZoneError extends Schema.TaggedError<TimeZoneError>()("@maple/web/TimeZoneError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
 
 const isValidZone = (zone: string): Effect.Effect<boolean> =>
 	zone.trim().length === 0
 		? Effect.succeed(false)
-		: Effect.try(() => new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date())).pipe(
+		: Effect.try({
+				try: () => new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date()),
+				catch: (cause) => new TimeZoneError({ message: `Unknown time zone ${zone}`, cause }),
+			}).pipe(
 				Effect.as(true),
 				Effect.orElseSucceed(() => false),
 			)
 
-export const browserZone: Effect.Effect<string> = Effect.try(
-	() => Intl.DateTimeFormat().resolvedOptions().timeZone,
-).pipe(
+export const browserZone: Effect.Effect<string> = Effect.try({
+	try: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+	catch: (cause) => new TimeZoneError({ message: "Could not read the browser time zone", cause }),
+}).pipe(
 	Effect.flatMap((zone) => Effect.map(isValidZone(zone), (valid) => (valid ? zone : DEFAULT_TIMEZONE))),
 	Effect.orElseSucceed(() => DEFAULT_TIMEZONE),
 )
@@ -46,16 +56,18 @@ export const TIME_ZONE_PREFERENCE_EVENT = "maple:timezone-preference"
  */
 export const writeSelectedTimeZone = (selected: Option.Option<string>): Effect.Effect<void> =>
 	Effect.sync(() => {
-		writeLocalStorage(TIMEZONE_STORAGE_KEY, JSON.stringify(Option.getOrElse(selected, () => SYSTEM_VALUE)))
+		writeLocalStorage(TIMEZONE_STORAGE_KEY, encodeStored(Option.getOrElse(selected, () => SYSTEM_VALUE)))
 		window.dispatchEvent(new Event(TIME_ZONE_PREFERENCE_EVENT))
 	})
 
 const supportedValues = Option.liftThrowable(() => Intl.supportedValuesOf("timeZone"))
 
 /** `listSupportedTimeZones`: every zone the runtime knows, else UTC and the browser's own. */
-export const readSupportedTimeZones: Effect.Effect<ReadonlyArray<string>> = Effect.map(browserZone, (browser) =>
-	Option.getOrElse(
-		Option.filter(supportedValues(), (values) => values.length > 0),
-		() => [...new Set(["UTC", browser])],
-	),
+export const readSupportedTimeZones: Effect.Effect<ReadonlyArray<string>> = Effect.map(
+	browserZone,
+	(browser) =>
+		Option.getOrElse(
+			Option.filter(supportedValues(), (values) => values.length > 0),
+			() => [...new Set(["UTC", browser])],
+		),
 )

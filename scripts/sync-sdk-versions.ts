@@ -5,13 +5,17 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { Schema } from "effect"
 
 const SDK_PACKAGES = ["packages/effect-sdk", "packages/browser"]
 const literal = /export const SDK_VERSION = "[^"]*"/
+const decodeManifest = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
+)
 
 SDK_PACKAGES.forEach((dir) => {
 	const root = resolve(import.meta.dir, "..", dir)
-	const { version } = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"))
+	const { version } = decodeManifest(readFileSync(resolve(root, "package.json"), "utf8"))
 	const file = resolve(root, "src/version.ts")
 	const source = readFileSync(file, "utf8")
 	if (!literal.test(source)) {

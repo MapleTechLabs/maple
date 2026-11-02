@@ -312,11 +312,9 @@ export class SourcesService extends Context.Service<SourcesService>()(
 
 			const get = Effect.fn("SourcesService.get")(function* (orgId: OrgId, sourceId: SourceId) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
-				return yield* toSource(
-					orgId,
-					yield* requireRow(orgId, sourceId),
-					yield* Clock.currentTimeMillis,
-				)
+				const row = yield* requireRow(orgId, sourceId)
+				const nowMs = yield* Clock.currentTimeMillis
+				return yield* toSource(orgId, row, nowMs)
 			})
 
 			const create = Effect.fn("SourcesService.create")(function* (
@@ -511,7 +509,8 @@ export class SourcesService extends Context.Service<SourcesService>()(
 				)
 				const row = rows[0]
 				if (row === undefined) return yield* notFound(sourceId)
-				return rowToSource(row, yield* Clock.currentTimeMillis)
+				const nowMs = yield* Clock.currentTimeMillis
+				return rowToSource(row, nowMs)
 			})
 
 			return { list, get, create, update, pause, resume, roll, delete: remove }

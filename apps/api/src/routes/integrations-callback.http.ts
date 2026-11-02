@@ -4,10 +4,12 @@ import {
 	type OAuthReturnFlow,
 	validateIntegrationReturnPath,
 } from "@maple/domain/http"
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { PLANETSCALE_CALLBACK_PATH } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { SUPABASE_CALLBACK_PATH } from "@maple/backend/services/auth/SupabaseOAuthService"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export const LINEAR_CALLBACK_PATH = "/api/integrations/linear/callback"
 export const GITHUB_CALLBACK_PATH = "/api/integrations/github/callback"
@@ -75,14 +77,14 @@ export const renderCallbackPage = (params: {
 			: null
 	const blockedReturn = safeReturn === null && (params.returnTo ?? "").length > 0
 	const payload = escapeJsonInHtml(
-		JSON.stringify({
+		encodeJson({
 			type: params.messageType,
 			status: params.status,
 			message: params.message,
 		}),
 	)
 	// Quote + escape it so the origin can't break out of the inline <script>.
-	const targetOrigin = escapeJsonInHtml(JSON.stringify(params.targetOrigin))
+	const targetOrigin = escapeJsonInHtml(encodeJson(params.targetOrigin))
 	const isSuccess = params.status === "success"
 	const glyph = isSuccess
 		? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg>`

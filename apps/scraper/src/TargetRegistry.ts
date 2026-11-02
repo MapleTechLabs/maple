@@ -48,7 +48,8 @@ export class TargetRegistry extends Context.Service<TargetRegistry, TargetRegist
 				const distinct = Array.from(groups.values()).reduce((total, group) => total + group.length, 0)
 				const duplicates = list.length - distinct
 				yield* Ref.set(targets, groups)
-				yield* Ref.set(lastRefreshAt, yield* Clock.currentTimeMillis)
+				const refreshedAt = yield* Clock.currentTimeMillis
+				yield* Ref.set(lastRefreshAt, refreshedAt)
 				yield* Effect.annotateCurrentSpan("maple.scraper.duplicate_targets_dropped", duplicates)
 				if (duplicates > 0) {
 					yield* Effect.logWarning("Dropped duplicate scrape targets sharing one key").pipe(

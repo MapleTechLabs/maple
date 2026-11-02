@@ -197,7 +197,9 @@ const decodeBase64Url = (input: string): string => {
 	return Buffer.from(padded, "base64").toString("utf8")
 }
 
-const encodeBase64Url = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url")
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+const encodeBase64Url = (value: unknown): string => Buffer.from(encodeJson(value)).toString("base64url")
 
 const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSessionToken")(function* (
 	token: string,

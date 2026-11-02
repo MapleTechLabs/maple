@@ -119,8 +119,10 @@ type ToolFailure = typeof ToolFailure.Type
 
 const answer = (effect: Effect.Effect<SourceOutput, SourceReadError>) =>
 	effect.pipe(
-		Effect.map(render),
-		Effect.mapError((error): ToolFailure => ({ message: error.message })),
+		Effect.mapBoth({
+			onSuccess: render,
+			onFailure: (error): ToolFailure => ({ message: error.message }),
+		}),
 	)
 
 /**

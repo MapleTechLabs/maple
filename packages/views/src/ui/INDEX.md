@@ -41,7 +41,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/confirm-dialog.ts` `confirmDialog`: Port of `ConfirmDialog` (packages/ui/src/components/ui/confirm-dialog.tsx) over the alert-dialog Submodel.
 - `packages/views/src/ui/context-menu-view.ts` `idleTrigger`, `view`: An entry of the menu: an item (with an optional shortcut) or a separator.
 - `packages/views/src/ui/context-menu.ts` `itemId`, `subItemId`, `subPopupId` (stateful: Model, init, update): Base UI `ContextMenu` (`@maple/ui/context-menu`): a right-click on the trigger opens a menu at the pointer (fixed, side right, align start, offset 4); arrows move the highlight,...
-- `packages/views/src/ui/copy-button.ts` `writeClipboard`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
+- `packages/views/src/ui/copy-button.ts` `writeClipboardApi`, `writeClipboard`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
 - `packages/views/src/ui/copyable-field.ts` `maskKey`, `copyableField`: Port of packages/ui/src/components/ui/copyable-field.tsx.
 - `packages/views/src/ui/delta.ts` `relativeChange`, `delta`: Port of packages/ui/src/components/ui/delta.tsx: change against a previous window.
 - `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailField`, `detailRailMetaRow`: Port of `DetailRail` (packages/ui/src/components/detail-rail.tsx): Group, Row and Field.

@@ -63,22 +63,21 @@ export class RuntimeReleaseCatalog extends Context.Service<RuntimeReleaseCatalog
 					.pipe(
 						Effect.flatMap(HttpClientResponse.schemaBodyJson(EndoflifeProduct)),
 						Effect.timeout(REQUEST_TIMEOUT),
-						Effect.map((body): ReadonlyArray<RuntimeRelease> =>
-							body.result.releases.map((release) => ({
-								cycle: release.name,
-								isEol: release.isEol === true,
-								eolFrom: release.eolFrom,
-								latest: release.latest?.name ?? null,
-							})),
-						),
-						Effect.mapError(
-							(cause) =>
+						Effect.mapBoth({
+							onSuccess: (body): ReadonlyArray<RuntimeRelease> =>
+								body.result.releases.map((release) => ({
+									cycle: release.name,
+									isEol: release.isEol === true,
+									eolFrom: release.eolFrom,
+									latest: release.latest?.name ?? null,
+								})),
+							onFailure: (cause) =>
 								new RuntimeReleaseCatalogError({
 									message: `endoflife.date read failed for ${product}`,
 									product,
 									cause,
 								}),
-						),
+						}),
 						Effect.withSpan("endoflife.request", {
 							kind: "client",
 							attributes: {

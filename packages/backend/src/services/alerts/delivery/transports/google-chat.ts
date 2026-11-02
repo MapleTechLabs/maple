@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
 	alertAccentColor,
@@ -10,6 +10,8 @@ import {
 	truncate,
 } from "../../alert-formatting"
 import type { HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Config = SecretConfigOf<"google-chat">
 
@@ -139,7 +141,7 @@ export const googleChatTransport: HttpTransport<Config> = {
 		// the span never records, so the path (a space id) is safe to annotate.
 		guarded: true,
 		sensitivePath: false,
-		body: JSON.stringify(buildGoogleChatMessage(input)),
+		body: encodeJson(buildGoogleChatMessage(input)),
 	}),
 	describeStatus: (status) => {
 		if (status === 401 || status === 403) {

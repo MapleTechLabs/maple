@@ -29,7 +29,8 @@ export class CancellationReader extends Context.Service<CancellationReader, Canc
 	"@maple/backend/cancellation-review/CancellationReader",
 	{
 		make: Effect.gen(function* () {
-			const binding = Option.flatten(yield* Effect.serviceOption(AiWorkerFetcher))
+			const fetcher = yield* Effect.serviceOption(AiWorkerFetcher)
+			const binding = Option.flatten(fetcher)
 			const token = Option.map((yield* Env).INTERNAL_SERVICE_TOKEN, Redacted.value)
 			if (Option.isNone(binding) || Option.isNone(token)) {
 				return { read: () => Effect.succeed(null) } satisfies CancellationReaderApi

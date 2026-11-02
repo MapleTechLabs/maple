@@ -22,9 +22,17 @@ export type LabShellFlags = typeof LabShellFlags.Type
 const Claims = Schema.fromJsonString(Schema.Struct({ org_id: Schema.String }))
 const decodeClaims = Schema.decodeUnknownOption(Claims)
 
+export class LabTokenDecodeError extends Schema.TaggedError<LabTokenDecodeError>()(
+	"@maple/web/lab/LabTokenDecodeError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** The org of the stored self-hosted token, read from its claims. */
 const orgOfToken = (token: string): Effect.Effect<Option.Option<string>> =>
-	Effect.try(() => atob((token.split(".")[1] ?? "").replaceAll("-", "+").replaceAll("_", "/"))).pipe(
+	Effect.try({
+		try: () => atob((token.split(".")[1] ?? "").replaceAll("-", "+").replaceAll("_", "/")),
+		catch: (cause) => new LabTokenDecodeError({ message: "The stored token is not base64url", cause }),
+	}).pipe(
 		Effect.map((json) => Option.map(decodeClaims(json), (claims) => claims.org_id)),
 		Effect.orElseSucceed(() => Option.none()),
 	)

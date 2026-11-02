@@ -178,6 +178,17 @@ export const makeAlertRulePersistence = (options: {
 		const normalized = yield* normalizeRule(orgId, request)
 		const ruleId = existingId ?? normalized.id
 		const timestamp = yield* runtime.now
+		const groupByJson =
+			normalized.groupBy != null
+				? yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(normalized.groupBy).pipe(
+						Effect.mapError(
+							() =>
+								new AlertPersistenceError({
+									message: "Alert rule group-by could not be encoded",
+								}),
+						),
+					)
+				: null
 		const ruleFields = {
 			name: normalized.name,
 			notes: normalizeOptionalString(request.notes),
@@ -189,7 +200,7 @@ export const makeAlertRulePersistence = (options: {
 				normalized.excludeServiceNames.length > 0 ? normalized.excludeServiceNames : null,
 			environmentsJson: normalized.environments.length > 0 ? normalized.environments : null,
 			tagsJson: normalized.tags.length > 0 ? normalized.tags : null,
-			groupBy: normalized.groupBy != null ? JSON.stringify(normalized.groupBy) : null,
+			groupBy: groupByJson,
 			signalType: normalized.signalType,
 			comparator: normalized.comparator,
 			threshold: normalized.threshold,

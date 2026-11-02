@@ -3,6 +3,8 @@ import { dirname, resolve } from "node:path"
 import { Schema } from "effect"
 import { MapleCloudEventSchema, SignalProjectionSpecSchema, SignalScalarSchema } from "../src/model"
 
+const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+
 const root = resolve(import.meta.dirname, "..")
 const check = process.argv.includes("--check")
 
@@ -42,7 +44,7 @@ for (const entry of documents) {
 					...document.schema,
 					$defs: document.definitions,
 				}
-	const serialized = `${JSON.stringify(schemaDocument, null, "\t")}\n`
+	const serialized = `${encodeJsonTabbed(schemaDocument)}\n`
 	const path = resolve(root, entry.path)
 	if (check) {
 		if (!existsSync(path) || readFileSync(path, "utf8") !== serialized) {

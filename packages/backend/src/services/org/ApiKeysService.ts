@@ -134,6 +134,7 @@ const readKeyRoleMetadata = (metadata: unknown): Option.Option<KeyRoleMetadata> 
 }
 
 const decodeApiKeyIdSync = Schema.decodeUnknownSync(ApiKeyId)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const toPersistenceError = (error: unknown) =>
 	new ApiKeyPersistenceError({
@@ -389,7 +390,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 					$.kind.eq("device"),
 					$.revoked.eq(false),
 					PG.sql
-						.cond`${$.metadataJson} @> ${JSON.stringify({ source: WIDGET_DEVICE_KEY_SOURCE, deviceId })}::jsonb`,
+						.cond`${$.metadataJson} @> ${encodeJson({ source: WIDGET_DEVICE_KEY_SOURCE, deviceId })}::jsonb`,
 				]
 
 			/**
@@ -629,7 +630,10 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				// Lost the claim: either the key never existed (404) or it was already
 				// revoked, in which case the stored row — not a freshly stamped copy —
 				// is the truth to report back.
-				if (revokedRows.length === 0) return rowToResponse(yield* requireById(orgId, keyId))
+				if (revokedRows.length === 0) {
+					const stored = yield* requireById(orgId, keyId)
+					return rowToResponse(stored)
+				}
 
 				return rowToResponse(revokedRows[0], readTxid(revokedRows))
 			})
@@ -669,8 +673,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 					keyId: row.value.id,
 					name: row.value.name,
 					kind: row.value.kind,
-					metadataJson:
-						row.value.metadataJson == null ? null : JSON.stringify(row.value.metadataJson),
+					metadataJson: row.value.metadataJson == null ? null : encodeJson(row.value.metadataJson),
 					scopes: row.value.scopes ?? null,
 					roles: roleMetadata.value.roles,
 					cliManaged: roleMetadata.value.cliManaged,

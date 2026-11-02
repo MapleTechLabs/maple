@@ -3,6 +3,7 @@ import { Command, Dom, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import * as AttributesPanel from "../attributes/attributes-panel"
+import { writeClipboardApi } from "../copy-button"
 import { buildLogJsonPayload } from "./log-row-expanded"
 import { LogRowView } from "./log-row-view"
 import { Message, type NavigationKey, VirtualRow } from "./logs-stream-message"
@@ -112,7 +113,7 @@ export const WriteLogJson = Command.define("WriteLogJson", {
 	args: { text: Schema.String, generation: Schema.Number },
 	messages: [Message.SucceededCopyJson, Message.FailedCopyJson],
 	execute: ({ text, generation }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
+		writeClipboardApi(text).pipe(
 			Effect.as(Message.SucceededCopyJson({ generation })),
 			Effect.orElseSucceed(() => Message.FailedCopyJson({ generation })),
 		),

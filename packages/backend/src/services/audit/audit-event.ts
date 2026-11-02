@@ -35,6 +35,7 @@ export class AuditLogEvent extends Schema.Class<AuditLogEvent>("AuditLogEvent")(
 
 export const decodeAuditLogEvent = Schema.decodeUnknownEffect(AuditLogEvent)
 export const encodeAuditLogEventSync = Schema.encodeSync(AuditLogEvent)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * One stored audit entry, as the service hands it to readers. Absent values are
@@ -85,8 +86,8 @@ export const auditEventToRow = (event: AuditLogEvent, recordedAtMs: number): Aud
 	ResourceType: event.resourceType ?? "",
 	ResourceId: event.resourceId ?? "",
 	ChangedFields: event.changes === undefined ? [] : [...event.changes.fields],
-	Changes: event.changes === undefined ? "" : JSON.stringify(event.changes),
-	Metadata: event.metadata === undefined ? "" : JSON.stringify(event.metadata),
+	Changes: event.changes === undefined ? "" : encodeJson(event.changes),
+	Metadata: event.metadata === undefined ? "" : encodeJson(event.metadata),
 	RequestId: event.requestId ?? "",
 	OriginIp: event.originIp ?? "",
 	OriginCountry: event.originCountry ?? "",

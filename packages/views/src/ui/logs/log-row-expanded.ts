@@ -1,6 +1,6 @@
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AttributesPanel from "../attributes/attributes-panel"
 import { capForDisplay, prettyJson } from "../../lib/display-text"
@@ -11,26 +11,24 @@ import { highlightedText } from "./highlight"
 import { truncationNote } from "./log-message"
 import type { LogRecord } from "./log-row-view"
 
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 // An expanded log row: the full body on a
 // severity-coloured edge, Details and JSON actions, then every attribute.
 
 /** The log as the Raw panel and the JSON copy show it. */
 export const buildLogJsonPayload = (log: LogRecord): string =>
-	JSON.stringify(
-		{
-			timestamp: log.timestamp,
-			severityText: log.severityText,
-			severityNumber: log.severityNumber,
-			serviceName: log.serviceName,
-			body: log.body,
-			traceId: log.traceId || undefined,
-			spanId: log.spanId || undefined,
-			logAttributes: log.logAttributes,
-			resourceAttributes: log.resourceAttributes,
-		},
-		null,
-		2,
-	)
+	encodePrettyJson({
+		timestamp: log.timestamp,
+		severityText: log.severityText,
+		severityNumber: log.severityNumber,
+		serviceName: log.serviceName,
+		body: log.body,
+		traceId: log.traceId || undefined,
+		spanId: log.spanId || undefined,
+		logAttributes: log.logAttributes,
+		resourceAttributes: log.resourceAttributes,
+	})
 
 /** Stack frames (`at …`, `File "…"`) read as context under the message line. */
 const FRAME = /^\s+(at |File "|from )/

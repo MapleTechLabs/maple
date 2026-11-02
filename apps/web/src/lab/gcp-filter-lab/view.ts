@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import { gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -5,6 +6,8 @@ import type { Message as IntegrationsMessage } from "../../page/integrations/mes
 import { filterField } from "../../page/integrations/view-gcp-configure-filter"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { Message, type Model, type Scenario, SCENARIOS, type ScenarioState } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type H = HtmlBuilder<Message>
 
@@ -51,9 +54,7 @@ const scenarioView = (h: H, scenario: Scenario, state: ScenarioState, index: num
 				[
 					"application_logs:",
 					" ",
-					applicationLogs === undefined
-						? "omitted (keep the filter)"
-						: JSON.stringify(applicationLogs),
+					applicationLogs === undefined ? "omitted (keep the filter)" : encodeJson(applicationLogs),
 				],
 			),
 		],

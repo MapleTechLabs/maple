@@ -1,5 +1,9 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import { Option, Schema } from "effect"
 import { snapTimestamp } from "./time-range"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 /** How a leaf string is treated: snapped to the 15s grid, or dropped entirely. */
 type TimestampMode = "snap" | "drop"
@@ -41,7 +45,7 @@ function normalizeForKey(value: unknown): unknown {
 
 export function encodeKey(value: unknown): string {
 	const normalized = normalizeForKey(value)
-	return JSON.stringify(normalized === undefined ? null : normalized)
+	return encodeJson(normalized === undefined ? null : normalized)
 }
 
 /**
@@ -94,15 +98,11 @@ export function identityFromKey(key: string): string {
 	const orgPrefix = separatorIndex === -1 ? "" : key.slice(0, separatorIndex)
 	const payload = orgScopedKeyPayload(key)
 
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(payload)
-	} catch {
-		// Not decodable — fall back to the key itself. Identity stays correct
-		// (never over-shares), it just can't match across windows.
-		return key
-	}
+	const parsed = decodeJson(payload)
+	// Not decodable: fall back to the key itself. Identity stays correct
+	// (never over-shares), it just can't match across windows.
+	if (Option.isNone(parsed)) return key
 
-	const stripped = normalize(parsed, "drop")
-	return `${orgPrefix}${ORG_KEY_SEPARATOR}${JSON.stringify(stripped === DROPPED ? null : stripped)}`
+	const stripped = normalize(parsed.value, "drop")
+	return `${orgPrefix}${ORG_KEY_SEPARATOR}${encodeJson(stripped === DROPPED ? null : stripped)}`
 }

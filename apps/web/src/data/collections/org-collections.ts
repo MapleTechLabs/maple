@@ -7,6 +7,7 @@ import {
 	Layer,
 	ManagedRuntime,
 	Option,
+	Schema,
 	type Scope,
 	Stream,
 	SubscriptionRef,
@@ -27,6 +28,11 @@ import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 
 /** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
 const CLEANUP_FALLBACK = Duration.seconds(30)
+
+export class CollectionCleanupError extends Schema.TaggedError<CollectionCleanupError>()(
+	"@maple/web/collections/CollectionCleanupError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
 
 /** `syncProxyUrl` (`shape-fetch.ts`): the authenticating shape proxy, never Electric itself. */
 const syncProxyUrl = `${electricSyncBaseUrl}/api/sync/shape`
@@ -172,7 +178,13 @@ const cleanupWhenIdle = (collection: SyncedCollection): Effect.Effect<void> =>
 		return Effect.sync(off)
 	}).pipe(
 		Effect.timeoutOption(CLEANUP_FALLBACK),
-		Effect.andThen(Effect.tryPromise(() => collection.cleanup())),
+		Effect.andThen(
+			Effect.tryPromise({
+				try: () => collection.cleanup(),
+				catch: (cause) =>
+					new CollectionCleanupError({ message: "Could not clean up the collection", cause }),
+			}),
+		),
 		Effect.ignore,
 	)
 
@@ -227,7 +239,8 @@ function makeOrgCollections(): Effect.Effect<
 > {
 	return Effect.gen(function* () {
 		const scope = yield* Effect.scope
-		const fetchClient = makeSyncFetch(yield* Effect.context<SessionBearer>())
+		const bearerContext = yield* Effect.context<SessionBearer>()
+		const fetchClient = makeSyncFetch(bearerContext)
 		const client = yield* MapleApiV2Client
 		// Collection handlers and backoff logs run here; none of Maple's collections need services.
 		const runtime = yield* Effect.acquireRelease(

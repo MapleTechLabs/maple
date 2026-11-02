@@ -6,7 +6,9 @@
 import { createRequire } from "node:module"
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { Schema } from "effect"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const alchemy = realpathSync("node_modules/alchemy")
 const cloudflare = realpathSync("node_modules/@alchemy.run/cloudflare")
 // Resolved through alchemy's own dependencies, the copy the deploy bundles with.
@@ -55,7 +57,7 @@ const build = await rolldown({
 						dynamic: info?.dynamicallyImportedIds ?? [],
 					}
 				}
-				this.emitFile({ type: "asset", fileName: "import-graph.json", source: JSON.stringify(graph) })
+				this.emitFile({ type: "asset", fileName: "import-graph.json", source: encodeJson(graph) })
 			},
 		},
 	],

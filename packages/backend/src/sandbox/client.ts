@@ -38,7 +38,8 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 	"@maple/backend/sandbox/SandboxClient",
 	{
 		make: Effect.gen(function* () {
-			const binding = Option.flatten(yield* Effect.serviceOption(SandboxFetcher))
+			const bindingOption = yield* Effect.serviceOption(SandboxFetcher)
+			const binding = Option.flatten(bindingOption)
 			const config = yield* Env
 			const token = Option.map(config.SANDBOX_INTERNAL_SERVICE_TOKEN, Redacted.value)
 
@@ -80,11 +81,10 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 				const body = yield* response.json.pipe(
 					Effect.mapError(toClientError("the sandbox worker returned invalid JSON")),
 				)
-				return Option.some(
-					yield* decodeResponse(body).pipe(
-						Effect.mapError(toClientError("the sandbox worker returned an unexpected payload")),
-					),
+				const decoded = yield* decodeResponse(body).pipe(
+					Effect.mapError(toClientError("the sandbox worker returned an unexpected payload")),
 				)
+				return Option.some(decoded)
 			})
 
 			return { exec } satisfies SandboxClientApi

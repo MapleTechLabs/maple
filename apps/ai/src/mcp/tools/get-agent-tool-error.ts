@@ -36,6 +36,7 @@ import { paddedWindowArgs } from "../lib/agent-sessions"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { formatNumber, tableCell } from "../lib/format"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 
@@ -232,7 +233,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 									? []
 									: [
 											doc.text(
-												`The read stops at ${output.sessionsCap} sessions, so more may have hit this group; its true count is the Sessions column of \`get_agent_tools_overview tool=${JSON.stringify(tool)}\`.`,
+												`The read stops at ${output.sessionsCap} sessions, so more may have hit this group; its true count is the Sessions column of \`get_agent_tools_overview tool=${stringifyJson(tool)}\`.`,
 											),
 										]),
 							]),
@@ -254,7 +255,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 									? []
 									: [
 											doc.text(
-												`The read stops at ${output.variantsCap} variants, so the group may have folded more; its true count is the Variants column of \`get_agent_tools_overview tool=${JSON.stringify(tool)}\`.`,
+												`The read stops at ${output.variantsCap} variants, so the group may have folded more; its true count is the Variants column of \`get_agent_tools_overview tool=${stringifyJson(tool)}\`.`,
 											),
 										]),
 							]),

@@ -46,7 +46,8 @@ export interface ChatSessionNamespace {
  */
 const aiScriptName = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return ""
-	const { stage, region } = yield* parseMapleDeploymentEffect(yield* Stage)
+	const rawStage = yield* Stage
+	const { stage, region } = yield* parseMapleDeploymentEffect(rawStage)
 	return resolveWorkerName("ai", stage, region)
 	// The root stack parses the same stage first and fails typed there.
 }).pipe(Effect.orDie)

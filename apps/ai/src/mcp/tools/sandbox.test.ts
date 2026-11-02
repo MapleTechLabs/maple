@@ -88,9 +88,7 @@ const ok = (stdout: string, exitCode = 0, stderr = ""): SandboxCommandResult => 
 
 const call = (name: string, params: SandboxToolParams, service: Partial<RepoSandboxServiceApi>) =>
 	tools.get(name)!(params).pipe(
-		Effect.provide(
-			Layer.mergeAll(tenant, Layer.succeed(RepoSandboxService, service as RepoSandboxServiceApi)),
-		),
+		Effect.provide([tenant, Layer.succeed(RepoSandboxService, service as RepoSandboxServiceApi)]),
 	)
 
 /** The failure a call ended with. */

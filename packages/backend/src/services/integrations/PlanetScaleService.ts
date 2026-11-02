@@ -743,7 +743,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 												database: row.name,
 												error: summarizeCause(cause),
 											}),
-											Effect.map(() => 0),
+											Effect.as(0),
 										),
 							),
 						),
@@ -779,7 +779,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 										orgId: connection.orgId,
 										error: summarizeCause(cause),
 									}),
-									Effect.map(() => 0),
+									Effect.as(0),
 								),
 					),
 				)

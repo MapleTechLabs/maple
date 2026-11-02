@@ -105,7 +105,8 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 				"maple.integrations.unhealthy": inventory.integrations.filter((i) => i.status !== "healthy")
 					.length,
 			})
-			return toStructured(inventory, provider, yield* Clock.currentTimeMillis)
+			const now = yield* Clock.currentTimeMillis
+			return toStructured(inventory, provider, now)
 		}),
 		render: (output) => {
 			const filter = output.providerFilter

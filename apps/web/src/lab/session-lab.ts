@@ -17,6 +17,8 @@ import { sessionHeader } from "../page/agent-sessions/session/view-header"
 import type { Resources } from "../platform/resources"
 import { urlToAppRoute } from "../route"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 // The session page driven by a fixture, for `/lab/agent-session` and `/lab/bench/agent-transcript`:
 // the spans stand in for the warehouse, the lab's state for the URL.
 
@@ -41,7 +43,7 @@ export const toWire = (
 	spans: ReadonlyArray<AiSessionSpan>,
 	sessionId: string,
 ): ReadonlyArray<AiSessionSpan> =>
-	spans.flatMap((span) => Option.toArray(decodeSpan(JSON.stringify({ ...span, sessionId }))))
+	spans.flatMap((span) => Option.toArray(decodeSpan(encodeJson({ ...span, sessionId }))))
 
 /**
  * The page's navigations land as the route change the shell would deliver: only the view and the
@@ -58,7 +60,11 @@ const followNavigation = (
 		onSome: (next) => {
 			if (next._tag !== "AgentSession") return { session, commands: [] }
 			const search = { ...session.search, view: next.search.view, span: next.search.span }
-			const changed = sessionRouteChanged(session, { sessionId: session.sessionId, search }, contextOf(timeZone))
+			const changed = sessionRouteChanged(
+				session,
+				{ sessionId: session.sessionId, search },
+				contextOf(timeZone),
+			)
 			return { session: changed.model, commands: withoutReads(changed.commands) }
 		},
 	})

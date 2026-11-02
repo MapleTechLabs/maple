@@ -1,6 +1,6 @@
 import type { StatusPageComponentId } from "@maple/domain"
 import type { V2StatusPageComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
-import { Option, Result } from "effect"
+import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -41,6 +41,8 @@ import {
 	type Return,
 	toast,
 } from "./reads"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Components in the side panel: saved as you go, removed behind a confirm, moved in the list,
 // and added from the same checklist the builder uses.
@@ -84,7 +86,7 @@ export const changeComponent = (model: Model, field: ComponentTextField, value: 
 })
 
 const isSame = (form: ComponentForm, component: V2StatusPageComponent): boolean =>
-	JSON.stringify(componentPayload(form)) === JSON.stringify(componentPayload(componentFormOf(component)))
+	encodeJson(componentPayload(form)) === encodeJson(componentPayload(componentFormOf(component)))
 
 /** Saves the form when it differs from the component; a save in flight re-commits when it lands. */
 export const commitComponent = (model: Model): Return => {

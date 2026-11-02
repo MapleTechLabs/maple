@@ -28,7 +28,8 @@ const parseDependency = (entry: string): { readonly name: string; readonly versi
 }
 
 export const parseCargoLock = Effect.fn("lockfiles.parseCargoLock")(function* (input: LockfileInput) {
-	const lock = yield* decodeUnknown(CargoLock, input.path, yield* parseTomlText(input.path, input.content))
+	const toml = yield* parseTomlText(input.path, input.content)
+	const lock = yield* decodeUnknown(CargoLock, input.path, toml)
 	const all = lock.package ?? []
 	const members = all.filter((p) => p.source === undefined)
 	const directDeps = members.flatMap((m) => (m.dependencies ?? []).map(parseDependency))

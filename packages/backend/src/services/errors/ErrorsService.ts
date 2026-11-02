@@ -267,7 +267,8 @@ const make: Effect.Effect<
 	const dispatcher = yield* NotificationDispatcher
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
-	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
+	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
+	const chatSessions = Option.getOrUndefined(chatSessionsOption)
 
 	const newErrorIssueId = () => decodeErrorIssueIdSync(randomUUID())
 	const newErrorIncidentId = () => decodeErrorIncidentIdSync(randomUUID())

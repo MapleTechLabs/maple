@@ -149,7 +149,7 @@ To use the same stack for hosted deploys, also pass `ingestKey` (or `endpoint`):
 
 The first run downloads the chDB library Maple pins (the same release the `maple` CLI ships), verifies its checksum and caches it in `~/.maple/cache/libchdb` (about 330 MB, shared across projects). Set `MAPLE_LIBCHDB` to point at a copy you already have. Run `alchemy dev` with Bun, on macOS or Linux.
 
-Stopping `alchemy dev` always closes the store cleanly, even when the terminal closes or the process is killed. The store is only left unclean if the server process itself dies (out of memory, power loss). Reopening it then could crash chDB, so it is refused; set `onDirtyStore: "wipe"` to start fresh.
+Maple Local closes its store on exits observed by the JavaScript runtime, including another handler calling `process.exit()` before Alchemy finishes teardown. A death the runtime cannot observe (SIGKILL of the sidecar itself, an OOM kill, or power loss) can still leave the store unclean. Reopening it could crash chDB, so it is refused; set `onDirtyStore: "wipe"` to start fresh. A sharing session that encounters a dirty store during takeover logs the refusal and recovery instructions once, then stops trying to take over.
 
 ## Add alerts and dashboards
 

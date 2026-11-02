@@ -501,8 +501,10 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						streamSecretHash: null,
 					}),
 				}
-				if (Object.keys(changes).length === 0)
-					return connectionOf(yield* selectRow(orgId, connectionId))
+				if (Object.keys(changes).length === 0) {
+					const current = yield* selectRow(orgId, connectionId)
+					return connectionOf(current)
+				}
 				const [row] = yield* dbExecute((db) =>
 					db.run(
 						PG.update(AwsConnections)
