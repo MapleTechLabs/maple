@@ -22,7 +22,6 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget } from "../kit/widget-data"
-import { dataStateOf } from "../kit/data-state"
 import { FetchAutocomplete, FetchVariableOptions, FetchWidget, ReadClock } from "./command"
 import { planOptionRequests, planVariablesOf } from "../kit/variables"
 import type { EditorState } from "./editor-state"
@@ -131,7 +130,11 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 		pointsMode: state.pointsMode,
 		markdownContent: state.markdownContent,
 		// The funnel's view and step labels are presentation too; its steps stay staged.
-		funnel: { ...model.staged.funnel, variant: state.funnel.variant, showStepPercent: state.funnel.showStepPercent },
+		funnel: {
+			...model.staged.funnel,
+			variant: state.funnel.variant,
+			showStepPercent: state.funnel.showStepPercent,
+		},
 		queries: listPreviewQueries(model.staged.queries, state, model.staged, widget),
 	}
 	return {
@@ -192,7 +195,13 @@ const planWidgetPreview = (model: Model, context: PageContext): Return => {
 	const options = planOptionRequests(context.orgId, definitions, model.variableOptions, window, "Load")
 	const variables = planVariablesOf(context.orgId, definitions, {}, options.slots, window)
 	const optionCommands = options.requests.map((request) => FetchVariableOptions(request))
-	const planned = planWidgetGates({ ...model, variableOptions: options.slots }, context, widget, window, variables)
+	const planned = planWidgetGates(
+		{ ...model, variableOptions: options.slots },
+		context,
+		widget,
+		window,
+		variables,
+	)
 	return { model: planned.model, commands: [...optionCommands, ...planned.commands] }
 }
 
@@ -213,13 +222,10 @@ const planWidgetGates = (
 		variables,
 	})
 	const asked = ask({ model: { ...model, gate }, commands: [] }, gate)
-	// `StatSparklineLoader`: the trend is asked for once the stat itself has its value.
+	// `StatSparklineLoader`: the trend is asked for beside the stat; it does not read the stat's value.
 	const sparkline = widget.display.sparkline
 	const sparkGate =
-		panel === "stat" &&
-		sparkline?.enabled === true &&
-		sparkline.dataSource !== undefined &&
-		dataStateOf(asked.model.requests, widget, gate)._tag === "Ready"
+		panel === "stat" && sparkline?.enabled === true && sparkline.dataSource !== undefined
 			? planWidget({
 					orgId: context.orgId,
 					dataSource: sparkline.dataSource,
@@ -233,7 +239,6 @@ const planWidgetGates = (
 }
 
 type Planned = Readonly<{ model: Model; commands: ReadonlyArray<ReturnType<typeof FetchWidget>> }>
-
 
 /** A gate's request asked for unless its key is already held. */
 const ask = (planned: Planned, gate: Model["gate"]): Planned => {
@@ -270,7 +275,11 @@ export const receiveDocument = (
 			const opened =
 				model.rawSql === null
 					? openedSource(model, widget)
-					: { sourceMode: model.sourceMode, initialSourceMode: model.initialSourceMode, sourceTabs: model.sourceTabs }
+					: {
+							sourceMode: model.sourceMode,
+							initialSourceMode: model.initialSourceMode,
+							sourceTabs: model.sourceTabs,
+						}
 			return planPreview(
 				{
 					...model,
@@ -321,7 +330,8 @@ export const editState = (
 export const isDirty = (model: Model): boolean =>
 	model.sourceMode !== model.initialSourceMode ||
 	JSON.stringify(model.state) !== JSON.stringify(model.initial) ||
-	(model.sourceMode === "rawSql" && JSON.stringify(model.rawSql?.draft) !== JSON.stringify(model.rawSql?.initial))
+	(model.sourceMode === "rawSql" &&
+		JSON.stringify(model.rawSql?.draft) !== JSON.stringify(model.rawSql?.initial))
 
 export const navigate = (model: Model, url: string): Return => ({
 	model,
@@ -379,7 +389,11 @@ export const autoIntervalLabel = (model: Model, timeZone: string): string => {
 /** The provider's window: the board's range, snapped, once the editor took focus. */
 export const autocompleteWindowOf = (model: Model, context: PageContext) => {
 	if (!model.isAutocompleteActive || model.timeRange === null || model.nowMs === null) return null
-	const window = resolveTimeRangeWindow(model.timeRange, { snap: true, timeZone: context.timeZone, nowMs: model.nowMs })
+	const window = resolveTimeRangeWindow(model.timeRange, {
+		snap: true,
+		timeZone: context.timeZone,
+		nowMs: model.nowMs,
+	})
 	return window === null ? null : { startTime: window.startTime, endTime: window.endTime }
 }
 
@@ -390,7 +404,10 @@ export const requestAutocomplete = (model: Model, context: PageContext): Return 
 	return AUTOCOMPLETE_LOOKUPS.reduce<Return>(
 		(step, lookup) => {
 			// The suggestions already asked for these names over this window: read them once.
-			if (lookup === "productEventNames" && step.model.suggestions.eventNames?.key === eventNamesKeyOf(context.orgId, range))
+			if (
+				lookup === "productEventNames" &&
+				step.model.suggestions.eventNames?.key === eventNamesKeyOf(context.orgId, range)
+			)
 				return step
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, range)
 			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {

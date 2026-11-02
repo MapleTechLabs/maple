@@ -13,6 +13,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
@@ -22,6 +23,10 @@ import * as Select from "@maple/views/ui/select"
 
 export const StatusFilter = Schema.Literals(["open", "dismissed", "accepted_risk", "fixed", "all"])
 export type StatusFilter = typeof StatusFilter.Type
+
+/** The scope's main view (the matrix, or a repository's upgrade plan), the repositories, or the advisories. */
+export const Pane = Schema.Literals(["summary", "repositories", "advisories"])
+export type Pane = typeof Pane.Type
 
 /** A scan someone asked for: polled until the repository's latest scan is a newer, finished one. */
 export const PendingScan = Schema.Struct({
@@ -38,7 +43,17 @@ export const Model = Schema.Struct({
 	repositories: KeyedSchema(DependencyScanRepositoriesResponse, LoadFailure),
 	findings: KeyedSchema(DependencyFindingsResponse, LoadFailure),
 	statusSelect: Select.Model,
-	repositorySelect: Select.Model,
+	/** The repository the URL scopes the page to; "all" for every one. */
+	scope: Schema.String,
+	/** The scope switcher: its items are "All repositories" and each repository's full name. */
+	repositoryBox: Combobox.Model,
+	pane: Pane,
+	/** Matrix rows opened to list the repositories that have the package. */
+	expandedPackages: Schema.Array(Schema.String),
+	/** Opened rows past their first page of repositories, showing every one. */
+	fullPackages: Schema.Array(Schema.String),
+	/** How many rows the repositories and advisories tables render. */
+	shownRows: Schema.Finite,
 	/** Repositories whose Scan now request is in flight. */
 	requestingScans: Schema.Array(VcsRepositoryId),
 	pendingScans: Schema.Array(PendingScan),
@@ -69,7 +84,10 @@ export const Message = defineMessageUnion({
 	},
 	TickedScanPoll: { nowMs: Schema.Finite },
 	GotStatusSelectMessage: { message: Select.Message },
-	GotRepositorySelectMessage: { message: Select.Message },
+	GotRepositoryBoxMessage: { message: Combobox.Message },
+	ClickedPackage: { key: Schema.String },
+	ClickedShowAllRepositories: { key: Schema.String },
+	ClickedShowMoreRows: {},
 	ClickedFinding: { findingId: DependencyFindingId },
 	/** An advisory link inside a row: it opens OSV, not the row's sheet. */
 	ClickedAdvisoryLink: {},

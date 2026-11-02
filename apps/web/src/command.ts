@@ -124,7 +124,7 @@ export const LoadCustomer = Command.define("LoadCustomer", {
 	messages: [Message.SucceededLoadCustomer, Message.FailedLoadCustomer],
 	execute: ({ orgId, refresh }) =>
 		Effect.gen(function* () {
-			const customer = yield* (yield* BillingCustomerCache).get({ refresh })
+			const customer = yield* (yield* BillingCustomerCache).get({ orgId, refresh })
 			return Message.SucceededLoadCustomer({ orgId, customer })
 		}).pipe(Effect.orElseSucceed(() => Message.FailedLoadCustomer({ orgId }))),
 })

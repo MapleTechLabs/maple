@@ -1,18 +1,18 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "@maple/views/ui/error-state"
+import { vstack } from "@maple/views/ui/stack"
 import type { PageViewInputs } from "../../contract"
 import { securityLayout } from "../kit/layout"
-import { focusedRepositoryOf, pageStateOf, scannedCount } from "./derive"
+import { focusedRepositoryOf, pageStateOf } from "./derive"
 import { Message, type Model } from "./model"
-import { repositoryBreakdown } from "./view-breakdown"
-import { findingsSection } from "./view-findings"
-import { repositoriesPanel } from "./view-repositories"
+import { allRepositoriesPane } from "./view-matrix"
+import { repositoryPane } from "./view-repository"
 import { findingSheet } from "./view-sheet"
-import { dependenciesLoading, firstScan, footnote, notConnected, severityRail } from "./view-states"
-import { vstack } from "@maple/views/ui/stack"
+import { dependenciesLoading, footnote, notConnected } from "./view-states"
 
-// The Dependencies tab inside the Security frame. No plan gate: it reads lockfiles.
+// The Dependencies tab inside the Security frame: a switcher scopes it to one repository or all of
+// them. No plan gate: it reads lockfiles.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -34,33 +34,14 @@ const body = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 			return [notConnected(h)]
 		case "Ready": {
 			const focused = focusedRepositoryOf(model)
-			return scannedCount(state.repositories) === 0
-				? [
-						firstScan(h, model, state.repositories),
-						repositoriesPanel(
-							h,
-							model,
-							state.repositories,
-							state.findings,
-							focused?.id ?? null,
-							clock,
-						),
-					]
-				: [
-						severityRail(h, state.findings, state.repositories, focused),
-						repositoriesPanel(
-							h,
-							model,
-							state.repositories,
-							state.findings,
-							focused?.id ?? null,
-							clock,
-						),
-						...(focused === null
-							? []
-							: [repositoryBreakdown(h, focused, state.findings, state.production)]),
-						vstack(h, { gap: "2" }, [findingsSection(h, model, state, clock), footnote(h)]),
-					]
+			return [
+				vstack(h, { gap: "4" }, [
+					...(focused === null
+						? allRepositoriesPane(h, model, state, clock)
+						: repositoryPane(h, model, { ...state, repository: focused }, clock)),
+					footnote(h),
+				]),
+			]
 		}
 	}
 }

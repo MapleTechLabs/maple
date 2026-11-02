@@ -13,12 +13,13 @@ import {
 	type as typeInto,
 	withViewInputs,
 } from "foldkit/scene"
+import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
 import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
 import { MeasureTimelineBody, MountAltToggle } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
-import { init, setSelectedSpanId, update } from "./update"
+import { barsOf, init, setSelectedSpanId, update } from "./update"
 import { view as timelineView } from "./view"
 import { attributeKeys } from "./view-chrome"
 
@@ -180,5 +181,23 @@ describe("trace timeline", () => {
 		expect(selected.model.selectedSpanId).toBe("00000000000000c1")
 		expect((selected.commands ?? []).map((command) => command.name)).toEqual(["ScrollTraceTimelineToRow"])
 		expect(setSelectedSpanId(selected.model, "00000000000000c1").commands).toBeUndefined()
+	})
+
+	test("bars are laid out depth-first once per tree, expansion and colour change", () => {
+		const model = entered()
+		const bars = barsOf(model)
+		expect(bars.map((bar) => bar.span.spanName)).toEqual([
+			"GET /order",
+			"GET /session",
+			"GET /charges",
+			"SELECT payments",
+		])
+		expect(barsOf({ ...model, viewport: { startMs: 0, endMs: 1 } })).toBe(bars)
+		const folded = update(model, Message.ClickedCollapseAll()).model
+		expect(barsOf(folded).map((bar) => bar.span.spanName)).toEqual(["GET /order"])
+	})
+
+	test("a render with an unchanged model reuses the minimap silhouette", () => {
+		Lazy.expectAllReused({ view, model: entered() })
 	})
 })
