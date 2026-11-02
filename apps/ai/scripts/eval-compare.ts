@@ -8,6 +8,7 @@
  */
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { Schema } from "effect"
 import { comparePaired } from "../src/evals/stats"
 import type { RunSummary } from "../src/evals/runner"
 
@@ -17,7 +18,11 @@ if (first === undefined || second === undefined) {
 	process.exit(2)
 }
 
-const load = (dir: string): RunSummary => JSON.parse(readFileSync(join(resolve(dir), "summary.json"), "utf8"))
+// summary.json is written by runSuite, so its shape is trusted rather than re-validated.
+const decodeSummary = Schema.decodeSync(Schema.fromJsonString(Schema.Any))
+
+const load = (dir: string): RunSummary =>
+	decodeSummary(readFileSync(join(resolve(dir), "summary.json"), "utf8"))
 
 const a = load(first)
 const b = load(second)

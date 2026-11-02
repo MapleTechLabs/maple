@@ -84,7 +84,8 @@ export function listLogs({ data }: { data: ListLogsInput }) {
 const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { data: ListLogsInput }) {
 	const input = yield* decodeInput(ListLogsInputSchema, data ?? {}, "listLogs")
 	const limit = input.limit ?? DEFAULT_LIMIT
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 
 	const logsResult = yield* runWarehouseQuery("listLogs", () =>
 		Effect.gen(function* () {
@@ -194,7 +195,8 @@ const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
 	data: ListLogsInput
 }) {
 	const input = yield* decodeInput(ListLogsInputSchema, data ?? {}, "getLogsCount")
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogsCount",
@@ -272,7 +274,8 @@ const getLogsFacetsEffect = Effect.fn("QueryEngine.getLogsFacets")(function* ({
 	data: GetLogsFacetsInput
 }) {
 	const input = yield* decodeInput(GetLogsFacetsInputSchema, data ?? {}, "getLogsFacets")
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogsFacets",
@@ -348,7 +351,8 @@ const getLogsFacetValuesEffect = Effect.fn("QueryEngine.getLogsFacetValues")(fun
 
 	yield* Effect.annotateCurrentSpan("facet", input.facet)
 
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogsFacetValues",
 		new QueryEngineExecuteRequest({
@@ -387,7 +391,8 @@ const getLogAttributeKeysEffect = Effect.fn("QueryEngine.getLogAttributeKeys")(f
 	data: GetLogAttributeKeysInput
 }) {
 	const input = yield* decodeInput(GetLogAttributeKeysInputSchema, data ?? {}, "getLogAttributeKeys")
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,

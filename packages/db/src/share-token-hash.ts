@@ -176,10 +176,13 @@ const AlertChartPayload = Schema.Tuple([
 	ChartBreachSide,
 ])
 
+// Claims are signed, so the encoding must stay plain `JSON.stringify` output.
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const decodeAlertChartPayload = Schema.decodeUnknownResult(Schema.fromJsonString(AlertChartPayload))
 
 const encodeAlertChartClaims = (claims: AlertChartClaims): string =>
-	JSON.stringify([
+	encodeJson([
 		claims.orgId,
 		claims.ruleId,
 		claims.groupKey,
@@ -266,7 +269,7 @@ const ChatChartPayload = Schema.Tuple([
 const decodeChatChartPayload = Schema.decodeUnknownResult(Schema.fromJsonString(ChatChartPayload))
 
 const encodeChatChartClaims = (claims: ChatChartClaims): string =>
-	JSON.stringify([claims.orgId, claims.sessionId, claims.messageId, claims.chartIndex])
+	encodeJson([claims.orgId, claims.sessionId, claims.messageId, claims.chartIndex])
 
 /**
  * The public, opaque id of a chart an agent drew inside a reply.

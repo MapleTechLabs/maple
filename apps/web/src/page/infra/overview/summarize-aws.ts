@@ -1,8 +1,11 @@
+import { Schema } from "effect"
 import { AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { countLabel } from "@maple/ui/lib/format"
 import type { FleetRead } from "../../infra-integrations/aws/data"
 import { type ResourceView, resourceViews, summaryOf } from "../../infra-integrations/aws/derive"
 import type { Finding, SourceSummary } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // `summarizeAws`: the /infra/aws page's health, as the overview's row and findings.
 
@@ -19,7 +22,7 @@ const PHRASE = new Map([
 ])
 
 const finding = (view: ResourceView, tone: "crit" | "warn"): Finding => ({
-	key: `aws:${view.kind}:${JSON.stringify(view.keys)}`,
+	key: `aws:${view.kind}:${encodeJson(view.keys)}`,
 	source: "aws",
 	tone,
 	subject: view.name,

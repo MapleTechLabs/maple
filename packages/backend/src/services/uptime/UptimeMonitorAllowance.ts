@@ -85,15 +85,15 @@ export class UptimeMonitorAllowance extends Context.Service<
 				).pipe(
 					Effect.flatMap(({ result }) => ensureOk(result)),
 					Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
-					Effect.map(uptimeMonitorLimit),
 					// With a key configured, billing being down is an outage, not a free plan.
-					Effect.mapError(
-						(error) =>
+					Effect.mapBoth({
+						onSuccess: uptimeMonitorLimit,
+						onFailure: (error) =>
 							new UptimeMonitorPersistenceError({
 								message: `Could not read the plan's uptime monitor allowance: ${error.message}`,
 								cause: error,
 							}),
-					),
+					}),
 				)
 				yield* Effect.annotateCurrentSpan(
 					"maple.uptime.monitor_limit",

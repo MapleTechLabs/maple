@@ -200,16 +200,20 @@ const decodeJson = <A>(text: string, schema: Schema.Decoder<A>) =>
 	)
 
 const JsonRow = Schema.Record(Schema.String, Schema.Unknown)
+const encodePrettyJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 const writeJsonFile = (path: string, value: unknown) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem
+		const text = yield* encodePrettyJson(value).pipe(
+			Effect.mapError((cause) => new BenchFileError({ path, op: "encode", message: String(cause) })),
+		)
 		yield* fs
 			.makeDirectory(dirname(resolve(path)), { recursive: true })
 			.pipe(
 				Effect.mapError((cause) => new BenchFileError({ path, op: "mkdir", message: String(cause) })),
 			)
 		yield* fs
-			.writeFileString(path, JSON.stringify(value, null, 2))
+			.writeFileString(path, text)
 			.pipe(
 				Effect.mapError((cause) => new BenchFileError({ path, op: "write", message: String(cause) })),
 			)
@@ -485,8 +489,6 @@ const BenchLive = Layer.mergeAll(BenchServicesLive, BunServices.layer)
 
 if (["catalog", "fetch"].includes(process.argv[2] ?? "")) {
 	Command.run(rootCommand, { version: "0.2.0" }).pipe(
-		// Application root: this is the one runtime boundary that owns the complete layer graph.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(BenchLive),
 		BunRuntime.runMain,
 	)

@@ -63,7 +63,8 @@ const listMetricsEffect = Effect.fn("QueryEngine.listMetrics")(function* ({
 	data: ListMetricsInput
 }) {
 	const input = yield* decodeInput(ListMetricsInputSchema, data ?? {}, "listMetrics")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 
 	const result = yield* runWarehouseQuery("listMetrics", () =>
 		Effect.gen(function* () {
@@ -120,7 +121,8 @@ const getMetricSparklinesEffect = Effect.fn("QueryEngine.getMetricSparklines")(f
 		return { data: [] as Array<{ metricName: string; points: MetricSparklinePoint[] }> }
 	}
 
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getMetricSparklines",
 		new QueryEngineExecuteRequest({
@@ -171,7 +173,8 @@ const getMetricsSummaryEffect = Effect.fn("QueryEngine.getMetricsSummary")(funct
 }) {
 	const input = yield* decodeInput(GetMetricsSummaryInputSchema, data ?? {}, "getMetricsSummary")
 
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQuery("metricsSummary", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -220,7 +223,8 @@ const getMetricAttributeKeysEffect = Effect.fn("QueryEngine.getMetricAttributeKe
 	data: GetMetricAttributeKeysInput
 }) {
 	const input = yield* decodeInput(GetMetricAttributeKeysInputSchema, data ?? {}, "getMetricAttributeKeys")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,
@@ -276,7 +280,8 @@ const getMetricAttributeValuesEffect = Effect.fn("QueryEngine.getMetricAttribute
 		return { data: [] }
 	}
 
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getMetricAttributeValues",
 		new QueryEngineExecuteRequest({

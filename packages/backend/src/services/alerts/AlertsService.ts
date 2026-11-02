@@ -183,6 +183,8 @@ import {
 import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 export { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 export type { AlertSchedulerLane } from "./AlertRuleModel"
 
@@ -643,7 +645,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			} = destinationDelivery
 			// Optional: present only inside a Worker isolate. Used to kick off the
 			// AI triage Workflow for issues created from freshly opened incidents.
-			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
+			const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
+			const chatSessions = Option.getOrUndefined(chatSessionsOption)
 			const now = runtime.now
 			const makeUuid = () => runtime.makeUuid()
 			const workerId = makeUuid()
@@ -750,7 +753,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				claim: RuleClaim,
 				rows: ReadonlyArray<AlertRuleStateRow>,
 			) {
-				const payload = JSON.stringify(
+				const payload = yield* encodeJson(
 					rows.map((row) => ({
 						org_id: row.orgId,
 						rule_id: row.ruleId,
@@ -767,7 +770,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						last_error_kind: row.lastErrorKind,
 						updated_at: msToSqlTimestamp(row.updatedAt),
 					})),
-				)
+				).pipe(Effect.mapError(makePersistenceError))
 				const result = yield* dbExecute((db) =>
 					db.query(
 						Orm.sql`
@@ -1078,8 +1081,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// An uptime rule observes its monitor, never the warehouse, and never skips:
 				// 1 while down, 0 otherwise. A monitor that is gone observes nothing.
 				if (rule.signalType === "uptime") {
+					const observedAt = yield* now
 					const observation = yield* uptimeAlerts
-						.observe(orgId, rule.id, yield* now)
+						.observe(orgId, rule.id, observedAt)
 						.pipe(Effect.mapError(makePersistenceError))
 					return Option.match(observation, {
 						onNone: () => [],
@@ -1098,7 +1102,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Snapped, not raw `now`: excludes the still-filling current minute and
 				// lets rules over the same signal share bucket reads within a tick. See
 				// `snapAlertWindowEndMs`. A scheduler tick passes its own.
-				const endMs = windowEndMs === undefined ? snapAlertWindowEndMs(yield* now) : windowEndMs
+				const endMs =
+					windowEndMs === undefined
+						? yield* now.pipe(Effect.map(snapAlertWindowEndMs))
+						: windowEndMs
 				const startMs = endMs - rule.windowMinutes * 60_000
 				const plan = rule.compiledPlan
 				const source = yield* planEvaluateSource(plan, rule)
@@ -1602,8 +1609,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				let evaluation: EvaluatedRule
 				if (normalized.serviceNames.length > 1) {
+					const serviceRules = yield* perServiceRules(normalized)
 					const results = yield* Effect.forEach(
-						yield* perServiceRules(normalized),
+						serviceRules,
 						({ rule }) =>
 							Effect.gen(function* () {
 								const observations = yield* evaluateRule(orgId, rule)
@@ -1698,7 +1706,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				rule: NormalizedRule,
 			) {
 				const probeLimitMs = alertQueryLimits(PREVIEW_RAW_INTERVAL_MINUTES).timeSeconds * 1000
-				const endMs = snapAlertWindowEndMs(yield* now)
+				const probeNow = yield* now
+				const endMs = snapAlertWindowEndMs(probeNow)
 				const source = yield* planEvaluateSource(rule.compiledPlan, {
 					windowMinutes: rule.windowMinutes,
 					evaluationIntervalMinutes: PREVIEW_RAW_INTERVAL_MINUTES,
@@ -1863,8 +1872,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				if (normalized.serviceNames.length > 1) {
 					// Mirror the scheduler's multi-service mode: independent per-service
 					// plans, groupKey = service name.
+					const serviceRules = yield* perServiceRules(normalized)
 					yield* Effect.forEach(
-						yield* perServiceRules(normalized),
+						serviceRules,
 						({ groupKey, rule }) =>
 							Effect.gen(function* () {
 								const observations = yield* queryEngine.evaluateSeries(systemTenant(orgId), {
@@ -2380,6 +2390,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)
 
 					const deliveryStart = yield* now
+					const payloadJson = yield* encodeJson(row.payloadJson).pipe(
+						Effect.mapError(
+							(cause) =>
+								new AlertDeliveryError({
+									message: "Stored delivery payload could not be encoded",
+									cause,
+								}),
+						),
+					)
 					const result = yield* dispatchDelivery(
 						{
 							deliveryKey: row.deliveryKey,
@@ -2438,11 +2457,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							),
 							sentAtMs: deliveryStart,
 						},
-						JSON.stringify(row.payloadJson),
+						payloadJson,
 					)
+					const deliveryEnd = yield* now
 					yield* Metric.update(
 						AlertingMetrics.deliveryAttemptDurationMs,
-						(yield* now) - deliveryStart,
+						deliveryEnd - deliveryStart,
 					)
 					yield* Metric.update(AlertingMetrics.deliveriesSucceededTotal, 1)
 
@@ -2600,13 +2620,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const incident = row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
 					const ruleRow = ruleMap.get(row.ruleId) ?? null
 					// Best effort per line: one unreadable payload must not sink the whole digest.
-					const payloadRule = Option.getOrUndefined(
-						yield* Effect.option(parseDeliveryPayload(row.payloadJson)),
-					)?.rule
+					const parsedPayload = yield* Effect.option(parseDeliveryPayload(row.payloadJson))
+					const payloadRule = Option.getOrUndefined(parsedPayload)?.rule
 					const storedRule =
 						ruleRow === null
 							? null
-							: Option.getOrNull(yield* Effect.option(decodeStoredAlertRuleMetadata(ruleRow)))
+							: yield* Effect.option(decodeStoredAlertRuleMetadata(ruleRow)).pipe(
+									Effect.map(Option.getOrNull),
+								)
 					const groupKey = incident?.groupKey ?? payloadRule?.groupKey ?? null
 					return {
 						ruleName: ruleRow?.name ?? payloadRule?.name ?? "Alert",
@@ -2827,11 +2848,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			) {
 				yield* Effect.annotateCurrentSpan("maple.alerting.triages_pending", pending.length)
 				// One admission permit per org keeps the daily quota exact under concurrency.
-				const admissions = new Map(
-					yield* Effect.forEach(Arr.dedupe(Arr.map(pending, (triage) => triage.orgId)), (orgId) =>
-						Effect.map(Semaphore.make(1), (admission) => [orgId, admission] as const),
-					),
+				const admissionEntries = yield* Effect.forEach(
+					Arr.dedupe(Arr.map(pending, (triage) => triage.orgId)),
+					(orgId) => Effect.map(Semaphore.make(1), (admission) => [orgId, admission] as const),
 				)
+				const admissions = new Map(admissionEntries)
 				yield* Effect.forEach(
 					pending,
 					(triage) =>
@@ -4751,14 +4772,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const evaluateClaimedRule = (row: StoredAlertRuleRow, timestamp: number, startedAt: number) =>
 					Effect.gen(function* () {
 						// Uptime rules never read the warehouse, so its outage does not skip them.
-						if (
-							row.signalType !== "uptime" &&
-							HashSet.has(yield* Ref.get(unavailableOrgs), row.orgId)
-						) {
-							return yield* new WarehouseUpstreamError({
-								message: "Skipped: this org's warehouse failed earlier in the tick",
-								pipeName: "alertEvaluation",
-							})
+						if (row.signalType !== "uptime") {
+							const unavailable = yield* Ref.get(unavailableOrgs)
+							if (HashSet.has(unavailable, row.orgId)) {
+								return yield* new WarehouseUpstreamError({
+									message: "Skipped: this org's warehouse failed earlier in the tick",
+									pipeName: "alertEvaluation",
+								})
+							}
 						}
 						const ruleStart = yield* now
 						const normalized = yield* normalizeRuleRow(row)
@@ -4770,7 +4791,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 
 						if (normalized.serviceNames.length > 1) {
-							yield* Effect.forEach(yield* perServiceRules(normalized), ({ groupKey, rule }) =>
+							const serviceRules = yield* perServiceRules(normalized)
+							yield* Effect.forEach(serviceRules, ({ groupKey, rule }) =>
 								Effect.gen(function* () {
 									const observations = yield* evaluateBeforeDeadline(row, rule)
 									// A service with no rows at all used to be dropped here,
@@ -5076,14 +5098,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Stream.runDrain,
 				)
 
-				yield* releaseClaims(Chunk.toReadonlyArray(yield* Ref.get(retryClaims))).pipe(
+				const claimsToRelease = yield* Ref.get(retryClaims)
+				yield* releaseClaims(Chunk.toReadonlyArray(claimsToRelease)).pipe(
 					Effect.withSpan("AlertsService.releaseClaims"),
 				)
 
 				// Every rule's writes are done and its claims released; triage overlaps the tail and
 				// is joined before returning, since a fiber that outlives a Worker invocation is cancelled.
+				const triagesToStart = yield* Ref.get(pendingTriages)
 				const triages = yield* forkRequestScoped(
-					startPendingTriages(Chunk.toReadonlyArray(yield* Ref.get(pendingTriages))),
+					startPendingTriages(Chunk.toReadonlyArray(triagesToStart)),
 				)
 				const deferred = yield* Ref.get(deferredRules)
 				yield* Effect.annotateCurrentSpan("maple.alerting.rules_deferred", deferred)
@@ -5115,9 +5139,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					{ discard: true },
 				)
 
+				const selfHeal = yield* Ref.get(selfHealTargets)
+				const clearErrors = yield* Ref.get(clearErrorTargets)
 				const housekeeping = flushRuleStateHousekeeping(
-					Chunk.toReadonlyArray(yield* Ref.get(selfHealTargets)),
-					Chunk.toReadonlyArray(yield* Ref.get(clearErrorTargets)),
+					Chunk.toReadonlyArray(selfHeal),
+					Chunk.toReadonlyArray(clearErrors),
 					tickStart,
 					limitFailures,
 				).pipe(Effect.withSpan("AlertsService.flushRuleStateHousekeeping"))
@@ -5127,8 +5153,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// broke across forty groups is one digest rather than one per chunk.
 				// Best-effort like every other push: a digest is a courtesy, and it
 				// must never fail the tick that produced it.
+				const suppressedRules = yield* pushBudget.suppressed
 				const digests = Effect.forEach(
-					yield* pushBudget.suppressed,
+					suppressedRules,
 					(rule) =>
 						mobilePush
 							.notifyIncidentDigest(rule)
@@ -5180,12 +5207,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// The history rows go out on their own fiber so a stalled insert never holds the
 				// delivery drain; runSchedulerTick joins it before the tick returns.
 				const accumulatedChecks = yield* Ref.getAndSet(pendingChecks, Chunk.empty())
-				yield* Ref.set(
-					checkIngest,
-					Option.some(
-						yield* forkRequestScoped(ingestAlertChecks(Chunk.toReadonlyArray(accumulatedChecks))),
-					),
+				const checkIngestFiber = yield* forkRequestScoped(
+					ingestAlertChecks(Chunk.toReadonlyArray(accumulatedChecks)),
 				)
+				yield* Ref.set(checkIngest, Option.some(checkIngestFiber))
 
 				// Every rule's writes are done, and these steps do not read each other's writes:
 				// disabled rules are never in the housekeeping lists, and the sweep only resolves,

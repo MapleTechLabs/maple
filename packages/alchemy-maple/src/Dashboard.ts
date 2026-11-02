@@ -180,7 +180,8 @@ export const DashboardProvider = () =>
 							),
 						)
 					if (fetched === undefined) return undefined
-					return toAttributes(yield* decodeWireDashboard(fetched), olds)
+					const decoded = yield* decodeWireDashboard(fetched)
+					return toAttributes(decoded, olds)
 				}),
 				list: Effect.fn(function* () {
 					const items = yield* listAll(api, "/v2/dashboards")

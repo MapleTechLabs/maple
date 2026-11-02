@@ -5,10 +5,12 @@ import {
 	type AwsSetupPlan,
 } from "@maple/domain/aws"
 import type { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { forPaste } from "../paste-script"
 
 const DOCS_URL = "https://maple.dev/docs/integrations/aws"
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 /**
  * Stacks live in a region while IAM does not: one fixed region lets the cleanup find the stack
  * whatever region CloudShell opened in, and a re-run update it instead of colliding on the role.
@@ -90,7 +92,7 @@ export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: Aws
 			RoleArn: { Description: "The role Maple assumes", Value: { "Fn::GetAtt": ["MapleRole", "Arn"] } },
 		},
 	}
-	return `${JSON.stringify(template, null, 2)}\n`
+	return `${encodePrettyJson(template)}\n`
 }
 
 /** A connection's metric stream as its setup renders it. */
@@ -256,7 +258,7 @@ export const renderAwsMetricsCloudFormation = (
 			},
 		},
 	}
-	return `${JSON.stringify(template, null, 2)}\n`
+	return `${encodePrettyJson(template)}\n`
 }
 
 export interface AwsScriptTarget {
@@ -411,7 +413,7 @@ ${removeOidcProviderIfUnused(target.oidcProvider)}echo "Done. The role Maple use
 `,
 	)
 
-const hcl = (value: unknown) => JSON.stringify(value)
+const hcl = (value: unknown) => encodeJson(value)
 
 /** The same setup as a self-contained Terraform file for the `aws` provider. */
 export const renderAwsTerraform = (connectionId: AwsConnectionId, plan: AwsSetupPlan) => {

@@ -25,6 +25,10 @@ const ES256_SIGN = { name: "ECDSA", hash: "SHA-256" } as const
 const COORDINATE = /^[A-Za-z0-9_-]{43}$/u
 const SEGMENT = /^[A-Za-z0-9_-]*$/u
 
+const JsonString = Schema.fromJsonString(Schema.Unknown)
+const encodeJsonSync = Schema.encodeSync(JsonString)
+const encodeJson = Schema.encodeEffect(JsonString)
+
 /** Unpadded base64url that re-encodes to itself: no stray bits, so one value has one spelling. */
 const isCanonicalBase64url = (value: string): boolean =>
 	SEGMENT.test(value) && Buffer.from(value, "base64url").toString("base64url") === value
@@ -45,7 +49,7 @@ export const sha256 = (...parts: ReadonlyArray<Uint8Array | string>): Uint8Array
 
 /** RFC 7638: SHA-256 over the required members in lexicographic order, base64url. */
 export const jwkThumbprint = (jwk: EcPublicJwk): string =>
-	base64url(sha256(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y })))
+	base64url(sha256(encodeJsonSync({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y })))
 
 /** Import an EC P-256 public JWK for ES256 verification; an off-curve point fails here. */
 export const importEcPublicJwk = (jwk: EcPublicJwk) =>
@@ -65,7 +69,10 @@ export const importEcPublicJwk = (jwk: EcPublicJwk) =>
 				catch: () => new JoseError({ message: "The key is not a valid P-256 point.", reason: "jwk" }),
 			})
 		: Effect.fail(
-				new JoseError({ message: "The key coordinates are not canonical 32-byte base64url.", reason: "jwk" }),
+				new JoseError({
+					message: "The key coordinates are not canonical 32-byte base64url.",
+					reason: "jwk",
+				}),
 			)
 
 export interface CompactJws {
@@ -78,9 +85,7 @@ export interface CompactJws {
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const parseJsonSegment = (segment: string): Option.Option<unknown> =>
-	SEGMENT.test(segment)
-		? decodeJson(Buffer.from(segment, "base64url").toString("utf8"))
-		: Option.none()
+	SEGMENT.test(segment) ? decodeJson(Buffer.from(segment, "base64url").toString("utf8")) : Option.none()
 
 /** Split and decode a compact JWS. Verifies nothing. */
 export const parseCompactJws = (token: string): Effect.Effect<CompactJws, JoseError> => {
@@ -95,7 +100,9 @@ export const parseCompactJws = (token: string): Effect.Effect<CompactJws, JoseEr
 		return Effect.fail(new JoseError({ message: "Not a compact JWS.", reason: "malformed" }))
 	}
 	if (!SEGMENT.test(signaturePart)) {
-		return Effect.fail(new JoseError({ message: "The JWS signature is not base64url.", reason: "malformed" }))
+		return Effect.fail(
+			new JoseError({ message: "The JWS signature is not base64url.", reason: "malformed" }),
+		)
 	}
 	const header = parseJsonSegment(headerPart)
 	const payload = parseJsonSegment(payloadPart)
@@ -130,7 +137,16 @@ export const verifyEs256 = (key: CryptoKey, jws: CompactJws) =>
 
 export const signEs256 = (key: CryptoKey, header: unknown, payload: unknown) =>
 	Effect.gen(function* () {
-		const signingInput = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(payload))}`
+		const [headerJson, payloadJson] = yield* Effect.all([encodeJson(header), encodeJson(payload)]).pipe(
+			Effect.mapError(
+				() =>
+					new JoseError({
+						message: "The JWS header or payload is not JSON-encodable.",
+						reason: "sign",
+					}),
+			),
+		)
+		const signingInput = `${base64url(headerJson)}.${base64url(payloadJson)}`
 		const signature = yield* Effect.tryPromise({
 			try: () => crypto.subtle.sign(ES256_SIGN, key, new TextEncoder().encode(signingInput)),
 			catch: () => new JoseError({ message: "Signing failed.", reason: "sign" }),

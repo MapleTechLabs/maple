@@ -6,11 +6,13 @@ import {
 	renderPage,
 	renderStatusJson,
 } from "@maple/status-page"
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
 import type { StatusEnv } from "./ports"
 import { asset, html, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
 import { type Lookup, loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** `/s/<slug>` and `/s/<slug>/<rest>`: path addressing for hosts without a page of their own. */
 const SLUG_PATH = /^\/s\/([a-z0-9][a-z0-9-]{1,46}[a-z0-9])(\/.*)?$/u
@@ -115,7 +117,7 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 		case "/api/v1/status.json":
 			return Effect.succeed(
 				asset(
-					JSON.stringify(renderStatusJson(view.snapshot, view.freshness)),
+					encodeJson(renderStatusJson(view.snapshot, view.freshness)),
 					"application/json; charset=utf-8",
 					{
 						"access-control-allow-origin": "*",

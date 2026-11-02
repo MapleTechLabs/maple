@@ -118,7 +118,8 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly)
-					return toV2Connection(yield* aws.check(tenant.orgId, params.id))
+					const connection = yield* aws.check(tenant.orgId, params.id)
+					return toV2Connection(connection)
 				}),
 			)
 			.handle("ingest", ({ params }) =>

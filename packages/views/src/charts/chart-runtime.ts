@@ -22,12 +22,20 @@ export const ChartRuntimeMessage = defineMessageUnion({
 })
 export type ChartRuntimeMessage = typeof ChartRuntimeMessage.Type
 
+export class ChartRuntimeLoadError extends Schema.TaggedError<ChartRuntimeLoadError>()(
+	"@maple/web/ChartRuntimeLoadError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 export const LoadChartRuntime = Command.define("LoadChartRuntime", {
 	messages: [ChartRuntimeMessage.CompletedLoadChartRuntime, ChartRuntimeMessage.FailedLoadChartRuntime],
-	execute: Effect.tryPromise(() => import("./chart-host")).pipe(
+	execute: Effect.tryPromise({
+		try: () => import("./chart-host"),
+		catch: (cause) => new ChartRuntimeLoadError({ message: String(cause), cause }),
+	}).pipe(
 		Effect.as(ChartRuntimeMessage.CompletedLoadChartRuntime()),
 		Effect.catch((error) =>
-			Effect.succeed(ChartRuntimeMessage.FailedLoadChartRuntime({ reason: String(error) })),
+			Effect.succeed(ChartRuntimeMessage.FailedLoadChartRuntime({ reason: error.message })),
 		),
 	),
 })

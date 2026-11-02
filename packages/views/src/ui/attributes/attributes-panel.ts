@@ -2,7 +2,7 @@ import { Duration, Effect, Option, Record, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import { CopyStatus } from "../copy-button"
+import { CopyStatus, writeClipboardApi } from "../copy-button"
 
 // The log attributes panel's state: the attribute
 // search, which collapsibles (namespace groups, JSON values, "Maple internal") are open, and the
@@ -73,7 +73,7 @@ export const WriteAttributeClipboard = Command.define("WriteAttributeClipboard",
 	args: { text: Schema.String, generation: Schema.Number },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
 	execute: ({ text, generation }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
+		writeClipboardApi(text).pipe(
 			Effect.as(Message.SucceededCopy({ generation })),
 			Effect.orElseSucceed(() => Message.FailedCopy({ generation })),
 		),

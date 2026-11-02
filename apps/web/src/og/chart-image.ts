@@ -15,10 +15,13 @@
  * else: the path they are requested at, the operation that resolves them, and
  * how long the answer may be cached. {@link CHART_KINDS} is those three facts.
  */
+import { Schema } from "effect"
 import { chartCard, rankedCard, type ChartCard } from "./chart-card"
 import { renderNode, type AssetFetcher } from "./render"
 import type { ShareChartResponse } from "@maple/domain/http"
 import type { ApiTarget } from "../worker-env"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** The API has to answer before an image request is worth abandoning. */
 const API_TIMEOUT_MS = 4000
@@ -119,7 +122,7 @@ export const renderChartImage = async (
 			new Request(new URL(request.kind.apiPath, api.baseUrl), {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ chartId: request.chartId }),
+				body: encodeJson({ chartId: request.chartId }),
 				signal: AbortSignal.timeout(API_TIMEOUT_MS),
 			}),
 		)

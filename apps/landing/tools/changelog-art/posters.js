@@ -380,6 +380,7 @@ async function save(name, canvas) {
 	const res = await fetch("/save", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
+		// oxlint-disable-next-line effecttsgo/global-json -- plain browser script loaded without a bundler, no effect runtime
 		body: JSON.stringify({ name, dataUrl }),
 	})
 	return res.text()

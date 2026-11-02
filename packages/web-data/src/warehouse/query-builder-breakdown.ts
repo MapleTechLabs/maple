@@ -60,7 +60,8 @@ const getQueryBuilderBreakdownEffect = Effect.fn("QueryEngine.getQueryBuilderBre
 }) {
 	const input = yield* decodeInput(QueryBuilderBreakdownInputSchema, data, "getQueryBuilderBreakdown")
 
-	const outcome = yield* runBreakdownQuerySet(yield* executor, {
+	const queryExecutor = yield* executor
+	const outcome = yield* runBreakdownQuerySet(queryExecutor, {
 		querySet: { queries: input.queries },
 		startTime: input.startTime,
 		endTime: input.endTime,

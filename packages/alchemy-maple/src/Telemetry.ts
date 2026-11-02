@@ -129,8 +129,10 @@ export const Telemetry = (props: TelemetryProps): Layer.Layer<never> => {
 				const server = Effect.isEffect(local) ? yield* local : local
 				yield* rc.set("MAPLE_ENDPOINT", Output.asOutput(server.endpoint))
 			} else {
-				if (ingestKey !== undefined)
-					yield* rc.set("MAPLE_INGEST_KEY", yield* ingestKeyOutput(ingestKey))
+				if (ingestKey !== undefined) {
+					const key = yield* ingestKeyOutput(ingestKey)
+					yield* rc.set("MAPLE_INGEST_KEY", key)
+				}
 				if (endpoint !== undefined) yield* rc.set("MAPLE_ENDPOINT", Output.asOutput(endpoint))
 			}
 			if (environment !== undefined) yield* rc.set("MAPLE_ENVIRONMENT", Output.asOutput(environment))

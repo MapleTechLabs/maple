@@ -1,6 +1,6 @@
 import { MapleApiV2, v2RouteNotFoundBody } from "@maple/domain/http/v2"
 import { mapleMcpServerManifest } from "@maple/domain/mcp-manifest"
-import { Context, Effect, identity, Option } from "effect"
+import { Context, Effect, identity, Option, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { OpenApi } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
@@ -56,12 +56,23 @@ export const instanceApiV2 = (origin: string) =>
 		}),
 	)
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 let openApiDocument: string | undefined
 const openApiJson = (origin: string) =>
-	Effect.sync(() => {
-		openApiDocument ??= JSON.stringify(OpenApi.fromApi(instanceApiV2(origin)))
-		return openApiDocument
-	})
+	Effect.suspend(() =>
+		openApiDocument === undefined
+			? encodeJson(OpenApi.fromApi(instanceApiV2(origin))).pipe(
+					Effect.tap((document) =>
+						Effect.sync(() => {
+							openApiDocument = document
+						}),
+					),
+					// The spec is plain data; an unencodable one is a bug, as the old throw was.
+					Effect.orDie,
+				)
+			: Effect.succeed(openApiDocument),
+	)
 
 const apiIndex = (origin: string) => ({
 	name: "Maple API",

@@ -1,4 +1,4 @@
-import { Context, Effect } from "effect"
+import { Context, Effect, Option, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { AuditedRead, type AuditLogSource } from "@maple/domain/http"
@@ -31,9 +31,11 @@ import {
 /** Bound on stored request/parameter snapshots — enough to see what was asked for. */
 const MAX_SNAPSHOT_CHARS = 2_000
 
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 /** A JSON rendering of `value` capped at {@link MAX_SNAPSHOT_CHARS}. */
 export const snapshot = (value: unknown): string => {
-	const text = typeof value === "string" ? value : (JSON.stringify(value) ?? "null")
+	const text = typeof value === "string" ? value : Option.getOrElse(encodeJson(value), () => "null")
 	return text.length > MAX_SNAPSHOT_CHARS ? `${text.slice(0, MAX_SNAPSHOT_CHARS)}…` : text
 }
 

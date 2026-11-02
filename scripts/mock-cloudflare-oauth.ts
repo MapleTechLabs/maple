@@ -11,12 +11,15 @@
  *   MAPLE_CLOUDFLARE_API_BASE_URL=http://127.0.0.1:9781
  */
 import { createHash } from "node:crypto"
+import { Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const issuedCodes = new Map<string, { challenge: string | null }>()
 let revoked = 0
 
 const json = (body: unknown, status = 200) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+	new Response(encodeJson(body), { status, headers: { "content-type": "application/json" } })
 
 Bun.serve({
 	port: 9781,

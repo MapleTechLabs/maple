@@ -100,11 +100,13 @@ export const FetchFacets = Command.define("FetchOverviewFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { refresh, key }).pipe(
-			Effect.map(({ data }) => ({
-				environments: data.environments.map((facet) => facet.name),
-				services: data.services.map((facet) => facet.name),
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: ({ data }) => ({
+					environments: data.environments.map((facet) => facet.name),
+					services: data.services.map((facet) => facet.name),
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -121,8 +123,7 @@ export const FetchSnapshot = Command.define("FetchServiceHealthSnapshot", {
 				environments: mutable(input.environments),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSnapshot({ key, result })),
 		),
@@ -146,18 +147,20 @@ export const FetchUsage = Command.define("FetchOverviewServiceUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: ({ key, input }) =>
 		getServiceUsage({ data: input }).pipe(
-			Effect.map((response) => ({
-				totals: response.data.reduce(
-					(acc, service) => ({
-						logs: acc.logs + service.totalLogs,
-						traces: acc.traces + service.totalTraces,
-						metrics: acc.metrics + service.totalMetrics,
-					}),
-					{ logs: 0, traces: 0, metrics: 0 },
-				),
-				previous: response.previousTotals ?? null,
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({
+					totals: response.data.reduce(
+						(acc, service) => ({
+							logs: acc.logs + service.totalLogs,
+							traces: acc.traces + service.totalTraces,
+							metrics: acc.metrics + service.totalMetrics,
+						}),
+						{ logs: 0, traces: 0, metrics: 0 },
+					),
+					previous: response.previousTotals ?? null,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchUsage({ key, result })),
 		),
@@ -175,8 +178,7 @@ export const FetchOverviewSeries = Command.define("FetchOverviewTimeSeries", {
 				environments: mutable(input.environments),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOverviewSeries({ key, result })),
 		),
@@ -201,16 +203,17 @@ export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 				},
 			},
 		}).pipe(
-			Effect.map((response) =>
-				response.data.map((point) => ({
-					bucket: point.bucket,
-					throughput: Object.values(point.series).reduce<number>(
-						(sum, value) => sum + (typeof value === "number" ? value : 0),
-						0,
-					),
-				})),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					response.data.map((point) => ({
+						bucket: point.bucket,
+						throughput: Object.values(point.series).reduce<number>(
+							(sum, value) => sum + (typeof value === "number" ? value : 0),
+							0,
+						),
+					})),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchLogSeries({ key, result })),
 		),
@@ -229,8 +232,7 @@ export const FetchRefinement = Command.define("FetchOverviewThroughputRefinement
 				samplingActive: input.samplingActive,
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchRefinement({ key, result })),
 		),

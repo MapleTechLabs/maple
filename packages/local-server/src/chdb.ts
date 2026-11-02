@@ -16,6 +16,7 @@ import { existsSync } from "node:fs"
 import { lstatSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
+import { decodeJsonSync } from "./json"
 import { durableJson } from "./durable-files"
 import { markStoreClosed, markStoreOpen, storeHasData } from "./store-version"
 import { MAPLE_VERSION } from "./version"
@@ -189,13 +190,22 @@ const decodeRetentionConfig = Schema.decodeUnknownSync(RawTelemetryRetentionConf
 
 const parseRawTelemetryRetentionDays = (value: unknown): number => decodeRetentionConfig(value).minimumDays
 
+const decodeTableTtlRow = Schema.decodeUnknownSync(
+	Schema.fromJsonString(
+		Schema.Struct({
+			name: Schema.optionalKey(Schema.Unknown),
+			create_table_query: Schema.optionalKey(Schema.Unknown),
+		}),
+	),
+)
+
 export const readRawTelemetryRetentionDays = (dataDir: string): number | undefined => {
 	const path = rawTelemetryRetentionConfigPath(dataDir)
 	if (!existsSync(path)) return undefined
 	const stat = lstatSync(path)
 	if (stat.isSymbolicLink() || !stat.isFile())
 		throw new Error(`raw telemetry retention config is not a real file: ${path}`)
-	return parseRawTelemetryRetentionDays(JSON.parse(readFileSync(path, "utf8")) as unknown)
+	return parseRawTelemetryRetentionDays(decodeJsonSync(readFileSync(path, "utf8")))
 }
 
 export const configureRawTelemetryRetentionDays = async (
@@ -240,7 +250,7 @@ export const applyRawTelemetryRetentionFloor = (db: Pick<Chdb, "query" | "exec">
 		)
 		.split("\n")
 		.filter((line) => line.trim().length > 0)
-		.map((line) => JSON.parse(line) as { name?: unknown; create_table_query?: unknown })
+		.map((line) => decodeTableTtlRow(line))
 	const definitions = new Map(
 		rows.map((row) => {
 			if (typeof row.name !== "string" || typeof row.create_table_query !== "string")
@@ -587,10 +597,9 @@ export const describeChdbOpenFailure = (raw: string, version: string = MAPLE_VER
 
 /**
  * Acquire a chDB connection as a scoped resource: `Chdb.open` (which bootstraps
- * the schema) on acquire, `close()` as a finalizer. Open failures — a missing
- * libchdb, a NULL connection, a rejected bootstrap — surface as a typed
- * `ChdbError` instead of an unhandled throw. The synchronous `query`/`exec`
- * methods are unchanged; only the lifecycle is Effect-managed.
+ * the schema) on acquire, `close()` as a finalizer. A synchronous exit hook also
+ * closes it if the host exits before scope teardown. Open failures surface as
+ * a typed `ChdbError`; the synchronous `query`/`exec` methods are unchanged.
  */
 export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError, Scope.Scope> =>
 	Effect.acquireRelease(
@@ -601,18 +610,22 @@ export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError
 				// here until a clean close, a crash leaves the store potentially
 				// inconsistent — mark it so the next `maple start` can auto-recover.
 				markStoreOpen(options.dataDir)
-				return db
+				const close = () => {
+					// Never clear the sentinel unless chDB closed successfully.
+					db.close()
+					markStoreClosed(options.dataDir)
+				}
+				process.once("exit", close)
+				return { db, close }
 			},
 			catch: (error) =>
 				new ChdbError({
 					message: describeChdbOpenFailure(error instanceof Error ? error.message : String(error)),
 				}),
 		}),
-		(db) =>
+		({ close }) =>
 			Effect.sync(() => {
-				// Clear the sentinel only AFTER a clean close: if close() throws, leave
-				// the marker so the next start auto-resets rather than risking a crash.
-				db.close()
-				markStoreClosed(options.dataDir)
+				process.removeListener("exit", close)
+				close()
 			}),
-	)
+	).pipe(Effect.map(({ db }) => db))

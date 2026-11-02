@@ -277,7 +277,8 @@ export const AlertRuleProvider = () =>
 						observedRaw = yield* api.patch(`/v2/alerts/rules/${current.id}`, body)
 					}
 
-					return toAttributes(yield* decodeWireRule(observedRaw), news)
+					const observed = yield* decodeWireRule(observedRaw)
+					return toAttributes(observed, news)
 				}),
 				delete: Effect.fn(function* ({ output, fqn, force }) {
 					// A previous owner must not delete a rule another stack has adopted.
@@ -291,7 +292,8 @@ export const AlertRuleProvider = () =>
 							)
 						if (fetched === undefined) return
 						const current = yield* decodeWireRule(fetched)
-						if (!ownsRule(current.tags, yield* ruleOwnerTags(fqn), true)) {
+						const owners = yield* ruleOwnerTags(fqn)
+						if (!ownsRule(current.tags, owners, true)) {
 							return yield* ownershipError(fqn, current.name)
 						}
 					}
@@ -315,7 +317,10 @@ export const AlertRuleProvider = () =>
 									Effect.succeed(undefined),
 								),
 							)
-						if (fetched !== undefined) return attributes(yield* decodeWireRule(fetched))
+						if (fetched !== undefined) {
+							const observed = yield* decodeWireRule(fetched)
+							return attributes(observed)
+						}
 					}
 					if (olds?.name !== undefined) {
 						const adopted = yield* findByName(olds.name)

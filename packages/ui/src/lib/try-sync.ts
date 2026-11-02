@@ -1,4 +1,10 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
+
+/** A throw or rejection captured by `trySync` / `tryPromise`; callers only see `None`. */
+class ThrownError extends Schema.TaggedError<ThrownError>()("@maple/ui/lib/ThrownError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
 
 /**
  * A throwing synchronous call as a total `Option`.
@@ -15,11 +21,25 @@ import { Effect, Option } from "effect"
  * rather than reach back for a `catch` block.
  */
 export const trySync = <A>(thunk: () => A): Option.Option<A> =>
-	Effect.runSync(Effect.option(Effect.try(thunk)))
+	Effect.runSync(
+		Effect.option(
+			Effect.try({
+				try: thunk,
+				catch: (cause) => new ThrownError({ message: "Synchronous call threw", cause }),
+			}),
+		),
+	)
 
 /**
  * The async twin, for a promise that rejects rather than a call that throws.
  * Resolves to `None` on rejection.
  */
 export const tryPromise = <A>(thunk: () => Promise<A>): Promise<Option.Option<A>> =>
-	Effect.runPromise(Effect.option(Effect.tryPromise(thunk)))
+	Effect.runPromise(
+		Effect.option(
+			Effect.tryPromise({
+				try: thunk,
+				catch: (cause) => new ThrownError({ message: "Promise rejected", cause }),
+			}),
+		),
+	)

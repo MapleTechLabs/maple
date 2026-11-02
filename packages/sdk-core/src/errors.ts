@@ -84,12 +84,14 @@ function summarize(value: Record<string, unknown>): string {
 		}
 		const rendered =
 			typeof field === "string"
-				? JSON.stringify(clip(field, MAX_SUMMARY_VALUE))
+				? // oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
+					JSON.stringify(clip(field, MAX_SUMMARY_VALUE))
 				: typeof field === "number" || typeof field === "boolean" || field === null
 					? String(field)
 					: typeof field === "bigint"
 						? `${field}n`
 						: undefined
+		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		if (rendered !== undefined) fields.push(`${JSON.stringify(clip(key, MAX_SUMMARY_VALUE))}:${rendered}`)
 	}
 	return fields.length > 0 ? clip(`{${fields.join(",")}}`, MAX_SUMMARY) : tagOf(value)

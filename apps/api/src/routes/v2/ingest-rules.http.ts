@@ -135,7 +135,8 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					return toV2IngestRule(yield* service.get(tenant.orgId, params.id))
+					const rule = yield* service.get(tenant.orgId, params.id)
+					return toV2IngestRule(rule)
 				}),
 			)
 			.handle("create", ({ payload }) =>

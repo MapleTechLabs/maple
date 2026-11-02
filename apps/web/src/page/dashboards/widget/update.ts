@@ -5,7 +5,7 @@ import {
 	formatBucketSecondsShort,
 	resolveTimeRangeWindow,
 } from "@maple/query-engine"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -32,6 +32,11 @@ import { eventNamesKeyOf, requestSuggestions } from "./product-step"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { Message } from "./message"
 import type { Model } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+/** `JSON.stringify` equality: an absent value reads as `null`, never as a thrown encode. */
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const jsonKeyOf = (value: unknown): string | null => Option.getOrNull(encodeJsonOption(value))
 
 export type Return = PageReturn<Model, Message>
 type Search = typeof DashboardWidgetSearch.Type
@@ -168,7 +173,7 @@ const listPreviewQueries = (
 ): EditorState["queries"] => {
 	const [first, ...rest] = queries
 	if (state.visualization !== "list" || first === undefined) return queries
-	return [{ ...first, id: `${first.id}:${revisionOf(JSON.stringify([state, staged, widget]))}` }, ...rest]
+	return [{ ...first, id: `${first.id}:${revisionOf(encodeJson([state, staged, widget]))}` }, ...rest]
 }
 
 /** The preview's requests, and the metric list while a query reads metrics. */
@@ -329,9 +334,8 @@ export const editState = (
 /** `isDirty`: the source tab moved, or the state (or, in Raw SQL, the SQL) differs from what was opened. */
 export const isDirty = (model: Model): boolean =>
 	model.sourceMode !== model.initialSourceMode ||
-	JSON.stringify(model.state) !== JSON.stringify(model.initial) ||
-	(model.sourceMode === "rawSql" &&
-		JSON.stringify(model.rawSql?.draft) !== JSON.stringify(model.rawSql?.initial))
+	encodeJson(model.state) !== encodeJson(model.initial) ||
+	(model.sourceMode === "rawSql" && jsonKeyOf(model.rawSql?.draft) !== jsonKeyOf(model.rawSql?.initial))
 
 export const navigate = (model: Model, url: string): Return => ({
 	model,

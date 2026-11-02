@@ -264,13 +264,13 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 			break
 		case "heartbeat":
 			// The alert evaluator computes deadlines from this schedule, so it must have a next run.
-			if (
-				config.schedule._tag === "cron" &&
-				Option.isNone(heartbeatDeadline(config, yield* Clock.currentTimeMillis))
-			) {
-				return yield* invalid(
-					`'${config.schedule.expression}' in ${config.schedule.timezone} is not a valid cron schedule, or never runs`,
-				)
+			if (config.schedule._tag === "cron") {
+				const nowMs = yield* Clock.currentTimeMillis
+				if (Option.isNone(heartbeatDeadline(config, nowMs))) {
+					return yield* invalid(
+						`'${config.schedule.expression}' in ${config.schedule.timezone} is not a valid cron schedule, or never runs`,
+					)
+				}
 			}
 			break
 	}
@@ -383,6 +383,7 @@ const selectMonitors = () =>
 		}))
 
 const decodeInterval = Schema.decodeUnknownEffect(UptimeIntervalSeconds)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const decodeDestinationIds = Schema.decodeUnknownEffect(Schema.Array(AlertDestinationId))
 
 const UpdatedStateRow = Schema.Struct({ monitor_id: Schema.String })
@@ -498,7 +499,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			const allowance = yield* UptimeMonitorAllowance
 			// Scoped per hop, so an unread body is cancelled on exit. A cross-origin redirect drops
 			// the configured headers and keeps only the user-agent we set, as the probe does.
-			const testClient = guard(HttpClient.withScope(yield* HttpClient.HttpClient), {
+			const baseClient = yield* HttpClient.HttpClient
+			const testClient = guard(HttpClient.withScope(baseClient), {
 				strictRedirects: true,
 				ownHeaders: ["user-agent"],
 			})
@@ -509,39 +511,39 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					intervalSeconds: decodeInterval(row.intervalSeconds),
 					destinationIds: decodeDestinationIds(row.destinationIdsJson ?? []),
 				}).pipe(
-					Effect.mapError(
-						(error) =>
+					Effect.mapBoth({
+						onFailure: (error) =>
 							new UptimeMonitorPersistenceError({
 								message: `Stored interval or destinations of uptime monitor ${row.id} are invalid`,
 								cause: error,
 							}),
-					),
-					Effect.map(({ intervalSeconds, destinationIds }): UptimeMonitorRecord => ({
-						id: row.id,
-						orgId: row.orgId,
-						name: row.name,
-						kind: row.kind,
-						config: row.configJson,
-						intervalSeconds,
-						failuresToDown: row.failuresToDown,
-						serviceName: row.serviceName,
-						enabled: row.enabled,
-						destinationIds,
-						alertRuleId: row.alertRuleId,
-						heartbeatUrl:
-							row.heartbeatToken === null ? null : `${apiBaseUrl}/hb/${row.heartbeatToken}`,
-						state: {
-							status: row.status,
-							consecutiveFailures: row.consecutiveFailures,
-							consecutiveSuccesses: row.consecutiveSuccesses,
-							statusChangedAt: row.statusChangedAt,
-							lastCheck: row.lastCheckJson,
-							recent: row.recentJson,
-							lastPingAt: row.lastPingAt,
-						},
-						createdAt: row.createdAt,
-						updatedAt: row.updatedAt,
-					})),
+						onSuccess: ({ intervalSeconds, destinationIds }): UptimeMonitorRecord => ({
+							id: row.id,
+							orgId: row.orgId,
+							name: row.name,
+							kind: row.kind,
+							config: row.configJson,
+							intervalSeconds,
+							failuresToDown: row.failuresToDown,
+							serviceName: row.serviceName,
+							enabled: row.enabled,
+							destinationIds,
+							alertRuleId: row.alertRuleId,
+							heartbeatUrl:
+								row.heartbeatToken === null ? null : `${apiBaseUrl}/hb/${row.heartbeatToken}`,
+							state: {
+								status: row.status,
+								consecutiveFailures: row.consecutiveFailures,
+								consecutiveSuccesses: row.consecutiveSuccesses,
+								statusChangedAt: row.statusChangedAt,
+								lastCheck: row.lastCheckJson,
+								recent: row.recentJson,
+								lastPingAt: row.lastPingAt,
+							},
+							createdAt: row.createdAt,
+							updatedAt: row.updatedAt,
+						}),
+					}),
 				)
 
 			const requireMonitor = Effect.fn("UptimeMonitorsService.requireMonitor")(function* (
@@ -771,13 +773,12 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				}
 				if (input.config !== undefined)
 					yield* refuseRedactedHeadersForNewOrigin(current.config, input.config)
-				const config =
+				const keptConfig =
 					input.config === undefined
 						? undefined
-						: yield* validateConfig(
-								current.kind,
-								yield* keepRedactedHeaders(current.config, input.config),
-							)
+						: yield* keepRedactedHeaders(current.config, input.config)
+				const config =
+					keptConfig === undefined ? undefined : yield* validateConfig(current.kind, keptConfig)
 				const name = input.name === undefined ? undefined : yield* validateName(input.name)
 				const failuresToDown =
 					input.failuresToDown === undefined
@@ -1066,7 +1067,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const values = Orm.sql.join(
 					states.map(
 						(state) =>
-							Orm.sql`(${state.monitorId}::text, ${state.status}::text, ${state.consecutiveFailures}::int4, ${state.consecutiveSuccesses}::int4, ${state.statusChangedAt === null ? null : msToSqlTimestamp(state.statusChangedAt)}::timestamptz, ${JSON.stringify(state.lastCheckJson)}::jsonb, ${JSON.stringify(state.recentJson)}::jsonb, ${msToSqlTimestamp(state.readUpdatedAt)}::timestamptz, ${msToSqlTimestamp(state.updatedAt)}::timestamptz)`,
+							Orm.sql`(${state.monitorId}::text, ${state.status}::text, ${state.consecutiveFailures}::int4, ${state.consecutiveSuccesses}::int4, ${state.statusChangedAt === null ? null : msToSqlTimestamp(state.statusChangedAt)}::timestamptz, ${encodeJson(state.lastCheckJson)}::jsonb, ${encodeJson(state.recentJson)}::jsonb, ${msToSqlTimestamp(state.readUpdatedAt)}::timestamptz, ${msToSqlTimestamp(state.updatedAt)}::timestamptz)`,
 					),
 					Orm.sql`, `,
 				)
@@ -1254,7 +1255,9 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 												readonly text: string
 												readonly truncated: boolean
 											}>()
-										: Option.some(yield* readTextPrefix(response, TEST_BODY_READ_BYTES))
+										: yield* readTextPrefix(response, TEST_BODY_READ_BYTES).pipe(
+												Effect.map(Option.some),
+											)
 								return {
 									_tag: "response" as const,
 									statusCode: response.status,

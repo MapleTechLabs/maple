@@ -4,7 +4,7 @@
  * `quick`, a second fresh verifier checks each final confirmed and needs_validation record, and a
  * material replacement only applies after yet another fresh verifier agrees.
  */
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Schema } from "effect"
 import { candidateVerifierPrompt, companionFileOf, recordVerifierPrompt } from "../prompts"
 import {
 	type Candidate,
@@ -21,6 +21,7 @@ import type { AuditStoreError } from "./ports"
 import { type Engine, type EngineState, withEstimate } from "./state"
 
 const MAX_MATERIAL_CHAIN = 3
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 interface ValidationItem {
 	readonly fingerprint: string
@@ -289,8 +290,8 @@ const materialView = (record: Finding) => {
  */
 export const isMaterial = (before: Finding, after: Finding): boolean =>
 	before.verdict !== after.verdict ||
-	JSON.stringify(tracePath(before)) !== JSON.stringify(tracePath(after)) ||
-	JSON.stringify(materialView(before)) !== JSON.stringify(materialView(after))
+	encodeJson(tracePath(before)) !== encodeJson(tracePath(after)) ||
+	encodeJson(materialView(before)) !== encodeJson(materialView(after))
 
 /** A record with the estimate that travels beside it (null unless it is needs_validation). */
 interface Estimated {
