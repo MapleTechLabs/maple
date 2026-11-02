@@ -2,7 +2,6 @@ import { playwright } from "@vitest/browser-playwright"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
-	resolve: { dedupe: ["react", "react-dom"] },
 	test: {
 		projects: [
 			{
@@ -10,20 +9,20 @@ export default defineConfig({
 					name: "node",
 					server: { deps: { inline: ["@effect/vitest"] } },
 					environment: "node",
-					include: ["src/**/*.test.{ts,tsx}"],
+					include: ["src/**/*.test.ts"],
 					exclude: [
 						...configDefaults.exclude,
 						"**/.claude/**",
 						"**/.context/**",
 						"**/worktrees/**",
-						"src/**/*.browser.test.{ts,tsx}",
+						"src/**/*.browser.test.ts",
 					],
 				},
 			},
 			{
 				test: {
 					name: "browser",
-					include: ["src/**/*.browser.test.{ts,tsx}"],
+					include: ["src/**/*.browser.test.ts"],
 					exclude: [
 						...configDefaults.exclude,
 						"**/.claude/**",

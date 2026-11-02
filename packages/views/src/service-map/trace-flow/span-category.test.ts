@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { describeSpan } from "../span-category"
+import { describeSpan } from "./span-category"
 
 const span = (input: { spanName: string; spanKind?: string; spanAttributes?: Record<string, string> }) => ({
 	spanName: input.spanName,
