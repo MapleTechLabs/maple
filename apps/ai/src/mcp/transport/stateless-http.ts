@@ -36,6 +36,7 @@ import {
 	type RequestEncoded,
 } from "effect/rpc/RpcMessage"
 import type { McpToolsUnavailableError } from "../executor-loader"
+import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
 
 /**
@@ -175,7 +176,8 @@ export const layerStatelessMcpHttp = (options: {
 				Effect.gen(function* () {
 					const scope = yield* Scope.Scope
 					const tracer = yield* Effect.tracer
-					const caller = mcpCaller(request)
+					const tenant = yield* CurrentMcpRequestTenant
+					const caller = mcpCaller(request, tenant?.userId)
 					// No session id is ever issued, so a client's leftover one is dropped: the server
 					// would look the session up by that id instead of by this request's client.
 					const requestHeaders = Object.entries(request.headers).filter(

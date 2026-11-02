@@ -4,6 +4,7 @@ import type {
 	McpSessionResponse,
 	McpSessionsResponse,
 } from "@maple/domain/http"
+import { formatWarehouseDateTime } from "@maple/query-engine"
 import { formatLatency, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
@@ -28,6 +29,8 @@ import {
 	headingNote,
 	kindTag,
 	lastSeenCell,
+	type McpChartEnv,
+	mcpPlot,
 	mcpScopeRow,
 	numberCell,
 	resultCell,
@@ -38,6 +41,7 @@ import {
 // each session its requests in order, linked to the Agent Session whose trace made them.
 
 export type SessionsBodyOptions<M> = Readonly<{
+	env: McpChartEnv<M>
 	toolbar: Html
 	scope: string
 	isWaiting: boolean
@@ -60,6 +64,21 @@ const failedCell = <M>(h: HtmlBuilder<M>, errors: number): Html =>
 		cn("w-14", errors > 0 ? "text-severity-error" : "text-foreground-subtle"),
 	)
 
+/** Who the session belongs to: their name, else their id, else nobody named. */
+const userCell = <M>(h: HtmlBuilder<M>, user: string | null, userName: string | null): Html =>
+	h.span(
+		[
+			h.Class(
+				cn(
+					"hidden w-36 shrink-0 truncate font-mono text-xs @min-[640px]/panel:block",
+					user === null ? "text-foreground-subtle" : "text-foreground",
+				),
+			),
+			...(user === null ? [] : [h.Title(user)]),
+		],
+		[userName ?? user ?? "anonymous"],
+	)
+
 const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: SessionsBodyOptions<M>): Html =>
 	h.button(
 		[
@@ -69,10 +88,16 @@ const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: Sessions
 			h.OnClick(options.onOpenSession(row.sessionId)),
 		],
 		[
-			h.span(
-				[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
-				[row.sessionId],
-			),
+			row.source === "issued"
+				? h.span(
+						[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
+						[row.sessionId],
+					)
+				: h.span(
+						[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground")],
+						["user session"],
+					),
+			userCell(h, row.user, row.userName),
 			h.span(
 				[h.Class("flex w-44 shrink-0 items-center gap-2 font-mono text-xs")],
 				[
@@ -99,20 +124,83 @@ const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: Sessions
 		],
 	)
 
-/** The calls without a session id, when some carry one: those never reach this list. */
-const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): ReadonlyArray<Html> =>
-	data.withSession >= data.toolCalls
+/** The calls in no session: neither a session id nor a user to build one from. */
+const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): ReadonlyArray<Html> => {
+	const inSessions = Math.min(data.toolCalls, data.withSession + data.withUser)
+	return inSessions >= data.toolCalls
 		? []
 		: [
 				h.p(
 					[h.Class("px-2.5 pt-3 font-prose text-xs text-muted-foreground")],
 					[
-						`${formatNumber(data.withSession)} of ${formatNumber(data.toolCalls)} tool calls carry `,
+						`${formatNumber(data.toolCalls - inSessions)} of ${formatNumber(data.toolCalls)} tool calls carry neither `,
 						attr(h, "mcp.session.id"),
-						"; the rest belong to no session.",
+						" nor ",
+						attr(h, "user.id"),
+						", so they belong to no session.",
 					],
 				),
 			]
+}
+
+/** The median of the listed sessions' lengths; `undefined` for none. */
+export const medianLengthMs = (sessions: ReadonlyArray<McpSessionItem>): number | undefined => {
+	const lengths = sessions.map((row) => row.lastSeenMs - row.firstSeenMs).toSorted((a, b) => a - b)
+	const middle = Math.floor(lengths.length / 2)
+	return lengths.length === 0
+		? undefined
+		: lengths.length % 2 === 1
+			? lengths[middle]
+			: ((lengths[middle - 1] ?? 0) + (lengths[middle] ?? 0)) / 2
+}
+
+const sessionsOverview = <M>(
+	h: HtmlBuilder<M>,
+	data: McpSessionsResponse,
+	options: SessionsBodyOptions<M>,
+): ReadonlyArray<Html> => {
+	const { totals } = data
+	const median = medianLengthMs(data.sessions)
+	return [
+		statRail(h, { columns: 4, className: "border-b border-border" }, [
+			statRailItem(h, {
+				eyebrow: "Sessions",
+				value: formatNumber(totals.sessions),
+				subline: `${formatNumber(totals.failingSessions)} with a failed call`,
+			}),
+			statRailItem(h, {
+				eyebrow: "Users",
+				value: formatNumber(totals.users),
+				subline: totals.users === 0 ? "no request names its user" : "named by user.id",
+			}),
+			statRailItem(h, {
+				eyebrow: "Median length",
+				value: median === undefined ? "–" : formatLatency(median),
+				subline: `of the latest ${formatNumber(data.sessions.length)}`,
+			}),
+			statRailItem(h, {
+				eyebrow: "Calls a session",
+				value: totals.sessions === 0 ? "–" : (totals.calls / totals.sessions).toFixed(1),
+				subline: `${formatNumber(totals.calls)} tool calls`,
+			}),
+		]),
+		mcpPlot(h, options.env, {
+			chartId: "mcp-sessions-activity",
+			title: "Active sessions and users",
+			rows: data.activity.map((point) => ({
+				bucket: formatWarehouseDateTime(point.bucket),
+				sessions: point.sessions,
+				users: point.users,
+			})),
+			series: [
+				{ key: "sessions", label: "Sessions", token: "--primary" },
+				{ key: "users", label: "Users", token: "--chart-2" },
+			],
+			format: "number",
+			height: 180,
+		}),
+	]
+}
 
 /** `McpSessionsBody`: the sessions list under the server header. */
 export const sessionsBody = <M>(
@@ -130,8 +218,9 @@ export const sessionsBody = <M>(
 				h,
 				options.scope,
 				formatNumber(totals.sessions),
-				`${pluralize(totals.sessions, "session")} · ${formatNumber(totals.failingSessions)} with a failed call`,
+				`${pluralize(totals.sessions, "session")} · ${formatNumber(totals.users)} ${pluralize(totals.users, "user")}`,
 			),
+			...sessionsOverview(h, data, options),
 			h.section(
 				[h.AriaLabel("Sessions"), h.Class("@container/panel min-w-0 px-6 pt-6 pb-6")],
 				[
@@ -139,6 +228,11 @@ export const sessionsBody = <M>(
 					toolTable(h, [
 						toolTableHead(h, [
 							th(h, { label: "Session", width: "w-0 flex-1 min-w-0" }),
+							th(h, {
+								label: "User",
+								width: "w-36 shrink-0",
+								hidden: "hidden @min-[640px]/panel:flex",
+							}),
 							th(h, { label: "Client", width: "w-44 shrink-0" }),
 							th(h, { label: "Calls", width: "w-14 shrink-0", align: "right" }),
 							th(h, { label: "Failed", width: "w-14 shrink-0", align: "right" }),

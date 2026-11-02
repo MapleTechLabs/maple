@@ -385,7 +385,7 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 	const window = windowOf(model)
 	const filters = filtersOf(model)
 	const description =
-		data === undefined || data.withSession === 0
+		data === undefined || data.totals.sessions === 0
 			? "MCP sessions"
 			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} tool calls`
 	const body = AsyncData.matchData(sessions, {
@@ -400,20 +400,23 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 			if (window === undefined) return sessionsLoading(h)
 			if (response.toolCalls === 0)
 				return quietWindow(h, { service, window: windowWords(window), widen: widenOf(model) })
-			if (response.withSession === 0)
+			if (response.withSession === 0 && response.withUser === 0)
 				return noSessionsState(h, { service, onInstrument: openInstrumentDocs })
-			return sessionsBody(h, response, {
-				toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(sessions), {
-					inputId: "mcp-sessions-search",
-					placeholder: "Session id…",
+			return chartsReady(h, model, (theme) =>
+				sessionsBody(h, response, {
+					env: chartEnv(model, theme, timeZone),
+					toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(sessions), {
+						inputId: "mcp-sessions-search",
+						placeholder: "Session id or user…",
+					}),
+					scope: scopeText("all sessions", filters),
+					isWaiting: AsyncData.isRefreshing(sessions),
+					isFailingOnly: filters.isFailingOnly,
+					onOpenSession: (sessionId) => Message.ClickedOpenSession({ sessionId }),
+					nowMs: model.nowMs,
+					timeZone,
 				}),
-				scope: scopeText("all sessions", filters),
-				isWaiting: AsyncData.isRefreshing(sessions),
-				isFailingOnly: filters.isFailingOnly,
-				onOpenSession: (sessionId) => Message.ClickedOpenSession({ sessionId }),
-				nowMs: model.nowMs,
-				timeZone,
-			})
+			)
 		},
 	})
 	return dashboardPage(
@@ -436,11 +439,16 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 	const data = AsyncData.getOrElse(session, () => undefined)
 	const window = windowOf(model)
 	const first = data?.requests[0]
+	const userLabel = data?.userName ?? data?.user ?? undefined
+	const isUserSession = data?.source === "user"
+	const title = isUserSession && userLabel !== undefined ? `${userLabel} on ${data.client}` : sessionId
 	const description =
 		data === undefined || first === undefined
 			? `MCP session on ${service}`
 			: [
-					data.client,
+					...(isUserSession
+						? ["User session, no session id: split after 30 idle minutes"]
+						: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
 					`${sessionCalls(data.requests).length.toLocaleString()} tool calls`,
 					`started ${formatClock(first.timeMs, timeZone)}`,
 					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
@@ -471,9 +479,7 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 			titleContent: h.div(
 				[h.Class("flex min-w-0 flex-col gap-1")],
 				[
-					pageTitle(h, { title: sessionId, className: "truncate font-mono leading-8" }, [
-						sessionId,
-					]),
+					pageTitle(h, { title, className: "truncate font-mono leading-8" }, [title]),
 					pageDescription(h, [description], "text-sm"),
 				],
 			),

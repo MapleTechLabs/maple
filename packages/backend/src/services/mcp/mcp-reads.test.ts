@@ -1,6 +1,14 @@
 import { DateTime } from "effect"
 import { describe, expect, it } from "vitest"
-import { agentSessionsOf, clientItems, quietClientsFor } from "./mcp-reads"
+import {
+	USER_SESSION_GAP_MS,
+	agentSessionsOf,
+	clientItems,
+	parseUserSessionKey,
+	quietClientsFor,
+	stitchUserSessions,
+	userSessionKey,
+} from "./mcp-reads"
 
 const seen = (client: string, kind: string, connects: number, sources: number, calls = 0) => ({
 	client,
@@ -99,5 +107,92 @@ describe("agentSessionsOf", () => {
 
 	it("leaves a call whose caller propagated no agent trace unlinked", () => {
 		expect(agentSessionsOf([{ traceId: httpTrace, linkTraceId: "" }], filed)).toEqual([null])
+	})
+})
+
+describe("stitchUserSessions", () => {
+	const at = (minute: number) => DateTime.makeUnsafe(Date.UTC(2026, 10, 2, 9, 0) + minute * 60_000)
+	const minute = (
+		user: string,
+		client: string,
+		m: number,
+		extra: Partial<{ errors: number; tools: ReadonlyArray<string | null> }> = {},
+	) => ({
+		user,
+		client,
+		kind: "agent",
+		userName: user === "u1" ? "Ada" : "",
+		requests: 2,
+		calls: 1,
+		errors: extra.errors ?? 0,
+		tools: extra.tools ?? ["run_sql"],
+		firstSeen: at(m),
+		lastSeen: DateTime.makeUnsafe(Date.UTC(2026, 10, 2, 9, 0) + m * 60_000 + 30_000),
+	})
+
+	it("joins a user's minutes from one client until they go quiet for the gap", () => {
+		const gapMinutes = USER_SESSION_GAP_MS / 60_000
+		const sessions = stitchUserSessions([
+			minute("u1", "Claude Code", 0, { tools: ["run_sql", null] }),
+			minute("u1", "Claude Code", 5, { errors: 1, tools: ["list_services"] }),
+			// Quiet just under the gap since the last request (at 5m30s): still the same session.
+			minute("u1", "Claude Code", 5 + gapMinutes - 1),
+			// Quiet for the whole gap: a new session.
+			minute("u1", "Claude Code", 5 + gapMinutes * 2 + 1),
+		])
+		expect(sessions.map((s) => [s.requests, s.calls, s.errors, s.tools])).toEqual([
+			[6, 3, 1, 2],
+			[2, 1, 0, 1],
+		])
+		expect(sessions[0]).toMatchObject({
+			source: "user",
+			user: "u1",
+			userName: "Ada",
+			client: "Claude Code",
+		})
+	})
+
+	it("never joins two users or one user's two clients", () => {
+		const sessions = stitchUserSessions([
+			minute("u1", "Claude Code", 0),
+			minute("u1", "Cursor", 1),
+			minute("u2", "Cursor", 1),
+		])
+		expect(sessions.map((s) => `${s.user} ${s.client}`)).toEqual([
+			"u1 Claude Code",
+			"u1 Cursor",
+			"u2 Cursor",
+		])
+		expect(sessions[2]?.userName).toBeNull()
+	})
+
+	it("keys each session so its page can find it again", () => {
+		const [session] = stitchUserSessions([minute("auth0|abc:1", "Node (undici)", 0)])
+		expect(session === undefined ? undefined : parseUserSessionKey(session.sessionId)).toEqual({
+			startMs: Date.UTC(2026, 10, 2, 9, 0),
+			client: "Node (undici)",
+			user: "auth0|abc:1",
+		})
+	})
+})
+
+describe("parseUserSessionKey", () => {
+	it("reads an issued session id as no user session", () => {
+		expect(parseUserSessionKey("3f6c1d2a-8b4e-4f7a-9c21-5d0e7b9a4c11")).toBeUndefined()
+	})
+
+	it("refuses a key whose start, client or user is missing or malformed", () => {
+		expect(parseUserSessionKey("user:abc:Cursor:u1")).toBeUndefined()
+		expect(parseUserSessionKey("user:1700000000000::u1")).toBeUndefined()
+		expect(parseUserSessionKey("user:1700000000000:Cursor:")).toBeUndefined()
+		expect(parseUserSessionKey("user:1700000000000:%E0%A4%A:u1")).toBeUndefined()
+	})
+
+	it("round-trips a client name with a colon", () => {
+		expect(parseUserSessionKey(userSessionKey(1, "a:b", "u1"))).toEqual({
+			startMs: 1,
+			client: "a:b",
+			user: "u1",
+		})
 	})
 })

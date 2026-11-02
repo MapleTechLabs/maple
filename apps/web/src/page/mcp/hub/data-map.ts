@@ -17,8 +17,7 @@ const plural = (count: number, one: string, many = `${one}s`) =>
 
 const point = (row: McpSeriesPoint): ToolSeriesPoint => ({ ...row, sessions: 0 })
 
-export const serverRows = (response: McpServersResponse): ReadonlyArray<McpServerRow> =>
-	response.servers
+export const serverRows = (response: McpServersResponse): ReadonlyArray<McpServerRow> => response.servers
 
 /** The failure panel: tool errors, server-side JSON-RPC errors, and the caller mistakes the spec exempts. */
 export const failureKinds = (failures: Overview["failures"]): ReadonlyArray<McpFailureKind> => {
@@ -88,7 +87,18 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 			detail:
 				coverage.withSession > 0
 					? every(coverage.withSession, "tool call")
-					: "Not sent: without a session id there is no sessions view.",
+					: coverage.withUser > 0
+						? "Not sent: sessions are built from each user's calls instead."
+						: "Not sent: send it, or the user below, for a sessions view.",
+		},
+		{
+			isPresent: coverage.withUser > 0,
+			label: "Users",
+			attributes: ["user.id"],
+			detail:
+				coverage.withUser > 0
+					? every(coverage.withUser, "tool call")
+					: "Not sent: calls can't be counted or grouped by who made them.",
 		},
 		{
 			isPresent: coverage.withCallerTrace > 0,

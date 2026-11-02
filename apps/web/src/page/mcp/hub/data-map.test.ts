@@ -8,6 +8,7 @@ const coverage = {
 	toolErrors: 4,
 	errorsWithMessage: 0,
 	withSession: 0,
+	withUser: 40,
 	withCallerTrace: 1,
 	protocolVersion: "2025-06-18",
 	transport: "tcp",
@@ -27,6 +28,14 @@ describe("coverageRows", () => {
 			isPresent: true,
 			detail: "1 of 100 calls join an agent's trace.",
 		})
+	})
+
+	it("builds sessions from users when the server issues no session id", () => {
+		expect(row("Sessions")).toMatchObject({
+			isPresent: false,
+			detail: "Not sent: sessions are built from each user's calls instead.",
+		})
+		expect(row("Users")).toMatchObject({ isPresent: true, detail: "On 40 of 100 tool calls." })
 	})
 
 	it("says failures can't be grouped when no failed call carries a message", () => {
