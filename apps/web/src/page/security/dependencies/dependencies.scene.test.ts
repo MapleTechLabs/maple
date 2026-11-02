@@ -1,7 +1,9 @@
 import { OrgId } from "@maple/domain"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { DependencyScanForbiddenError, DependencyScanPersistenceError } from "@maple/domain/http"
+import { VcsRepositoryId } from "@maple/domain/http"
 import type { DependencyFindingsResponse, DependencyScanRepositoriesResponse } from "@maple/domain/http"
+import { DependencyFindingId } from "@maple/domain/dependency-scan"
 import { Result, Schema } from "effect"
 import {
 	click,
@@ -22,6 +24,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	FINDING_IDS,
 	findingsOf,
+	largeOrgOf,
 	neverScannedOf,
 	noFindings,
 	noRepositories,
@@ -31,6 +34,9 @@ import {
 	rescannedOf,
 } from "../../../lab/security-dependencies-fixture"
 import { AppRoute, hrefOf } from "../../../route"
+import type { SecurityDependenciesSearch } from "../../../route/search"
+import * as Animation from "@foldkit/ui/animation"
+import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
@@ -74,6 +80,11 @@ const loaded = (
 				result: Result.succeed(findings),
 			}),
 	])
+
+/** The same answers at another URL: a repository, the advisories table, or both. */
+const at = (model: Model, search: SecurityDependenciesSearch): Model =>
+	routeChanged(model, AppRoute.SecurityDependencies({ search }), context).model
+const ADVISORIES: SecurityDependenciesSearch = { view: "advisories" }
 
 const forbiddenFailure = toLoadFailure(
 	new DependencyScanForbiddenError({ message: "Only org admins can triage findings" }),
@@ -143,10 +154,20 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("before any scan, the URL's tab still decides the view", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(at(loaded(neverScannedOf(NOW), noFindings), ADVISORIES)),
+			expectView(text("First scan is on its way")).toExist(),
+			expectView(role("link", { name: /^Advisories/ })).toHaveAttr("aria-current", "page"),
+			expectView(role("table", { name: "Repositories" })).toBeAbsent(),
+		)
+	})
+
 	test("names the busiest service running each finding, and says when one is not deployed", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(repositoriesOf(NOW), findingsOf(NOW))),
+			given(at(loaded(repositoriesOf(NOW), findingsOf(NOW)), ADVISORIES)),
 			expectView(text("api-gateway +1")).toExist(),
 			expectView(text("2.6M spans/day")).toExist(),
 			expectView(text("payments-worker")).toExist(),
@@ -160,24 +181,30 @@ describe("security dependencies tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
-				loaded(
-					{
-						repositories: repositories.repositories.map((repository) =>
-							repository.id === PAYMENTS_ID
-								? {
-										...repository,
-										runningCommits: repository.runningCommits.map((commit) => ({
-											...commit,
-											scanStatus: null,
-										})),
-									}
-								: repository,
-						),
-					},
-					{
-						...findingsOf(NOW),
-						findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
-					},
+				at(
+					loaded(
+						{
+							repositories: repositories.repositories.map((repository) =>
+								repository.id === PAYMENTS_ID
+									? {
+											...repository,
+											runningCommits: repository.runningCommits.map((commit) => ({
+												...commit,
+												scanStatus: null,
+											})),
+										}
+									: repository,
+							),
+						},
+						{
+							...findingsOf(NOW),
+							findings: findingsOf(NOW).findings.map((finding) => ({
+								...finding,
+								production: [],
+							})),
+						},
+					),
+					ADVISORIES,
 				),
 			),
 			expectView(text("Not scanned yet")).toExist(),
@@ -191,24 +218,30 @@ describe("security dependencies tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
-				loaded(
-					{
-						repositories: repositories.repositories.map((repository) =>
-							repository.id === PAYMENTS_ID
-								? {
-										...repository,
-										runningCommits: repository.runningCommits.map((commit) => ({
-											...commit,
-											scanStatus: "running" as const,
-										})),
-									}
-								: repository,
-						),
-					},
-					{
-						...findingsOf(NOW),
-						findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
-					},
+				at(
+					loaded(
+						{
+							repositories: repositories.repositories.map((repository) =>
+								repository.id === PAYMENTS_ID
+									? {
+											...repository,
+											runningCommits: repository.runningCommits.map((commit) => ({
+												...commit,
+												scanStatus: "running" as const,
+											})),
+										}
+									: repository,
+							),
+						},
+						{
+							...findingsOf(NOW),
+							findings: findingsOf(NOW).findings.map((finding) => ({
+								...finding,
+								production: [],
+							})),
+						},
+					),
+					ADVISORIES,
 				),
 			),
 			expectView(text("Scanning")).toExist(),
@@ -221,24 +254,30 @@ describe("security dependencies tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
-				loaded(
-					{
-						repositories: repositories.repositories.map((repository) =>
-							repository.id === PAYMENTS_ID
-								? {
-										...repository,
-										runningCommits: repository.runningCommits.map((commit) => ({
-											...commit,
-											scanStatus: "failed" as const,
-										})),
-									}
-								: repository,
-						),
-					},
-					{
-						...findingsOf(NOW),
-						findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
-					},
+				at(
+					loaded(
+						{
+							repositories: repositories.repositories.map((repository) =>
+								repository.id === PAYMENTS_ID
+									? {
+											...repository,
+											runningCommits: repository.runningCommits.map((commit) => ({
+												...commit,
+												scanStatus: "failed" as const,
+											})),
+										}
+									: repository,
+							),
+						},
+						{
+							...findingsOf(NOW),
+							findings: findingsOf(NOW).findings.map((finding) => ({
+								...finding,
+								production: [],
+							})),
+						},
+					),
+					ADVISORIES,
 				),
 			),
 			expectView(text("Scan failed")).toExist(),
@@ -334,10 +373,13 @@ describe("security dependencies tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
-				loaded(repositoriesOf(NOW), {
-					...findingsOf(NOW),
-					production: { ...findingsOf(NOW).production, complete: false },
-				}),
+				at(
+					loaded(repositoriesOf(NOW), {
+						...findingsOf(NOW),
+						production: { ...findingsOf(NOW).production, complete: false },
+					}),
+					ADVISORIES,
+				),
 			),
 			expectView(text("Not running")).toBeAbsent(),
 			expectView(text("Unknown")).toExist(),
@@ -354,11 +396,19 @@ describe("security dependencies tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
-				loaded(repositoriesOf(NOW), {
-					...findingsOf(NOW),
-					findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
-					production: { available: true, runningServices: 0, linkedServices: 0, complete: true },
-				}),
+				at(
+					loaded(repositoriesOf(NOW), {
+						...findingsOf(NOW),
+						findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
+						production: {
+							available: true,
+							runningServices: 0,
+							linkedServices: 0,
+							complete: true,
+						},
+					}),
+					ADVISORIES,
+				),
 			),
 			expectView(text(/vcs\.ref\.head\.revision/)).toExist(),
 			expectView(text("Unknown")).toExist(),
@@ -393,14 +443,67 @@ describe("security dependencies tab", () => {
 		)
 	})
 
-	test("the populated tab shows the rail, repository problems and open findings worst first", () => {
+	test("every repository reads as a matrix: a package per row, a dot where it is open, worst first", () => {
+		const matrix = role("table", { name: "Vulnerable packages by repository" })
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
-			expectView(text("3 / 3")).toExist(),
-			expectView(text("open, and 1 unrated")).toExist(),
-			expectView(text(/commit bun\.lock/)).toExist(),
+			// Both axios advisories are one dot, linked to the repository's upgrade plan.
+			expectView(
+				within(
+					matrix,
+					role("link", { name: /^axios in acme\/payments-api, Critical, 2 advisories/ }),
+				),
+			).toHaveAttr("href", hrefOf(AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }))),
+			expectView(within(matrix, role("link", { name: "acme/web" }))).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDependencies({ search: { repo: REPOSITORY_IDS.web } })),
+			),
+			// The fix column is the highest version any lockfile needs.
+			expectView(within(matrix, text("1.12.0"))).toExist(),
+			expectView(within(matrix, text("No fix yet"))).toExist(),
+			expectView(within(matrix, text("lodash.template"))).toBeAbsent(),
+			expectView(within(matrix, text("jsonwebtoken"))).toBeAbsent(),
+			expectView(text(/3 \/ 3 scanned/)).toExist(),
+			expectView(text("+1 unrated")).toExist(),
+		)
+	})
+
+	test("every repository says how many scans could not read everything, and the Repositories tab says why", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(text("2 repositories could not be read in full.")).toExist(),
+			expectView(role("link", { name: "See which" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDependencies({ search: { view: "repositories" } })),
+			),
+		)
+		const repositories = role("table", { name: "Repositories" })
+		scene(
+			{ update: pageUpdate, view },
+			given(at(loaded(), { view: "repositories" })),
+			expectView(within(repositories, text("Line 212: expected a [[package]] table."))).toExist(),
+			expectView(within(repositories, role("link", { name: "acme/payments-api" }))).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } })),
+			),
+			// Two axios advisories are one bump.
+			expectView(within(repositories, text("3 upgrades clear 4"))).toExist(),
+		)
+	})
+	test("a repository's pane names its lockfile problems", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(at(loaded(), { repo: PAYMENTS_ID })),
 			expectView(text("Line 212: expected a [[package]] table.")).toExist(),
+		)
+	})
+
+	test("the advisories tab lists open findings worst first, linked to OSV", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(at(loaded(), ADVISORIES)),
 			expectView(role("link", { name: "CVE-2025-27152" })).toHaveAttr(
 				"href",
 				"https://osv.dev/vulnerability/GHSA-jr5f-v2jv-69x6",
@@ -418,24 +521,24 @@ describe("security dependencies tab", () => {
 			Message.GotStatusSelectMessage({ message: Select.Message.SelectedItem({ index: 0, value }) })
 		scene(
 			{ update: pageUpdate, view },
-			given(apply(loaded(), [status("dismissed")])),
+			given(apply(at(loaded(), ADVISORIES), [status("dismissed")])),
 			expectView(text("lodash.template")).toExist(),
 			expectView(text("axios")).toBeAbsent(),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(apply(loaded(), [status("all")])),
+			given(apply(at(loaded(), ADVISORIES), [status("all")])),
 			expectView(text("lodash.template")).toExist(),
 			expectView(text("jsonwebtoken")).toExist(),
 			expectView(text("axios")).toExist(),
 		)
 	})
 
-	test("the repository filter links to that repository's breakdown", () => {
+	test("picking a repository in the switcher opens it", () => {
 		const step = pageUpdate(
 			loaded(),
-			Message.GotRepositorySelectMessage({
-				message: Select.Message.SelectedItem({ index: 1, value: PAYMENTS_ID }),
+			Message.GotRepositoryBoxMessage({
+				message: Combobox.Message.ClickedItem({ value: "acme/payments-api" }),
 			}),
 		)
 		expect(step.outMessage).toEqual(
@@ -445,24 +548,85 @@ describe("security dependencies tab", () => {
 			}),
 		)
 	})
-
-	test("each repository row counts its open findings and the upgrades that clear them", () => {
-		const repositories = role("table", { name: "Repositories" })
-		scene(
-			{ update: pageUpdate, view },
-			given(loaded()),
-			expectView(within(repositories, role("link", { name: "acme/payments-api" }))).toHaveAttr(
-				"href",
-				hrefOf(AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } })),
-			),
-			// Two axios advisories are one bump.
-			expectView(within(repositories, text("3 upgrades clear 4"))).toExist(),
-			expectView(within(repositories, text("1 upgrade clears 1"))).toExist(),
-			expectView(within(repositories, text("No fix yet"))).toExist(),
+	test("the switcher keeps the advisories tab, and leaves the repositories tab for the upgrade plan", () => {
+		const pick = (model: Model) =>
+			pageUpdate(
+				model,
+				Message.GotRepositoryBoxMessage({
+					message: Combobox.Message.ClickedItem({ value: "acme/payments-api" }),
+				}),
+			).outMessage
+		expect(pick(at(loaded(), ADVISORIES))).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: hrefOf(
+					AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID, view: "advisories" } }),
+				),
+				isReplace: false,
+			}),
+		)
+		expect(pick(at(loaded(), { view: "repositories" }))).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } })),
+				isReplace: false,
+			}),
 		)
 	})
 
-	test("a focused repository shows its upgrade plan, its rail and only its findings", () => {
+	test("the matrix gives the riskiest repositories a column and counts every one", () => {
+		// Eight more repositories, each with the critical axios advisory.
+		const repositoryId = (index: number) =>
+			Schema.decodeSync(VcsRepositoryId)(`00000000-0000-4000-8000-00000000000${index}`)
+		const extra = repositoriesOf(NOW)
+			.repositories.slice(0, 1)
+			.flatMap((base) =>
+				Array.from({ length: 8 }, (_, index) => ({
+					...base,
+					id: repositoryId(index),
+					fullName: `acme/extra-${index}`,
+				})),
+			)
+		const findings = findingsOf(NOW)
+		const extraFindings = findings.findings
+			.filter((finding) => finding.id === FINDING_IDS.axios)
+			.flatMap((axios) =>
+				extra.map((repository, index) => ({
+					...axios,
+					id: Schema.decodeSync(DependencyFindingId)(`${"e".repeat(31)}${index}`),
+					repositoryId: repository.id,
+					repositoryFullName: repository.fullName,
+				})),
+			)
+		const model = loaded(
+			{ repositories: [...repositoriesOf(NOW).repositories, ...extra] },
+			{ ...findings, findings: [...findings.findings, ...extraFindings] },
+		)
+		const matrix = role("table", { name: "Vulnerable packages by repository" })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			// 11 affected repositories: 5 columns, and axios counted in all 9 that have it.
+			expectView(within(matrix, role("columnheader", { name: "Repos" }))).toExist(),
+			expectView(within(matrix, text("9"))).toExist(),
+			expectView(within(matrix, role("link", { name: "acme/cli" }))).toBeAbsent(),
+			expectView(within(matrix, role("link", { name: "acme/extra-7" }))).toBeAbsent(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			click(within(matrix, role("button", { name: /axios/ }))),
+			// Opened, the row names every repository it is open in, counted ones included.
+			expectView(within(matrix, role("link", { name: "acme/extra-7" }))).toHaveAttr(
+				"href",
+				hrefOf(
+					AppRoute.SecurityDependencies({
+						search: { repo: repositoryId(7) },
+					}),
+				),
+			),
+			expectView(within(matrix, text("1.7.4 → 1.12.0"))).toExist(),
+		)
+	})
+	test("a focused repository shows its upgrade plan and only its findings", () => {
 		const routed = routeChanged(
 			loaded(),
 			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
@@ -477,13 +641,8 @@ describe("security dependencies tab", () => {
 			expectView(within(plan, text("1.12.0"))).toExist(),
 			expectView(within(plan, text("1.8.2"))).toBeAbsent(),
 			expectView(within(plan, text("2 advisories"))).toExist(),
-			expectView(text("Upgrades")).toExist(),
-			expectView(text("clear 4 of 4 advisories")).toExist(),
+			expectView(role("link", { name: /Upgrade plan/ })).toHaveAttr("aria-current", "page"),
 			expectView(text("tokio")).toBeAbsent(),
-			expectView(role("link", { name: "All repositories" })).toHaveAttr(
-				"href",
-				hrefOf(AppRoute.SecurityDependencies({ search: {} })),
-			),
 		)
 	})
 
@@ -570,7 +729,56 @@ describe("security dependencies tab", () => {
 		)
 	})
 
-	test("before any scan, the focused repository's row still reads as the current one", () => {
+	test("at 300 repositories an opened package lists a page of them, then every one", () => {
+		const org = largeOrgOf(NOW, 300)
+		const matrix = role("table", { name: "Vulnerable packages by repository" })
+		const opened = pageUpdate(
+			loaded(org.repositories, org.findings),
+			Message.ClickedPackage({ key: "npm/axios" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			expectView(within(matrix, role("button", { name: /^Show all \d+ repositories$/ }))).toExist(),
+		)
+		const all = pageUpdate(opened, Message.ClickedShowAllRepositories({ key: "npm/axios" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(all),
+			expectView(within(matrix, role("button", { name: /^Show all/ }))).toBeAbsent(),
+		)
+	})
+
+	test("at 300 repositories the tables render a page at a time", () => {
+		const org = largeOrgOf(NOW, 300)
+		const model = at(loaded(org.repositories, org.findings), { view: "repositories" })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Showing 100 of 300 repositories")).toExist(),
+			click(role("button", { name: "Load more" })),
+			expectView(text("Showing 200 of 300 repositories")).toExist(),
+		)
+	})
+
+	test("an empty upgrade plan does not call an unread repository clean", () => {
+		const focused = (repositories: DependencyScanRepositoriesResponse) =>
+			at(loaded(repositories, noFindings), { repo: PAYMENTS_ID })
+		scene(
+			{ update: pageUpdate, view },
+			given(focused(neverScannedOf(NOW))),
+			expectView(text("Not scanned yet, so there is nothing to plan.")).toExist(),
+			expectView(text("No open advisories in this repository's latest scan")).toBeAbsent(),
+		)
+		// The fixture's payments scan could not read one lockfile.
+		scene(
+			{ update: pageUpdate, view },
+			given(focused(repositoriesOf(NOW))),
+			expectView(text("No open advisories in what the latest scan could read.")).toExist(),
+		)
+	})
+
+	test("the switcher reads the focused repository, even before any scan", () => {
 		const routed = routeChanged(
 			loaded(neverScannedOf(NOW), noFindings),
 			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
@@ -579,10 +787,9 @@ describe("security dependencies tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(routed),
-			expectView(role("link", { name: "acme/payments-api" })).toHaveAttr("aria-current", "page"),
+			expectView(role("combobox", { name: "Repository" })).toHaveAttr("value", "acme/payments-api"),
 		)
 	})
-
 	test("re-picking the focused repository does not navigate again", () => {
 		const focused = routeChanged(
 			loaded(),
@@ -591,8 +798,8 @@ describe("security dependencies tab", () => {
 		).model
 		const step = pageUpdate(
 			focused,
-			Message.GotRepositorySelectMessage({
-				message: Select.Message.SelectedItem({ index: 1, value: PAYMENTS_ID }),
+			Message.GotRepositoryBoxMessage({
+				message: Combobox.Message.ClickedItem({ value: "acme/payments-api" }),
 			}),
 		)
 		expect(step.outMessage).toBeUndefined()
@@ -650,7 +857,7 @@ describe("security dependencies tab", () => {
 		expect(queued.outMessage).toMatchObject({ title: "Scan queued" })
 		scene(
 			{ update: pageUpdate, view },
-			given(queued.model),
+			given(at(queued.model, { repo: PAYMENTS_ID })),
 			expectView(role("button", { name: "Scan queued" })).toHaveAttr("disabled", "true"),
 		)
 		const ticked = pageUpdate(queued.model, Message.TickedScanPoll({ nowMs: NOW + 5_000 }))
@@ -713,6 +920,43 @@ describe("security dependencies tab", () => {
 			expectView(text("1.8.2")).toExist(),
 			expectView(text("pnpm-lock.yaml")).toExist(),
 			expectView(role("button", { name: "Accept risk" })).toExist(),
+		)
+	})
+
+	test("an upgrade opens to the advisories it clears, and each opens its finding", () => {
+		const plan = role("table", { name: "Upgrade plan for acme/payments-api" })
+		scene(
+			{ update: pageUpdate, view },
+			given(at(loaded(), { repo: PAYMENTS_ID })),
+			click(within(plan, role("button", { name: /^axios/ }))),
+			expectView(within(plan, role("button", { name: /CVE-2025-58754/ }))).toExist(),
+			click(within(plan, role("button", { name: /CVE-2025-27152/ }))),
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+			),
+			Command.resolve(
+				Animation.WaitForAnimationSettled,
+				Animation.Message.EndedAnimation({ generation: 1 }),
+			),
+			mounted,
+			expectView(role("dialog")).toExist(),
+			expectView(text(/ignore baseURL/)).toExist(),
+		)
+	})
+
+	test("one repository's advisories name the lockfile, not the repository on every row", () => {
+		const table = role("table", { name: "Vulnerable packages" })
+		scene(
+			{ update: pageUpdate, view },
+			given(at(loaded(), { repo: PAYMENTS_ID, view: "advisories" })),
+			expectView(within(table, role("columnheader", { name: "Lockfile" }))).toExist(),
+			expectView(within(table, text("payments-api"))).toBeAbsent(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(at(loaded(), ADVISORIES)),
+			expectView(within(table, role("columnheader", { name: "Location" }))).toExist(),
 		)
 	})
 
