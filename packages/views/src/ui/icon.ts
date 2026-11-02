@@ -52,12 +52,16 @@ const renderNode = <Message>(
 }
 
 /** A generated icon with its size, class, style and attributes. */
-export const icon = <Message>(
+export const icon = <Message>(h: HtmlBuilder<Message>, name: IconName, options: IconOptions<Message> = {}): Html =>
+	iconNode(h, ICON_TREES[name], name, options)
+
+/** One tree drawn without the `ICON_TREES` lookup (`control-icons`), so a bundle keeps only it. */
+export const iconNode = <Message>(
 	h: HtmlBuilder<Message>,
+	tree: IconNode,
 	name: IconName,
 	options: IconOptions<Message> = {},
-): Html =>
-	renderNode(h, ICON_TREES[name], options, String(options.size ?? ICON_DEFAULT_SIZES[name] ?? 24), options.id ?? name)
+): Html => renderNode(h, tree, options, String(options.size ?? ICON_DEFAULT_SIZES[name] ?? 24), options.id ?? name)
 
 /** `style={{ color }}` when the call site has a colour. */
 export const iconColor = (color: string | undefined): Pick<IconOptions<never>, "style"> =>

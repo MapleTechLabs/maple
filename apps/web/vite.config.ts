@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { Schema } from "effect"
 import { defineConfig, loadEnv, type Plugin } from "vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
-import { clerkJsUrl } from "./src/platform/clerk-js-url.ts"
+import { clerkJsUrl } from "../../packages/domain/src/clerk-js-url.ts"
 import { versionManifest } from "./vite-plugin-version-manifest.ts"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.String))

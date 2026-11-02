@@ -722,8 +722,8 @@
 	}
 }
 
-/* ReactFlow Controls styling — shared because @maple/ui ships flow components
-   rendered by both apps (service map in web, TraceVisualization on landing).
+/* xyflow Controls styling, shared by the flow views in @maple/views (service map,
+   trace flow) on every app.
    Flat chrome, square corners: the product rendering is the reference. */
 .react-flow__controls {
 	box-shadow: none !important;

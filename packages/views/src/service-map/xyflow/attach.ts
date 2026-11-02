@@ -1,3 +1,4 @@
+import * as XYSystem from "@xyflow/system"
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./canvas"
@@ -174,7 +175,7 @@ export const followLimits = (raw: string | null, applied: string, apply: (limits
 
 /** `ZoomPane`: XYPanZoom on the renderer with the canvas's gesture options. */
 const attachPanZoom = (
-	system: typeof import("@xyflow/system"),
+	system: typeof XYSystem,
 	renderer: HTMLElement,
 	limits: FlowLimits,
 	emit: (message: MountMessage) => void,
@@ -381,7 +382,7 @@ export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 	execute: ({ element, minZoom, maxZoom, gestures }) =>
 		Stream.callback<MountMessage>((queue) =>
 			Effect.acquireRelease(
-				Effect.promise(() => import("@xyflow/system")).pipe(
+				Effect.succeed(XYSystem).pipe(
 					Effect.map((system) => {
 						if (!(element instanceof HTMLElement)) return () => {}
 						const emit = (message: MountMessage) => Queue.offerUnsafe(queue, message)

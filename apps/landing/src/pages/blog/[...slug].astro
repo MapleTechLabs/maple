@@ -10,7 +10,7 @@ import PostCard from "../../components/blog/PostCard.astro";
 import ArticleEnhancements from "../../components/blog/ArticleEnhancements.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
 import { CATEGORY_META, formatDate, isoDate, readingTime, getSortedPosts } from "../../lib/blog";
-import { MapleMark } from "@maple/ui/components/icons/maple-mark";
+import Icon from "../../components/Icon.astro";
 
 export async function getStaticPaths() {
     const posts = await getCollection("blog", ({ data }) => !data.draft || import.meta.env.DEV);
@@ -103,7 +103,7 @@ const backLink =
                         <p class="mt-5 font-display text-[17px] leading-[1.65] text-pretty text-fg-muted">{description}</p>
 
                         <div class="mt-6 flex items-center gap-2.5 font-mono text-xs text-fg/80">
-                            <MapleMark size={22} className="text-primary" aria-hidden="true" />
+                            <Icon name="MapleMark" size={22} class="text-primary" aria-hidden="true" />
                             <span>{author}</span>
                             {authorRole && <span class="text-fg-muted">{authorRole}</span>}
                         </div>
