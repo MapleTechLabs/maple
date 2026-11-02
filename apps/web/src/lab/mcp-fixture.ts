@@ -318,7 +318,7 @@ export const MCP_OVERVIEW: McpServerOverview = {
 			lastSeenMs: at(11, 40),
 		},
 	],
-	initializers: [
+	clientInfo: [
 		{ name: "Claude Code", count: 75 },
 		{ name: "estate-console", count: 10 },
 		{ name: "executor-mcp", count: 5 },
@@ -370,7 +370,7 @@ export const MCP_OVERVIEW: McpServerOverview = {
 			isPresent: true,
 			label: "Client per call",
 			attributes: ["user_agent.original"],
-			detail: "On every call; clientInfo on initialize only.",
+			detail: "On every call.",
 		},
 		{
 			isPresent: true,

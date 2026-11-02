@@ -149,8 +149,8 @@ export class McpOverviewResponse extends Schema.Class<McpOverviewResponse>("McpO
 	clients: Schema.Array(McpClientItem),
 	/** Every client in the window, for the client and kind facets. */
 	allClients: Schema.Array(McpClientItem),
-	/** `clientInfo.name` from real `initialize` requests. */
-	initializers: Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number })),
+	/** Requests per `clientInfo.name`: from `initialize`, or every request on a stateless server. */
+	clientInfo: Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number })),
 	/** Failed calls per `error.type` under the selection. */
 	failures: Schema.Array(Schema.Struct({ errorType: Schema.String, count: Schema.Number })),
 	methods: Schema.Array(McpMethodItem),

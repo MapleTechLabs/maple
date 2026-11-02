@@ -2037,9 +2037,9 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "mcp",
-		name: "mcpInitializersQuery",
+		name: "mcpClientInfoQuery",
 		label: "default",
-		compile: () => CH.compileUnsafe(CH.mcpInitializersQuery(), { ...window, serviceName: "maple-ai" }),
+		compile: () => CH.compileUnsafe(CH.mcpClientInfoQuery(), { ...window, serviceName: "maple-ai" }),
 	},
 	{
 		module: "mcp",

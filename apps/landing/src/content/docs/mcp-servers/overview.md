@@ -18,9 +18,9 @@ Every request is a `SERVER` span carrying `mcp.method.name`.
 | `gen_ai.tool.name`          | The tool a `tools/call` called.                                                       |
 | `error.type`                | Set when a call failed: `tool_error` for an `isError` result, else the JSON-RPC code. |
 | `user_agent.original`       | The client: Claude Code, Cursor, Codex, curl...                                       |
-| `mcp.session.id`            | Groups a stateful server's requests into sessions.                                    |
-| `user.id` (or `enduser.id`) | The end user: a column, a filter, user counts, and sessions on a stateless server.    |
+| `user.id` (or `enduser.id`) | The end user: a column, a filter, user counts, and sessions.                          |
 | `user.name`, `user.email`   | How the user is shown; the id when neither is set.                                    |
+| `mcp.session.id`            | Groups an older, stateful server's requests into its own sessions.                    |
 
 ## Identify the user
 
@@ -44,8 +44,8 @@ Send an id you already use for the user, never a secret: it is stored with the s
 
 ## Sessions
 
-A server on a stateful transport issues an `Mcp-Session-Id`. Record it as `mcp.session.id` on every server span and each client's requests group into one session.
+MCP is stateless from spec version 2026-07-28: there is no `initialize` handshake and no `Mcp-Session-Id`, and every request is authenticated on its own. Maple builds sessions from `user.id` instead. It joins one user's calls from one client and starts a new session after 30 minutes without a request, so the attribute from [Identify the user](#identify-the-user) is all a session needs.
 
-A stateless server issues no session. Its calls still form sessions when they carry `user.id`: Maple joins one user's calls from one client and starts a new session after 30 minutes without a request. Calls with neither a session id nor a user belong to no session.
+A server on an earlier spec version that issues an `Mcp-Session-Id` can record it as `mcp.session.id` on every server span. Those requests group into the session the server issued, and both kinds list side by side. Calls with neither a user nor a session id belong to no session.
 
 Each session lists its requests in order, the tools it called, and the trace behind every request. When the client sends its trace context in `params._meta`, the session also links to the [Agent Session](/docs/agent-sessions/overview) that made each call.
