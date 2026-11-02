@@ -1,7 +1,7 @@
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
+import { findFirstPartialIndex, splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
 import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { Option } from "effect"
@@ -313,6 +313,17 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 	}
 }
 
+/**
+ * A run split at the first in-flight bucket. Like `splitAtFirstPartial`, the last closed reading
+ * belongs to both halves, so the dashed tail starts where the solid line ends.
+ */
+const splitRunAt = (run: ReadonlyArray<TimeseriesRow>, partialFromMs: number | null) => {
+	const first = partialFromMs === null ? -1 : run.findIndex((row) => row.date.getTime() >= partialFromMs)
+	return first === -1
+		? { solid: run, dashed: [] }
+		: { solid: run.slice(0, first), dashed: run.slice(Math.max(0, first - 1)) }
+}
+
 const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
 	const focus = tooltipFocusCapture()
@@ -340,10 +351,12 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 			strokeDasharray: dash ? partialDash : undefined,
 		})
 	const runs = series.map((entry) => ({ entry, ...seriesRuns(plotRows, gapValueOf(entry.key), at) }))
-	// Each run splits on its own, so the dashed tail starts at that series' last closed reading.
+	// The in-flight boundary comes from the whole window: a run's own readings can sit buckets apart,
+	// which would read as a wider bucket and mark closed readings in flight.
+	const partialFromMs = plotRows[findFirstPartialIndex(plotRows, model.trimOptions)]?.date.getTime() ?? null
 	const lines = runs.flatMap(({ entry, runs: entryRuns }) =>
 		entryRuns.flatMap((run, index) => {
-			const { solid, dashed } = splitAtFirstPartial(run, [entry.key], model.trimOptions)
+			const { solid, dashed } = splitRunAt(run, partialFromMs)
 			return [
 				line(solid, entry, false, index),
 				...(dashed.length > 0 ? [line(dashed, entry, true, index)] : []),

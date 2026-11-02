@@ -19,11 +19,11 @@ const rows = P50.map((p50, index) => ({
 const flatten = (nodes: ReadonlyArray<SceneNode>): ReadonlyArray<SceneNode> =>
 	nodes.flatMap((node) => (node.kind === "group" ? flatten(node.children) : [node]))
 
-const scene = () => {
+const scene = (chartRows: typeof rows = rows, nowMs = START + 24 * 60 * 60_000) => {
 	const built = buildFixedMetric({
 		_tag: "FixedMetric",
 		chart: "Latency",
-		rows,
+		rows: chartRows,
 		colors: {
 			border: "#333",
 			background: "#000",
@@ -33,8 +33,8 @@ const scene = () => {
 		},
 		perSecond: false,
 		timeZone: "UTC",
-		// Long after the last bucket, so every bucket is closed and draws solid.
-		nowMs: START + 24 * 60 * 60_000,
+		// By default long after the last bucket, so every bucket is closed and draws solid.
+		nowMs,
 		gradientPrefix: "latency",
 		showTooltip: false,
 	})
@@ -60,6 +60,19 @@ describe("latency chart with missing buckets", () => {
 			node.kind === "polyline" && node.key.startsWith("p50LatencyMs-silence:") ? [node] : [],
 		)
 		expect(bridges.map((node) => [node.points.length, node.style?.strokeDasharray])).toEqual([[2, "2 4"]])
+	})
+
+	test("closed readings one empty bucket apart stay solid next to an in-flight bucket", () => {
+		// 12:40 and 12:50 readings, charted at 12:57: only the 12:55 bucket is still in flight.
+		const late = Array.from({ length: 12 }, (_, index) => ({
+			bucket: new Date(START + index * BUCKET).toISOString(),
+			p50LatencyMs: index === 8 || index === 10 ? 20 : null,
+			p95LatencyMs: null,
+			p99LatencyMs: null,
+		}))
+		const nodes = scene(late, START + 57 * 60_000)
+		expect(lines(nodes, "p50LatencyMs")).toEqual([2])
+		expect(lines(nodes, "p50LatencyMs-partial")).toEqual([])
 	})
 
 	test("readings too far apart to share a line draw as dots", () => {

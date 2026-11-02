@@ -158,8 +158,10 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 				})
 			})
 		: []
-	// A short silence is bridged, a long one stays a gap, and a lone reading draws as a dot.
-	const runsOf = new Map(series.map((name) => [name, seriesRuns(data, valueOf(name), at)]))
+	// Lines bridge a short silence and dash a long one. A gaps chart exists to show every silence,
+	// so its lines break at each silent bucket instead.
+	const bridged = !spec.stacked && !spec.gaps
+	const runsOf = new Map(bridged ? series.map((name) => [name, seriesRuns(data, valueOf(name), at)]) : [])
 	const bands = spec.stacked
 		? [
 				areaY(cells, {
@@ -173,21 +175,32 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 					layout: stack({ order: [...series] }),
 				}),
 			]
-		: series.flatMap((name) =>
-				(runsOf.get(name)?.runs ?? []).map((run, index) =>
-					lineY(run, {
-						id: `${name}:${index}`,
+		: spec.gaps
+			? series.map((name) =>
+					lineY(data, {
+						id: name,
 						x: at,
 						y: valueOf(name),
 						stroke: colorOf(name),
 						strokeWidth: STROKE_WIDTH,
 						curve,
 					}),
-				),
-			)
+				)
+			: series.flatMap((name) =>
+					(runsOf.get(name)?.runs ?? []).map((run, index) =>
+						lineY(run, {
+							id: `${name}:${index}`,
+							x: at,
+							y: valueOf(name),
+							stroke: colorOf(name),
+							strokeWidth: STROKE_WIDTH,
+							curve,
+						}),
+					),
+				)
 	const silent = (value: (point: InfraPoint) => number | null) => (point: InfraPoint | undefined) =>
 		point === undefined || value(point) === null
-	const lone = !spec.stacked
+	const lone = bridged
 		? series.map((name) =>
 				dot(runsOf.get(name)?.lone ?? [], {
 					x: at,
@@ -249,9 +262,8 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		marks: [
 			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
 			...thresholdMarks,
-			...(spec.stacked
-				? []
-				: series.map((name) =>
+			...(bridged
+				? series.map((name) =>
 						silenceBridges(
 							`${name}-silence`,
 							runsOf.get(name)?.silences ?? [],
@@ -259,7 +271,8 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 							valueOf(name),
 							colorOf(name),
 						),
-					)),
+					)
+				: []),
 			...bands,
 			...lone,
 			...series.map((name) => focusDot(data, at, plottedOf(name), colorOf(name), chrome)),
