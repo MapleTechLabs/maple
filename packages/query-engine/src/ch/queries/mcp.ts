@@ -211,6 +211,7 @@ export function mcpClientReachQuery(filter: Pick<McpCallFilter, "client" | "kind
 			client: mcpClientName($),
 			kind: CH.any_(mcpClientKind($)),
 			calls: CH.countIf(method($).eq("tools/call")),
+			errors: CH.countIf(method($).eq("tools/call").and(failed($))),
 			connects: CH.countIf(method($).eq("initialize")),
 			sources: CH.uniqExact(CH.nullIf($.SpanAttributes.get("client.address"), "")),
 			lastSeen: CH.max_($.Timestamp),
