@@ -139,7 +139,7 @@
     },
     "apps/cli": {
       "name": "@maple/cli",
-      "version": "0.3.3",
+      "version": "0.3.4",
       "bin": {
         "maple": "./src/bin.ts",
       },
@@ -528,7 +528,7 @@
     },
     "packages/alchemy-maple": {
       "name": "@maple-dev/alchemy",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "dependencies": {
         "@maple-dev/effect-sdk": "workspace:*",
       },
