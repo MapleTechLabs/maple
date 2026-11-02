@@ -1,6 +1,6 @@
 import { findSpan } from "@maple/web/page/traces/detail/select"
 import * as Timeline from "@maple/web/page/traces/detail/timeline"
-import { toSpanNode, type SpanNodeData, type TraceData } from "@maple/web/page/traces/detail/trace-data"
+import { toSpanNode, type SpanNodeData, type TraceData } from "@maple/views/traces/trace-data"
 import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import { Option } from "effect"

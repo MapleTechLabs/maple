@@ -14,7 +14,7 @@ import {
 } from "@maple/ui/components/traces/trace-timeline-types"
 import { getValueHue } from "@maple/ui/lib/colors"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
-import type { SpanNodeData } from "../trace-data"
+import type { SpanNodeData } from "@maple/views/traces/trace-data"
 
 // copied: the pure layout half of packages/ui/src/components/traces/use-trace-timeline.ts (a React
 // module), over the Model's readonly tree.

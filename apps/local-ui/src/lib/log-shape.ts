@@ -6,21 +6,23 @@
 import type { LogsListOutput } from "@maple/query-engine/ch"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { severityRank } from "@maple/ui/lib/severity"
+import { Schema } from "effect"
 
-export interface LocalLog {
+/** One log row, attribute maps already decoded. */
+export const LocalLog = Schema.Struct({
 	/** The stored `DateTime64(9)` value with its nanoseconds: shown verbatim and the keyset cursor. */
-	timestamp: string
-	severityText: string
-	severityNumber: number
-	serviceName: string
-	body: string
-	traceId: string
-	spanId: string
-	/** Hash of the whole stored record: the last tiebreak of the list's keyset cursor. */
-	recordIdentity: string
-	logAttributes: Record<string, string>
-	resourceAttributes: Record<string, string>
-}
+	timestamp: Schema.String,
+	severityText: Schema.String,
+	severityNumber: Schema.Number,
+	serviceName: Schema.String,
+	body: Schema.String,
+	traceId: Schema.String,
+	spanId: Schema.String,
+	recordIdentity: Schema.String,
+	logAttributes: Schema.Record(Schema.String, Schema.String),
+	resourceAttributes: Schema.Record(Schema.String, Schema.String),
+})
+export type LocalLog = typeof LocalLog.Type
 
 export function normalizeLog(row: LogsListOutput): LocalLog {
 	return {

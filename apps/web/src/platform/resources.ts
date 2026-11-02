@@ -4,6 +4,7 @@ import { OrgCollections } from "../data/collections/org-collections"
 import { ReadCache } from "../data/read-cache"
 import { IntegrationStatuses } from "../data/integration-statuses"
 import { SessionTenant } from "../data/session-tenant"
+import { TraceSourceLive } from "../data/trace-source"
 import { WarehouseLive } from "../data/warehouse"
 import { ApiClientsLive, MapleApiV2Client, MapleInternalApiClient } from "./api-clients"
 
@@ -14,7 +15,8 @@ import { ApiClientsLive, MapleApiV2Client, MapleInternalApiClient } from "./api-
  */
 export const ResourcesLive = Layer.mergeAll(
 	ApiClientsLive,
-	WarehouseLive,
+	// The trace views' source shares the one warehouse batcher.
+	TraceSourceLive.pipe(Layer.provideMerge(WarehouseLive)),
 	OrgCollections.layer,
 	SessionTenant.layer,
 	ReadCache.layer,

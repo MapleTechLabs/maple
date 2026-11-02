@@ -2,7 +2,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { toKitFailure } from "../../data/local-query"
 import type { TimeFormat } from "../kit/local-time"
 import * as Timeline from "@maple/web/page/traces/detail/timeline"
-import type { TraceData } from "@maple/web/page/traces/detail/trace-data"
+import type { TraceData } from "@maple/views/traces/trace-data"
 import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
 import { view as traceFlowView } from "@maple/views/service-map/trace-flow/view"
 import { button } from "@maple/views/ui/button"
@@ -19,9 +19,10 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { loadedTrace } from "./update"
 import { anatomyStrip, httpInfoOf, rootSpanOf } from "./view-anatomy"
-import { spanPanel } from "./view-panel"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import * as LogSheetView from "../kit/log-sheet/view"
 import { spanTooltip } from "./view-span-tooltip"
-import { TrackPointer } from "./command"
+import { FocusSpanPanel, TrackPointer } from "./command"
 import { findSpan } from "@maple/web/page/traces/detail/select"
 import { traceDetailLoading, traceNotFound } from "./view-states"
 
@@ -103,16 +104,38 @@ const loadedBody = (h: H, model: Model, trace: TraceData, timeFormat: TimeFormat
 					h.div([h.Class("min-h-0 flex-1")], [traceViewTabs(h, model)]),
 				],
 			),
-			...(model.panel === null
-				? []
-				: [
-						spanPanel(h, model.panel, {
-							traceStartTime: trace.traceStartTime ?? "",
-							totalDurationMs: trace.totalDurationMs,
-							nowMs: model.traceUpdatedAtMs,
-							timeFormat,
-						}),
-					]),
+			...(model.panel === null ? [] : [spanPanel(h, model.panel, timeFormat)]),
+			...Option.match(model.maybeLogSheet, {
+				onNone: () => [],
+				onSome: (sheet) => [
+					h.submodel({
+						slotId: "span-log-sheet",
+						model: sheet,
+						view: LogSheetView.view,
+						viewInputs: { timeFormat },
+						toParentMessage: (message) => Message.GotLogSheetMessage({ message }),
+					}),
+				],
+			}),
+		],
+	)
+
+/** The shared span panel beside the trace; it takes focus when deep-linked so Escape closes it. */
+const spanPanel = (h: H, panel: SpanPanel.Model, timeFormat: TimeFormat): Html =>
+	h.aside(
+		[
+			h.Tabindex(-1),
+			h.OnMount(FocusSpanPanel()),
+			h.Class("flex h-full w-full shrink-0 flex-col overflow-hidden border-l focus:outline-none sm:w-[28rem]"),
+		],
+		[
+			h.submodel({
+				slotId: "span-panel",
+				model: panel,
+				view: SpanPanel.view,
+				viewInputs: { timeZone: timeFormat.timeZone, canFilterAttributes: false },
+				toParentMessage: (message: SpanPanel.Message) => Message.GotSpanPanelMessage({ message }),
+			}),
 		],
 	)
 

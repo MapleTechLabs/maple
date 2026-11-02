@@ -1,7 +1,6 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
-import { getActiveInfraCorrelations } from "../../../../components/infra/infra-correlations"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -11,19 +10,27 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { scrollArea } from "@maple/views/ui/scroll-area"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
-import * as InfraCorrelation from "../../../kit/infra-correlation"
 import { attributesSection } from "./attributes"
 import { copyableValue, selectableValue } from "./copy"
 import { errorSection } from "./error-section"
 import { spanEventsSection } from "./events"
 import { Message } from "./message"
 import type { Model } from "./model"
+import type { SpanDetail } from "../trace-source"
 import { getCloudPlatform } from "./platform"
 import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
 import { spanLogs, tabsView } from "./view-tabs"
-import { sidePanelFrame } from "../../../kit/side-panel"
+import { sidePanelFrame } from "../../ui/side-panel"
 
-export type ViewInputs = Readonly<{ timeZone: string }>
+export type ViewInputs = Readonly<{
+	timeZone: string
+	/** Attribute rows offer Filter / Exclude (`RequestedAttributeFilter`). */
+	canFilterAttributes: boolean
+	/** The Logs tab's empty state links here. */
+	logsDocsHref?: string
+	/** The Infrastructure tab's body, built by the app that can back it; no tab without it. */
+	infraTab?: (() => Html) | undefined
+}>
 
 type H = HtmlBuilder<Message>
 
@@ -130,10 +137,11 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 }
 
 /** The span and resource attributes: full maps once loaded, the trimmed ones if that fails. */
-const attributesBody = (h: H, model: Model): ReadonlyArray<Html | null> => {
+const attributesBody = (h: H, model: Model, isFilterable: boolean): ReadonlyArray<Html | null> => {
 	const { span } = model
-	if (span.isMissing === true)
-		return [attributesSection(h, model, "span", span.spanAttributes, "Span attributes")]
+	const section = (scope: "span" | "resource", attributes: Readonly<Record<string, string>>, title: string) =>
+		attributesSection(h, model, scope, attributes, title, { isFilterable })
+	if (span.isMissing === true) return [section("span", span.spanAttributes, "Span attributes")]
 	return AsyncData.matchData(model.detail.data, {
 		onEmpty: (): ReadonlyArray<Html | null> => [
 			h.div(
@@ -151,35 +159,34 @@ const attributesBody = (h: H, model: Model): ReadonlyArray<Html | null> => {
 				[h.Class("rounded-md border border-dashed px-2 py-1.5 text-2xs text-muted-foreground")],
 				["Couldn't load all attributes. Showing the ones loaded with the trace."],
 			),
-			attributesSection(h, model, "span", span.spanAttributes, "Span attributes"),
-			attributesSection(h, model, "resource", span.resourceAttributes, "Resource attributes"),
+			section("span", span.spanAttributes, "Span attributes"),
+			section("resource", span.resourceAttributes, "Resource attributes"),
 		],
 		onData: (detail) => [
 			spanEventsSection(h, model, detail.events),
-			attributesSection(h, model, "span", detail.spanAttributes, "Span attributes"),
-			attributesSection(h, model, "resource", detail.resourceAttributes, "Resource attributes"),
+			section("span", detail.spanAttributes, "Span attributes"),
+			section("resource", detail.resourceAttributes, "Resource attributes"),
 		],
 	})
 }
 
+const loadedOr = (model: Model, pick: (detail: SpanDetail) => Readonly<Record<string, string>>, fallback: Readonly<Record<string, string>>) =>
+	Option.match(AsyncData.getData(model.detail.data), { onNone: () => fallback, onSome: pick })
+
+/** The span's resource attributes: the full map once loaded, else the trimmed one. */
+export const resourceAttributesOf = (model: Model): Readonly<Record<string, string>> =>
+	loadedOr(model, (detail) => detail.resourceAttributes, model.span.resourceAttributes)
+
 /** The root `<SpanDetailPanel />` as the page's ResizablePanel holds it. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const { span } = model
-	const detail = AsyncData.getData(model.detail.data)
 	const serviceColor = getServiceColor(span.serviceName)
-	const infraAttrs = Option.match(detail, {
-		onNone: () => span.resourceAttributes,
-		onSome: (loaded) => loaded.resourceAttributes,
-	})
-	const spanAttrs = Option.match(detail, {
-		onNone: () => span.spanAttributes,
-		onSome: (loaded) => loaded.spanAttributes,
-	})
-	const hasInfra = getActiveInfraCorrelations({ ...infraAttrs }).length > 0
+	const spanAttrs = loadedOr(model, (detail) => detail.spanAttributes, span.spanAttributes)
 	const platform = getCloudPlatform(spanAttrs)
-	const values = hasInfra
-		? (["details", "logs", "infrastructure"] as const)
-		: (["details", "logs"] as const)
+	const { infraTab } = inputs
+	const values = infraTab === undefined
+		? (["details", "logs"] as const)
+		: (["details", "logs", "infrastructure"] as const)
 	return sidePanelFrame(h, [
 			panelHeader(h, model),
 			scrollArea(h, { className: "min-h-0 flex-1", idPrefix: "span-panel-scroll" }, [
@@ -205,31 +212,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 									[h.Class("p-3 space-y-3")],
 									[
 										spanCard(h, model, inputs.timeZone, serviceColor),
-										...attributesBody(h, model),
+										...attributesBody(h, model, inputs.canFilterAttributes),
 									],
 								),
 							]
-						: value === "logs"
-							? [spanLogs(h, model, inputs.timeZone)]
-							: [
-									h.div(
-										[h.Class("p-3")],
-										[
-											h.submodel({
-												slotId: `${model.infra.id}-panel`,
-												model: model.infra,
-												view: InfraCorrelation.view,
-												viewInputs: {
-													resourceAttributes: infraAttrs,
-													anchor: span.startTime,
-													spanDurationMs: span.durationMs,
-													timeZone: inputs.timeZone,
-												},
-												toParentMessage: (message) => Message.GotInfraMessage({ message }),
-											}),
-										],
-									),
-								],
+						: value === "logs" || infraTab === undefined
+							? [spanLogs(h, model, inputs.timeZone, inputs.logsDocsHref)]
+							: [h.div([h.Class("p-3")], [infraTab()])],
 				),
 			]),
 		],

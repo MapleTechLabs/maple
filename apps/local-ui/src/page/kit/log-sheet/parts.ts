@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../../route"
 import { type Copies, copyOf } from "../copies"
 import { Message } from "./message"
-import type { LocalLog } from "./model"
+import type { LocalLog } from "../../../lib/log-shape"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 

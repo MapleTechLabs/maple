@@ -1,5 +1,5 @@
 import { computeServiceShares, type ServiceShare } from "@maple/web/page/traces/detail/derive"
-import type { SpanNodeData, TraceData } from "@maple/web/page/traces/detail/trace-data"
+import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"

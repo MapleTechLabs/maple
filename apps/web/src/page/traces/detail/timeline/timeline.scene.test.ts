@@ -15,7 +15,7 @@ import {
 } from "foldkit/scene"
 import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
-import type { SpanNodeData, TraceData } from "../trace-data"
+import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
 import { MeasureTimelineBody, MountAltToggle } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"

@@ -10,10 +10,11 @@ import { severityBadge } from "@maple/views/ui/logs/severity-badge"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import * as TabsView from "@maple/views/ui/tabs-view"
-import { docsLink } from "../../../kit/signal-empty-state"
+import { docsLink } from "@maple/views/ui/docs-link"
 import { LOG_LIMIT } from "./command"
 import { Message } from "./message"
-import type { LogEntry, Model } from "./model"
+import type { Model } from "./model"
+import type { LogEntry } from "../trace-source"
 import { TAB_VALUES } from "./update"
 
 // The panel's Details / Logs / Infrastructure tabs on `@maple/views/ui/tabs-view.ts`, with icon labels and the
@@ -39,7 +40,10 @@ const logCount = (model: Model): string | null =>
 const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 	pressable(
 		h,
-		{ className: "block w-full p-2 text-left hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer" },
+		{
+			className: "block w-full p-2 text-left hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer",
+			onClick: Message.ClickedLog({ key: log.key }),
+		},
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 text-3xs text-muted-foreground mb-1")],
@@ -52,11 +56,8 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 		],
 	)
 
-/**
- * `SpanLogs`: the logs carrying this span's context.
- * TODO(log-sheet): a row click should open the log detail sheet; it is not wired here yet.
- */
-export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string): Html =>
+/** `SpanLogs`: the logs carrying this span's context. A row click asks the page to open that log. */
+export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string, docsHref?: string): Html =>
 	AsyncData.matchData(model.logs.data, {
 		onEmpty: () =>
 			skeletonList(h, {
@@ -71,7 +72,7 @@ export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string): Ht
 			logs.length === 0
 				? emptyMessage(h, { className: "flex flex-col items-center gap-2" }, [
 						"No logs carry this span's trace context. Logs link here when your log bridge runs inside the active span.",
-						docsLink(h, "logs"),
+						...(docsHref === undefined ? [] : [docsLink(h, docsHref)]),
 					])
 				: h.div(
 						[h.Class("divide-y")],

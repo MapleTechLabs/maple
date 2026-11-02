@@ -1,4 +1,4 @@
-import { TraceData } from "@maple/web/page/traces/detail/trace-data"
+import { TraceData } from "@maple/views/traces/trace-data"
 import { Option, Schema } from "effect"
 import type { CacheValue, QueryKey } from "../../data/cache-store"
 

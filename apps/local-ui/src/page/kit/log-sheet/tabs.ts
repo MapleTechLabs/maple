@@ -10,7 +10,8 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyOf } from "../copies"
 import { Message } from "./message"
-import type { LocalLog, Model } from "./model"
+import type { LocalLog } from "../../../lib/log-shape"
+import type { Model } from "./model"
 import { buildLogJsonPayload, copyableValue, traceHrefOf } from "./parts"
 
 // The Attributes / Trace / Raw tabs of `LogDetailSheet`.

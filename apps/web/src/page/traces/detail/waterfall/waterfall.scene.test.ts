@@ -14,7 +14,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import type { SpanNodeData, TraceData } from "../trace-data"
+import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
 import { Message, type Model, OutMessage } from "./model"
 import { init, setSelectedSpanId, update } from "./update"
 import { view as waterfallView } from "./view"

@@ -25,7 +25,7 @@ import { pickTimeSearch } from "../infra/kit/view-tabs"
 import { infrastructureTab } from "./view-service-infra"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
-import { sidePanelFrame } from "../kit/side-panel"
+import { sidePanelFrame } from "@maple/views/ui/side-panel"
 import { grid } from "@maple/views/ui/grid"
 
 type H = HtmlBuilder<Message>

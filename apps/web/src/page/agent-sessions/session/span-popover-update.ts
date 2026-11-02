@@ -8,9 +8,9 @@ import { requestKey } from "../../../data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageContext, PageReturn } from "../../contract"
-import { FetchSpanDetail, FetchSpanLogs, LOG_LIMIT } from "../../traces/detail/span-panel/command"
-import type { Message as SpanPanelMessage } from "../../traces/detail/span-panel/message"
-import type { PanelState } from "../../traces/detail/span-panel/model"
+import { FetchSpanDetail, FetchSpanLogs, LOG_LIMIT } from "@maple/views/traces/span-panel/command"
+import type { Message as SpanPanelMessage } from "@maple/views/traces/span-panel/message"
+import type { PanelState } from "@maple/views/traces/span-panel/model"
 import { sessionData, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -83,7 +83,14 @@ const readFor = (model: Model, context: PageContext, span: AiSessionSpan): Retur
 			onSome: (detail) => ({
 				model: { ...model, spanPanel: { ...model.spanPanel, detail } },
 				commands: Command.mapMessages(
-					[FetchSpanDetail({ key, traceId, spanId, timestamp: span.timestamp })],
+					[
+						FetchSpanDetail({
+							key,
+							request: { traceId, spanId, timestamp: span.timestamp },
+							fallback: { spanAttributes: {}, resourceAttributes: {} },
+							readsCache: false,
+						}),
+					],
 					toPanel,
 				),
 			}),
@@ -95,7 +102,22 @@ const readFor = (model: Model, context: PageContext, span: AiSessionSpan): Retur
 		onNone: () => ({ model }),
 		onSome: (logs) => ({
 			model: { ...model, spanPanel: { ...model.spanPanel, logs } },
-			commands: Command.mapMessages([FetchSpanLogs({ key, traceId, spanId })], toPanel),
+			commands: Command.mapMessages(
+				[
+					FetchSpanLogs({
+						key,
+						request: {
+							traceId,
+							spanId,
+							startTime: span.timestamp,
+							durationMs: span.durationMs,
+							limit: LOG_LIMIT,
+						},
+						readsCache: false,
+					}),
+				],
+				toPanel,
+			),
 		}),
 	})
 }
