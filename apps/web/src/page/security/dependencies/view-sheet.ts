@@ -12,7 +12,8 @@ import { relativeTime } from "../../kit/relative-time"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
 import { RELATION_LABEL, reasonErrorOf, selectedFindingOf, shortSha, STATUS_FILTER_LABEL } from "./derive"
 import { Message, type Model } from "./model"
-import { advisoryLink, dependencySeverityBadge } from "./view-findings"
+import { advisorySeverityBadge } from "../kit/parts"
+import { advisoryLink } from "./view-findings"
 
 // The finding's sheet: what the advisory says, where the package is locked, and its triage.
 
@@ -237,7 +238,7 @@ const content = (h: H, model: Model, finding: DependencyFindingView, clock: Cloc
 				? null
 				: badge(h, { variant: "meta" }, [STATUS_FILTER_LABEL[finding.status]]),
 		description: finding.summary ?? `A known vulnerability in ${finding.packageName}`,
-		meta: [dependencySeverityBadge(h, finding.severity), advisoryLink(h, finding)],
+		meta: [advisorySeverityBadge(h, finding.severity), advisoryLink(h, finding)],
 	}),
 	DialogView.dialogPanel(
 		h,

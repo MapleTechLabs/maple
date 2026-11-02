@@ -171,7 +171,7 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 						id: ids.control,
 						attributes: [
 							h.Placeholder(
-								picked === "open"
+								picked === "open" && finding.status !== "open"
 									? "Why is this being reopened?"
 									: "Why is this being dismissed or accepted?",
 							),

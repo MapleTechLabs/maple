@@ -24,6 +24,7 @@ import {
 	tableRow,
 } from "../../../ui/table"
 import { relativeTime } from "../../kit/relative-time"
+import { WIDE_COLUMN } from "../kit/layout"
 import { repositoryName } from "../kit/parts"
 import {
 	isScanPending,
@@ -66,11 +67,11 @@ const lockfileIssue = (h: H, lockfile: DependencyScanLockfile): Html =>
 		[h.Key(lockfile.path), h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs")],
 		[
 			h.span([h.Class("font-mono text-foreground")], [lockfile.path]),
-			badge(h, { variant: lockfile.status === "failed" ? "warn" : "muted" }, [
+			badge(h, { variant: lockfile.status === "failed" ? "crit" : "muted" }, [
 				LOCKFILE_STATUS_LABEL[lockfile.status],
 			]),
 			h.span(
-				[h.Class("min-w-0 text-muted-foreground")],
+				[h.Class("min-w-0 text-muted-foreground wrap-anywhere")],
 				[lockfile.message ?? LOCKFILE_FALLBACK[lockfile.status]],
 			),
 		],
@@ -149,7 +150,12 @@ const RANKED = ["critical", "high", "medium", "low"] as const
 const severityCounts = (h: H, findings: ReadonlyArray<DependencyFindingView>): Html => {
 	const counts = openSeverityCounts(findings)
 	return h.span(
-		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
+		// Two by two on phones, where the row has room for one narrow column beside the name.
+		[
+			h.Class(
+				"grid grid-cols-2 gap-x-2.5 gap-y-1 font-mono text-xs tabular-nums sm:flex sm:items-center",
+			),
+		],
 		[
 			...RANKED.map((severity) =>
 				h.span(
@@ -178,7 +184,10 @@ const severityCounts = (h: H, findings: ReadonlyArray<DependencyFindingView>): H
 				? []
 				: [
 						h.span(
-							[h.Key("unrated"), h.Class("whitespace-nowrap font-sans text-muted-foreground")],
+							[
+								h.Key("unrated"),
+								h.Class("col-span-2 whitespace-nowrap font-sans text-muted-foreground"),
+							],
 							[`+${counts.unknown} unrated`],
 						),
 					]),
@@ -254,7 +263,7 @@ const repositoryRow = (
 						[h.Class("flex min-w-0 max-w-xl flex-col gap-1")],
 						[
 							h.span(
-								[h.Class("flex min-w-0 items-center gap-2")],
+								[h.Class("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5")],
 								[
 									icon(h, "GithubIcon", {
 										size: 14,
@@ -305,13 +314,22 @@ const repositoryRow = (
 											issues.map((lockfile) => lockfileIssue(h, lockfile)),
 										),
 									]),
+							// Phones drop the scan column, so its state and button ride here.
+							h.div(
+								[h.Class("flex flex-wrap items-center gap-2 pt-1 sm:hidden")],
+								[...scanState(h, scan), scanButton(h, model, repository)],
+							),
 						],
 					),
 				],
-				"w-full whitespace-normal align-top",
+				"whitespace-normal align-top sm:w-full",
 			),
 			tableCell(h, [emptyNote === null ? severityCounts(h, open) : muted(h, emptyNote)], "align-top"),
-			tableCell(h, [emptyNote === null ? planCell(h, open) : muted(h, "")], "align-top"),
+			tableCell(
+				h,
+				[emptyNote === null ? planCell(h, open) : muted(h, "")],
+				cn("align-top", WIDE_COLUMN),
+			),
 			tableCell(h, [productionCell(h, repository)], "hidden md:table-cell align-top"),
 			tableCell(
 				h,
@@ -321,7 +339,7 @@ const repositoryRow = (
 						[...scanState(h, scan), scanButton(h, model, repository)],
 					),
 				],
-				"align-top text-right",
+				cn("align-top text-right", WIDE_COLUMN),
 			),
 		],
 		cn(isFocused && "bg-surface-strong"),
@@ -350,9 +368,9 @@ export const repositoriesPanel = (
 				tableRow(h, [
 					tableHead(h, ["Repository"]),
 					tableHead(h, ["Open"]),
-					tableHead(h, ["Fix plan"]),
+					tableHead(h, ["Fix plan"], WIDE_COLUMN),
 					tableHead(h, ["Running in"], "hidden md:table-cell"),
-					tableHead(h, [h.span([h.Class("sr-only")], ["Scan"])], "text-right"),
+					tableHead(h, [h.span([h.Class("sr-only")], ["Scan"])], cn("text-right", WIDE_COLUMN)),
 				]),
 			]),
 			tableBody(

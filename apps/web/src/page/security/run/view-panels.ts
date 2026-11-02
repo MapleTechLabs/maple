@@ -10,6 +10,7 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { formatClock, formatUsd, gateOf, isLive, isoOf } from "../kit/format"
 import { gateState, placeholderRows } from "../kit/parts"
+import { WIDE_COLUMN } from "../kit/layout"
 import {
 	countOf,
 	filteredUnits,
@@ -78,11 +79,15 @@ const unitRow = (h: H, unit: SecurityAuditUnit): Html =>
 				"w-full max-w-0",
 			),
 			tableCell(h, [unitBadge(h, unit.status)]),
-			tableCell(h, [unit.wave > 0 ? String(unit.wave) : ""], "text-right font-mono tabular-nums"),
+			tableCell(
+				h,
+				[unit.wave > 0 ? String(unit.wave) : ""],
+				cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+			),
 			tableCell(
 				h,
 				[h.span([h.Class("block max-w-40 truncate"), h.Title(resultText(unit))], [resultText(unit)])],
-				"text-right text-xs text-muted-foreground",
+				cn("text-right text-xs text-muted-foreground", WIDE_COLUMN),
 			),
 		],
 		undefined,
@@ -116,8 +121,8 @@ const unitsBody = (
 							tableRow(h, [
 								tableHead(h, ["Unit"]),
 								tableHead(h, ["Status"]),
-								tableHead(h, ["Wave"], "text-right"),
-								tableHead(h, ["Results"], "text-right"),
+								tableHead(h, ["Wave"], cn("text-right", WIDE_COLUMN)),
+								tableHead(h, ["Results"], cn("text-right", WIDE_COLUMN)),
 							]),
 						]),
 						tableBody(

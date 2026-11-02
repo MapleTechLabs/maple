@@ -14,7 +14,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { textLink } from "../../../ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { BESIDE_RAIL_TWO_COLUMNS } from "../kit/layout"
+import { NARROW_TWO_COLUMNS, WIDE_COLUMN } from "../kit/layout"
 import { placeholder } from "../kit/parts"
 import { TIMELINE_BUCKET_SECONDS } from "./command"
 import {
@@ -71,12 +71,12 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Service"]),
-					tableHead(h, ["Path"]),
-					tableHead(h, ["Category"]),
+					tableHead(h, ["Path"], WIDE_COLUMN),
+					tableHead(h, ["Category"], WIDE_COLUMN),
 					tableHead(h, ["Status"]),
-					tableHead(h, ["Requests"], "text-right"),
-					tableHead(h, ["Last seen"]),
-					tableHead(h, [h.span([h.Class("sr-only")], ["Trace"])]),
+					tableHead(h, ["Requests"], cn("text-right", WIDE_COLUMN)),
+					tableHead(h, ["Last seen"], WIDE_COLUMN),
+					tableHead(h, [h.span([h.Class("sr-only")], ["Trace"])], WIDE_COLUMN),
 				]),
 			]),
 			tableBody(
@@ -85,22 +85,49 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 					tableRow(
 						h,
 						[
-							tableCell(h, [row.service], "font-medium"),
-							tableCell(h, [
-								h.span(
-									[
-										h.Class("block max-w-80 truncate font-mono text-xs"),
-										h.Title(`${row.host}${row.path}`),
-									],
-									[h.span([h.Class("text-muted-foreground")], [row.host]), row.path],
-								),
-							]),
-							tableCell(h, [categoryLabelOf(row.signature)], "text-xs text-muted-foreground"),
+							tableCell(
+								h,
+								[
+									row.service,
+									// Phones drop the path column, so the path rides under its service.
+									h.span(
+										[
+											h.Class(
+												"block max-w-60 truncate font-mono text-xs font-normal text-muted-foreground sm:hidden",
+											),
+										],
+										[row.path],
+									),
+								],
+								"font-medium",
+							),
+							tableCell(
+								h,
+								[
+									h.span(
+										[
+											h.Class("block max-w-80 truncate font-mono text-xs"),
+											h.Title(`${row.host}${row.path}`),
+										],
+										[h.span([h.Class("text-muted-foreground")], [row.host]), row.path],
+									),
+								],
+								WIDE_COLUMN,
+							),
+							tableCell(
+								h,
+								[categoryLabelOf(row.signature)],
+								cn("text-xs text-muted-foreground", WIDE_COLUMN),
+							),
 							tableCell(h, [
 								badge(h, { variant: "crit", mono: true }, [String(row.httpStatus)]),
 							]),
-							tableCell(h, [count(row.requests)], "text-right font-mono tabular-nums"),
-							tableCell(h, [lastSeen(h, clock, row.lastSeen)]),
+							tableCell(
+								h,
+								[count(row.requests)],
+								cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+							),
+							tableCell(h, [lastSeen(h, clock, row.lastSeen)], WIDE_COLUMN),
 							tableCell(
 								h,
 								row.sampleTraceId === ""
@@ -121,7 +148,7 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 												["Sample trace"],
 											),
 										],
-								"text-right",
+								cn("text-right", WIDE_COLUMN),
 							),
 						],
 						undefined,
@@ -140,7 +167,7 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 	const exposedCount = exposedRows(exposure).length
 	const catchAllCount = catchAllServices(exposure).length
 	const plus = isExposedCapped(exposure) ? "+" : ""
-	return statRail(h, { columns: 4, className: BESIDE_RAIL_TWO_COLUMNS }, [
+	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Probe requests",
 			value: `${count(totals.probeRequests)}${floor}`,
@@ -154,7 +181,7 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 			subline: "named tools on ordinary paths",
 		}),
 		statRailItem(h, {
-			eyebrow: "Sources",
+			eyebrow: "Clients",
 			value: totals.isSourcesCapped ? `${SOURCES_SHOWN}+` : String(totals.sources),
 			compact: true,
 			subline: totals.isSourcesCapped
@@ -264,8 +291,8 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 					tableHead(h, ["Category"]),
 					tableHead(h, ["Requests"], "text-right"),
 					tableHead(h, ["Answered"], "text-right"),
-					tableHead(h, ["Services"], "text-right"),
-					tableHead(h, ["Top signatures"]),
+					tableHead(h, ["Services"], cn("text-right", WIDE_COLUMN)),
+					tableHead(h, ["Top signatures"], WIDE_COLUMN),
 				]),
 			]),
 			tableBody(
@@ -274,24 +301,32 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 					tableRow(
 						h,
 						[
-							tableCell(h, [row.label], "font-medium"),
+							tableCell(h, [row.label], "font-medium max-sm:whitespace-normal"),
 							tableCell(h, [count(row.requests)], "text-right font-mono tabular-nums"),
 							tableCell(h, [answeredCell(h, row)], "text-right"),
-							tableCell(h, [String(row.services)], "text-right font-mono tabular-nums"),
-							tableCell(h, [
-								h.span(
-									[h.Class("flex flex-wrap items-center gap-1.5")],
-									row.topSignatures.map((signature) =>
-										h.span(
-											[
-												h.Key(signature.signature),
-												h.Title(`${count(signature.requests)} requests`),
-											],
-											[inlineCode(h, {}, [signature.signature])],
+							tableCell(
+								h,
+								[String(row.services)],
+								cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+							),
+							tableCell(
+								h,
+								[
+									h.span(
+										[h.Class("flex flex-wrap items-center gap-1.5")],
+										row.topSignatures.map((signature) =>
+											h.span(
+												[
+													h.Key(signature.signature),
+													h.Title(`${count(signature.requests)} requests`),
+												],
+												[inlineCode(h, {}, [signature.signature])],
+											),
 										),
 									),
-								),
-							]),
+								],
+								WIDE_COLUMN,
+							),
 						],
 						undefined,
 						[h.Key(row.key)],
@@ -306,18 +341,18 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
-			title: "Top sources",
+			title: "Top clients",
 			action: h.span([h.Class("text-xs text-muted-foreground")], ["Most requests first"]),
 		}),
-		table(h, { ariaLabel: "Top sources" }, [
+		table(h, { ariaLabel: "Top clients" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Client address"]),
 					tableHead(h, ["Tool"]),
-					tableHead(h, ["User agent"]),
+					tableHead(h, ["User agent"], WIDE_COLUMN),
 					tableHead(h, ["Requests"], "text-right"),
-					tableHead(h, ["Distinct probes"], "text-right"),
-					tableHead(h, ["Last seen"]),
+					tableHead(h, ["Distinct probes"], cn("text-right", WIDE_COLUMN)),
+					tableHead(h, ["Last seen"], WIDE_COLUMN),
 				]),
 			]),
 			tableBody(
@@ -332,18 +367,26 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 								[source.scanner === "" ? "Unnamed" : source.scanner],
 								source.scanner === "" ? "text-muted-foreground" : undefined,
 							),
-							tableCell(h, [
-								h.span(
-									[
-										h.Class("block max-w-72 truncate text-xs text-muted-foreground"),
-										h.Title(source.userAgent),
-									],
-									[source.userAgent === "" ? "None sent" : source.userAgent],
-								),
-							]),
+							tableCell(
+								h,
+								[
+									h.span(
+										[
+											h.Class("block max-w-72 truncate text-xs text-muted-foreground"),
+											h.Title(source.userAgent),
+										],
+										[source.userAgent === "" ? "None sent" : source.userAgent],
+									),
+								],
+								WIDE_COLUMN,
+							),
 							tableCell(h, [count(source.requests)], "text-right font-mono tabular-nums"),
-							tableCell(h, [String(source.signatures)], "text-right font-mono tabular-nums"),
-							tableCell(h, [lastSeen(h, clock, source.lastSeen)]),
+							tableCell(
+								h,
+								[String(source.signatures)],
+								cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+							),
+							tableCell(h, [lastSeen(h, clock, source.lastSeen)], WIDE_COLUMN),
 						],
 						undefined,
 						[h.Key(source.clientAddress)],
@@ -367,12 +410,12 @@ const exposureEmpty = (h: H): Html =>
 				]),
 			]),
 		],
-		"rounded-md border md:py-16",
+		"rounded-md border border-dashed md:py-14",
 	)
 
 export const telemetryLoading = (h: H): ReadonlyArray<Html> => [
 	h.div(
-		[h.AriaBusy(true), h.AriaLabel("Loading"), h.Class("grid grid-cols-2 gap-px 2xl:grid-cols-4")],
+		[h.AriaBusy(true), h.AriaLabel("Loading"), h.Class("grid grid-cols-2 gap-px xl:grid-cols-4")],
 		Array.from({ length: 4 }, () => placeholder(h, "h-24")),
 	),
 	placeholder(h, "h-64 w-full"),
@@ -395,9 +438,9 @@ export const exposureBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 			const exposed = exposedRows(exposure)
 			const catchAll = catchAllServices(exposure)
 			return [
+				totalsRail(h, clock, exposure),
 				...(exposed.length === 0 ? [] : [exposedPanel(h, clock, exposed, isExposedCapped(exposure))]),
 				...(catchAll.length === 0 ? [] : [catchAllPanel(h, catchAll)]),
-				totalsRail(h, clock, exposure),
 				...(categories.length === 0 ? [] : [categoriesPanel(h, categories)]),
 				...(exposure.sources.length === 0 ? [] : [sourcesPanel(h, clock, exposure.sources)]),
 			]

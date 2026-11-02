@@ -5,6 +5,7 @@ import {
 	type RuntimeAdvisory,
 } from "@maple/domain/runtime-advisories"
 import { RUNTIME_PRODUCTS } from "@maple/domain/runtime-posture"
+import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
@@ -18,7 +19,8 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { textLink } from "../../../ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { BESIDE_RAIL_TWO_COLUMNS } from "../kit/layout"
+import { NARROW_TWO_COLUMNS, ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
+import { advisorySeverityBadge } from "../kit/parts"
 import {
 	type CriticalUpgrade,
 	criticalUpgrades,
@@ -127,14 +129,6 @@ const runtimeCell = (h: H, entry: RuntimeEntry): Html =>
 		],
 	)
 
-const SEVERITY_VARIANT = {
-	critical: "crit",
-	high: "warn",
-	medium: "muted",
-	low: "muted",
-	unknown: "muted",
-} as const satisfies Record<AdvisorySeverity, Mark["variant"]>
-
 const severityCounts = (counts: Record<AdvisorySeverity, number>): string =>
 	ADVISORY_SEVERITIES.filter((severity) => counts[severity] > 0)
 		.map((severity) => `${counts[severity]} ${severity}`)
@@ -187,9 +181,16 @@ const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
 			return h.div(
 				[h.Class("flex min-w-0 flex-col items-start gap-1"), h.Title(severityCounts(summary.counts))],
 				[
-					badge(h, { variant: SEVERITY_VARIANT[summary.worst] }, [
-						`${summary.counts[summary.worst]} ${summary.worst}`,
-					]),
+					h.span(
+						[h.Class("flex items-center gap-1.5 whitespace-nowrap")],
+						[
+							advisorySeverityBadge(h, summary.worst),
+							h.span(
+								[h.Class("font-mono text-xs tabular-nums")],
+								[String(summary.counts[summary.worst])],
+							),
+						],
+					),
 					...(rest === 0
 						? []
 						: [
@@ -214,11 +215,11 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Service"]),
-					tableHead(h, ["Runtime"]),
-					tableHead(h, ["Status"]),
-					tableHead(h, ["Vulnerabilities"]),
-					tableHead(h, ["SDK"]),
-					tableHead(h, ["Last seen"]),
+					tableHead(h, ["Runtime"], WIDE_COLUMN),
+					tableHead(h, ["Status"], WIDE_COLUMN),
+					tableHead(h, ["Vulnerabilities"], WIDE_COLUMN),
+					tableHead(h, ["SDK"], ROOMY_COLUMN),
+					tableHead(h, ["Last seen"], WIDE_COLUMN),
 				]),
 			]),
 			tableBody(
@@ -232,6 +233,9 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 									[h.Class("flex min-w-0 flex-col")],
 									[
 										h.span([h.Class("truncate font-medium")], [entry.row.service]),
+										// Phones drop the runtime and status columns, so both ride under the service.
+										h.span([h.Class("text-sm sm:hidden")], [runtimeCell(h, entry)]),
+										h.span([h.Class("pt-1 sm:hidden")], [statusCell(h, entry)]),
 										...(entry.row.environment === ""
 											? []
 											: [
@@ -243,25 +247,33 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 									],
 								),
 							]),
-							tableCell(h, [runtimeCell(h, entry)]),
-							tableCell(h, [statusCell(h, entry)]),
-							tableCell(h, [vulnerabilitiesCell(h, entry)]),
-							tableCell(h, [sdkLabelOf(entry.row)], "text-xs text-muted-foreground"),
-							tableCell(h, [
-								isSeenThisHour(entry.row.lastSeen, nowMs)
-									? h.span(
-											[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
-											["This hour"],
-										)
-									: relativeTime(h, {
-											value: entry.row.lastSeen,
-											nowMs,
-											timeZone,
-											variant: "orDate",
-											tooltip: "title",
-											className: "whitespace-nowrap text-xs text-muted-foreground",
-										}),
-							]),
+							tableCell(h, [runtimeCell(h, entry)], WIDE_COLUMN),
+							tableCell(h, [statusCell(h, entry)], WIDE_COLUMN),
+							tableCell(h, [vulnerabilitiesCell(h, entry)], WIDE_COLUMN),
+							tableCell(
+								h,
+								[sdkLabelOf(entry.row)],
+								cn("text-xs text-muted-foreground", ROOMY_COLUMN),
+							),
+							tableCell(
+								h,
+								[
+									isSeenThisHour(entry.row.lastSeen, nowMs)
+										? h.span(
+												[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
+												["This hour"],
+											)
+										: relativeTime(h, {
+												value: entry.row.lastSeen,
+												nowMs,
+												timeZone,
+												variant: "orDate",
+												tooltip: "title",
+												className: "whitespace-nowrap text-xs text-muted-foreground",
+											}),
+								],
+								WIDE_COLUMN,
+							),
 						],
 						undefined,
 						[
@@ -278,7 +290,7 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 const totalsRail = (h: H, entries: ReadonlyArray<RuntimeEntry>): Html => {
 	const totals = runtimeTotals(entries)
 	const services = (value: number) => (value === 1 ? "service" : "services")
-	return statRail(h, { columns: 4, className: BESIDE_RAIL_TWO_COLUMNS }, [
+	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Services",
 			value: String(totals.services),
@@ -378,9 +390,7 @@ const advisoryRow = (h: H, advisory: RuntimeAdvisory): Html =>
 				},
 				[advisory.id],
 			),
-			badge(h, { variant: SEVERITY_VARIANT[advisory.severity], className: "shrink-0" }, [
-				advisory.severity,
-			]),
+			advisorySeverityBadge(h, advisory.severity, "shrink-0"),
 			h.span(
 				[h.Class("min-w-0 flex-1 truncate text-muted-foreground"), h.Title(advisory.summary ?? "")],
 				[advisory.summary ?? "No summary published"],
@@ -499,7 +509,7 @@ const runtimesEmpty = (h: H): Html =>
 					h.span(
 						[],
 						[
-							"This tab lists the runtime each service reports through ",
+							"This page lists the runtime each service reports through ",
 							inlineCode(h, {}, ["process.runtime.name"]),
 							" and ",
 							inlineCode(h, {}, ["process.runtime.version"]),
@@ -509,7 +519,7 @@ const runtimesEmpty = (h: H): Html =>
 				]),
 			]),
 		],
-		"rounded-md border md:py-16",
+		"rounded-md border border-dashed md:py-14",
 	)
 
 export const runtimesBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>

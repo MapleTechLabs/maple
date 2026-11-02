@@ -163,5 +163,8 @@ export const securityLayout = <M>(
 /** A four-tile stat rail keeps two columns until the page is wide enough for four. */
 export const NARROW_TWO_COLUMNS = "md:grid-cols-2 xl:grid-cols-4 md:divide-y xl:divide-y-0"
 
-/** The same beside the rail, which takes the width between `xl` and `2xl`. */
-export const BESIDE_RAIL_TWO_COLUMNS = "md:grid-cols-2 2xl:grid-cols-4 md:divide-y 2xl:divide-y-0"
+/** A table column phones drop; what they still need from it rides in the row's first cell. */
+export const WIDE_COLUMN = "hidden sm:table-cell"
+
+/** A column only a wide screen has room for beside the rail. */
+export const ROOMY_COLUMN = "hidden min-[1680px]:table-cell"

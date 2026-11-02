@@ -11,10 +11,11 @@ import { middleTruncate } from "../../../ui/middle-truncate"
 import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { textLink } from "../../../ui/text-link"
-import { repositoryName } from "../kit/parts"
+import { WIDE_COLUMN } from "../kit/layout"
+import { advisorySeverityBadge, repositoryName } from "../kit/parts"
 import { planSummaryOf, RELATION_LABEL, type UpgradeStep, upgradePlanOf } from "./derive"
 import type { Message } from "./model"
-import { dependencySeverityBadge, notRunningLabel, productionScanStates } from "./view-findings"
+import { notRunningLabel, productionScanStates } from "./view-findings"
 import { repositoryHref } from "./view-repositories"
 
 // One repository's open findings as the package bumps that clear them, the first to make on top.
@@ -90,10 +91,10 @@ const stepRow = (h: H, step: UpgradeStep, notRunning: string): Html =>
 	tableRow(
 		h,
 		[
-			tableCell(h, [dependencySeverityBadge(h, step.severity)], "w-24"),
+			tableCell(h, [advisorySeverityBadge(h, step.severity)], "w-24"),
 			tableCell(h, [bumpCell(h, step)]),
-			tableCell(h, [clearsCell(h, step)]),
-			tableCell(h, [runningCell(h, step, notRunning)]),
+			tableCell(h, [clearsCell(h, step)], WIDE_COLUMN),
+			tableCell(h, [runningCell(h, step, notRunning)], WIDE_COLUMN),
 			tableCell(h, [muted(h, RELATION_LABEL[step.relation])], "hidden md:table-cell"),
 			tableCell(
 				h,
@@ -153,7 +154,7 @@ export const repositoryBreakdown = (
 			]),
 		}),
 		...(plan.length === 0
-			? [emptyMessage(h, {}, ["No open advisories in this repository's latest scan."])]
+			? [emptyMessage(h, {}, ["No open advisories in this repository's latest scan"])]
 			: [
 					h.p([h.Class("border-b px-4 py-2 text-xs text-muted-foreground")], [planLine(plan)]),
 					table(h, { variant: "bare", ariaLabel: `Upgrade plan for ${repository.fullName}` }, [
@@ -161,8 +162,8 @@ export const repositoryBreakdown = (
 							tableRow(h, [
 								tableHead(h, ["Worst"]),
 								tableHead(h, ["Upgrade"]),
-								tableHead(h, ["Clears"]),
-								tableHead(h, ["Running in"]),
+								tableHead(h, ["Clears"], WIDE_COLUMN),
+								tableHead(h, ["Running in"], WIDE_COLUMN),
 								tableHead(h, ["Relation"], "hidden md:table-cell"),
 								tableHead(h, ["Lockfile"], "hidden lg:table-cell"),
 							]),
