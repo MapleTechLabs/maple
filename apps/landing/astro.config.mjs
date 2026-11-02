@@ -11,6 +11,7 @@ import { codeTheme } from "./src/lib/code-theme.mjs"
 import mdx from "@astrojs/mdx"
 import { paraglideVitePlugin } from "@inlang/paraglide-js"
 import react from "@astrojs/react"
+import { foldkitIslands } from "./src/foldkit-island/integration.ts"
 import sitemap from "@astrojs/sitemap"
 import tailwindcss from "@tailwindcss/vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
@@ -125,6 +126,7 @@ export default defineConfig({
 	integrations: [
 		mdx(),
 		react(),
+		foldkitIslands(),
 		sitemap({
 			i18n: {
 				defaultLocale: "en",
