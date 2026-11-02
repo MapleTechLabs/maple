@@ -61,14 +61,20 @@ if (violations.length > 0) {
 	process.exit(1)
 }
 
-// Charts and the mobile app read HTTP_METHOD_HEX; the badges read the `--http-*` tokens. Keep them equal.
-const methodDrift = [...readFileSync(sharedFile, "utf8").matchAll(/^\s*--http-([a-z]+)\s*:\s*([^;]+);/gm)].filter(
-	([, method, value]) => HTTP_METHOD_HEX[method.toUpperCase()]?.toLowerCase() !== value.trim().toLowerCase(),
+// Charts and the mobile app read HTTP_METHOD_HEX; the badges read the `--http-*` tokens. Every
+// method needs its token, at the same value.
+const methodTokens = new Map(
+	[...readFileSync(sharedFile, "utf8").matchAll(/^\s*--http-([a-z]+)\s*:\s*([^;]+);/gm)].map(
+		([, method, value]) => [method.toUpperCase(), value.trim().toLowerCase()],
+	),
+)
+const methodDrift = Object.entries(HTTP_METHOD_HEX).filter(
+	([method, hex]) => methodTokens.get(method) !== hex.toLowerCase(),
 )
 if (methodDrift.length > 0) {
 	console.error("--http-* tokens in tokens.css differ from HTTP_METHOD_HEX in packages/ui/src/lib/http.ts:\n")
-	for (const [, method, value] of methodDrift)
-		console.error(`  --http-${method}: ${value.trim()} (HTTP_METHOD_HEX: ${HTTP_METHOD_HEX[method.toUpperCase()] ?? "missing"})`)
+	for (const [method, hex] of methodDrift)
+		console.error(`  --http-${method.toLowerCase()}: ${methodTokens.get(method) ?? "missing"} (HTTP_METHOD_HEX: ${hex})`)
 	process.exit(1)
 }
 
