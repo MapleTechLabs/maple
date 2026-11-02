@@ -856,7 +856,7 @@ describe("v2 alerts over HTTP", () => {
 	it("previews a raw SQL alert for alerts:write keys", async () => {
 		const harness = makeHarness({
 			...warehouseStub,
-			rawSqlQuery: () => Effect.succeed([{ value: 42, samples: 20 }]),
+			rawSqlQuery: () => Effect.succeed([{ bucket: "2026-01-01 00:10:00", value: 42, samples: 20 }]),
 		})
 		const key = await harness.bootstrapKey(["alerts:write"])
 		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
@@ -865,7 +865,7 @@ describe("v2 alerts over HTTP", () => {
 				severity: "warning",
 				signal_type: "raw_query",
 				raw_query_sql:
-					"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					"SELECT $__timeGroup(Timestamp) AS bucket, count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY bucket",
 				raw_query_reducer: "max",
 				comparator: "gt",
 				threshold: 10,

@@ -17,6 +17,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
 	CreateInvestigation,
+	FetchIncidentChecks,
 	FetchIncidentDeliveries,
 	FetchIncidentInvestigation,
 	FetchIncidentPreview,
@@ -38,6 +39,7 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 		rules: null,
 		states: null,
 		preview: Keyed.idle(),
+		checks: Keyed.idle(),
 		deliveries: Keyed.idle(),
 		investigation: Keyed.idle(),
 		isStartingInvestigation: false,
@@ -95,6 +97,20 @@ const followData = (model: Model, context: PageContext): Return =>
 							commands: [FetchIncidentInvestigation({ key: investigationKey, incidentId })],
 						}),
 					),
+				),
+				...Option.toArray(
+					Option.flatMap(view.checksQuery, (query) => {
+						const key = requestKey(context.orgId, "alertRules.checksSummary", query)
+						return Option.map(
+							sameKey(model.checks, key)
+								? Option.none()
+								: Keyed.request(model.checks, key, "Load"),
+							(checks) => ({
+								patch: { checks },
+								commands: [FetchIncidentChecks({ key, ...query })],
+							}),
+						)
+					}),
 				),
 				...Option.toArray(
 					Option.flatMap(view.payload, (payload) => {
@@ -215,6 +231,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),
 		CompletedFetchPreview: ({ key, result }) => ({
 			model: { ...model, preview: Keyed.accept(model.preview, key, result) },
+		}),
+		CompletedFetchChecks: ({ key, result }) => ({
+			model: { ...model, checks: Keyed.accept(model.checks, key, result) },
 		}),
 		CompletedFetchDeliveries: ({ key, result }) => ({
 			model: { ...model, deliveries: Keyed.accept(model.deliveries, key, result) },

@@ -60,6 +60,7 @@ const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
 						ruleIncidents,
 						states,
 						preview,
+						checks: [],
 						isPreviewLoading: !isChartReady,
 						previewError: null,
 						range,

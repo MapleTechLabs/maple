@@ -7,6 +7,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries, setRuleEnabled } from "../shared/commands"
+import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { CheckStatusFilter } from "./model"
 import { Message, RequestMode } from "./message"
@@ -64,8 +65,11 @@ export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 			const client = yield* MapleApiV2Client
 			const [response, summary] = yield* Effect.all(
 				[
-					client.alertRules.checks({ params: { id: ruleId }, query: { since, until, limit: PAGE_LIMIT } }),
-					client.alertRules.checksSummary({ params: { id: ruleId }, query: { since, until } }),
+					client.alertRules.checks({
+						params: { id: ruleId },
+						query: { since, until, limit: PAGE_LIMIT },
+					}),
+					fetchCheckSummary(ruleId, since, until),
 				],
 				{ concurrency: "unbounded" },
 			)
@@ -73,22 +77,7 @@ export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 				checks: response.data.map(v2CheckToDocument),
 				hasMore: response.has_more,
 				nextCursor: response.next_cursor,
-				summary: {
-					bucketSeconds: summary.bucket_seconds,
-					totals: summary.totals,
-					points: summary.points.map((point) => ({
-						bucket: point.bucket,
-						groupKey: point.group_key,
-						totalCount: point.total_count,
-						breachedCount: point.breached_count,
-						healthyCount: point.healthy_count,
-						skippedCount: point.skipped_count,
-						errorCount: point.error_count,
-						transitionCount: point.transition_count,
-						observedValue: point.observed_value,
-						threshold: point.threshold,
-					})),
-				},
+				summary,
 			}
 		}).pipe(
 			Effect.mapError(toLoadFailure),
@@ -104,7 +93,10 @@ export const FetchBucketChecks = Command.define("FetchAlertRuleBucketChecks", {
 	execute: ({ request, ruleId, since, until }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const page = yield* client.alertRules.checks({ params: { id: ruleId }, query: { since, until, limit: PAGE_LIMIT } })
+			const page = yield* client.alertRules.checks({
+				params: { id: ruleId },
+				query: { since, until, limit: PAGE_LIMIT },
+			})
 			return page.data.map(v2CheckToDocument)
 		}).pipe(
 			Effect.mapError(toLoadFailure),

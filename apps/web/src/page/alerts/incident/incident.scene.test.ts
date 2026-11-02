@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import { AlertRulePreviewResponse } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import {
 	click,
@@ -14,6 +15,8 @@ import {
 } from "foldkit/scene"
 import { CreateInvestigation } from "./command"
 import { describe, expect, test } from "vitest"
+import * as Chart from "@maple/views/charts/chart"
+import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -49,9 +52,74 @@ describe("alert incident", () => {
 			expect.arrayContaining(["FetchAlertIncidentDeliveries", "FetchAlertIncidentInvestigation"]),
 		)
 		const withRule = step(withIncident.model, Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] }))
-		expect(names(withRule.commands)).toEqual(["FetchAlertIncidentPreview"])
+		expect(names(withRule.commands)).toEqual(
+			expect.arrayContaining(["FetchAlertIncidentChecks", "FetchAlertIncidentPreview"]),
+		)
 		const again = step(withRule.model, Message.UpdatedRuleStates({ orgId: ORG, rows: [stateRow(2)] }))
 		expect(again.commands ?? []).toHaveLength(0)
+	})
+
+	test("a SQL rule without a time bucket charts what the evaluator recorded", () => {
+		const sql =
+			"SELECT max(lag) AS value FROM metrics_gauge WHERE $__orgFilter AND $__timeFilter(TimeUnix)"
+		const loaded = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ signal_type: "raw_query" })] }),
+			Message.UpdatedRules({
+				orgId: ORG,
+				rows: [ruleRow(2, { signal_type: "raw_query", raw_query_sql: sql, reducer: "max" })],
+			}),
+		].reduce((model, message) => step(model, message).model, init(route(), context).model)
+		const preview = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			bucketSeconds: 300,
+			windowMinutes: 5,
+			threshold: 800,
+			thresholdUpper: null,
+			thresholds: [
+				{ severity: "critical", value: 800, upper: null, recoveryValue: null, destinationIds: [] },
+			],
+			comparator: "gt",
+			truncatedToStart: null,
+			series: [],
+			wouldFire: [],
+			seriesFailure: "not_time_grouped",
+		})
+		const answeredPreview = step(
+			loaded,
+			Message.CompletedFetchPreview({ key: loaded.preview.key ?? "", result: Result.succeed(preview) }),
+		).model
+		const bucket = (minutesAgo: number, observedValue: number) => ({
+			bucket: new Date(NOW - minutesAgo * 60_000).toISOString(),
+			groupKey: "all",
+			totalCount: 5,
+			breachedCount: observedValue > 800 ? 5 : 0,
+			healthyCount: observedValue > 800 ? 0 : 5,
+			skippedCount: 0,
+			errorCount: 0,
+			transitionCount: 0,
+			observedValue,
+			threshold: 800,
+		})
+		const answered = step(
+			answeredPreview,
+			Message.CompletedFetchChecks({
+				key: answeredPreview.checks.key ?? "",
+				result: Result.succeed({
+					bucketSeconds: 300,
+					totals: { total: 15, breached: 10, healthy: 5, skipped: 0, error: 0, transitions: 1 },
+					points: [bucket(30, 400), bucket(20, 10_600), bucket(10, 10_600)],
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(answered),
+			themeResolved(),
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("has no points in this window.", { exact: false })).toExist(),
+			expectView(text(/returns one value for the whole range/)).toExist(),
+			expectView(text("Preview query failed")).not.toExist(),
+		)
 	})
 
 	test("another rule's live tick keeps the page as it was; its own rule's tick does not", () => {

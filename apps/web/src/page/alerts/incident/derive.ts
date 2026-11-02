@@ -2,6 +2,8 @@ import {
 	type AlertIncidentDocument,
 	AlertRulePreviewResponse,
 	type AlertRuleDocument,
+	type AlertRuleId,
+	IsoDateTimeString,
 } from "@maple/domain/http"
 import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -25,6 +27,10 @@ export interface IncidentView {
 	readonly ruleIncidents: ReadonlyArray<AlertIncidentDocument>
 	readonly range: Readonly<{ start: number; end: number }>
 	readonly payload: Option.Option<V2AlertRulePreviewParams>
+	/** The rule's recorded checks over `range`; `None` without a rule or for an uptime incident. */
+	readonly checksQuery: Option.Option<
+		Readonly<{ ruleId: AlertRuleId; since: IsoDateTimeString; until: IsoDateTimeString }>
+	>
 }
 
 /** The state rows of one rule (one per group). */
@@ -58,6 +64,14 @@ export const incidentViewOf = (model: Model): Option.Option<IncidentView> => {
 			.filter((row) => row.rule_id === incidentRow.rule_id)
 			.map(rowToAlertIncidentDocument),
 		range,
+		checksQuery:
+			rule === null || incident.signalType === "uptime"
+				? Option.none()
+				: Option.some({
+						ruleId: rule.id,
+						since: IsoDateTimeString.make(new Date(range.start).toISOString()),
+						until: IsoDateTimeString.make(new Date(range.end).toISOString()),
+					}),
 		// An uptime rule has no query to replay: its signal is the monitor's checks.
 		payload:
 			rule === null || incident.signalType === "uptime"

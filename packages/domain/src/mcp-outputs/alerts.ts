@@ -183,8 +183,10 @@ export const PreviewAlertRuleOutput = Schema.Struct({
 	),
 	warnings: Schema.Array(Schema.String),
 	/** Raw SQL rules only: one check of the latest window, timed against the interval's limit. */
-	/** Raw SQL only: the range was too heavy to chart, so no windows were evaluated. */
-	seriesFailure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
+	/** Raw SQL only: the range was too heavy to chart, or the SQL has no time bucket, so no windows were evaluated. */
+	seriesFailure: Schema.optionalKey(
+		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
+	),
 	queryTiming: Schema.optionalKey(
 		Schema.Struct({
 			/** Null when the check did not finish within `probeLimitMs`. */
