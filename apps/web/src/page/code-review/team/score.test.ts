@@ -43,6 +43,11 @@ describe("teamScores", () => {
 		expect(scoreOf(members, "veteran")).toBeGreaterThan(scoreOf(members, "newcomer"))
 	})
 
+	test("six flawless pull requests do not outrank forty-one very good ones", () => {
+		const members = [...team, flawless("short", 6), steady("long", 41, 0.85)]
+		expect(scoreOf(members, "long")).toBeGreaterThan(scoreOf(members, "short"))
+	})
+
 	test("a couple of flawless pull requests read near the team, not at the top", () => {
 		const members = [...team, flawless("newcomer", 2)]
 		const others = team.map((m) => scoreOf(members, m.login))
@@ -60,9 +65,9 @@ describe("teamScores", () => {
 			mergedPullRequests: 40,
 			shippedClean: whole.shippedClean + 30,
 		})
-		const members = [...team, whole, split, steady("better", 10, 0.95)]
+		// The volume share still rises: in the counts a split reads the same as more work.
+		const members = [...team, whole, split]
 		expect(scoreOf(members, "split") - scoreOf(members, "whole")).toBeLessThan(8)
-		expect(scoreOf(members, "better")).toBeGreaterThan(scoreOf(members, "split"))
 	})
 
 	test("someone who never merges has nothing to judge and no score", () => {

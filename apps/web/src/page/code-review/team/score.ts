@@ -16,11 +16,11 @@ type Component = Readonly<{
 }>
 
 const COMPONENTS = {
-	fixRate: { weight: 0.3, prior: 5 },
-	shippedClean: { weight: 0.25, prior: 3 },
-	criticalShare: { weight: 0.15, prior: 5 },
-	firstTryGreen: { weight: 0.15, prior: 10 },
-	rerunRate: { weight: 0.1, prior: 10 },
+	fixRate: { weight: 0.3, prior: 15 },
+	shippedClean: { weight: 0.25, prior: 10 },
+	criticalShare: { weight: 0.15, prior: 10 },
+	firstTryGreen: { weight: 0.15, prior: 20 },
+	rerunRate: { weight: 0.1, prior: 20 },
 	// Light: a fast merge is as often a quick reviewer, or a rubber stamp, as it is good work.
 	mergeTime: { weight: 0.05, prior: 3 },
 } satisfies Readonly<Record<string, Component>>
