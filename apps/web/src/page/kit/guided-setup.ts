@@ -108,7 +108,7 @@ export const frameworkPicker = <M>(
 export type InstructionsDocs = Readonly<{ label: string; page: DocsPage }>
 
 const AGENT_MARKS = [
-	{ name: "ClaudeIcon", className: "text-[#D97757]" },
+	{ name: "ClaudeIcon", className: "text-brand-claude" },
 	{ name: "OpenAiIcon", className: "text-foreground" },
 	{ name: "CursorIcon", className: "text-foreground" },
 ] as const satisfies ReadonlyArray<Readonly<{ name: IconName; className: string }>>

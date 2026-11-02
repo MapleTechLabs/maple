@@ -14,6 +14,7 @@ import {
 	gcpWorkloadTone,
 } from "../../components/infra/gcp/tabs"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { emptyMessage } from "../../ui/empty"
 import { icon } from "../../ui/icon"
@@ -67,7 +68,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 				h.div(
 					[h.Class("flex min-w-0 flex-1 items-baseline gap-3")],
 					[
-						h.h3([h.Class("text-sm font-semibold")], ["Workloads"]),
+						heading(h, { level: 3, variant: "section" }, ["Workloads"]),
 						h.span([h.Class("truncate text-2xs text-muted-foreground")], ["last 24h"]),
 					],
 				),
@@ -207,7 +208,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 	return panel(h, { className: cn("h-fit border-border-subtle", className) }, [
 		panelHeader(h, {
 			className: "border-border-subtle",
-			children: [h.h3([h.Class("text-sm font-semibold")], ["Resources"])],
+			children: [heading(h, { level: 3, variant: "section" }, ["Resources"])],
 			action: h.span([h.Class("text-2xs text-muted-foreground")], ["listed hourly"]),
 		}),
 		types.length === 0

@@ -23,6 +23,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
+import { heading } from "../../../ui/heading"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { rowLink } from "../../../ui/table"
@@ -74,8 +75,9 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 			h.div(
 				[h.Class("space-y-1.5")],
 				[
-					h.h2(
-						[h.Class("text-2xl font-semibold tracking-tight tabular-nums")],
+					heading(
+						h,
+						{ level: 2, variant: "title", className: "tabular-nums" },
 						[
 							isQuiet ? "Nothing firing" : `${firing} firing`,
 							...(isQuiet ? [quietStreak(h, incidents, now)] : []),

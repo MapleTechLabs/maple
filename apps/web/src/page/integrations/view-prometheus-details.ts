@@ -5,6 +5,7 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { alert, alertDescription, alertTitle } from "../../ui/alert"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
@@ -186,8 +187,9 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 									[h.Class("flex items-center gap-2")],
 									[
 										statusDot(h, { tone: status.tone, size: "lg" }),
-										h.h3(
-											[h.Class("truncate text-sm font-semibold"), h.Title(target.name)],
+										heading(
+											h,
+											{ level: 3, variant: "section", className: "truncate", attributes: [h.Title(target.name)] },
 											[target.name],
 										),
 									],

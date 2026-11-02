@@ -39,8 +39,9 @@ const nameRow = (h: H, model: Model): Html =>
 					}),
 				],
 			),
-			h.label(
-				[h.Class("flex h-9 items-center gap-2 text-sm")],
+			label(
+				h,
+				{ className: "flex h-9 items-center gap-2 text-sm font-normal" },
 				[
 					...switchControl(h, {
 						id: "ingest-rule-enabled",

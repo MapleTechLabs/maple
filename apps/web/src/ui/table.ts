@@ -4,6 +4,7 @@ import {
 	tableCellStyles,
 	tableContainerScrollStyles,
 	tableContainerStyles,
+	tableHeadLabelStyles,
 	tableHeadStyles,
 	tableHeaderStickyStyles,
 	tableHeaderStyles,
@@ -14,7 +15,9 @@ import {
 	tableSortIconStyles,
 	tableSortIdleIconStyles,
 	tableStyles,
+	truncatedCellStyles,
 } from "@maple/ui/styles/ui/table"
+import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { withHint } from "./eyebrow"
 import { icon } from "./icon"
@@ -126,6 +129,31 @@ export const tableCell = <M>(
 		],
 		children,
 	)
+
+/** A column head for a div-based table (the infra grids): the table-head label type on a `div`. */
+export const divTableHead = <M>(
+	h: HtmlBuilder<M>,
+	options: { readonly className?: string; readonly attributes?: ReadonlyArray<Attribute<M>> },
+	children: Children,
+): Html =>
+	h.div([h.Class(cn(tableHeadLabelStyles, options.className)), ...(options.attributes ?? [])], children)
+
+/** A cell that takes the row's spare width and lets its content truncate (`w-full max-w-0`). */
+export const truncatedTableCell = <M>(
+	h: HtmlBuilder<M>,
+	children: Children,
+	className?: string,
+	attributes: ReadonlyArray<Attribute<M>> = [],
+): Html => tableCell(h, children, cn(truncatedCellStyles, className), attributes)
+
+/** A selectable row's first cell: it draws `listRow`'s selection lane (left bar and tint). */
+export const laneTableCell = <M>(
+	h: HtmlBuilder<M>,
+	isSelected: boolean,
+	children: Children,
+	className?: string,
+	attributes: ReadonlyArray<Attribute<M>> = [],
+): Html => tableCell(h, children, cn(rowSelectedClass(isSelected), className), attributes)
 
 /** Lift for a control inside a `rowLink` row: it stays clickable above the overlay. */
 export const ROW_LINK_LIFT = tableRowLinkLiftStyles

@@ -4,8 +4,10 @@ import { MINIMAP_HEIGHT, TIME_AXIS_HEIGHT } from "@maple/ui/components/traces/tr
 import { countLabel, formatDurationAtStep } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { bareInput } from "../../../../ui/bare-input"
 import { button } from "../../../../ui/button"
 import { icon } from "../../../../ui/icon"
+import { iconButton } from "../../../../ui/icon-button"
 import * as SelectView from "../../../../ui/select-view"
 import type { SpanNodeData } from "../trace-data"
 import { depthControls } from "../depth-controls"
@@ -23,20 +25,21 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 		[h.Class("flex items-center gap-2 border-b border-border bg-surface-faint px-3 py-1.5")],
 		[
 			icon(h, "MagnifierIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
-			h.input([
-				h.Class(
-					"min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-foreground-faint pointer-coarse:text-base",
-				),
-				h.Placeholder("Search spans…"),
-				h.Type("text"),
-				h.Value(model.searchQuery),
-				h.OnInput((query) => Message.ChangedSearch({ query })),
-				h.OnKeyDownPreventDefault((key, modifiers) =>
-					(key === "Enter" && matchCount > 0) || key === "Escape"
-						? Option.some(Message.PressedSearchKey({ key, isShift: modifiers.shiftKey }))
-						: Option.none(),
-				),
-			]),
+			bareInput(h, {
+				className:
+					"flex-1 font-mono text-xs text-foreground placeholder:text-foreground-faint pointer-coarse:text-base",
+				attributes: [
+					h.Placeholder("Search spans…"),
+					h.Type("text"),
+					h.Value(model.searchQuery),
+					h.OnInput((query) => Message.ChangedSearch({ query })),
+					h.OnKeyDownPreventDefault((key, modifiers) =>
+						(key === "Enter" && matchCount > 0) || key === "Escape"
+							? Option.some(Message.PressedSearchKey({ key, isShift: modifiers.shiftKey }))
+							: Option.none(),
+					),
+				],
+			}),
 			...(model.searchQuery === ""
 				? []
 				: [
@@ -48,15 +51,15 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 									: `${matchCount} of ${totalCount}`,
 							],
 						),
-						h.button(
-							[
-								h.AriaLabel("Clear search"),
-								h.Class(
-									"-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-								h.Type("button"),
-								h.OnClick(Message.ClickedClearSearch()),
-							],
+						iconButton(
+							h,
+							{
+								label: "Clear search",
+								size: "icon-2xs",
+								hasTooltip: false,
+								className: "shrink-0 text-muted-foreground hover:text-foreground active:text-foreground",
+								attributes: [h.OnClick(Message.ClickedClearSearch())],
+							},
 							[icon(h, "XmarkIcon", { size: 12 })],
 						),
 					]),

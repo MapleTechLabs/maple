@@ -16,6 +16,7 @@ import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
+import { pressable } from "../../../ui/pressable"
 import type { SessionData } from "./derive"
 import {
 	CANVAS_PADDING,
@@ -50,22 +51,22 @@ const toCanvas = (message: Canvas.Message) => Message.GotFlowCanvasMessage({ mes
 const stepNode = (h: H, node: FlowNode, isSelected: boolean): ReadonlyArray<Html> => [
 	flowHandle(h, node.key, "target", "left", HANDLE),
 	flowHandle(h, node.key, "source", "right", HANDLE),
-	h.button(
-		[
-			...(isSelected ? [h.AriaCurrent("true")] : []),
-			h.AriaHasPopup("dialog"),
-			h.Class(
-				cn(
-					"flex size-full cursor-pointer flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring active:border-ring",
-					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-					node.isErrored ? "border-severity-error-a4" : "border-border",
-					isSelected && "border-primary bg-primary-a1",
-				),
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedSpan({ spanId: isSelected ? undefined : node.span.spanId }),
+			className: cn(
+				"flex size-full flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring active:border-ring",
+				"focus-visible:ring-ring",
+				node.isErrored ? "border-severity-error-a4" : "border-border",
+				isSelected && "border-primary bg-primary-a1",
 			),
-			h.DataAttribute("span-id", node.span.spanId),
-			h.Type("button"),
-			h.OnClick(Message.ClickedSpan({ spanId: isSelected ? undefined : node.span.spanId })),
-		],
+			attributes: [
+				...(isSelected ? [h.AriaCurrent("true")] : []),
+				h.AriaHasPopup("dialog"),
+				h.DataAttribute("span-id", node.span.spanId),
+			],
+		},
 		[
 			h.span(
 				[h.Class("flex items-center gap-1.5")],

@@ -2,6 +2,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { cloudShellUrl } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button, linkButton } from "../../ui/button"
 import * as CopyButton from "../../ui/copy-button"
 import { eyebrow } from "../../ui/eyebrow"
@@ -232,12 +233,13 @@ export const step = (
 					h.div(
 						[h.Class("flex flex-col gap-0.5")],
 						[
-							h.h4(
-								[
-									h.Class(
-										cn(GCP_TITLE, options.state === "pending" && "text-muted-foreground"),
-									),
-								],
+							heading(
+								h,
+								{
+									level: 4,
+									variant: "subsection",
+									className: options.state === "pending" ? "text-muted-foreground" : undefined,
+								},
 								[options.title],
 							),
 							...(options.detail === undefined ? [] : [h.p([h.Class(SMALL)], options.detail)]),

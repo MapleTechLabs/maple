@@ -8,6 +8,7 @@ import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
+import { textLink } from "../../../ui/text-link"
 import { findingBody } from "../kit/finding-body"
 import { bucketOf, countByBucket, sectionsOf, type SeverityBucket } from "../kit/findings"
 import { findingBadge, findingGroups, severityTabs, trailingText } from "../kit/findings-view"
@@ -53,13 +54,15 @@ const reportLinks = (h: H, run: SecurityAuditRunDetail): ReadonlyArray<Html> =>
 								["needsValidation", "NEEDS-VALIDATION.md"],
 							] as const
 						).map(([report, label]) =>
-							h.button(
-								[
-									h.Key(report),
-									h.Type("button"),
-									h.Class("font-mono underline underline-offset-2 hover:text-foreground active:text-foreground"),
-									h.OnClick(Message.ClickedReport({ report })),
-								],
+							textLink(
+								h,
+								{
+									tone: "muted",
+									isMono: true,
+									className: "underline",
+									onClick: Message.ClickedReport({ report }),
+									attributes: [h.Key(report)],
+								},
 								[label],
 							),
 						),

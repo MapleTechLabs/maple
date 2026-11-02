@@ -8,6 +8,7 @@ import {
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { relativeTime } from "../kit/relative-time"
 import { DOCS } from "./gcp-configure-copy"
@@ -27,7 +28,7 @@ import {
 } from "./view-gcp-configure-parts"
 import { fileCard } from "./view-gcp-configure-script"
 import { applied, runStatus } from "./view-gcp-configure-status"
-import { GCP_TITLE, openCloudShellButton, type ScriptFailure, SMALL } from "./view-gcp-parts"
+import { openCloudShellButton, type ScriptFailure, SMALL } from "./view-gcp-parts"
 
 // `ApplyStage` / `GcpApplyView`: the script and the run's status, or the confirmed run.
 
@@ -125,7 +126,7 @@ export const scriptSection = (
 			h.div(
 				[h.Class("flex flex-col gap-0.5")],
 				[
-					h.h3([h.Class(GCP_TITLE)], ["Run this script in Cloud Shell"]),
+					heading(h, { level: 3, variant: "subsection" }, ["Run this script in Cloud Shell"]),
 					h.p([h.Class(SMALL)], ["Nothing changes in Google Cloud until it runs."]),
 				],
 			),

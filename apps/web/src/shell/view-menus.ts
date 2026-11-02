@@ -1,11 +1,10 @@
-import { cn } from "@maple/ui/lib/utils"
-import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kbd } from "../ui/display"
 import { menuGroup, menuItem, menuLabel, menuSeparator, menuShortcut } from "../ui/dropdown-menu"
+import { spinner } from "../ui/spinner"
 import { icon, iconColor } from "../ui/icon"
 import { switchControl } from "../ui/switch"
 import { popupIdOf } from "./menus"
@@ -121,7 +120,12 @@ const supportMenu = (h: HtmlBuilder<Message>, menu: Menu, isClerk: boolean): Rea
 		items(h, menu, [
 			// The channel is created in Maple's Slack for a Clerk org; self-hosted has neither.
 			...(isClerk
-				? [{ content: [icon(h, "SlackIcon"), "Shared Slack channel"], onSelect: Message.ClickedSupportChannel() }]
+				? [
+						{
+							content: [icon(h, "SlackIcon"), "Shared Slack channel"],
+							onSelect: Message.ClickedSupportChannel(),
+						},
+					]
 				: []),
 			{
 				content: [icon(h, "DiscordIcon"), "Community Discord"],
@@ -163,21 +167,19 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 		return [
 			h.div(
 				[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
-				[
-					icon(h, "LoaderIcon", {
-						className: cn(spinnerStyles, "size-3.5"),
-						attributes: [h.AriaLabel("Loading"), h.Role("status")],
-					}),
-					" Loading namespaces…",
-				],
+				[spinner(h, "size-3.5", undefined, true), " Loading namespaces…"],
 			),
 		]
 	if (observed.length === 0 && Option.isNone(pinned))
 		return [h.div([h.Class("px-2 py-1.5 text-xs text-muted-foreground")], ["No namespaces detected"])]
 	const rows = namespaceRows(observed, pinned, model.namespaceQuery)
 	const entries: ReadonlyArray<Item> = [
-		...(rows.isFiltered ? [] : [namespaceItem(h, "All namespaces", Option.none(), Option.isNone(pinned))]),
-		...rows.matches.map((name) => namespaceItem(h, name, Option.some(name), Option.contains(pinned, name))),
+		...(rows.isFiltered
+			? []
+			: [namespaceItem(h, "All namespaces", Option.none(), Option.isNone(pinned))]),
+		...rows.matches.map((name) =>
+			namespaceItem(h, name, Option.some(name), Option.contains(pinned, name)),
+		),
 		...Option.match(rows.unseenPin, {
 			onNone: () => [],
 			onSome: (name): ReadonlyArray<Item> => [
@@ -244,9 +246,17 @@ const navSectionMenu = (
 }
 
 /** `UserMenu` (Clerk): who is signed in, the theme, Account, Settings, shortcuts, Log out. */
-const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk: ShellClerk): ReadonlyArray<Html> => {
+const clerkUserMenu = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	menu: Menu,
+	clerk: ShellClerk,
+): ReadonlyArray<Html> => {
 	const name = userNameOf(clerk)
-	const email = Option.getOrElse(Option.flatMapNullishOr(clerk.maybeUser, (user) => user.email), () => "")
+	const email = Option.getOrElse(
+		Option.flatMapNullishOr(clerk.maybeUser, (user) => user.email),
+		() => "",
+	)
 	const labelId = `${popupIdOf(menu)}-label`
 	return [
 		menuGroup(h, labelId, [
@@ -254,14 +264,25 @@ const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk:
 				h.div(
 					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
 					[
-						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", { url: userImageOf(clerk), label: name }),
+						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", {
+							url: userImageOf(clerk),
+							label: name,
+						}),
 						h.div(
 							[h.Class("grid flex-1 text-left text-sm leading-tight")],
 							[
 								h.span([h.Class("truncate font-medium"), h.Title(name)], [name]),
 								...(email === ""
 									? []
-									: [h.span([h.Class("truncate text-muted-foreground text-xs"), h.Title(email)], [email])]),
+									: [
+											h.span(
+												[
+													h.Class("truncate text-muted-foreground text-xs"),
+													h.Title(email),
+												],
+												[email],
+											),
+										]),
 							],
 						),
 					],
@@ -284,7 +305,12 @@ const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk:
 		menuGroup(
 			h,
 			undefined,
-			items(h, menu, [{ content: [icon(h, "LogoutIcon"), "Log out"], onSelect: Message.ClickedLogOut() }], 3),
+			items(
+				h,
+				menu,
+				[{ content: [icon(h, "LogoutIcon"), "Log out"], onSelect: Message.ClickedLogOut() }],
+				3,
+			),
 		),
 	]
 }

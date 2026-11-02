@@ -11,7 +11,6 @@ import {
 import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { iconButtonTooltipStyles } from "@maple/ui/styles/ui/icon-button"
 import * as Tooltip from "../../../ui/tooltip"
 import { AppRoute, hrefOf } from "../../../route"
 import { orderedSearch } from "../../../route/tanstack-search"
@@ -162,7 +161,7 @@ export const spanPopover = (h: H, model: Model, inputs: SpanPopoverInputs | unde
 		viewInputs: {
 			// `IconButton`'s tooltip: its label, in the icon-button popup layout.
 			toContent: () => ["Close span detail"],
-			className: iconButtonTooltipStyles,
+			layout: "icon-button",
 			toView: ({ trigger, portal }) =>
 				h.submodel({
 					slotId: SPAN_DIALOG_ID,

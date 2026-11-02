@@ -2,6 +2,7 @@ import type { GithubIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
@@ -377,8 +378,9 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 			h.div(
 				[h.Class("flex max-w-md flex-col gap-1.5")],
 				[
-					h.h3(
-						[h.Class("text-base font-semibold")],
+					heading(
+						h,
+						{ level: 3, variant: "section" },
 						[suspended ? "GitHub integration suspended" : "GitHub integration deactivated"],
 					),
 					h.p(

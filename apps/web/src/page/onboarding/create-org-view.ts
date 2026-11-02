@@ -2,10 +2,12 @@ import { MapleRegion } from "@maple/domain/organization-regions"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { label } from "../../ui/label"
 import { hasMultipleRegions } from "../../lib/region"
 import type { ClerkOrganization, UserInvitation } from "../../platform/clerk"
 import { switchTargetOf } from "../../shell/clerk-org-switcher"
 import { button } from "../../ui/button"
+import { heading } from "../../ui/heading"
 import { textLink } from "../../ui/text-link"
 import { icon, type IconName } from "../../ui/icon"
 import { input } from "../../ui/input"
@@ -60,10 +62,9 @@ const nameField = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-2.5")],
 		[
-			h.label(
-				[h.For("org-required-name"), h.Class("text-sm font-medium")],
-				["What should we call it?"],
-			),
+			label(h, { className: "text-sm sm:text-sm", attributes: [h.For("org-required-name")] }, [
+				"What should we call it?",
+			]),
 			h.div(
 				[h.Class("flex items-center gap-3")],
 				[
@@ -403,12 +404,9 @@ export const view = (
 												[h.Class("text-sm text-muted-foreground")],
 												["Welcome to Maple"],
 											),
-											h.h1(
-												[
-													h.Class(
-														"font-display text-3xl font-semibold leading-tight tracking-tight",
-													),
-												],
+											heading(
+												h,
+												{ level: 1, variant: "display" },
 												["Give your team a home"],
 											),
 											h.p(

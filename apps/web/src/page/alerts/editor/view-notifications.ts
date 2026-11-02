@@ -9,6 +9,7 @@ import { field, fieldLabel, input } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { statusDot } from "../../../ui/status-dot"
+import { pressable } from "../../../ui/pressable"
 import { textarea } from "../../../ui/textarea"
 import { stableSlice } from "../../kit/stable-slice"
 import { destinationsOf } from "./derive-rows"
@@ -60,15 +61,14 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 	return h.div(
 		[h.Class("mt-3")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ToggledMessageTemplate()),
-					h.Class(
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledMessageTemplate(),
+					className:
 						"flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
-					),
-					h.AriaExpanded(isOpen),
-				],
+					attributes: [h.AriaExpanded(isOpen)],
+				},
 				[
 					h.span(
 						[h.Class("flex items-center gap-1.5")],

@@ -21,6 +21,7 @@ import { pageTitle } from "../../../ui/page-layout"
 import { icon } from "../../../ui/icon"
 import { listRow } from "../../../ui/list-row"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { searchInput } from "../../../ui/search-input"
 import * as SelectView from "../../../ui/select-view"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
@@ -401,15 +402,14 @@ const hubHero = (h: H, model: Model): Html => {
 					h.li(
 						[h.Key(suggestion)],
 						[
-							h.button(
-								[
-									h.Type("button"),
-									...(model.isCreating ? [h.Disabled(true)] : []),
-									h.OnClick(Message.ClickedSuggestion({ title: suggestion })),
-									h.Class(
+							pressable(
+								h,
+								{
+									onClick: Message.ClickedSuggestion({ title: suggestion }),
+									isDisabled: model.isCreating,
+									className:
 										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground hover:border-ring active:border-ring hover:bg-surface-sunken active:bg-surface-sunken disabled:opacity-60",
-									),
-								],
+								},
 								[
 									h.span(
 										[h.AriaHidden(true), h.Class("shrink-0 text-muted-foreground")],

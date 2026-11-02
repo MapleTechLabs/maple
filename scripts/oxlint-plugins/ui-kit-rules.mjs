@@ -61,7 +61,8 @@ const ratcheted = (name, { description, message, collect }) => ({
 
 /** Raw element → the kit call that replaces it. */
 const CONTROLS = {
-	button: "`button` / `linkButton` (ui/button), `iconButton`, `cardButton`, or `sortButton` (ui/table)",
+	button:
+		"`button` / `linkButton` (ui/button), `iconButton`, `textLink`, `cardButton`, a clickable `listRow`, `sortButton` (ui/table), or `pressable` (ui/pressable) for a target that draws its own look",
 	input: "`input` / `field` (ui/field), `searchInput`, `checkbox`, `switchControl`",
 	textarea: "`textarea` (ui/textarea)",
 	select: "`select` (ui/select) or `nativeSelect`",
@@ -98,7 +99,7 @@ const noRawControl = ratcheted("no-raw-control", {
 const noRawHeading = ratcheted("no-raw-heading", {
 	description: "Headings come from the kit's heading components.",
 	message:
-		"`h.{{element}}` is a hand-styled heading. Use `sectionHeading` (page/kit/section-heading), `pageTitle` / `pageHeader` (ui/page-layout) or `detailTitle` (page/kit/detail-header); a new heading style goes into one of those.",
+		"`h.{{element}}` is a hand-styled heading. Use `heading` (ui/heading: display, title, section, subsection, label), `sectionHeading` (page/kit/section-heading), `pageTitle` (ui/page-layout) or `detailTitle` (page/kit/detail-header); a new heading style is a new `heading` variant.",
 	collect: (_context, push) => ({
 		CallExpression(node) {
 			const element = builderElement(node)

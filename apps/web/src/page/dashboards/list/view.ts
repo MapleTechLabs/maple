@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../../ui/alert"
 import { button } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
+import { fileInput } from "../../../ui/file-input"
 import type { LoadFailure } from "../../../data/load-failure"
 import { icon } from "../../../ui/icon"
 import { pageTitle } from "../../../ui/page-layout"
@@ -91,15 +92,12 @@ const actions = (h: H, reason: string | null): Html =>
 					],
 				),
 			),
-			h.input([
-				h.Accept(".json"),
-				h.AriaLabel("Import dashboard JSON file"),
-				h.Class("hidden"),
-				h.Style({}),
-				h.Type("file"),
-				h.Id("dashboards-import-input"),
-				h.OnFileChange((files) => Message.ChoseImportFile({ files })),
-			]),
+			fileInput(h, {
+				id: "dashboards-import-input",
+				label: "Import dashboard JSON file",
+				accept: ".json",
+				onChange: (files) => Message.ChoseImportFile({ files }),
+			}),
 		],
 	)
 

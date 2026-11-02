@@ -1,13 +1,12 @@
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import * as C from "@maple/ui/styles/ui/combobox"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as Combobox from "../../../ui/combobox"
-import { hiddenInput, inputAttributes, listPopup } from "../../../ui/combobox-view"
+import { chipsInput, hiddenInput, inputAttributes, listPopup } from "../../../ui/combobox-view"
 import { icon } from "../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
 import { isMounted } from "../../../ui/overlay/transition"
@@ -116,16 +115,16 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 							header: h.div(
 								[h.Class("border-b border-border px-1.5 py-1.5")],
 								[
-									h.input([
-										...inputAttributes(
+									chipsInput(h, {
+										size: "sm",
+										className: "w-full font-mono",
+										attributes: inputAttributes(
 											h,
 											searchModel,
 											{ slot: "combobox-chips-input", placeholder: `Search ${label}…`, items },
 											(message) => message,
 										),
-										h.DataAttribute("size", "sm"),
-										h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputSmStyles, "w-full font-mono")),
-									]),
+									}),
 								],
 							),
 						},

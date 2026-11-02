@@ -5,6 +5,7 @@ import type { CrashContext } from "foldkit/runtime"
 import { writeClipboardText } from "@maple/ui/lib/clipboard"
 import { button, linkButton } from "../ui/button"
 import { eyebrow } from "../ui/eyebrow"
+import { heading } from "../ui/heading"
 import { icon } from "../ui/icon"
 import { MAPLE_MARK_PATH } from "../ui/icons.generated"
 import { mountMapleLeaves } from "./maple-leaves"
@@ -127,14 +128,9 @@ export const crashView = (context: CrashContext<unknown, unknown>, h: HtmlBuilde
 								eyebrow(h, { variant: "label", className: "text-muted-foreground" }, [
 									"Unexpected error",
 								]),
-								h.h1(
-									[
-										h.Class(
-											"font-display text-3xl font-semibold tracking-tight text-balance md:text-4xl",
-										),
-									],
-									["Something came loose"],
-								),
+								heading(h, { level: 1, variant: "display", className: "text-balance" }, [
+									"Something came loose",
+								]),
 								h.p(
 									[
 										h.Class(

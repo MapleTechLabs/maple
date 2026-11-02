@@ -1,5 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
-import * as DialogStyles from "@maple/ui/styles/ui/dialog"
 import {
 	LIST_PRESET_SAMPLE_ROWS,
 	STAT_PRESET_SAMPLE_VALUES,
@@ -11,9 +9,8 @@ import * as Chart from "../../../charts/chart"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { cardButton } from "../../../ui/card-button"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
-import { descriptionId, titleId } from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
-import { dialogHeader } from "../../../ui/dialog-view"
+import { dialogDescription, dialogHeader, dialogTitle } from "../../../ui/dialog-view"
 import { eyebrow } from "../../../ui/eyebrow"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import * as TabsView from "../../../ui/tabs-view"
@@ -237,22 +234,8 @@ export const widgetPicker = (h: H, model: Model): Html => {
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: () => [
 				dialogHeader(h, "dialog", [
-					h.h2(
-						[
-							h.Class(cn(DialogStyles.dialogTitleStyles)),
-							h.DataAttribute("slot", "dialog-title"),
-							h.Id(titleId(id)),
-						],
-						["Add widget"],
-					),
-					h.p(
-						[
-							h.Class(cn(DialogStyles.dialogDescriptionStyles)),
-							h.DataAttribute("slot", "dialog-description"),
-							h.Id(descriptionId(id)),
-						],
-						["Choose a visualization type to add to your dashboard."],
-					),
+					dialogTitle(h, "dialog", id, "Add widget"),
+					dialogDescription(h, "dialog", id, "Choose a visualization type to add to your dashboard."),
 				]),
 				h.submodel({
 					slotId: "widget-picker-tabs",

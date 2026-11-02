@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
+import { heading } from "../../ui/heading"
 import { eyebrow } from "../../ui/eyebrow"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
@@ -111,10 +112,7 @@ export const teamStep = (h: H, team: Team): Html => {
 			h.div(
 				[h.Class("flex flex-col gap-2.5")],
 				[
-					h.h1(
-						[h.Class("font-display text-3xl font-semibold tracking-tight")],
-						["Bring in your team and tools"],
-					),
+					heading(h, { level: 1, variant: "display" }, ["Bring in your team and tools"]),
 					h.p(
 						[h.Class("text-title leading-relaxed text-muted-foreground")],
 						["Maple shows up where you already work. Every one of these is optional."],
@@ -285,8 +283,9 @@ export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html 
 					h.div(
 						[h.Class("mb-10 flex flex-col items-center gap-2.5 text-center")],
 						[
-							h.h1(
-								[h.Class("font-display text-3xl font-semibold tracking-tight")],
+							heading(
+								h,
+								{ level: 1, variant: "display" },
 								[`Start your ${TRIAL_DURATION_DAYS}-day free trial`],
 							),
 							h.p(

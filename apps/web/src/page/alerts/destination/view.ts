@@ -11,6 +11,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input } from "../../../ui/field"
 import type { FieldState } from "../../../ui/input"
 import { inlineCode } from "../../../ui/inline-code"
+import { listRow } from "../../../ui/list-row"
 import { panel } from "../../../ui/panel"
 import { settingRow } from "../../../ui/setting-row"
 import { switchControl } from "../../../ui/switch"
@@ -498,22 +499,19 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 								h.div(
 									[h.Class("space-y-1 rounded-md border border-border-subtle p-1")],
 									model.telegramChats.map((chat) =>
-										h.button(
-											[
-												h.Key(chat.id),
-												h.Type("button"),
-												h.OnClick(Message.ClickedTelegramChat({ chatId: chat.id })),
-												h.Class(
-													"flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted active:bg-muted",
-												),
-											],
-											[
-												h.span([h.Class("truncate")], [chat.title]),
-												h.span(
-													[h.Class("shrink-0 text-3xs text-muted-foreground")],
+										listRow(
+											h,
+											{
+												density: "compact",
+												className: "gap-2 rounded-sm px-2",
+												title: chat.title,
+												trailing: h.span(
+													[h.Class("text-3xs text-muted-foreground")],
 													[TELEGRAM_CHAT_TYPE_LABELS.get(chat.type) ?? chat.type],
 												),
-											],
+												onClick: Message.ClickedTelegramChat({ chatId: chat.id }),
+											},
+											[h.Key(chat.id)],
 										),
 									),
 								),

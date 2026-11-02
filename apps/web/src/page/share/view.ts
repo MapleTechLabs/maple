@@ -9,6 +9,7 @@ import { WIDGET_CHART_TOKENS } from "../dashboards/kit/chart-tokens"
 import * as Chart from "../../charts/chart"
 import { ResolveThemeColors } from "../../charts/theme-colors"
 import { button } from "../../ui/button"
+import { heading } from "../../ui/heading"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyTitle } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { skeleton } from "../../ui/skeleton"
@@ -32,7 +33,11 @@ const shell = (h: H, children: ReadonlyArray<Html>, title?: string): Html =>
 		h.header([h.Class("flex items-center justify-between gap-4 border-b px-6 py-3")], [
 			title === undefined
 				? h.span([], [])
-				: h.h1([h.Class("min-w-0 truncate font-medium text-sm"), h.Title(title)], [title]),
+				: heading(
+						h,
+						{ level: 1, variant: "subsection", className: "min-w-0 truncate", attributes: [h.Title(title)] },
+						[title],
+					),
 			h.a(
 				[
 					h.Href("https://maple.dev"),

@@ -1,12 +1,13 @@
 import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
+import { cardButton } from "../../../ui/card-button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
+import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { listSectionHeader, toolbarSearch } from "../kit/list-parts"
 import * as Menu from "../../../ui/menu"
 import * as MenuView from "../../../ui/menu-view"
@@ -170,35 +171,12 @@ const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> 
 /** `RowActionsMenu`: the kebab trigger; only the active row holds live menu state. */
 const rowMenu = (h: H, model: Model, dashboard: ListDashboard): Html => {
 	const menu = model.rowMenuId === dashboard.id ? model.rowMenu : Menu.init(rowMenuIdOf(dashboard.id))
-	return h.submodel({
+	return rowActionsMenu(h, {
 		slotId: `row-menu-${dashboard.id}`,
 		model: menu,
-		view: MenuView.view,
-		viewInputs: {
-			entries: rowMenuEntries(isReadOnly(model)),
-			align: "end",
-			className: rowActionsMenuContentStyles,
-			toView: ({ trigger, withTrigger }) =>
-				h.div(
-					[h.Class("contents")],
-					withTrigger(
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "icon-sm",
-								className: "text-muted-foreground",
-								attributes: [
-									h.AriaLabel(`More actions for ${displayName(dashboard.name)}`),
-									...trigger,
-									h.DataAttribute("slot", "row-actions-trigger"),
-								],
-							},
-							[icon(h, "DotsVerticalIcon", { className: rowActionsMenuIconStyles })],
-						),
-					),
-				),
-		},
+		entries: rowMenuEntries(isReadOnly(model)),
+		label: `More actions for ${displayName(dashboard.name)}`,
+		className: "text-muted-foreground",
 		toParentMessage: (message) => Message.GotRowMenuMessage({ rowId: dashboard.id, message }),
 	})
 }
@@ -351,15 +329,14 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 
 /** `CreateRow`: pinned below the list so a filter can never make it read as a result. */
 const createRow = (h: H, isReadOnly: boolean): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedCreate()),
-			...(isReadOnly ? [h.Disabled(true)] : []),
-			h.Class(
-				"mt-4 flex w-full shrink-0 items-center gap-3 rounded-md border border-dashed border-input bg-card py-3 pr-4 pl-3 text-left hover:bg-surface-sunken active:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50",
-			),
-		],
+	cardButton(
+		h,
+		{
+			onClick: Message.ClickedCreate(),
+			isDisabled: isReadOnly,
+			className:
+				"mt-4 flex w-full shrink-0 items-center gap-3 border-dashed border-input py-3 pr-4 pl-3",
+		},
 		[
 			h.span(
 				[h.Class("flex size-5.5 shrink-0 items-center justify-center")],

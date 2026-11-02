@@ -18,6 +18,7 @@ import type * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { linkButton } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { miniBars } from "../../../ui/mini-bars"
@@ -75,14 +76,15 @@ const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =
 		),
 	)
 
-const MUTED_HEADING = "font-mono text-lg leading-[26px] font-semibold tracking-tight text-muted-foreground"
+const mutedHeading = (h: H, text: string): Html =>
+	heading(h, { level: 2, variant: "code", className: "text-muted-foreground" }, [text])
 
 const headingOf = (h: H, group: Prepared, text: string): Html => {
 	if (group.fingerprint === UNGROUPED_FINGERPRINT)
 		return h.div(
 			[h.Class("flex flex-col gap-1")],
 			[
-				h.h2([h.Class(MUTED_HEADING)], ["Failures recorded before error grouping"]),
+				mutedHeading(h, "Failures recorded before error grouping"),
 				h.p(
 					[h.Class("max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground")],
 					[
@@ -91,7 +93,7 @@ const headingOf = (h: H, group: Prepared, text: string): Html => {
 				),
 			],
 		)
-	if (text === "") return h.h2([h.Class(MUTED_HEADING)], ["No error message recorded"])
+	if (text === "") return mutedHeading(h, "No error message recorded")
 	return errorTextHeading(h, errorTextTokens(text))
 }
 

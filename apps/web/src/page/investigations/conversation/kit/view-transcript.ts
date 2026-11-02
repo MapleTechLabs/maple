@@ -3,16 +3,6 @@ import type { AnnotationSegment } from "@maple/domain/chat-annotations"
 import { stripChatContext } from "@maple/domain/chat-preamble"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	messageScrollerButtonIconStyles,
-	messageScrollerButtonLabelStyles,
-	messageScrollerButtonStyles,
-	messageScrollerContentStyles,
-	messageScrollerItemStyles,
-	messageScrollerStyles,
-	messageScrollerViewportStyles,
-} from "@maple/ui/styles/ui/message-scroller"
-import { markerVariants } from "@maple/ui/styles/ui/marker"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { messageResponse, type ViewOverrides } from "../../../kit/message-response"
 import { bubble, bubbleContent } from "../../../../ui/bubble"
@@ -20,6 +10,13 @@ import { button } from "../../../../ui/button"
 import * as CopyButton from "../../../../ui/copy-button"
 import { icon } from "../../../../ui/icon"
 import { marker, markerContent, markerIcon } from "../../../../ui/marker"
+import {
+	messageScroller,
+	messageScrollerButton,
+	messageScrollerContent,
+	messageScrollerItem,
+	messageScrollerViewport,
+} from "../../../../ui/message-scroller"
 import { message as messageRow, messageContent, messageFooter } from "../../../../ui/message"
 import { dotLoader } from "./dot-loader"
 import { type MinimapState, turnMinimap } from "./turn-minimap"
@@ -158,13 +155,9 @@ export const statusMarker = <M>(
 	label = "Thinking…",
 	clockMount?: PanelHost<M>["clockMount"],
 ): Html =>
-	h.div(
-		[
-			h.Class(cn(markerVariants({ variant: "default", className: "text-xs" }))),
-			h.DataAttribute("slot", "marker"),
-			h.DataAttribute("variant", "default"),
-			h.Role("status"),
-		],
+	marker(
+		h,
+		{ variant: "default", className: "text-xs", role: "status" },
 		[
 			markerIcon(h, [dotLoader(h)], "size-5"),
 			markerContent(
@@ -182,14 +175,13 @@ const scrollerItem = <M>(
 	isAnchor: boolean,
 	children: ReadonlyArray<Html>,
 ): Html =>
-	h.keyed("div")(
+	messageScrollerItem(
+		h,
 		id,
-		[
-			h.Class(cn(messageScrollerItemStyles, TRANSCRIPT_ITEM)),
-			h.DataAttribute("message-id", id),
-			h.DataAttribute("scroll-anchor", String(isAnchor)),
-			h.DataAttribute("slot", "message-scroller-item"),
-		],
+		{
+			className: TRANSCRIPT_ITEM,
+			attributes: [h.DataAttribute("message-id", id), h.DataAttribute("scroll-anchor", String(isAnchor))],
+		},
 		children,
 	)
 
@@ -306,29 +298,6 @@ const toolRunItem = <M>(
 		]),
 	])
 
-const scrollButton = <M>(h: HtmlBuilder<M>): Html =>
-	button(
-		h,
-		{
-			variant: "secondary",
-			size: "icon-sm",
-			className: messageScrollerButtonStyles,
-			slot: "message-scroller-button",
-			attributes: [
-				h.DataAttribute("active", "false"),
-				h.DataAttribute("direction", "end"),
-				h.DataAttribute("size", "icon-sm"),
-				h.DataAttribute("variant", "secondary"),
-				h.Attribute("inert", ""),
-				h.Tabindex(-1),
-			],
-		},
-		[
-			icon(h, "ArrowDownIcon", { className: messageScrollerButtonIconStyles }),
-			h.span([h.Class(messageScrollerButtonLabelStyles)], ["Scroll to end"]),
-		],
-	)
-
 /** `JumpToDiagnosis`: back to the report once it scrolled away (its Mount shows and presses it). */
 const jumpButton = <M>(
 	h: HtmlBuilder<M>,
@@ -373,34 +342,29 @@ export const transcript = <M>(
 		(text) => host.markdown[text]?.isStale ?? true,
 	)
 	// Keyed apart from the empty state: patched in place, the scroller's Mount would never run.
-	return h.keyed("div")(
-		"transcript-scroller",
+	return messageScroller(
+		h,
+		{
+			key: "transcript-scroller",
+			className: "min-h-0 flex-1",
+			attributes: [h.OnMount(host.scrollerMount)],
+		},
 		[
-			h.Class(cn(messageScrollerStyles, "min-h-0 flex-1")),
-			h.DataAttribute("slot", "message-scroller"),
-			h.OnMount(host.scrollerMount),
-		],
-		[
-			h.div(
-				[
-					h.AriaLabel("Messages"),
-					h.Class(messageScrollerViewportStyles),
-					h.DataAttribute("slot", "message-scroller-viewport"),
-					h.Role("region"),
-					h.Tabindex(0),
-				],
-				[
-					h.div(
+					messageScrollerViewport(
+						h,
+						{ attributes: [h.AriaLabel("Messages"), h.Role("region"), h.Tabindex(0)] },
 						[
-							h.Attribute("aria-relevant", "additions"),
-							h.Class(
-								cn(messageScrollerContentStyles, "mx-auto w-full max-w-3xl gap-4 px-4 py-6"),
-							),
-							h.DataAttribute("slot", "message-scroller-content"),
-							...(isMarkdownPending ? [h.DataAttribute("markdown-pending", "")] : []),
-							h.Role("log"),
-						],
-						[
+							messageScrollerContent(
+								h,
+								{
+									className: "mx-auto w-full max-w-3xl gap-4 px-4 py-6",
+									attributes: [
+										h.Attribute("aria-relevant", "additions"),
+										...(isMarkdownPending ? [h.DataAttribute("markdown-pending", "")] : []),
+										h.Role("log"),
+									],
+								},
+								[
 							...(readOnlyLabel === undefined
 								? []
 								: [scrollerItem(h, "__read-only", false, [separator(h, readOnlyLabel)])]),
@@ -447,7 +411,7 @@ export const transcript = <M>(
 				],
 			),
 			turnMinimap(h, rows, host.minimap, host.minimapMount),
-			scrollButton(h),
+			messageScrollerButton(h),
 			...(host.jump === undefined ? [] : [jumpButton(h, host.jump.messageId, host.jump.mount)]),
 		],
 	)

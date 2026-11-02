@@ -6,6 +6,7 @@ import { copyableField } from "../../../ui/copyable-field"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { heading } from "../../../ui/heading"
 import { publicUrl, statusPageHref } from "../shared/commands"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -53,7 +54,7 @@ const nextStep = (
 				h.div(
 					[h.Class("flex flex-col gap-1")],
 					[
-						h.h3([h.Class("text-sm font-medium")], [options.title]),
+						heading(h, { level: 3, variant: "subsection" }, [options.title]),
 						h.p([h.Class("text-xs text-muted-foreground")], [options.description]),
 					],
 				),
@@ -79,10 +80,9 @@ export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
 								[h.Class("flex items-center gap-2 text-severity-ok")],
 								[icon(h, "CircleCheckIcon", { size: 18 }), eyebrow(h, {}, ["Published"])],
 							),
-					h.h2(
-						[h.Class("text-xl font-semibold tracking-tight")],
-						[page.draft ? `${page.name} is not public yet` : `${page.name} is live`],
-					),
+					heading(h, { level: 2, variant: "title" }, [
+						page.draft ? `${page.name} is not public yet` : `${page.name} is live`,
+					]),
 					h.p(
 						[h.Class("text-sm text-muted-foreground")],
 						[

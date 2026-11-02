@@ -1,6 +1,5 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../../ui/button"
@@ -8,7 +7,7 @@ import { confirmDialog } from "../../../../ui/confirm-dialog"
 import { badge } from "../../../../ui/display"
 import { icon } from "../../../../ui/icon"
 import { skeletonList } from "../../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../../ui/table"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "../../../../ui/table"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { relativeTime } from "../../../kit/relative-time"
 import { settingsSection, settingsSections } from "../../kit/section"
@@ -22,7 +21,7 @@ const sessionRow = (h: H, model: Model, session: SessionRow, inputs: Inputs): Ht
 	return tableRow(
 		h,
 		[
-			tableCell(
+			truncatedTableCell(
 				h,
 				[
 					h.div(
@@ -39,7 +38,6 @@ const sessionRow = (h: H, model: Model, session: SessionRow, inputs: Inputs): Ht
 						],
 					),
 				],
-				cn(truncatedCellStyles),
 			),
 			tableCell(h, [session.location], "text-muted-foreground hidden text-xs sm:table-cell"),
 			tableCell(

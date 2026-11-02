@@ -2,6 +2,7 @@ import type { CloudflareServiceUsage } from "@maple/domain/http"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import * as Chart from "../../charts/chart"
 import * as Sparkline from "../../charts/sparkline"
 import { AppRoute, hrefOf } from "../../route"
@@ -214,7 +215,7 @@ export const zoneBoard = (
 		panelHeader(h, {
 			className: "gap-2 border-border-subtle pl-4 pr-2.5",
 			children: [
-				h.h3([h.Class("text-sm font-semibold")], ["Zones"]),
+				heading(h, { level: 3, variant: "section" }, ["Zones"]),
 				ToggleGroup.view(h, {
 					model: card.zoneFilter,
 					toParentMessage: (message) => Message.GotZoneFilterMessage({ message }),
@@ -310,7 +311,7 @@ export const workersCard = (
 	return panel(h, { className: "h-fit border-border-subtle lg:w-72 lg:shrink-0 xl:w-80" }, [
 		panelHeader(h, {
 			className: "border-border-subtle py-3",
-			children: [h.h3([h.Class("text-sm font-semibold")], ["Workers"])],
+			children: [heading(h, { level: 3, variant: "section" }, ["Workers"])],
 			action: h.a(
 				[
 					h.Href(hrefOf(AppRoute.ServiceMap({ search: {} }))),

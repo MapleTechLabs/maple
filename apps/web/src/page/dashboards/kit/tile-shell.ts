@@ -1,12 +1,12 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { cardActionStyles } from "@maple/ui/styles/ui/card"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
-import { card, cardHeader, cardPanel } from "../../../ui/card"
+import { card, cardAction, cardHeader, cardPanel } from "../../../ui/card"
 import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { isEmptyError, type WidgetDataState } from "./data-state"
 import { NARROW_RANGE_LABEL } from "./widget-data"
 
@@ -97,16 +97,14 @@ const timeRangeChip = <M>(h: HtmlBuilder<M>, label: string): Html =>
 
 /** The grip a tile is dragged by (edit mode); the press starts the grid gesture. */
 const grip = <M>(h: HtmlBuilder<M>, title: string): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.AriaLabel(`Move ${title}`),
-			h.DataAttribute("grid-label", title),
-			h.Class(
+	pressable(
+		h,
+		{
+			label: `Move ${title}`,
+			className:
 				"widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground active:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
-			),
-			h.AriaDescribedBy(GRID_INSTRUCTIONS_ID),
-		],
+			attributes: [h.DataAttribute("grid-label", title), h.AriaDescribedBy(GRID_INSTRUCTIONS_ID)],
+		},
 		[icon(h, "GripDotsIcon", { size: 14 })],
 	)
 
@@ -146,19 +144,14 @@ export const widgetShell = <M>(
 					...(options.menu === null
 						? []
 						: [
-								h.div(
-									[
-										h.Class(
-											cn(
-												cardActionStyles,
-												!options.isEdit &&
-													"opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100 pointer-coarse:opacity-100",
-												!options.isEdit && options.isMenuOpen && "opacity-100",
-											),
-										),
-										h.DataAttribute("slot", "card-action"),
-									],
+								cardAction(
+									h,
 									[options.menu],
+									cn(
+										!options.isEdit &&
+											"opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100 pointer-coarse:opacity-100",
+										!options.isEdit && options.isMenuOpen && "opacity-100",
+									),
 								),
 							]),
 				],

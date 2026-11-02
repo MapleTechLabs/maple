@@ -2,7 +2,6 @@ import { queryBadgeColor } from "@maple/query-engine/query-builder"
 import { FUNNEL_SESSION_DIMENSION_LABEL, QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import {
 	FUNNEL_KEY_BY_OPTIONS,
 	FUNNEL_SESSION_DIMENSIONS,
@@ -11,6 +10,7 @@ import {
 import { parseProductEventsFilterClause } from "../../../lib/query-builder/funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { badge } from "../../../ui/display"
 import { filterChip } from "../../../ui/filter-chip"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
@@ -81,21 +81,12 @@ export const panelShell = (
 									},
 									[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
 								),
-								h.span(
-									[
-										h.Class(
-											cn(
-												badgeVariants({
-													variant: "outline",
-													className: cn(
-														"font-mono text-2xs text-white border-0 shrink-0",
-														queryBadgeColor(0),
-													),
-												}),
-											),
-										),
-										h.DataAttribute("slot", "badge"),
-									],
+								badge(
+									h,
+									{
+										variant: "outline",
+										className: cn("font-mono text-2xs text-white border-0 shrink-0", queryBadgeColor(0)),
+									},
 									["A"],
 								),
 								...parts,

@@ -1,7 +1,6 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
 import type { ActionKind } from "@maple/web-data/investigations/action-target"
 import { splitDuration } from "@maple/web-data/investigations/display"
 import {
@@ -31,6 +30,7 @@ import {
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { relativeTime } from "../../kit/relative-time"
@@ -522,31 +522,27 @@ const controls = (h: H): Html =>
 				[h.AriaHidden(true), h.Class(cn(CONTROL, "cursor-default"))],
 				[icon(h, "CursorIcon", { size: 12 })],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.Class(CONTROL),
-					h.AriaLabel("Zoom in"),
-					h.OnClick(Message.GotCanvasMessage({ message: Canvas.Message.ClickedZoomIn() })),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.GotCanvasMessage({ message: Canvas.Message.ClickedZoomIn() }),
+					label: "Zoom in",
+					className: CONTROL,
+				},
 				[icon(h, "PlusIcon", { size: 12 })],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.Class(CONTROL),
-					h.AriaLabel("Zoom out"),
-					h.OnClick(Message.GotCanvasMessage({ message: Canvas.Message.ClickedZoomOut() })),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.GotCanvasMessage({ message: Canvas.Message.ClickedZoomOut() }),
+					label: "Zoom out",
+					className: CONTROL,
+				},
 				[icon(h, "MinusIcon", { size: 12 })],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.Class(CONTROL),
-					h.AriaLabel("Fit the graph to the view"),
-					h.OnClick(Message.ClickedPlaceGraph()),
-				],
+			pressable(
+				h,
+				{ onClick: Message.ClickedPlaceGraph(), label: "Fit the graph to the view", className: CONTROL },
 				[icon(h, "MaximizeIcon", { size: 12 })],
 			),
 		],
@@ -577,11 +573,9 @@ const outline = (h: H, graph: ProvenanceGraph): Html =>
 					[],
 					node.type === "action"
 						? [
-								h.button(
-									[
-										h.Type("button"),
-										h.OnClick(Message.ClickedAction({ index: node.data.index })),
-									],
+								pressable(
+									h,
+									{ onClick: Message.ClickedAction({ index: node.data.index }) },
 									[`Proposed action ${node.data.ordinal}: ${node.data.text}`],
 								),
 							]
@@ -834,12 +828,9 @@ const actionGhost = (h: H, card: Card, delay: number): Html =>
 
 /** `ProvenanceCanvasLoading`: the chain it is about to be replaced by, drawn as a ghost. */
 export const provenanceLoading = (h: H): Html =>
-	h.section(
-		[
-			h.Class(cn(panelStyles, panelToneStyles.default, PANEL)),
-			h.DataAttribute("slot", "panel"),
-			h.AriaBusy(true),
-		],
+	panel(
+		h,
+		{ className: PANEL, attributes: [h.AriaBusy(true)] },
 		[
 			h.div(
 				[h.Class("flex items-center gap-2.5")],

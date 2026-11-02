@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../../ui/heading"
 import { panel } from "../../../ui/panel"
 import { sectionHeading } from "../../kit/section-heading"
 import { emptyMessage } from "../../../ui/empty"
@@ -32,7 +33,7 @@ const descriptionOf = <M>(h: HtmlBuilder<M>, description: Children | undefined):
 
 /** The lead section's heading: hidden, the page header already shows its title and description. */
 const leadHeader = <M>(h: HtmlBuilder<M>, options: SettingsSectionOptions): Html =>
-	h.h2([h.Id(options.id), h.Class("sr-only")], [options.title])
+	heading(h, { level: 2, variant: "section", id: options.id, className: "sr-only" }, [options.title])
 
 export const settingsSection = <M>(
 	h: HtmlBuilder<M>,

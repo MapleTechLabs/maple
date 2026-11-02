@@ -6,7 +6,6 @@ import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { panelPaddingStyles, panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "../../../../charts/area-chart"
@@ -164,23 +163,17 @@ const tableView =
 
 const PLOT_HEIGHT = "h-[160px] w-full"
 
-/** `<Panel render={<figure />} padded="sm">` and `<Panel render={<pre />} tone="muted" padded="sm">`. */
-const panelClass = (tone: "default" | "muted", className: string): string =>
-	cn(panelStyles, panelToneStyles[tone], panelPaddingStyles.sm, className)
-
+/** `<Panel render={<figure />} padded="sm">`. */
 const chartFrame = <M>(h: HtmlBuilder<M>, title: string | null, children: ReadonlyArray<Html>): Html =>
-	h.figure(
-		[
+	panel(
+		h,
+		{
+			as: "figure",
+			padded: "sm",
 			// Mono like every other chart; the prose around it is sans. The min width keeps ranked
 			// labels readable when the surrounding message is short.
-			h.Class(
-				panelClass(
-					"default",
-					"my-3 block min-w-[min(100%,21rem)] space-y-2 overflow-visible font-mono",
-				),
-			),
-			h.DataAttribute("slot", "panel"),
-		],
+			className: "my-3 block min-w-[min(100%,21rem)] space-y-2 overflow-visible font-mono",
+		},
 		[
 			...(title === null
 				? []
@@ -254,11 +247,14 @@ const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartS
 const chartView = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, code: string): Html =>
 	Option.match(Option.fromNullishOr(parseChartSpec(code)), {
 		onNone: () =>
-			h.pre(
-				[
-					h.Class(panelClass("muted", "my-3 block overflow-auto text-xs text-muted-foreground")),
-					h.DataAttribute("slot", "panel"),
-				],
+			panel(
+				h,
+				{
+					as: "pre",
+					tone: "muted",
+					padded: "sm",
+					className: "my-3 block overflow-auto text-xs text-muted-foreground",
+				},
 				[h.code([], [code])],
 			),
 		onSome: (spec) => chartFrame(h, spec.title ?? null, [plot(h, host, code, spec)]),

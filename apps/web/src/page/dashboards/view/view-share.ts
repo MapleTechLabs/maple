@@ -7,6 +7,7 @@ import { confirmDialog } from "../../../ui/confirm-dialog"
 import { copyableField } from "../../../ui/copyable-field"
 import * as DialogView from "../../../ui/dialog-view"
 import { icon, type IconName } from "../../../ui/icon"
+import { label } from "../../../ui/label"
 import * as RadioGroup from "../../../ui/radio-group"
 import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "../kit/share-support"
 import { Message } from "./message"
@@ -107,14 +108,13 @@ const accessOption = (
 	config: RadioGroup.RadioGroupViewConfig<Message>,
 	option: (typeof ACCESS)[number],
 ): Html =>
-	h.label(
-		[
-			h.For(`share-${option.value}`),
-			h.Id(`share-${option.value}-label`),
-			h.Class(
-				"group flex cursor-pointer items-start gap-3 px-3.5 py-3 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-surface-strong",
-			),
-		],
+	label(
+		h,
+		{
+			className:
+				"group flex cursor-pointer items-start gap-3 px-3.5 py-3 font-normal hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-surface-strong",
+			attributes: [h.For(`share-${option.value}`), h.Id(`share-${option.value}-label`)],
+		},
 		[
 			icon(h, option.icon, {
 				size: 16,

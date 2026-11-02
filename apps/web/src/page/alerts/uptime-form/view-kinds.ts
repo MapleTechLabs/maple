@@ -3,6 +3,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import * as MenuView from "../../../ui/menu-view"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "./form"
 import { Message } from "./message"
@@ -256,14 +257,13 @@ export const notifySection = (h: H, model: Model): Html => {
 									h.span(
 										[h.Class("contents")],
 										withTrigger(
-											h.button(
-												[
-													h.Type("button"),
-													h.Class(
+											pressable(
+												h,
+												{
+													className:
 														"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-													),
-													...trigger,
-												],
+													attributes: trigger,
+												},
 												[icon(h, "PlusIcon", { size: 14 }), "Add destination"],
 											),
 										),

@@ -5,6 +5,7 @@ import {
 	fieldLabelStyles,
 	fieldStyles,
 } from "@maple/ui/styles/ui/field"
+import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { Schema } from "effect"
 import type { Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -81,7 +82,7 @@ export const controlAttributes = <P>(
 /** Base UI `Field.Root`. */
 export const field = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ className?: string; state: FieldState }>,
+	options: Readonly<{ className?: string; state: FieldState; attributes?: ReadonlyArray<Attribute<Message>> }>,
 	children: ReadonlyArray<Html>,
 ): Html =>
 	h.div(
@@ -89,6 +90,7 @@ export const field = <Message>(
 			h.DataAttribute("slot", "field"),
 			h.Class(cn(fieldStyles, options.className)),
 			...fieldStateAttributes(h, options.state),
+			...(options.attributes ?? []),
 		],
 		children,
 	)
@@ -96,10 +98,13 @@ export const field = <Message>(
 /** Base UI `useId`s of a field's parts; `description` only when a `FieldDescription` renders. */
 export type FieldIds = Readonly<{ control: string; label: string; error: string; description?: string }>
 
+// The small uppercase eyebrow look on a field label (a dense editor rail).
+const EYEBROW_LABEL = cn(eyebrowVariants({ variant: "label" }), "sm:text-2xs sm:leading-normal")
+
 /** Base UI `Field.Label`, wired to the control by id. */
 export const fieldLabel = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ ids: FieldIds; className?: string; state: FieldState }>,
+	options: Readonly<{ ids: FieldIds; className?: string; state: FieldState; isEyebrow?: boolean }>,
 	text: string | ReadonlyArray<Html | string>,
 ): Html =>
 	h.label(
@@ -107,8 +112,23 @@ export const fieldLabel = <Message>(
 			h.Id(options.ids.label),
 			h.For(options.ids.control),
 			h.DataAttribute("slot", "field-label"),
-			h.Class(cn(fieldLabelStyles, options.className)),
+			h.Class(cn(fieldLabelStyles, options.isEyebrow === true && EYEBROW_LABEL, options.className)),
 			...fieldStateAttributes(h, options.state),
+		],
+		typeof text === "string" ? [text] : text,
+	)
+
+/** A field label with no control of its own: it names what follows (a chip list, a list of rows). */
+export const fieldGroupLabel = <Message>(
+	h: HtmlBuilder<Message>,
+	options: Readonly<{ className?: string; isEyebrow?: boolean; attributes?: ReadonlyArray<Attribute<Message>> }>,
+	text: string | ReadonlyArray<Html | string>,
+): Html =>
+	h.label(
+		[
+			h.Class(cn(fieldLabelStyles, options.isEyebrow === true && EYEBROW_LABEL, options.className)),
+			h.DataAttribute("slot", "field-label"),
+			...(options.attributes ?? []),
 		],
 		typeof text === "string" ? [text] : text,
 	)
@@ -178,6 +198,21 @@ export const fieldError = <Message>(
 			...(options.attributes ?? []),
 			h.Class(cn(fieldErrorStyles, "font-prose", options.className)),
 			...fieldStateAttributes(h, options.state),
+		],
+		typeof text === "string" ? [text] : text,
+	)
+
+/** A field-error line not tied to one control's ids: an error that belongs to a whole editor. */
+export const fieldErrorText = <Message>(
+	h: HtmlBuilder<Message>,
+	options: Readonly<{ className?: string; attributes?: ReadonlyArray<Attribute<Message>> }>,
+	text: string | ReadonlyArray<Html | string>,
+): Html =>
+	h.div(
+		[
+			h.Class(cn(fieldErrorStyles, options.className)),
+			h.DataAttribute("slot", "field-error"),
+			...(options.attributes ?? []),
 		],
 		typeof text === "string" ? [text] : text,
 	)

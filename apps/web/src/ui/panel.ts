@@ -26,28 +26,36 @@ export const panel = <M>(
 		readonly className?: string
 		/** Props spread after the panel's own (a `ref` target marker, an id). */
 		readonly attributes?: ReadonlyArray<Attribute<M>>
+		/** `render={<figure />}` or `render={<pre />}`; a `section` by default. */
+		readonly as?: "figure" | "pre"
 	},
 	children: Children,
-): Html =>
-	h.section(
-		[
-			h.Class(
-				cn(
-					panelStyles,
-					panelToneStyles[options.tone ?? "default"],
-					options.padded === "sm"
-						? panelPaddingStyles.sm
-						: options.padded === true
-							? panelPaddingStyles.md
-							: null,
-					options.className,
-				),
+): Html => {
+	const attributes = [
+		h.Class(
+			cn(
+				panelStyles,
+				panelToneStyles[options.tone ?? "default"],
+				options.padded === "sm"
+					? panelPaddingStyles.sm
+					: options.padded === true
+						? panelPaddingStyles.md
+						: null,
+				options.className,
 			),
-			h.DataAttribute("slot", "panel"),
-			...(options.attributes ?? []),
-		],
-		children,
-	)
+		),
+		h.DataAttribute("slot", "panel"),
+		...(options.attributes ?? []),
+	]
+	switch (options.as) {
+		case "figure":
+			return h.figure(attributes, children)
+		case "pre":
+			return h.pre(attributes, children)
+		default:
+			return h.section(attributes, children)
+	}
+}
 
 export const panelTitle = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.h3([h.Class(cn(panelTitleStyles, className)), h.DataAttribute("slot", "panel-title")], children)

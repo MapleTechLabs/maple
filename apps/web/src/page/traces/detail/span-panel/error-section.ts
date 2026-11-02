@@ -4,6 +4,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../../ui/eyebrow"
 import { icon } from "../../../../ui/icon"
+import { pressable } from "../../../../ui/pressable"
+import { textLink } from "../../../../ui/text-link"
 import { copyButton, statusOf } from "./copy"
 import { Message } from "./message"
 import type { PanelState as Model } from "./model"
@@ -87,21 +89,18 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 					}),
 				],
 			),
-			h.button(
-				[
-					h.AriaLabel("Copy error message"),
-					h.Class(
-						cn(
-							"mt-1.5 block w-full cursor-copy rounded-sm text-left font-mono text-2xs text-foreground-soft leading-relaxed",
-							"duration-150 hover:text-foreground active:text-foreground motion-reduce:transition-none",
-							"data-[copy-status=copied]:text-severity-info",
-						),
+			pressable(
+				h,
+				{
+					label: "Copy error message",
+					onClick: Message.ClickedCopy({ id: BODY_ID, text: body.full }),
+					className: cn(
+						"mt-1.5 block w-full cursor-copy rounded-sm text-left font-mono text-2xs text-foreground-soft leading-relaxed",
+						"duration-150 hover:text-foreground active:text-foreground motion-reduce:transition-none",
+						"data-[copy-status=copied]:text-severity-info",
 					),
-					h.DataAttribute("copy-status", status),
-					h.Title("Click to copy"),
-					h.Type("button"),
-					h.OnClick(Message.ClickedCopy({ id: BODY_ID, text: body.full })),
-				],
+					attributes: [h.DataAttribute("copy-status", status), h.Title("Click to copy")],
+				},
 				[
 					h.pre(
 						[
@@ -131,15 +130,14 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 			),
 			...(isLong
 				? [
-						h.button(
-							[
-								h.AriaExpanded(model.isErrorExpanded),
-								h.Class(
-									"mt-1 rounded-sm text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-								h.Type("button"),
-								h.OnClick(Message.ToggledErrorExpanded()),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								onClick: Message.ToggledErrorExpanded(),
+								className: "mt-1 rounded-sm text-2xs",
+								attributes: [h.AriaExpanded(model.isErrorExpanded)],
+							},
 							[model.isErrorExpanded ? "Show less" : "Show more"],
 						),
 					]

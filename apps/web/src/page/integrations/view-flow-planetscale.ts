@@ -2,6 +2,7 @@ import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { derivePlanetScaleSetup, metricsAuthOf } from "../../components/integrations/planetscale-setup-steps"
 import { button } from "../../ui/button"
 import * as Field from "../../ui/field"
@@ -241,7 +242,7 @@ const metricsPart = (h: H, model: Model, status: V2PlanetScaleIntegration): Html
 	return h.div(
 		[h.Class("flex flex-col gap-3 border-t border-border pt-5")],
 		[
-			h.h3([h.Class("text-sm font-medium")], ["Branch metrics"]),
+			heading(h, { level: 3, variant: "subsection" }, ["Branch metrics"]),
 			choiceTiles(h, [
 				{
 					title: "PlanetScale metrics API",

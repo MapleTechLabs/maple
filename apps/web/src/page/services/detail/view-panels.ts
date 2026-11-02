@@ -6,6 +6,7 @@ import * as Chart from "../../../charts/chart"
 import * as Sparkline from "../../../charts/sparkline"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { backdropBar } from "../../../ui/meter"
+import { pressable } from "../../../ui/pressable"
 import { textLink } from "../../../ui/text-link"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { truncatedText } from "../../../ui/truncated-text"
@@ -62,14 +63,13 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 					h.li(
 						[h.Key(op.spanName)],
 						[
-							h.button(
-								[
-									h.Type("button"),
-									h.OnClick(onViewAll),
-									h.Class(
+							pressable(
+								h,
+								{
+									onClick: onViewAll,
+									className:
 										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-									),
-								],
+								},
 								[
 									backdropBar(h, {
 										value: op.estimatedSpanCount,

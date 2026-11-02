@@ -11,7 +11,7 @@ import {
 	pageStickyAreaScrolledStyles,
 	pageStickyAreaStyles,
 } from "@maple/ui/styles/ui/page-layout"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import {
 	pageDescription,
 	pageHeaderActions,
@@ -81,10 +81,19 @@ export const filterRail = <M>(h: HtmlBuilder<M>, child: Html, width?: string, la
 		[child],
 	)
 
-/** `PageLayout.Content`. */
-export const pageContent = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+/** `PageLayout.Content`; `attributes` adds state on the `<main>` (a loading placeholder's busy flag). */
+export const pageContent = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	attributes: ReadonlyArray<Attribute<M>> = [],
+): Html =>
 	h.main(
-		[h.Id("main-content"), h.DataAttribute("slot", "page-content"), h.Class(pageContentStyles)],
+		[
+			h.Id("main-content"),
+			h.DataAttribute("slot", "page-content"),
+			h.Class(pageContentStyles),
+			...attributes,
+		],
 		children,
 	)
 
@@ -155,6 +164,13 @@ const scrollArea = <M>(
 					),
 				],
 			)
+
+/** `PageLayout.ScrollArea` on its own, for a page that lays out its header and footer itself. */
+export const pageScrollArea = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ className?: string; width?: PageWidth; gap?: PageGap }>,
+	children: ReadonlyArray<Html>,
+): Html => scrollArea(h, children, options.className, options.width, options.gap)
 
 /** The common page: optional filter rail, then the content column with header and scroll area. */
 export const dashboardPage = <M>(

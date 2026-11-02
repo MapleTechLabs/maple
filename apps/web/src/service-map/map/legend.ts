@@ -5,6 +5,7 @@ import {
 } from "@maple/ui/components/service-map/service-map-utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Popover from "../../ui/popover"
+import { pressable } from "../../ui/pressable"
 import { statusDot } from "../../ui/status-dot"
 
 // `ServiceMapLegend` (packages/ui `service-map/service-map-canvas.tsx`), with the "+N more"
@@ -69,12 +70,12 @@ const morePopover = <M>(
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								...trigger,
-								h.Class("font-medium hover:text-foreground active:text-foreground cursor-pointer"),
-								h.Type("button"),
-							],
+						pressable(
+							h,
+							{
+								className: "font-medium hover:text-foreground active:text-foreground",
+								attributes: trigger,
+							},
 							["+", String(services.length - 3), " more"],
 						),
 					),

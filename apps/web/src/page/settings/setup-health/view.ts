@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
+import { collapsible } from "../../../ui/collapsible"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
@@ -314,124 +315,66 @@ const passingDisclosure = (
 ): ReadonlyArray<Html> => {
 	const { checks: passing, label } = resolvedChecks(checks)
 	if (passing.length === 0) return []
-	const isOpen = model.isPassingOpen
 	return [
-		h.div(
-			[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
-			[
-				panel(h, { className: "overflow-hidden" }, [
-					h.button(
+		panel(h, { className: "overflow-hidden" }, [
+			collapsible(
+				h,
+				{
+					isOpen: model.isPassingOpen,
+					onToggle: Message.ToggledPassing(),
+					panelId: "setup-health-passing",
+					triggerClassName:
+						"group hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-3 px-4 py-3 text-left",
+					trigger: [
+						icon(h, "ChevronRightIcon", {
+							size: 14,
+							className:
+								"text-muted-foreground shrink-0 transition-transform group-data-panel-open:rotate-90",
+						}),
+						icon(h, "CircleCheckIcon", { size: 16, className: cn("shrink-0", TONE_TEXT.info) }),
+						h.span([h.Class("text-sm font-medium")], [label]),
+						h.span(
+							[h.Class("text-muted-foreground min-w-0 flex-1 text-xs")],
+							["Checks are skipped only when telemetry could not be read"],
+						),
+					],
+				},
+				[
+					h.div(
+						[],
 						[
-							...(isOpen ? [h.AriaControls("setup-health-passing")] : []),
-							h.AriaDisabled(false),
-							h.AriaExpanded(isOpen),
-							h.Class(
-								"group hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-3 px-4 py-3 text-left",
-							),
-							...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-							h.DataAttribute("slot", "collapsible-trigger"),
-							h.Tabindex(0),
-							h.Type("button"),
-							h.OnClick(Message.ToggledPassing()),
-						],
-						[
-							icon(h, "ChevronRightIcon", {
-								size: 14,
-								className:
-									"text-muted-foreground shrink-0 transition-transform group-data-panel-open:rotate-90",
-							}),
-							icon(h, "CircleCheckIcon", {
-								size: 16,
-								className: cn("shrink-0", TONE_TEXT.info),
-							}),
-							h.span([h.Class("text-sm font-medium")], [label]),
-							h.span(
-								[h.Class("text-muted-foreground min-w-0 flex-1 text-xs")],
-								["Checks are skipped only when telemetry could not be read"],
+							h.ul(
+								[h.Class("divide-border divide-y border-t")],
+								passing.map((check) =>
+									h.li(
+										[h.Key(check.id), h.Class("flex items-center gap-3 px-4 py-2.5")],
+										[
+											check.status === "pass"
+												? icon(h, "CircleCheckIcon", {
+														size: 14,
+														className: cn("shrink-0", TONE_TEXT.info),
+													})
+												: icon(h, "CircleInfoIcon", {
+														size: 14,
+														className: "text-foreground-subtle shrink-0",
+													}),
+											h.span([h.Class("min-w-0 flex-1 text-xs")], [check.title]),
+											...(check.status === "skip"
+												? [badge(h, { variant: "secondary", size: "xs" }, ["Skipped"])]
+												: []),
+											h.span(
+												[h.Class("text-foreground-subtle text-2xs")],
+												[CATEGORY_LABEL[check.category]],
+											),
+										],
+									),
+								),
 							),
 						],
 					),
-					...(isOpen
-						? [
-								h.div(
-									[
-										h.Class(
-											"h-(--collapsible-panel-height) overflow-hidden [contain:layout_paint] transition-[height] duration-200 ease-out motion-reduce:transition-none data-ending-style:h-0 data-starting-style:h-0",
-										),
-										h.DataAttribute("open", ""),
-										h.DataAttribute("slot", "collapsible-panel"),
-										h.Id("setup-health-passing"),
-										h.Style({
-											"--collapsible-panel-height": "auto",
-											"--collapsible-panel-width": "auto",
-											"animation-name": "none",
-										}),
-									],
-									[
-										h.div(
-											[],
-											[
-												h.ul(
-													[h.Class("divide-border divide-y border-t")],
-													passing.map((check) =>
-														h.li(
-															[
-																h.Key(check.id),
-																h.Class(
-																	"flex items-center gap-3 px-4 py-2.5",
-																),
-															],
-															[
-																check.status === "pass"
-																	? icon(h, "CircleCheckIcon", {
-																			size: 14,
-																			className: cn(
-																				"shrink-0",
-																				TONE_TEXT.info,
-																			),
-																		})
-																	: icon(h, "CircleInfoIcon", {
-																			size: 14,
-																			className:
-																				"text-foreground-subtle shrink-0",
-																		}),
-																h.span(
-																	[h.Class("min-w-0 flex-1 text-xs")],
-																	[check.title],
-																),
-																...(check.status === "skip"
-																	? [
-																			badge(
-																				h,
-																				{
-																					variant: "secondary",
-																					size: "xs",
-																				},
-																				["Skipped"],
-																			),
-																		]
-																	: []),
-																h.span(
-																	[
-																		h.Class(
-																			"text-foreground-subtle text-2xs",
-																		),
-																	],
-																	[CATEGORY_LABEL[check.category]],
-																),
-															],
-														),
-													),
-												),
-											],
-										),
-									],
-								),
-							]
-						: []),
-				]),
-			],
-		),
+				],
+			),
+		]),
 	]
 }
 

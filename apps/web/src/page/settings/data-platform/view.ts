@@ -22,6 +22,7 @@ import { errorState } from "../../../ui/error-state"
 import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { refreshButton } from "../../../ui/refresh-button"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { truncatedId } from "../../../ui/truncated-id"
@@ -291,15 +292,14 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 	return h.div(
 		[h.Key(entry.name), h.Class("border-b")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.AriaExpanded(isExpanded),
-					h.OnClick(Message.ToggledDrift({ name: entry.name })),
-					h.Class(
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledDrift({ name: entry.name }),
+					className:
 						"hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 px-3 py-2 text-left text-xs",
-					),
-				],
+					attributes: [h.AriaExpanded(isExpanded)],
+				},
 				[
 					icon(h, "ChevronRightIcon", {
 						size: 14,
@@ -408,15 +408,14 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 		...(upToDate.length === 0
 			? []
 			: [
-					h.button(
-						[
-							h.Type("button"),
-							h.AriaExpanded(model.showUpToDate),
-							h.OnClick(Message.ToggledUpToDate()),
-							h.Class(
+					pressable(
+						h,
+						{
+							onClick: Message.ToggledUpToDate(),
+							className:
 								"hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs",
-							),
-						],
+							attributes: [h.AriaExpanded(model.showUpToDate)],
+						},
 						[
 							icon(h, "ChevronRightIcon", {
 								size: 14,

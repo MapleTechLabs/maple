@@ -1,4 +1,3 @@
-import { formDialogFormStyles } from "@maple/ui/styles/ui/form-dialog"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -8,6 +7,7 @@ import * as DialogView from "../../../ui/dialog-view"
 import { emptyMessage } from "../../../ui/empty"
 import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
 import * as Field from "../../../ui/field"
+import { formDialogForm } from "../../../ui/form-dialog"
 import { inlineCode } from "../../../ui/inline-code"
 import { searchInput } from "../../../ui/search-input"
 import { segmentedSelect } from "../../../ui/segmented-select"
@@ -336,7 +336,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 			// One dialog across both steps (a remount replays the open animation); only the create step is a form.
 			toContent: () =>
 				model.created === null
-					? [h.form([h.Class(formDialogFormStyles), h.OnSubmit(Message.ClickedCreate())], formContent(h, model))]
+					? [formDialogForm(h, Message.ClickedCreate(), formContent(h, model))]
 					: createdContent(h, model),
 		},
 	}),

@@ -1,11 +1,11 @@
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../ui/empty"
+import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { meter } from "../../ui/meter"
 import { selectableTile } from "../agent-sessions/tools-kit/metric-strip"
@@ -14,7 +14,7 @@ import {
 	errorTone,
 	shareCell,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
@@ -247,8 +247,9 @@ const toolRow = <M>(
 	options: ServerBodyOptions<M>,
 ): Html => {
 	const rate = errorRate(row)
-	return h.button(
-		[h.Type("button"), h.Class(toolRowClass(false)), h.OnClick(options.onOpenTool(row.tool))],
+	return toolTableRow(
+		h,
+		{ onClick: options.onOpenTool(row.tool) },
 		[
 			h.span(
 				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
@@ -376,11 +377,9 @@ const CLIENT_ROWS = 8
 
 const clientsHead = <M>(h: HtmlBuilder<M>): Html => {
 	const label = (text: string, width: string, title?: string) =>
-		h.span(
-			[
-				h.Class(cn(width, eyebrowVariants({ variant: "mono" }))),
-				...(title === undefined ? [] : [h.Title(title)]),
-			],
+		eyebrow(
+			h,
+			{ variant: "mono", className: width, attributes: title === undefined ? [] : [h.Title(title)] },
 			[text],
 		)
 	return h.div(
@@ -453,7 +452,7 @@ const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number): Html =
 const clientGroupLabel = <M>(h: HtmlBuilder<M>, text: string): Html =>
 	h.div(
 		[h.Class("flex h-8 items-end border-b border-border-subtle pb-1.5")],
-		[h.span([h.Class(eyebrowVariants({ variant: "mono" }))], [text])],
+		[eyebrow(h, { variant: "mono" }, [text])],
 	)
 
 /** One `clientInfo.name` and how many initialize requests sent it. */
@@ -555,7 +554,7 @@ const coverageRow = <M>(h: HtmlBuilder<M>, row: McpCoverageRow): Html =>
 
 const methodsHead = <M>(h: HtmlBuilder<M>): Html => {
 	const label = (text: string, width: string) =>
-		h.span([h.Class(cn(width, eyebrowVariants({ variant: "mono" })))], [text])
+		eyebrow(h, { variant: "mono", className: width }, [text])
 	return h.div(
 		[h.Class("flex h-8 items-center gap-3 border-y border-border")],
 		[

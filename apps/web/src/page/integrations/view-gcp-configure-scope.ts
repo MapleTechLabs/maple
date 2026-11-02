@@ -6,6 +6,7 @@ import {
 	isGcpResourceNumber,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { alert, alertDescription } from "../../ui/alert"
 import * as Field from "../../ui/field"
 import { icon } from "../../ui/icon"
@@ -14,7 +15,7 @@ import { PROJECT_ID_RULE, SCOPE_TYPES, SCOPES } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import type { Model } from "./model"
 import { Message } from "./message"
-import { GCP_TITLE, gcpCommand, SMALL } from "./view-gcp-parts"
+import { gcpCommand, SMALL } from "./view-gcp-parts"
 
 // `ScopeFields`: what kind of thing to connect, and its ID.
 
@@ -53,7 +54,7 @@ export const scopeFields = (
 		h.div(
 			[h.Class("flex flex-col gap-2")],
 			[
-				h.h3([h.Class(GCP_TITLE)], ["What should Maple watch?"]),
+				heading(h, { level: 3, variant: "subsection" }, ["What should Maple watch?"]),
 				ToggleGroup.view(h, {
 					model: configure.scopeGroup,
 					toParentMessage: (message) => Message.GotGcpScopeTypeMessage({ message }),

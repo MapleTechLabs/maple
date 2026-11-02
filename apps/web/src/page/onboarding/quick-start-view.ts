@@ -13,8 +13,10 @@ import {
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { choiceCard } from "../../ui/choice-card"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
+import { heading } from "../../ui/heading"
 import { icon } from "../../ui/icon"
 import { searchInput } from "../../ui/search-input"
 import { textLink } from "../../ui/text-link"
@@ -247,54 +249,34 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 
 /** A compact pick: one line of label and description, so the whole stack fits on a laptop screen. */
 const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message): Html =>
-	h.label(
-		[h.Class("group relative cursor-pointer")],
+	choiceCard(
+		h,
+		{ type: "checkbox", isChecked, label: item.label, onChange, className: "items-center gap-3 p-3" },
 		[
-			h.input([
-				h.Type("checkbox"),
-				h.Class("peer sr-only"),
-				h.Checked(isChecked),
-				h.AriaLabel(item.label),
-				h.OnChange(() => onChange),
-			]),
-			h.div(
+			h.span(
+				[h.AriaHidden(true), h.Class("flex size-7 shrink-0 items-center justify-center")],
+				[icon(h, item.icon, { size: 18 })],
+			),
+			h.span(
+				[h.Class("flex min-w-0 flex-1 flex-col")],
 				[
+					h.span([h.Class("truncate text-sm font-medium")], [item.label]),
+					h.span([h.Class("truncate text-xs text-muted-foreground")], [item.description]),
+				],
+			),
+			h.span(
+				[
+					h.AriaHidden(true),
 					h.Class(
 						cn(
-							"flex items-center gap-3 rounded-md border p-3 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+							"flex size-4 shrink-0 items-center justify-center rounded-sm border",
 							isChecked
-								? "border-primary bg-primary-a1"
-								: "border-border group-hover:border-border-strong",
+								? "border-primary bg-primary text-primary-foreground"
+								: "border-input",
 						),
 					),
 				],
-				[
-					h.span(
-						[h.AriaHidden(true), h.Class("flex size-7 shrink-0 items-center justify-center")],
-						[icon(h, item.icon, { size: 18 })],
-					),
-					h.span(
-						[h.Class("flex min-w-0 flex-1 flex-col")],
-						[
-							h.span([h.Class("truncate text-sm font-medium")], [item.label]),
-							h.span([h.Class("truncate text-xs text-muted-foreground")], [item.description]),
-						],
-					),
-					h.span(
-						[
-							h.AriaHidden(true),
-							h.Class(
-								cn(
-									"flex size-4 shrink-0 items-center justify-center rounded-sm border",
-									isChecked
-										? "border-primary bg-primary text-primary-foreground"
-										: "border-input",
-								),
-							),
-						],
-						isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
-					),
-				],
+				isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
 			),
 		],
 	)
@@ -407,10 +389,7 @@ const stackStep = (h: H, state: QuickStartState, query: string, hasPlan: boolean
 			h.div(
 				[h.Class("flex flex-col gap-2.5")],
 				[
-					h.h1(
-						[h.Class("font-display text-3xl font-semibold tracking-tight")],
-						["What are you running?"],
-					),
+					heading(h, { level: 1, variant: "display" }, ["What are you running?"]),
 					h.p(
 						[h.Class("text-title leading-relaxed text-muted-foreground")],
 						["Pick everything that applies. We set up just those, and you can add more later."],
@@ -638,10 +617,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 			h.div(
 				[h.Class("flex flex-col gap-2.5")],
 				[
-					h.h1(
-						[h.Class("font-display text-3xl font-semibold tracking-tight")],
-						["Connect your stack"],
-					),
+					heading(h, { level: 1, variant: "display" }, ["Connect your stack"]),
 					h.p(
 						[h.Class("text-title leading-relaxed text-muted-foreground")],
 						[
@@ -960,8 +936,9 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 								],
 								[isLive ? "Data is flowing" : "All set up"],
 							),
-							h.h1(
-								[h.Class("font-display text-4xl font-semibold tracking-tight")],
+							heading(
+								h,
+								{ level: 1, variant: "display" },
 								[isLive ? `${orgName} is live` : `${orgName} is ready for its first data`],
 							),
 							h.ul(

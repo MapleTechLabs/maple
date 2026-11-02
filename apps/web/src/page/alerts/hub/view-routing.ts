@@ -9,7 +9,6 @@ import {
 	formatAlertTime,
 	groupDeliveryEventsByDay,
 } from "@maple/web-data/alerts/form-utils"
-import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
@@ -384,12 +383,8 @@ const logTable = (
 			h,
 			groups.flatMap((group) => [
 				tableRow(h, [
-					h.td(
-						[
-							h.Attribute("class", cn(tableCellStyles, "bg-surface-sunken py-1.5")),
-							h.Attribute("colspan", "5"),
-							h.DataAttribute("slot", "table-cell"),
-						],
+					tableCell(
+						h,
 						[
 							eyebrow(h, { className: "flex items-center gap-2" }, [
 								group.label,
@@ -399,6 +394,8 @@ const logTable = (
 								),
 							]),
 						],
+						"bg-surface-sunken py-1.5",
+						[h.Attribute("colspan", "5")],
 					),
 				]),
 				...group.events.map((event) => logRow(h, model, inputs, event)),

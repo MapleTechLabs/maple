@@ -2,6 +2,7 @@ import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-mod
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
+import { pressable } from "../../../../ui/pressable"
 import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
 import type * as Menu from "../../../../ui/menu"
 import * as MenuView from "../../../../ui/menu-view"
@@ -95,8 +96,9 @@ export const projectMenu = (
 				h.span(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[h.Type("button"), h.Tabindex(0), h.Class(heroFieldChipClass(true)), ...trigger],
+						pressable(
+							h,
+							{ className: heroFieldChipClass(true), attributes: [h.Tabindex(0), ...trigger] },
 							// "All 3 projects", or just the picked project's name.
 							heroFieldChipParts(
 								h,

@@ -1,6 +1,5 @@
-import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { badge } from "../../../ui/display"
 import { icon, type IconName } from "../../../ui/icon"
 import { statusDot } from "../../../ui/status-dot"
 
@@ -19,11 +18,9 @@ export const errorChip = <M>(
 		attributes?: ReadonlyArray<Attribute<M>>
 	}>,
 ): Html =>
-	h.span(
-		[
-			h.Class(cn(badgeVariants({ pill: true, size: "xs", mono: true }), options.className)),
-			...(options.attributes ?? []),
-		],
+	badge(
+		h,
+		{ pill: true, size: "xs", mono: true, className: options.className, attributes: options.attributes },
 		[
 			options.iconName === undefined
 				? statusDot(h, { tone: "custom", size: "sm", className: "bg-current" })

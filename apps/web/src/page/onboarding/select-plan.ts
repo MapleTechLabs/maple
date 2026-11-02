@@ -7,6 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../../platform/resources"
 import { badge } from "../../ui/display"
+import { heading } from "../../ui/heading"
 import { icon } from "../../ui/icon"
 import * as PricingCards from "./pricing-cards"
 import * as PricingCardsView from "./pricing-cards-view"
@@ -44,7 +45,7 @@ export const update = (model: Model, message: Message): UpdateReturn => {
 
 type H = HtmlBuilder<Message>
 
-const heading = (h: H, isReactivating: boolean): Html =>
+const planHeading = (h: H, isReactivating: boolean): Html =>
 	h.div(
 		[h.Class("text-center flex flex-col items-center")],
 		[
@@ -66,12 +67,9 @@ const heading = (h: H, isReactivating: boolean): Html =>
 							],
 						),
 					]),
-			h.h1(
-				[
-					h.Class(
-						"text-3xl md:text-4xl font-semibold tracking-tight text-foreground [text-wrap:balance]",
-					),
-				],
+			heading(
+				h,
+				{ level: 1, variant: "display", className: "text-balance" },
 				[isReactivating ? "Pick up where you left off" : "Start your free trial"],
 			),
 			h.p(
@@ -130,7 +128,7 @@ export const view = (h: H, model: Model, customer: BillingCustomer | undefined):
 			h.section(
 				[h.Class("relative mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 md:px-8 z-10")],
 				[
-					heading(h, hasLapsedPlan(customer)),
+					planHeading(h, hasLapsedPlan(customer)),
 					h.div(
 						[h.Class("mt-4")],
 						[

@@ -30,8 +30,12 @@ const METHOD_LABELS = {
 const fieldLabel = (h: H, id: string, text: string): Html => label(h, { attributes: [h.For(id)] }, [text])
 
 const checkboxRow = (h: H, id: string, isChecked: boolean, text: string, onToggle: Message): Html =>
-	h.label(
-		[h.Key(id), h.Id(Checkbox.labelId(id)), h.Class("flex items-center gap-2 text-sm")],
+	label(
+		h,
+		{
+			className: "flex items-center gap-2 text-sm font-normal",
+			attributes: [h.Key(id), h.Id(Checkbox.labelId(id))],
+		},
 		[
 			...Checkbox.view(h, {
 				model: { isChecked },
