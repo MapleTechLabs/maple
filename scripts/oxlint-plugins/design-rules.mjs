@@ -6,7 +6,7 @@
  */
 
 /** `dark:hover:bg-x` → `{ variants: ["dark", "hover"], utility: "bg-x" }`, ignoring colons in brackets. */
-const splitToken = (token) => {
+export const splitToken = (token) => {
 	const parts = []
 	let depth = 0
 	let start = 0
@@ -24,7 +24,7 @@ const splitToken = (token) => {
 }
 
 /** Calls `check(node, tokens)` for every string literal and template chunk. */
-const classStrings = (check) => ({
+export const classStrings = (check) => ({
 	Literal(node) {
 		if (typeof node.value === "string") check(node, node.value.split(/\s+/).filter(Boolean))
 	},
