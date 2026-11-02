@@ -29,6 +29,7 @@ import { issuesPanel } from "./view-issues"
 import { postgresRow } from "./view-postgres"
 import { HEALTH_STRIP_GRID, healthStripView } from "./view-strip"
 import { trafficPanel } from "./view-traffic"
+import { typography } from "../../../../ui/typography"
 
 // `/infra/supabase/$projectRef`: the project's Overview.
 
@@ -133,8 +134,9 @@ const heroMeta = (
 	return parts.length === 0
 		? []
 		: [
-				h.p(
-					[h.Class("font-mono text-xs text-muted-foreground")],
+				typography(
+					h,
+					{ size: "xs", tone: "muted", mono: true, as: "p" },
 					parts.flatMap((part, index) => (index === 0 ? [part] : [" · ", part])),
 				),
 			]

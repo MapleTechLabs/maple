@@ -28,6 +28,7 @@ import { usageCards } from "./view-usage"
 
 import { Message as SetupMessage } from "./setup-checklist"
 import * as SetupChecklistView from "./setup-checklist-view"
+import { hstack } from "../../ui/stack"
 
 const EMPTY_COLORS = {}
 
@@ -70,7 +71,7 @@ const headerActions = (h: H, model: Model): Html => {
 		viewInputs: {
 			entries: environmentItems(model).map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
 			size: "sm",
-			toView: (parts) => h.div([h.Class("flex items-center gap-2")], [...parts, controls]),
+			toView: (parts) => hstack(h, { gap: "2" }, [...parts, controls]),
 		},
 	})
 }

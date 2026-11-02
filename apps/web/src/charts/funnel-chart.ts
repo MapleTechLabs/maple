@@ -7,6 +7,7 @@ import { pressable } from "../ui/pressable"
 import { Message, type Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { funnelStages, type Stage } from "./funnel-stages"
+import { typography, typographyClass } from "../ui/typography"
 
 // Port of `FunnelBarsChart` (packages/ui/src/components/charts/funnel/query-builder-funnel-chart.tsx).
 // The hovered stage is `activeKey` (its index), the hovered breakdown group `activeGroup`.
@@ -141,7 +142,7 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 	if (stages.length === 0)
 		return h.div(
 			[h.Class(cn("relative h-full w-full grid place-items-center", inputs.className))],
-			[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
+			[typography(h, { size: "2xs", tone: "muted" }, ["No data"])],
 		)
 	const isGrouped = legend.length > 0
 	const rowFullH = isGrouped ? ROW_MIN_H + legend.length * GROUP_BAR_H + ROW_GAP : ROW_FULL_H
@@ -192,7 +193,7 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 											cn(
 												"truncate",
 												stage.unnamed
-													? "italic text-muted-foreground"
+													? typographyClass({ tone: "muted", className: "italic" })
 													: "text-foreground-soft",
 											),
 										),
@@ -200,8 +201,9 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 									],
 									[stage.name],
 								),
-								h.span(
-									[h.Class("shrink-0 tabular-nums text-muted-foreground")],
+								typography(
+									h,
+									{ tone: "muted", numeric: true, className: "shrink-0" },
 									stageNumbers(h, stage, hoverGroup, flags),
 								),
 							],

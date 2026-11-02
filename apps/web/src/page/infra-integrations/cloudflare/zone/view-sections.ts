@@ -15,6 +15,7 @@ import type { LongRow } from "../../../../charts/infra-metric-series"
 import type { ZoneDns, ZoneSecurity } from "../data"
 import { Message, type Model } from "./model"
 import { panelScope, type Trigger } from "./view-scope"
+import { hstackClass } from "../../../../ui/stack"
 
 // `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`.
 
@@ -30,8 +31,11 @@ export type SectionContext = Readonly<{
 /** Legend chips beyond this collapse into a `+N`, so the legend can never reflow the card header. */
 const MAX_LEGEND_CHIPS = 8
 
-const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
+const ROW_CLASS = hstackClass({
+	gap: "4",
+	className:
+		"border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
+})
 
 export const SCOPE_IDS = {
 	dns: "cf-scope-dns",

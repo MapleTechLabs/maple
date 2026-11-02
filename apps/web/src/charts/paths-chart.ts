@@ -16,6 +16,7 @@ import {
 	ribbon,
 	toGraph,
 } from "./paths-layout"
+import { typography, typographyClass } from "../ui/typography"
 
 // Port of `PathsChart` (packages/ui/src/components/charts/paths/paths-chart.tsx). The hovered node
 // id is the chart Model's `activeKey`; the measured box is its container size.
@@ -129,7 +130,7 @@ const nodeGroup = (
 								}),
 								h.Class(
 									cn(
-										"text-2xs font-medium",
+										typographyClass({ size: "2xs", weight: "medium" }),
 										node.kind === "event" ? "fill-foreground" : "fill-muted-foreground",
 									),
 								),
@@ -166,7 +167,7 @@ export const view = Submodel.defineView<Model, Message, PathsChartInputs>((model
 	if (anchor === undefined || anchor.count <= 0)
 		return h.div(
 			[h.Class(cn("relative grid h-full w-full place-items-center", inputs.className))],
-			[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
+			[typography(h, { size: "2xs", tone: "muted" }, ["No data"])],
 		)
 	const columnSpan =
 		graph !== undefined && graph.columns.length > 1 ? (width - NODE_W) / (graph.columns.length - 1) : width

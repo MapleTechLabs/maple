@@ -22,6 +22,8 @@ import { chatConnectorStatus } from "./update-chat"
 import { chatCardLoading, identityRow, monoGlyph } from "./view-chat"
 import { disconnectConfirm } from "./view-disconnect"
 import { entryBrand } from "./view-entry"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // `ChatIntegrationCard`.
 // TODO(clerk): `useIsOrgAdmin` (self-hosted is the root admin) and `WorkspaceSettings`, which renders
@@ -73,8 +75,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 		])
 
 	const confirmWorkspace = workspaces.find((workspace) => workspace.id === model.chatCard.confirmId)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(h, { gap: "4" },
 		[
 			...workspaces.map((workspace) =>
 				item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
@@ -82,22 +83,19 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 					itemContent(
 						h,
 						[
-							h.div(
-								[h.Class("flex items-center gap-2")],
+							hstack(h, { gap: "2" },
 								[
 									heading(
 										h,
 										{ level: 3, variant: "section", className: "min-w-0 [overflow-wrap:anywhere]" },
 										[workspace.name],
 									),
-									h.span(
-										[h.Class("flex items-center gap-1.5 text-xs text-muted-foreground")],
+									hstack(h, { gap: "1.5", as: "span", className: typographyClass({ size: "xs", tone: "muted" }) },
 										[statusDot(h, { tone: "ok", size: "lg" }), "Connected"],
 									),
 								],
 							),
-							h.p(
-								[h.Class("text-xs text-muted-foreground")],
+							typography(h, { size: "xs", tone: "muted", as: "p" },
 								[
 									status?.supports_identity === true
 										? `Linked to your organization. Maple answers only people who have linked their ${manifest.name} account, as their own Maple user.`
@@ -109,7 +107,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 								nowMs: model.nowMs,
 								timeZone,
 								prefix: "Connected",
-								className: "text-2xs text-muted-foreground",
+								className: typographyClass({ size: "2xs", tone: "muted" }),
 							}),
 							h.div(
 								[],

@@ -24,6 +24,7 @@ import { columnHead, dataTable } from "../../../infra/kit/data-table"
 import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
 import { Message } from "./model"
+import { typography, typographyClass } from "../../../../ui/typography"
 
 // `GcpCloudSqlTopQueries` and the workload page's `GcpAppWaitCallout`.
 
@@ -32,8 +33,8 @@ type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: 
 
 const SHOWN = 5
 const STATEMENT = "w-0 min-w-64 flex-1"
-const NUMBER = "text-right font-mono text-xs tabular-nums"
-const SUB = "truncate font-mono text-3xs text-muted-foreground"
+const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
+const SUB = typographyClass({ size: "3xs", tone: "muted", mono: true, truncate: true })
 const MANY_ROWS = 10_000
 const LOCK_WARN = 0.2
 const LOCK_CRIT = 0.5
@@ -87,8 +88,7 @@ const statementRow = (
 			h.div(
 				[h.Class(cn(STATEMENT, "space-y-0.5"))],
 				[
-					h.div(
-						[h.Class("truncate font-mono text-xs text-foreground"), h.Title(row.querystring)],
+					typography(h, { size: "xs", tone: "foreground", mono: true, truncate: true, as: "div", attributes: [h.Title(row.querystring)] },
 						[row.querystring],
 					),
 					callers(h, traced),
@@ -230,10 +230,10 @@ export const figure = (h: H, value: string, caption: string, className?: string)
 		[h.Class("flex flex-col items-start @2xl:items-end")],
 		[
 			h.span(
-				[h.Class(cn("font-mono text-sm font-semibold tabular-nums text-foreground", className))],
+				[h.Class(cn(typographyClass({ size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true }), className))],
 				[value],
 			),
-			h.span([h.Class("font-mono text-3xs text-muted-foreground")], [caption]),
+			typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
 		],
 	)
 
@@ -259,8 +259,7 @@ export const appWaitCallout = (
 					h.div(
 						[h.Class("min-w-0 flex-1 space-y-1 px-4 py-3")],
 						[
-							h.p(
-								[h.Class("text-sm font-medium text-foreground")],
+							typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" },
 								[
 									wait.service,
 									" waits ",
@@ -270,11 +269,7 @@ export const appWaitCallout = (
 									formatLatency(wait.dbP95Ms),
 								],
 							),
-							h.p(
-								[
-									h.Class("truncate font-mono text-2xs text-muted-foreground"),
-									h.Title(wait.statement),
-								],
+							typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true, as: "p", attributes: [h.Title(wait.statement)] },
 								[wait.statement],
 							),
 							h.p(

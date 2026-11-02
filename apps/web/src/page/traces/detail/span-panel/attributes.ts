@@ -12,6 +12,7 @@ import { pressable } from "../../../../ui/pressable"
 import { copyableValue, copyButton, selectableValue } from "./copy"
 import { type AttributeScope, Message } from "./message"
 import type { PanelState as Model } from "./model"
+import { typography } from "../../../../ui/typography"
 
 // `AttributesSection` / `AttributesTable` / `AttributeRow` (packages/ui/src/components/attributes)
 // with filter actions and a value renderer that links commit SHAs.
@@ -213,7 +214,7 @@ const attributesTable = (
 	isFilterable: boolean,
 ): Html =>
 	entries.length === 0
-		? h.div([h.Class("text-xs text-muted-foreground py-2")], [`No ${title.toLowerCase()} available`])
+		? typography(h, { size: "xs", tone: "muted", as: "div", className: "py-2" }, [`No ${title.toLowerCase()} available`])
 		: h.div(
 				[h.Class("space-y-1.5")],
 				[

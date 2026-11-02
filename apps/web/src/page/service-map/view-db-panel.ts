@@ -28,6 +28,8 @@ import {
 	queryActivity,
 	topQueries,
 } from "./view-db-sections"
+import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // The database detail panel.
 // TODO(gcp): `GcpCloudSqlSection` renders only while a GCP connection collects metrics; not ported.
@@ -199,69 +201,58 @@ export const databasePanel = (h: H, model: Model, inputs: DatabasePanelInputs): 
 	const hyperdrive = hyperdriveOf(model, inputs.nodeId)
 	const isWaiting =
 		AsyncData.isLoading(model.dbSummary.data) || AsyncData.isRefreshing(model.dbSummary.data)
-	return h.div(
-		[h.Class("flex flex-col h-full bg-background overflow-hidden")],
-		[
-			header(h, inputs),
-			scrollArea(h, { idPrefix: "service-map-db-scroll", className: "flex-1 min-h-0" }, [
-				h.div(
-					[h.Class("p-4 space-y-5")],
-					[
-						metricsGrid(h, metrics),
-						...(hyperdrive !== undefined && hyperdrive.length > 0
-							? [hyperdriveSection(h, hyperdrive)]
-							: []),
-						...(inputs.planetscale === undefined
-							? []
-							: [planetscaleSection(h, model, inputs.planetscale)]),
-						h.div(
-							[h.Class("space-y-3")],
-							[
-								separator(h, "horizontal", undefined),
+	return vstack(h, { className: "h-full bg-background overflow-hidden" }, [
+		header(h, inputs),
+		scrollArea(h, { idPrefix: "service-map-db-scroll", className: "flex-1 min-h-0" }, [
+			h.div(
+				[h.Class("p-4 space-y-5")],
+				[
+					metricsGrid(h, metrics),
+					...(hyperdrive !== undefined && hyperdrive.length > 0
+						? [hyperdriveSection(h, hyperdrive)]
+						: []),
+					...(inputs.planetscale === undefined
+						? []
+						: [planetscaleSection(h, model, inputs.planetscale)]),
+					h.div(
+						[h.Class("space-y-3")],
+						[
+							separator(h, "horizontal", undefined),
+							hstack(h, { gap: "2", justify: "between" }, [
+								eyebrow(h, { as: "h4" }, ["Query activity"]),
+								...(isWaiting && metrics.response !== null
+									? [typography(h, { size: "3xs", tone: "muted" }, ["Refreshing"])]
+									: []),
+							]),
+							...Option.toArray(failureAlert(h, model.dbSummary.data)),
+							queryActivity(h, model, metrics.response, isWaiting, inputs.timeZone),
+						],
+					),
+					...topQueries(h, metrics.response),
+					...(metrics.callers.length === 0
+						? []
+						: [
 								h.div(
-									[h.Class("flex items-center justify-between gap-2")],
+									[h.Class("space-y-3")],
 									[
-										eyebrow(h, { as: "h4" }, ["Query activity"]),
-										...(isWaiting && metrics.response !== null
-											? [
-													h.span(
-														[h.Class("text-3xs text-muted-foreground")],
-														["Refreshing"],
-													),
-												]
-											: []),
+										separator(h, "horizontal", undefined),
+										eyebrow(h, { as: "h4" }, ["Called by"]),
+										h.div(
+											[h.Class("space-y-1.5")],
+											metrics.callers.map((caller) =>
+												edgeRow(h, {
+													service: caller.sourceService,
+													edge: caller,
+													durationSeconds: inputs.durationSeconds,
+													unit: "calls/s",
+												}),
+											),
+										),
 									],
 								),
-								...Option.toArray(failureAlert(h, model.dbSummary.data)),
-								queryActivity(h, model, metrics.response, isWaiting, inputs.timeZone),
-							],
-						),
-						...topQueries(h, metrics.response),
-						...(metrics.callers.length === 0
-							? []
-							: [
-									h.div(
-										[h.Class("space-y-3")],
-										[
-											separator(h, "horizontal", undefined),
-											eyebrow(h, { as: "h4" }, ["Called by"]),
-											h.div(
-												[h.Class("space-y-1.5")],
-												metrics.callers.map((caller) =>
-													edgeRow(h, {
-														service: caller.sourceService,
-														edge: caller,
-														durationSeconds: inputs.durationSeconds,
-														unit: "calls/s",
-													}),
-												),
-											),
-										],
-									),
-								]),
-					],
-				),
-			]),
-		],
-	)
+							]),
+				],
+			),
+		]),
+	])
 }

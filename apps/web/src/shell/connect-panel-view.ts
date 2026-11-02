@@ -24,6 +24,8 @@ import * as PopoverView from "../ui/popover"
 import { skeleton } from "../ui/skeleton"
 import { statusDot } from "../ui/status-dot"
 import { type CopyField, Message, type Model, POPOVER_ID, realServices } from "./connect-panel"
+import { typography } from "../ui/typography"
+import { hstack } from "../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -67,7 +69,7 @@ const statusPill = (h: H, model: Model): Html => {
 const fieldSkeleton = (h: H, label: string): Html =>
 	h.div(
 		[h.Class("space-y-1")],
-		[h.span([h.Class("text-xs text-muted-foreground")], [label]), skeleton(h, "h-8 w-full")],
+		[typography(h, { size: "xs", tone: "muted" }, [label]), skeleton(h, "h-8 w-full")],
 	)
 
 /** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
@@ -198,21 +200,18 @@ const mcpCard = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("space-y-2")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-2")],
-				[
-					eyebrow(h, { variant: "label" }, ["Connect your own agent · MCP"]),
-					h.a(
-						[
-							h.Href(settingsHref("mcp")),
-							h.Class(
-								"inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-							),
-						],
-						["All clients", icon(h, "ArrowRightIcon", { size: 12 })],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "baseline", justify: "between" }, [
+				eyebrow(h, { variant: "label" }, ["Connect your own agent · MCP"]),
+				h.a(
+					[
+						h.Href(settingsHref("mcp")),
+						h.Class(
+							"inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+						),
+					],
+					["All clients", icon(h, "ArrowRightIcon", { size: 12 })],
+				),
+			]),
 			panel(h, { tone: "muted" }, [
 				h.ul(
 					[h.Class("divide-y")],
@@ -244,10 +243,9 @@ const mcpCard = (h: H, model: Model): Html =>
 					],
 				),
 			]),
-			h.p(
-				[h.Class("font-prose text-xs text-muted-foreground")],
-				["Your client opens Maple in the browser to approve access."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
+				"Your client opens Maple in the browser to approve access.",
+			]),
 		],
 	)
 
@@ -298,13 +296,10 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 			h.div(
 				[h.Class("space-y-1.5")],
 				[
-					h.div(
-						[h.Class("flex items-start justify-between gap-2")],
-						[
-							PopoverView.popoverTitle(h, POPOVER_ID, "Connect your app", "text-base"),
-							statusPill(h, model),
-						],
-					),
+					hstack(h, { gap: "2", align: "start", justify: "between" }, [
+						PopoverView.popoverTitle(h, POPOVER_ID, "Connect your app", "text-base"),
+						statusPill(h, model),
+					]),
 					PopoverView.popoverDescription(
 						h,
 						POPOVER_ID,
@@ -320,14 +315,11 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 				[
 					eyebrow(h, { variant: "label" }, ["Fastest path · Claude Code"]),
 					commandBlock(h, model),
-					h.p(
-						[h.Class("font-prose text-xs text-muted-foreground")],
-						[
-							"The ",
-							inlineCode(h, {}, ["maple-onboard"]),
-							" skill installs OpenTelemetry and wires traces, logs, and metrics end-to-end.",
-						],
-					),
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
+						"The ",
+						inlineCode(h, {}, ["maple-onboard"]),
+						" skill installs OpenTelemetry and wires traces, logs, and metrics end-to-end.",
+					]),
 				],
 			),
 			mcpCard(h, model),

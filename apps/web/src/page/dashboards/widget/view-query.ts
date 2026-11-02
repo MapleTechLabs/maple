@@ -19,6 +19,8 @@ import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
 import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The widget editor's query side: the source toggle, one `QueryPanel` per query,
 // `FormulaPanel`s, and the toolbar.
@@ -61,74 +63,61 @@ const formulaPanel = (h: H, formula: FormulaDraft): Html =>
 	h.div(
 		[h.Class("border border-dashed border-l-2 border-l-chart-3 p-3 space-y-2")],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-2")],
-				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[
-							...Checkbox.view(h, {
-								model: { isChecked: !formula.hidden },
-								toParentMessage: () =>
-									Message.ToggledFormulaVisible({ formulaId: formula.id }),
-								id: `formula-visible-${formula.id}-root`,
-								inputId: `formula-visible-${formula.id}`,
-							}),
-							badge(
-								h,
-								{
-									variant: "outline",
-									className: "font-mono text-xs bg-chart-3/10 border-chart-3/30",
-								},
-								[formula.name],
-							),
-						],
-					),
-					button(
+			hstack(h, { gap: "2", justify: "between" }, [
+				hstack(h, { gap: "2" }, [
+					...Checkbox.view(h, {
+						model: { isChecked: !formula.hidden },
+						toParentMessage: () => Message.ToggledFormulaVisible({ formulaId: formula.id }),
+						id: `formula-visible-${formula.id}-root`,
+						inputId: `formula-visible-${formula.id}`,
+					}),
+					badge(
 						h,
 						{
-							variant: "ghost",
-							size: "xs",
-							attributes: [h.OnClick(Message.ClickedRemoveFormula({ formulaId: formula.id }))],
+							variant: "outline",
+							className: "font-mono text-xs bg-chart-3/10 border-chart-3/30",
 						},
-						["Remove"],
+						[formula.name],
 					),
-				],
-			),
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					textInput(
-						h,
-						`formula-expression-${formula.id}`,
-						formula.expression,
-						"A / B, (A + B) / 2",
-						"font-mono flex-1",
-						(value) =>
-							Message.ChangedFormulaText({ formulaId: formula.id, field: "expression", value }),
-					),
-					textInput(h, `formula-legend-${formula.id}`, formula.legend, "Legend", "w-48", (value) =>
-						Message.ChangedFormulaText({ formulaId: formula.id, field: "legend", value }),
-					),
-				],
-			),
+				]),
+				button(
+					h,
+					{
+						variant: "ghost",
+						size: "xs",
+						attributes: [h.OnClick(Message.ClickedRemoveFormula({ formulaId: formula.id }))],
+					},
+					["Remove"],
+				),
+			]),
+			hstack(h, { gap: "2" }, [
+				textInput(
+					h,
+					`formula-expression-${formula.id}`,
+					formula.expression,
+					"A / B, (A + B) / 2",
+					"font-mono flex-1",
+					(value) =>
+						Message.ChangedFormulaText({ formulaId: formula.id, field: "expression", value }),
+				),
+				textInput(h, `formula-legend-${formula.id}`, formula.legend, "Legend", "w-48", (value) =>
+					Message.ChangedFormulaText({ formulaId: formula.id, field: "legend", value }),
+				),
+			]),
 		],
 	)
 
 const sourceToggle = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3")],
-		[
-			eyebrow(h, {}, ["Source"]),
-			h.submodel({
-				slotId: "widget-editor-source",
-				model: model.sourceTabs,
-				view: TabsView.view,
-				viewInputs: { labels: ["Query builder", "Raw SQL"], panel: () => undefined },
-				toParentMessage: (message) => Message.GotSourceTabsMessage({ message }),
-			}),
-		],
-	)
+	hstack(h, { gap: "3" }, [
+		eyebrow(h, {}, ["Source"]),
+		h.submodel({
+			slotId: "widget-editor-source",
+			model: model.sourceTabs,
+			view: TabsView.view,
+			viewInputs: { labels: ["Query builder", "Raw SQL"], panel: () => undefined },
+			toParentMessage: (message) => Message.GotSourceTabsMessage({ message }),
+		}),
+	])
 
 const MARKDOWN_PLACEHOLDER = "## Runbook\n\n- Check the error rate panel first\n- Escalate to #oncall"
 
@@ -141,20 +130,17 @@ const markdownEditor = (h: H, content: string): Html =>
 				[h.Class("flex items-baseline justify-between")],
 				[
 					eyebrow(h, { as: "p" }, ["Content"]),
-					h.p(
-						[h.Class("text-2xs text-muted-foreground")],
-						[
-							"Markdown: ",
-							h.code([], ["# heading"]),
-							", ",
-							h.code([], ["**bold**"]),
-							", ",
-							h.code([], ["- list"]),
-							",",
-							" ",
-							h.code([], ["[link](url)"]),
-						],
-					),
+					typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+						"Markdown: ",
+						h.code([], ["# heading"]),
+						", ",
+						h.code([], ["**bold**"]),
+						", ",
+						h.code([], ["- list"]),
+						",",
+						" ",
+						h.code([], ["[link](url)"]),
+					]),
 				],
 			),
 			textarea(h, {
@@ -226,47 +212,41 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 						state.formulas.map((formula) => formulaPanel(h, formula)),
 					),
 				]),
-		h.div(
-			[h.Class("flex items-center gap-3")],
-			[
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedAddQuery())],
-					},
-					["+ Query"],
-				),
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedAddFormula())],
-					},
-					["+ Formula"],
-				),
-				button(
-					h,
-					{
-						size: "sm",
-						isDisabled: error !== null,
-						attributes: [h.OnClick(Message.ClickedRunPreview())],
-					},
-					["Run preview"],
-				),
-				// Two text nodes once there are formulas.
-				h.span(
-					[h.Class("text-2xs text-muted-foreground ml-auto")],
-					[
-						state.queries.map((query) => query.name).join(", "),
-						...(state.formulas.length === 0
-							? []
-							: [`, ${state.formulas.map((formula) => formula.name).join(", ")}`]),
-					],
-				),
-			],
-		),
+		hstack(h, { gap: "3" }, [
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					attributes: [h.OnClick(Message.ClickedAddQuery())],
+				},
+				["+ Query"],
+			),
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					attributes: [h.OnClick(Message.ClickedAddFormula())],
+				},
+				["+ Formula"],
+			),
+			button(
+				h,
+				{
+					size: "sm",
+					isDisabled: error !== null,
+					attributes: [h.OnClick(Message.ClickedRunPreview())],
+				},
+				["Run preview"],
+			),
+			// Two text nodes once there are formulas.
+			typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
+				state.queries.map((query) => query.name).join(", "),
+				...(state.formulas.length === 0
+					? []
+					: [`, ${state.formulas.map((formula) => formula.name).join(", ")}`]),
+			]),
+		]),
 	]
 }

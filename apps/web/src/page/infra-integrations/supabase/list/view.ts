@@ -23,6 +23,7 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { advisorsPanel, issuesPanel } from "./view-bottom"
 import { supabaseTable, supabaseTableLoading } from "./view-table"
+import { hstack } from "../../../../ui/stack"
 
 // `/infra/supabase`: the organization's projects, their health and what needs a look.
 
@@ -176,22 +177,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			gap: "lg",
 			titleContent: pageHeroParts(h, { title: "Supabase", description: description(model) }).title,
-			actions: h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage projects"]),
-					pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-					}),
-				],
-			),
+			actions: hstack(h, { gap: "2", wrap: true }, [
+				linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage projects"]),
+				pageTime(h, {
+					search: model.search,
+					defaultPreset: DEFAULT_PRESET,
+					window: model.window,
+					picker: model.timePicker,
+					toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+					onReset: Message.ClickedResetTimeRange(),
+					onReload: Message.ClickedReload(),
+					isReloading: model.isReloading,
+				}),
+			]),
 		},
 		[statusView(h, model)],
 	),

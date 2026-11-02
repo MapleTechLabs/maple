@@ -25,6 +25,8 @@ import { appearanceSection, previewPanel } from "./view-appearance"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The Settings tab: the page's fields, the break-glass token and deleting the page.
 
@@ -166,26 +168,20 @@ export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 							copy: model.tokenCopy,
 							toCopyMessage: (message) => Message.GotTokenCopyMessage({ message }),
 						}),
-						h.div(
-							[h.Class("flex items-center justify-between gap-3")],
-							[
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
-									[
-										"Store it outside Maple, in your password manager. It is not shown again.",
-									],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "ghost",
-										attributes: [h.OnClick(Message.ClickedDismissToken())],
-									},
-									["Done"],
-								),
-							],
-						),
+						hstack(h, { gap: "3", justify: "between" }, [
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								"Store it outside Maple, in your password manager. It is not shown again.",
+							]),
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "ghost",
+									attributes: [h.OnClick(Message.ClickedDismissToken())],
+								},
+								["Done"],
+							),
+						]),
 					],
 				),
 			]
@@ -199,72 +195,62 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 			title: "Break-glass token",
 			description: [
 				"If Maple itself is down, post updates straight to the page with this token at ",
-				h.code([h.Class("font-mono text-xs")], [`${publicAddress(page.slug)}/_manage`]),
+				h.code(
+					[h.Class(typographyClass({ size: "xs", mono: true }))],
+					[`${publicAddress(page.slug)}/_manage`],
+				),
 				". The page keeps serving from edge storage either way.",
 			],
 		},
 		[
-			h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-between gap-3")],
-						[
-							h.p(
-								[h.Class("text-sm")],
-								suffix === null
-									? [h.span([h.Class("text-muted-foreground")], ["No token issued"])]
-									: [
-											"Active token ending in ",
-											h.code([h.Class("font-mono text-xs")], [suffix]),
-										],
-							),
-							...(model.isAdmin
-								? [
-										h.div(
-											[h.Class("flex items-center gap-2")],
-											[
-												...(suffix === null
-													? []
-													: [
-															button(
-																h,
-																{
-																	size: "sm",
-																	variant: "destructive-outline",
-																	attributes: [
-																		h.OnClick(
-																			Message.ClickedRevokeToken(),
-																		),
-																	],
-																},
-																["Revoke"],
-															),
-														]),
+			vstack(h, { gap: "3" }, [
+				hstack(h, { gap: "3", justify: "between", wrap: true }, [
+					h.p(
+						[h.Class("text-sm")],
+						suffix === null
+							? [h.span([h.Class("text-muted-foreground")], ["No token issued"])]
+							: [
+									"Active token ending in ",
+									h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [suffix]),
+								],
+					),
+					...(model.isAdmin
+						? [
+								hstack(h, { gap: "2" }, [
+									...(suffix === null
+										? []
+										: [
 												button(
 													h,
 													{
 														size: "sm",
-														variant: "outline",
-														isLoading:
-															model.isChangingBreakGlass &&
-															model.breakGlassAction === "rotate",
-														attributes: [h.OnClick(Message.ClickedRotateToken())],
+														variant: "destructive-outline",
+														attributes: [h.OnClick(Message.ClickedRevokeToken())],
 													},
-													[
-														icon(h, "KeyIcon"),
-														suffix === null ? "Issue token" : "Replace token",
-													],
+													["Revoke"],
 												),
-											],
-										),
-									]
-								: []),
-						],
-					),
-					...revealedToken(h, model),
-				],
-			),
+											]),
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "outline",
+											isLoading:
+												model.isChangingBreakGlass &&
+												model.breakGlassAction === "rotate",
+											attributes: [h.OnClick(Message.ClickedRotateToken())],
+										},
+										[
+											icon(h, "KeyIcon"),
+											suffix === null ? "Issue token" : "Replace token",
+										],
+									),
+								]),
+							]
+						: []),
+				]),
+				...revealedToken(h, model),
+			]),
 		],
 	)
 }

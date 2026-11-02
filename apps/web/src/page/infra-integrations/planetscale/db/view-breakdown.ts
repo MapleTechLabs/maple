@@ -18,6 +18,7 @@ import {
 } from "../../../../components/infra/planetscale/metrics"
 import { formatWholePercent } from "../../../../components/infra/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
+import { typography, typographyClass } from "../../../../ui/typography"
 
 // `PlanetScaleBranchBreakdownPanel`.
 
@@ -143,7 +144,7 @@ const rowsOf = (candidates: ReadonlyArray<BranchCandidate>, spec: MeasureSpec) =
 }
 
 const metaChip = (h: H, text: string): Html =>
-	h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])
+	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
 
 const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): ReadonlyArray<Html> => [
 	h.div(
@@ -153,7 +154,7 @@ const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): Readonly
 				[
 					h.Class(
 						cn(
-							"truncate text-sm",
+							typographyClass({ size: "sm", truncate: true }),
 							row.isOther ? "text-muted-foreground" : "font-mono text-foreground-soft",
 							isSelected && "text-primary",
 						),

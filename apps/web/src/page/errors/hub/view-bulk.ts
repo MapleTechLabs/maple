@@ -10,12 +10,13 @@ import { WORKFLOW_LABEL } from "../kit/workflow"
 import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstackClass } from "../../../ui/stack"
 
 // The issues bulk bar: the selection's actions, pinned to the foot.
 
 type H = HtmlBuilder<Message>
 
-const DOT_ITEM = "flex items-center gap-2"
+const DOT_ITEM = hstackClass({ gap: "2" })
 
 const bulkMenu = (
 	h: H,

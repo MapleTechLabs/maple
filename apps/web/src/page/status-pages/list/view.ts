@@ -19,6 +19,8 @@ import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/comm
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary } from "../shared/derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `/status-pages`: the page table, and the builder's on-ramp when there is none.
 
@@ -50,7 +52,11 @@ const emptyState = (h: H, isAdmin: boolean): Html =>
 							]),
 						]),
 					]
-				: [h.p([h.Class("text-xs text-muted-foreground")], ["Ask an org admin to create one."])]),
+				: [
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Ask an org admin to create one.",
+						]),
+					]),
 		],
 		"py-12",
 	)
@@ -64,13 +70,13 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 			["Publish failed"],
 		)
 	return page.published_at === null
-		? h.span([h.Class("text-right text-xs text-muted-foreground")], ["Not published"])
+		? typography(h, { size: "xs", tone: "muted", className: "text-right" }, ["Not published"])
 		: relativeTime(h, {
 				value: page.published_at,
 				nowMs: inputs.nowMs,
 				timeZone: inputs.timeZone,
 				tooltip: "title",
-				className: "text-right text-xs text-muted-foreground",
+				className: typographyClass({ size: "xs", tone: "muted", className: "text-right" }),
 			})
 }
 
@@ -93,8 +99,9 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 								},
 								[page.name],
 							),
-							h.p(
-								[h.Class("truncate font-mono text-xs text-muted-foreground")],
+							typography(
+								h,
+								{ size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
 								[publicAddress(page.slug)],
 							),
 						],
@@ -103,7 +110,7 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 						[],
 						[
 							summary.componentCount === 0
-								? h.span([h.Class("text-xs text-muted-foreground")], ["No components"])
+								? typography(h, { size: "xs", tone: "muted" }, ["No components"])
 								: badge(h, { variant: COMPONENT_STATUS_TONE[summary.overall] }, [
 										COMPONENT_STATUS_LABEL[summary.overall],
 									]),
@@ -117,7 +124,12 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 						[
 							h.Class(
 								cn(
-									"text-right font-mono text-xs tabular-nums",
+									typographyClass({
+										size: "xs",
+										mono: true,
+										numeric: true,
+										className: "text-right",
+									}),
 									summary.openIncidents > 0
 										? "text-severity-warn"
 										: "text-muted-foreground",
@@ -169,23 +181,16 @@ const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 			className: "py-12",
 		})
 	return Option.match(AsyncData.getData(data), {
-		onNone: () =>
-			h.div([h.Class("flex flex-col gap-4")], [skeleton(h, "h-9 w-1/3"), skeleton(h, "h-48 w-full")]),
+		onNone: () => vstack(h, { gap: "4" }, [skeleton(h, "h-9 w-1/3"), skeleton(h, "h-48 w-full")]),
 		onSome: (pages) =>
 			pages.length === 0
 				? emptyState(h, inputs.isAdmin)
-				: h.div(
-						[h.Class("flex flex-col gap-3")],
-						[
-							h.p(
-								[h.Class("text-xs text-muted-foreground")],
-								[
-									`${countLabel(pages.length, "page")}. Each one is served from edge storage, so it stays up when Maple does not.`,
-								],
-							),
-							table(h, pages, inputs),
-						],
-					),
+				: vstack(h, { gap: "3" }, [
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							`${countLabel(pages.length, "page")}. Each one is served from edge storage, so it stays up when Maple does not.`,
+						]),
+						table(h, pages, inputs),
+					]),
 	})
 }
 

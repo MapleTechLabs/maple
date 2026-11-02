@@ -27,6 +27,7 @@ import { fileCard, loadFailure } from "./view-gcp-configure-script"
 import { runStatus } from "./view-gcp-configure-status"
 import { type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { manualSteps, removalItem } from "./view-gcp-setup-methods"
+import { vstack, vstackClass } from "../../ui/stack"
 
 // `GcpMethodStage` and `GcpMethodApplyView`: how Google Cloud is set up, and the setup without the script.
 
@@ -47,7 +48,7 @@ export const methodStage = (
 		configurePanel(
 			h,
 			[runSummary(h, connector, filterShort(choice), false), methodChoice(h, configure, !nothingSeen)],
-			"flex flex-col gap-5",
+			vstackClass({ gap: "5" }),
 		),
 		configureFooter(h, [
 			footerNote(h, [
@@ -91,11 +92,9 @@ const removalSection = (
 	// Parts Maple never saw working may not exist: listed, but there is nothing to confirm.
 	const confirmable = removal.some((item) => item.confirmed)
 	return [
-		h.section(
-			[h.Class("flex flex-col gap-3")],
+		vstack(h, { gap: "3", as: "section" },
 			[
-				h.div(
-					[h.Class("flex flex-col gap-0.5")],
+				vstack(h, { gap: "0.5" },
 					[
 						heading(
 							h,
@@ -193,11 +192,9 @@ const codeBody = (
 	const config = state.setup === null ? null : isTerraform ? state.setup.terraform : state.setup.alchemy
 	const flavour = isTerraform ? "terraform" : "alchemy"
 	const removing = gcpRemovalList(connector).length > 0
-	return h.section(
-		[h.Class("flex flex-col gap-3")],
+	return vstack(h, { gap: "3", as: "section" },
 		[
-			h.div(
-				[h.Class("flex flex-col gap-0.5")],
+			vstack(h, { gap: "0.5" },
 				[
 					heading(
 						h,
@@ -306,7 +303,7 @@ export const methodApplyStage = (
 					: []),
 				...methodSetup(h, model, configure, connector),
 			],
-			"flex flex-col gap-5",
+			vstackClass({ gap: "5" }),
 		),
 		runStatus(h, connector, {
 			opened: options.opened,

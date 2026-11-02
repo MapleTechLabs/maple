@@ -32,6 +32,7 @@ import {
 } from "./transcript-rows"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
+import { hstackClass, vstack, vstackClass } from "../../../../ui/stack"
 
 // The transcript: the scrolling thread.
 
@@ -70,7 +71,7 @@ export type TranscriptHost<M> = PanelHost<M> &
 	}>
 
 const TRANSCRIPT_ITEM = "[content-visibility:visible] [contain-intrinsic-size:none]"
-const PART_STACK = "flex flex-col gap-2"
+const PART_STACK = vstackClass({ gap: "2" })
 
 const READ_ONLY_LABEL = new Map([
 	["resolved", "Investigation resolved · read-only"],
@@ -97,8 +98,7 @@ const markdownBody = <M>(
 export const richText = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, text: string): Html => {
 	const body = richTextSegments(text)
 	if (body._tag === "Plain") return markdownBody(h, host, text)
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
+	return vstack(h, { gap: "2" },
 		body.segments.flatMap((segment) => {
 			if (segment.type === "text")
 				return segment.content.trim() === "" ? [] : [markdownBody(h, host, segment.content)]
@@ -163,7 +163,7 @@ export const statusMarker = <M>(
 			markerContent(
 				h,
 				[h.span([h.Class("shimmer")], [label]), ...runningClock(h, clockMount)],
-				"flex items-center gap-2",
+				hstackClass({ gap: "2" }),
 			),
 		],
 	)

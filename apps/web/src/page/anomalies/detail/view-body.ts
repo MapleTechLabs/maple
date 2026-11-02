@@ -40,6 +40,8 @@ import { actorAvatar } from "../../errors/kit/actor"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `AnomalyHero`, `AnomalySignalChart` + `AnomalyTimeseriesChart` and `AnomalyLinkedIssueCard`.
 
@@ -74,7 +76,7 @@ export const anomalySummary = (h: H, incident: AnomalyIncidentDocument, nowMs: n
 	const isStale = isStaleOpenIncident(incident, nowMs)
 	const dev = deviation(incident)
 	const accent = cn(
-		"font-mono font-medium",
+		typographyClass({ weight: "medium", mono: true }),
 		incident.status === "open" && !isStale ? tone.text : "text-foreground",
 	)
 	const fmt = (value: number) => formatSignalValue(incident.signalType, value)
@@ -86,8 +88,7 @@ export const anomalySummary = (h: H, incident: AnomalyIncidentDocument, nowMs: n
 			h.span([h.Class(accent)], [fmt(incident.lastObservedValue)]),
 			" ",
 			"against a ",
-			h.span(
-				[h.Class("font-mono text-foreground")],
+			typography(h, { tone: "foreground", mono: true },
 				[fmt(incident.baselineMedian)],
 			),
 			" 7-day baseline:",
@@ -99,8 +100,7 @@ export const anomalySummary = (h: H, incident: AnomalyIncidentDocument, nowMs: n
 					? " vs baseline"
 					: "",
 			", threshold ",
-			h.span(
-				[h.Class("font-mono text-foreground")],
+			typography(h, { tone: "foreground", mono: true },
 				[fmt(incident.thresholdValue)],
 			),
 			".",
@@ -233,8 +233,7 @@ const cardActions = (
 	issueId: NonNullable<AnomalyIncidentDocument["errorIssueId"]>,
 	isBusy: boolean,
 ): Html =>
-	h.div(
-		[h.Class("flex shrink-0 items-center gap-1.5")],
+	hstack(h, { gap: "1.5", className: "shrink-0" },
 		[
 			linkButton(
 				h,
@@ -278,15 +277,13 @@ export const linkedIssueCard = (
 		return h.div(
 			[h.Class("rounded-md border border-dashed border-border-subtle p-4")],
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center justify-between gap-3")],
+				hstack(h, { gap: "3", justify: "between", wrap: true },
 					[
 						h.div(
 							[h.Class("space-y-1")],
 							[
-								h.p([h.Class("text-sm text-foreground")], ["Not linked to an issue"]),
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
+								typography(h, { size: "sm", tone: "foreground", as: "p" }, ["Not linked to an issue"]),
+								typography(h, { size: "xs", tone: "muted", as: "p" },
 									[
 										incident.signalType === "error_spike"
 											? "This frequency increase is fingerprint-scoped, so an issue with this fingerprint may already exist for the service."
@@ -330,15 +327,14 @@ export const linkedIssueCard = (
 		onRefreshing: (wire) => loadedIssue(wire),
 	})
 	function failedIssue(id: NonNullable<AnomalyIncidentDocument["errorIssueId"]>): Html {
-		return h.div(
-			[h.Class("flex items-center justify-between gap-3")],
+		return hstack(h, { gap: "3", justify: "between" },
 			[
 				h.p(
 					[h.Class("text-muted-foreground")],
 					[
 						"Linked to issue",
 						" ",
-						h.code([h.Class("font-mono text-xs")], [shortIssueId(id)]),
+						h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [shortIssueId(id)]),
 						". Couldn't load its details.",
 					],
 				),
@@ -355,8 +351,7 @@ export const linkedIssueCard = (
 				h.div(
 					[h.Class("min-w-0 space-y-2")],
 					[
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
+						hstack(h, { gap: "2", wrap: true },
 							[
 								badge(
 									h,
@@ -364,7 +359,7 @@ export const linkedIssueCard = (
 									[WORKFLOW_LABEL[issue.workflowState]],
 								),
 								h.code(
-									[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
+									[h.Class(typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }))],
 									[shortIssueId(issue.id)],
 								),
 								badge(
@@ -391,8 +386,7 @@ export const linkedIssueCard = (
 									: []),
 							],
 						),
-						h.div(
-							[h.Class("flex items-center gap-3 text-xs text-muted-foreground")],
+						hstack(h, { gap: "3", className: typographyClass({ size: "xs", tone: "muted" }) },
 							[
 								h.span(
 									[h.Class("tabular-nums")],
@@ -402,8 +396,7 @@ export const linkedIssueCard = (
 										pluralize(issue.occurrenceCount, "event"),
 									],
 								),
-								h.span(
-									[h.Class("flex items-center gap-1.5")],
+								hstack(h, { gap: "1.5", as: "span" },
 									actor === null ? ["Unclaimed"] : [actorAvatar(h, actor)],
 								),
 							],

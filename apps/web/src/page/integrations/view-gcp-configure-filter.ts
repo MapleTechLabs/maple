@@ -12,6 +12,8 @@ import { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { filterModeSelect } from "./view-gcp-configure-filter-mode"
 import { runtimeFields } from "./view-gcp-configure-runtimes"
+import { typography, typographyClass } from "../../ui/typography"
+import { vstack } from "../../ui/stack"
 
 // `LogFilter` and `GcpLogFilterField`: the filter the script gives the log sink.
 
@@ -49,10 +51,9 @@ export const logFilter = (
 				"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
 			trigger: [
 				h.span([h.Class("text-foreground")], ["Log filter"]),
-				h.span(
-					[h.Class("truncate text-muted-foreground")],
-					[filterShort(gcpLogFilterChoice(configure.filter, options.sinkExists))],
-				),
+				typography(h, { tone: "muted", truncate: true }, [
+					filterShort(gcpLogFilterChoice(configure.filter, options.sinkExists)),
+				]),
 				icon(h, "ChevronDownIcon", {
 					size: 12,
 					className:
@@ -91,7 +92,7 @@ export type FilterFieldOptions = Readonly<{
 	forwardId?: string
 }>
 
-const LABEL = "text-xs font-medium text-muted-foreground"
+const LABEL = typographyClass({ size: "xs", tone: "muted", weight: "medium" })
 
 /** `GcpLogFilterField`: whose application output comes along. */
 export const filterField = (
@@ -120,47 +121,42 @@ export const filterField = (
 					},
 					"Log filter",
 				)
-	const newFilter = h.div(
-		[h.Class("flex flex-col gap-2.5")],
-		[
-			h.dl(
-				[h.Class("divide-y rounded-md border")],
-				[
-					summaryRow(
-						h,
-						icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
-						"Platform logs",
-						"Requests, audit, deploys, crashes, scaling",
-					),
-					summaryRow(
-						h,
-						// Off reads as off: a cross, not an ambiguous dash; ticked runtimes get a check.
-						choice.runtimes.length === 0
-							? icon(h, "XmarkIcon", { size: 14 })
-							: icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
-						"Application output",
-						choice.runtimes.length === 0
-							? "Not collected: stdout and stderr stay in Google Cloud"
-							: `stdout and stderr, from ${runtimeLabels(choice.runtimes)} only`,
-					),
-				],
-			),
-			h.p(
-				[
-					h.Class(
-						"flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-prose text-xs/5 text-pretty text-muted-foreground",
-					),
-				],
-				[
-					"Send application logs with your OpenTelemetry setup, where they link to traces.",
-					externalLink(h, OTEL_DOCS, "Set up OpenTelemetry"),
-				],
-			),
-			choice.forwardsOutput
-				? runtimeFields(h, choice.runtimes, options.forwardId)
-				: forwardOutputPrompt(h),
-		],
-	)
+	const newFilter = vstack(h, { gap: "2.5" }, [
+		h.dl(
+			[h.Class("divide-y rounded-md border")],
+			[
+				summaryRow(
+					h,
+					icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
+					"Platform logs",
+					"Requests, audit, deploys, crashes, scaling",
+				),
+				summaryRow(
+					h,
+					// Off reads as off: a cross, not an ambiguous dash; ticked runtimes get a check.
+					choice.runtimes.length === 0
+						? icon(h, "XmarkIcon", { size: 14 })
+						: icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
+					"Application output",
+					choice.runtimes.length === 0
+						? "Not collected: stdout and stderr stay in Google Cloud"
+						: `stdout and stderr, from ${runtimeLabels(choice.runtimes)} only`,
+				),
+			],
+		),
+		h.p(
+			[
+				h.Class(
+					"flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-prose text-xs/5 text-pretty text-muted-foreground",
+				),
+			],
+			[
+				"Send application logs with your OpenTelemetry setup, where they link to traces.",
+				externalLink(h, OTEL_DOCS, "Set up OpenTelemetry"),
+			],
+		),
+		choice.forwardsOutput ? runtimeFields(h, choice.runtimes, options.forwardId) : forwardOutputPrompt(h),
+	])
 	return field(h, { className: "items-stretch gap-2.5", state }, [
 		h.div(
 			[h.Class("flex items-baseline justify-between gap-4 text-xs text-muted-foreground")],

@@ -18,6 +18,8 @@ import type { SortDir, SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import type { HostSortKey } from "./message"
 import type { HostRow } from "./model"
+import { typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `HostTable` / `HostTableLoading`, generic over the host's Message: /infra/hosts sorts through its Model,
 // `/lab/worst-case` through its own.
@@ -78,23 +80,24 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 			h.div(
 				[h.Class("w-0 min-w-64 flex-1")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[
-							middleTruncate(h, {
-								text: host.hostName,
-								tail: 12,
-								mono: true,
-								className:
-									"text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+					hstack(h, { gap: "2" }, [
+						middleTruncate(h, {
+							text: host.hostName,
+							tail: 12,
+							mono: true,
+							className: typographyClass({
+								size: "xs",
+								tone: "foreground",
+								weight: "medium",
+								className: "transition-colors group-hover:text-primary",
 							}),
-							hostStatusBadge(h, {
-								quiet: true,
-								lastSeen: host.lastSeen,
-								referenceMs: inputs.nowMs,
-							}),
-						],
-					),
+						}),
+						hostStatusBadge(h, {
+							quiet: true,
+							lastSeen: host.lastSeen,
+							referenceMs: inputs.nowMs,
+						}),
+					]),
 					metaLine(h, [
 						host.osType && platformLabel(h, "os", host.osType),
 						host.hostArch && platformLabel(h, "arch", host.hostArch),
@@ -128,7 +131,11 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
 						mono: true,
-						className: "cursor-default text-2xs text-muted-foreground",
+						className: typographyClass({
+							size: "2xs",
+							tone: "muted",
+							className: "cursor-default",
+						}),
 					}),
 				],
 			),

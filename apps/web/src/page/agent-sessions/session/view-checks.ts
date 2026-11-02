@@ -18,6 +18,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // The session checks: the verdict, what needs attention, the rest.
 // Headlines and actions are sentences, so they read in the prose face; codes and values stay mono.
@@ -54,8 +56,7 @@ const verdict = (h: H, model: Model, report: SessionChecksReport): Html => {
 	return h.section(
 		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3")],
 		[
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-1")],
+			vstack(h, { gap: "1", shrink: true },
 				[
 					h.p(
 						[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base")],
@@ -150,8 +151,7 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 		[
 			checkDot(h, check.status),
 			h.span([h.Class("truncate font-semibold text-ui")], [check.name]),
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-1")],
+			vstack(h, { gap: "1", shrink: true },
 				[
 					h.p([h.Class("font-prose text-ui leading-relaxed")], withCode(h, check.headline)),
 					...(check.id === "tool-errors"
@@ -230,8 +230,7 @@ const disclosure = (
 				!isDisclosable && "invisible",
 			),
 		}),
-		h.span(
-			[h.Class("flex items-baseline gap-2")],
+		hstack(h, { gap: "2", align: "baseline", as: "span" },
 			[
 				h.span(
 					[
@@ -244,8 +243,7 @@ const disclosure = (
 					],
 					[options.title],
 				),
-				h.span(
-					[h.Class("font-mono text-muted-foreground text-xs tabular-nums")],
+				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true },
 					[String(options.checks.length)],
 				),
 			],
@@ -278,7 +276,7 @@ const disclosure = (
 			...(isExpanded
 				? [
 						h.div(
-							[h.Class(cn("pt-0.5 pb-3", "flex flex-col gap-1.5"))],
+							[h.Class(cn("pt-0.5 pb-3", vstackClass({ gap: "1.5" })))],
 							options.checks.map((check) => checkFact(h, check)),
 						),
 					]
@@ -359,12 +357,10 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 	const passed = report.checks.filter((check) => check.status === "passed")
 	const skipped = report.checks.filter((check) => check.status === "skipped")
 	const isClean = attention.length === 0
-	return h.div(
-		[h.Class("flex flex-col gap-5")],
+	return vstack(h, { gap: "5" },
 		[
 			verdict(h, model, report),
-			h.section(
-				[h.Class("flex flex-col gap-2")],
+			vstack(h, { gap: "2", as: "section" },
 				[
 					sectionHeading(h, {
 						variant: "eyebrow",

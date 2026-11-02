@@ -16,6 +16,7 @@ import { panel } from "../../../ui/panel"
 import * as Tooltip from "../../../ui/tooltip"
 import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
+import { hstack } from "../../../ui/stack"
 
 // `FindingRow` under one `RelativeTime` tooltip.
 
@@ -45,26 +46,20 @@ const findingRow = (h: H, finding: CodeReviewFinding, context: RowContext): Html
 					[SEVERITY_LABELS[finding.severity]],
 				),
 				title: finding.title,
-				meta: h.span(
-					[h.Class("flex min-w-0 items-center gap-1.5")],
-					[
-						middleTruncate(h, {
-							text: `${finding.path}:${finding.line}`,
-							tail: Math.min(
-								40,
-								Array.from(`${basename(finding.path)}:${finding.line}`).length,
-							),
-							mono: true,
-						}),
-						h.span(
-							[
-								h.Class("min-w-0 max-w-[45%] shrink-0 truncate"),
-								h.Title(`${finding.repositoryFullName}#${finding.number}`),
-							],
-							["· ", finding.repositoryFullName, "#", String(finding.number)],
-						),
-					],
-				),
+				meta: hstack(h, { gap: "1.5", shrink: true, as: "span" }, [
+					middleTruncate(h, {
+						text: `${finding.path}:${finding.line}`,
+						tail: Math.min(40, Array.from(`${basename(finding.path)}:${finding.line}`).length),
+						mono: true,
+					}),
+					h.span(
+						[
+							h.Class("min-w-0 max-w-[45%] shrink-0 truncate"),
+							h.Title(`${finding.repositoryFullName}#${finding.number}`),
+						],
+						["· ", finding.repositoryFullName, "#", String(finding.number)],
+					),
+				]),
 				trailing: [
 					h.span(
 						[h.Class("hidden text-xs text-muted-foreground sm:block")],

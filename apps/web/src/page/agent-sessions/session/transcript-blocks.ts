@@ -11,6 +11,8 @@ import type { Model } from "./model"
 import { disclosed } from "./payload-view"
 import { payloadActions, payloadBody, toolIo, toolIoSummary, truncatedBadge, truncatedNote } from "./tool-io"
 import { clockOf, META, ON_HOVER, row } from "./transcript-shell"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The transcript's tool cards and payload sections (`ToolBlock`, `PayloadSection`).
 
@@ -121,27 +123,21 @@ export const payloadSection = (
 	return h.div(
 		[h.Class("flex flex-col gap-2 px-3 pt-2.5 pb-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					eyebrow(h, { variant: "mono" }, [options.label]),
-					h.span(
-						[h.Class("font-mono text-3xs text-muted-foreground")],
-						[
-							[
-								formatBytes(payload.byteLength),
-								...(payload.lineCount > 1 ? [`${payload.lineCount} lines`] : []),
-							].join(" · "),
-						],
-					),
-					...(payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
-					...payloadActions(h, model, {
-						payload,
-						textKey: options.textKey,
-						label: options.label.toLowerCase(),
-					}),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				eyebrow(h, { variant: "mono" }, [options.label]),
+				typography(h, { size: "3xs", tone: "muted", mono: true }, [
+					[
+						formatBytes(payload.byteLength),
+						...(payload.lineCount > 1 ? [`${payload.lineCount} lines`] : []),
+					].join(" · "),
+				]),
+				...(payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
+				...payloadActions(h, model, {
+					payload,
+					textKey: options.textKey,
+					label: options.label.toLowerCase(),
+				}),
+			]),
 			...payloadBody(h, model, { payload, textKey: options.textKey, clampLines: 14 }),
 			...(payload.truncatedByEmitter ? [truncatedNote(h)] : []),
 		],

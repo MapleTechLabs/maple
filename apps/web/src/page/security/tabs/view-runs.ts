@@ -42,6 +42,8 @@ import { bucketDot } from "../kit/findings-view"
 import { meter } from "../../../ui/meter"
 import { Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
 
@@ -55,8 +57,7 @@ const statusCell = (h: H, run: SecurityAuditRun): Html => {
 			: run.status === "failed"
 				? (run.error ?? "could not finish")
 				: stopSummaryOf(run.incompleteReason)
-	return h.div(
-		[h.Class("flex min-w-0 flex-col items-start gap-1")],
+	return vstack(h, { gap: "1", align: "start", shrink: true },
 		[
 			runStatusBadge(h, run),
 			...(reason === null
@@ -73,7 +74,7 @@ const statusCell = (h: H, run: SecurityAuditRun): Html => {
 
 const muted = (h: H, text: string, title?: string): Html =>
 	h.span(
-		[h.Class("text-xs text-muted-foreground"), ...(title === undefined ? [] : [h.Title(title)])],
+		[h.Class(typographyClass({ size: "xs", tone: "muted" })), ...(title === undefined ? [] : [h.Title(title)])],
 		[text],
 	)
 
@@ -109,8 +110,7 @@ const findingsCell = (
 const coverageCell = (h: H, run: SecurityAuditRun, detail: SecurityAuditRunDetail | null): Html => {
 	if (detail === null || detail.unitTotal === 0) return muted(h, "")
 	const { closed, total } = coverageOf(detail)
-	return h.div(
-		[h.Class("flex items-center justify-end gap-2")],
+	return hstack(h, { gap: "2", justify: "end" },
 		[
 			meter(h, {
 				value: closed,
@@ -144,11 +144,10 @@ const runRow = (
 				h,
 				[
 					h.a(
-						[h.Href(href), h.Class("flex min-w-0 flex-col")],
+						[h.Href(href), h.Class(vstackClass({ shrink: true }))],
 						[
-							h.span([h.Class("font-mono text-sm")], [`Run ${shortId(run.id)}`]),
-							h.span(
-								[h.Class("truncate text-xs text-muted-foreground")],
+							typography(h, { size: "sm", mono: true }, [`Run ${shortId(run.id)}`]),
+							typography(h, { size: "xs", tone: "muted", truncate: true },
 								[
 									[
 										RUN_KIND_LABEL[run.kind].toLowerCase(),
@@ -170,12 +169,10 @@ const runRow = (
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("flex min-w-0 flex-col")],
+					vstack(h, { shrink: true, as: "span" },
 						[
 							repositoryName(h, repository, "text-sm"),
-							h.span(
-								[h.Class("truncate font-mono text-xs text-muted-foreground")],
+							typography(h, { size: "xs", tone: "muted", mono: true, truncate: true },
 								[refLabel(run.sourceRef)],
 							),
 						],
@@ -190,7 +187,7 @@ const runRow = (
 				[coverageCell(h, run, latestDetailOf(model, run.id))],
 				cn("text-right", ROOMY_COLUMN),
 			),
-			tableCell(h, [formatUsd(runTotalUsd(run))], cn("text-right font-mono tabular-nums", WIDE_COLUMN)),
+			tableCell(h, [formatUsd(runTotalUsd(run))], cn(typographyClass({ mono: true, numeric: true, className: "text-right" }), WIDE_COLUMN)),
 			tableCell(
 				h,
 				[

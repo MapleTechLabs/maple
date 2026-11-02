@@ -17,6 +17,8 @@ import { gateState, placeholderRows } from "../kit/parts"
 import { countOf, openFindingOf } from "./derive"
 import { Message, type Model } from "./model"
 import { emptyMessage } from "../../../ui/empty"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // What the run reported, first on the page: severity tabs over severity groups, each finding
 // opening in a side sheet.
@@ -130,7 +132,7 @@ export const findingsSection = (h: H, model: Model, run: SecurityAuditRunDetail)
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2")],
 						[
-							h.span([h.Class("text-sm font-medium")], ["Findings"]),
+							typography(h, { size: "sm", weight: "medium" }, ["Findings"]),
 							...(findings.length === 0
 								? []
 								: [
@@ -172,16 +174,12 @@ export const findingSheet = (h: H, model: Model): Html => {
 					? []
 					: [
 							DialogView.dialogHeader(h, "sheet", [
-								h.div(
-									[h.Class("flex flex-wrap items-center gap-2")],
-									[
-										findingBadge(h, finding),
-										h.span(
-											[h.Class("font-mono text-xs text-muted-foreground")],
-											[locationOf(finding.record) ?? ""],
-										),
-									],
-								),
+								hstack(h, { gap: "2", wrap: true }, [
+									findingBadge(h, finding),
+									typography(h, { size: "xs", tone: "muted", mono: true }, [
+										locationOf(finding.record) ?? "",
+									]),
+								]),
 								DialogView.dialogTitle(h, "sheet", id, finding.record.title),
 								h.div(
 									[h.Class("pt-1")],
@@ -204,7 +202,7 @@ export const findingSheet = (h: H, model: Model): Html => {
 								),
 							]),
 							DialogView.dialogPanel(h, "sheet", id, [
-								h.div([h.Class("flex flex-col gap-4")], findingBody(h, finding)),
+								vstack(h, { gap: "4" }, findingBody(h, finding)),
 							]),
 						],
 		},

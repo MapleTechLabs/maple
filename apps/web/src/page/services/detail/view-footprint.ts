@@ -27,13 +27,15 @@ import { type DependencyKind, type StripTarget, stripTargets } from "./derive-pa
 import { Message } from "./message"
 import type { Model, UsageTotals } from "./model"
 import { sectionCard, viewAllButton } from "./view-panels"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstackClass } from "../../../ui/stack"
 
 // `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
 
 type H = HtmlBuilder<Message>
 
 const allEnvironments = (h: H): Html =>
-	h.span([h.Class("text-3xs text-foreground-subtle")], ["all environments"])
+	typography(h, { size: "3xs", tone: "subtle" }, ["all environments"])
 
 const USAGE_STATS: ReadonlyArray<{
 	readonly key: keyof UsageTotals
@@ -80,7 +82,7 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 								previous: previous?.[stat.key],
 								suffix: "vs prev",
 								flatThreshold: 0.005,
-								className: "text-3xs text-muted-foreground",
+								className: typographyClass({ size: "3xs", tone: "muted" }),
 							}),
 						],
 					),
@@ -149,7 +151,7 @@ const runsOnRow = (
 						itemDescription(
 							h,
 							[[link.label, ...link.location].join(" · ")],
-							"truncate text-3xs text-foreground-subtle",
+							typographyClass({ size: "3xs", tone: "subtle", truncate: true }),
 						),
 					],
 					"gap-0 leading-tight",
@@ -162,12 +164,12 @@ const runsOnRow = (
 					itemActions(
 						h,
 						[extra.count],
-						"shrink-0 font-mono text-2xs tabular-nums text-muted-foreground",
+						typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" }),
 					),
 				]),
 		...(extra.meters.length === 0
 			? []
-			: [h.div([h.Class(cn("flex flex-col gap-1", "max-w-[280px] basis-full pl-6"))], extra.meters)]),
+			: [h.div([h.Class(cn(vstackClass({ gap: "1" }), "max-w-[280px] basis-full pl-6"))], extra.meters)]),
 	])
 
 /** Every place the service runs, platform resources first: the header links the first. */

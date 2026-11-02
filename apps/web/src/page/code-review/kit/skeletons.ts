@@ -15,6 +15,8 @@ import { CI_HEADLINE_LABELS } from "../ci/view-stats"
 import { analyticsPanel } from "./analytics-panel"
 import { section } from "./parts"
 import { SHEET_STAT_LABELS } from "./review-sheet-sections"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // Loading states for code review, drawn in the real panels, headers and row geometry: labels and
 // titles that don't depend on the data render for real, so only the values swap in.
@@ -49,10 +51,10 @@ const busy = <M>(h: HtmlBuilder<M>, label: string, body: Html): Html =>
 
 /** A busy page: the slow-load note sits under its first block, where a reader is looking. */
 export const busyPage = <M>(h: HtmlBuilder<M>, label: string, [first, ...rest]: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-6"), h.AriaBusy(true), h.AriaLabel(label)],
-		[h.div([h.Class("relative")], [first, slowNote(h)]), ...rest],
-	)
+	vstack(h, { gap: "6", attributes: [h.AriaBusy(true), h.AriaLabel(label)] }, [
+		h.div([h.Class("relative")], [first, slowNote(h)]),
+		...rest,
+	])
 
 /** One table column: its header, and what its cells show (two text lines for `lead`, else one bar). */
 export type SkeletonColumn = Readonly<{
@@ -335,45 +337,40 @@ const chartCard = <M>(
 
 /** `repositoryList` under a chart: its real caption and the top five rows. */
 const repositoryRows = <M>(h: HtmlBuilder<M>, title: string): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-2")],
-		[
-			h.span([h.Class("text-xs text-muted-foreground")], [title]),
-			h.ul(
-				[h.Class("flex flex-col")],
-				rows(5, (index) =>
-					h.li(
-						[h.Class("flex h-8 items-center gap-2.5 py-1.5")],
-						[
-							bar(h, "size-4 shrink-0 rounded-full"),
-							h.span(
-								[h.Class("min-w-0 flex-1")],
-								[bar(h, cn("h-3", pick(TITLE_WIDTHS, index + 1)))],
-							),
-							bar(h, "h-3 w-6"),
-						],
-					),
+	vstack(h, { gap: "2" }, [
+		typography(h, { size: "xs", tone: "muted" }, [title]),
+		h.ul(
+			[h.Class("flex flex-col")],
+			rows(5, (index) =>
+				h.li(
+					[h.Class("flex h-8 items-center gap-2.5 py-1.5")],
+					[
+						bar(h, "size-4 shrink-0 rounded-full"),
+						h.span(
+							[h.Class("min-w-0 flex-1")],
+							[bar(h, cn("h-3", pick(TITLE_WIDTHS, index + 1)))],
+						),
+						bar(h, "h-3 w-6"),
+					],
 				),
 			),
-		],
-	)
+		),
+	])
 
 /** `barList`: a label and count over a meter, per row. */
 const barListCard = <M>(h: HtmlBuilder<M>, title: string): Html =>
 	analyticsPanel(h, { title }, [
-		h.ul(
-			[h.Class("flex flex-col gap-2.5")],
+		vstack(
+			h,
+			{ gap: "2.5", as: "ul" },
 			rows(4, (index) =>
-				h.li(
-					[h.Class("flex flex-col gap-1")],
-					[
-						h.span(
-							[h.Class("flex h-5 items-center justify-between gap-2")],
-							[bar(h, cn("h-3", pick(META_WIDTHS, index))), bar(h, "h-3 w-6")],
-						),
-						bar(h, "h-1.5 w-full rounded-full"),
-					],
-				),
+				vstack(h, { gap: "1", as: "li" }, [
+					h.span(
+						[h.Class("flex h-5 items-center justify-between gap-2")],
+						[bar(h, cn("h-3", pick(META_WIDTHS, index))), bar(h, "h-3 w-6")],
+					),
+					bar(h, "h-1.5 w-full rounded-full"),
+				]),
 			),
 		),
 	])
@@ -414,20 +411,17 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 				}),
 				chartCard(h, "Issues caught", "bar", {
 					control: true,
-					footer: h.div(
-						[h.Class("flex flex-col gap-3")],
-						[
-							repositoryRows(h, "Repositories with the most issues"),
-							h.span(
-								[
-									h.Class(
-										"inline-flex items-center gap-1 self-center text-sm text-muted-foreground",
-									),
-								],
-								["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
-							),
-						],
-					),
+					footer: vstack(h, { gap: "3" }, [
+						repositoryRows(h, "Repositories with the most issues"),
+						h.span(
+							[
+								h.Class(
+									"inline-flex items-center gap-1 self-center text-sm text-muted-foreground",
+								),
+							],
+							["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
+						),
+					]),
 				}),
 			],
 		),
@@ -455,16 +449,13 @@ export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		),
 		tablePanel(h, "Workflows", WORKFLOW_COLUMNS),
 		tablePanel(h, "Jobs by CI time", JOB_COLUMNS),
-		h.section(
-			[h.Class("flex flex-col gap-3")],
-			[
-				h.div(
-					[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")],
-					[sectionHeading(h, { title: "Runs" }), bar(h, "h-8 w-36 rounded-lg sm:h-7")],
-				),
-				panel(h, {}, [tableSkeleton(h, RUN_COLUMNS, { count: 4 })]),
-			],
-		),
+		vstack(h, { gap: "3", as: "section" }, [
+			hstack(h, { justify: "between", wrap: true, className: "gap-x-3 gap-y-2" }, [
+				sectionHeading(h, { title: "Runs" }),
+				bar(h, "h-8 w-36 rounded-lg sm:h-7"),
+			]),
+			panel(h, {}, [tableSkeleton(h, RUN_COLUMNS, { count: 4 })]),
+		]),
 	])
 
 /** `repositoryList`: the access line, then one row per repository with Configure and its switch. */
@@ -561,44 +552,43 @@ export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyA
 		"sheet",
 		id,
 		[
-			h.div(
-				[h.Class("flex flex-col gap-6"), h.AriaBusy(true), h.AriaLabel("Loading review")],
-				[
-					h.div(
-						[h.Class("relative")],
-						[
-							statRail(
-								h,
-								{},
-								Object.values(SHEET_STAT_LABELS).map((label) =>
-									statRailItem(h, {
-										compact: true,
-										eyebrow: label,
-										value: inlineBar(h, "h-3.5 w-14"),
-										className: "min-w-0 px-3 py-2.5",
-										valueClassName: "text-sm",
-									}),
-								),
+			vstack(h, { gap: "6", attributes: [h.AriaBusy(true), h.AriaLabel("Loading review")] }, [
+				h.div(
+					[h.Class("relative")],
+					[
+						statRail(
+							h,
+							{},
+							Object.values(SHEET_STAT_LABELS).map((label) =>
+								statRailItem(h, {
+									compact: true,
+									eyebrow: label,
+									value: inlineBar(h, "h-3.5 w-14"),
+									className: "min-w-0 px-3 py-2.5",
+									valueClassName: "text-sm",
+								}),
 							),
-							slowNote(h),
-						],
+						),
+						slowNote(h),
+					],
+				),
+				section(h, "Summary", [
+					vstack(
+						h,
+						{ gap: "2" },
+						rows(4, (index) => bar(h, cn("h-3", index === 3 ? "w-[45%]" : "w-full"))),
 					),
-					section(h, "Summary", [
-						h.div(
-							[h.Class("flex flex-col gap-2")],
-							rows(4, (index) => bar(h, cn("h-3", index === 3 ? "w-[45%]" : "w-full"))),
-						),
-					]),
-					section(h, "Issues", [
-						h.ul(
-							[h.Class("flex flex-col gap-3")],
-							rows(2, (index) => findingCardSkeleton(h, index)),
-						),
-					]),
-					section(h, "CI runs", [ciRunsSkeleton(h, true)]),
-				],
-			),
+				]),
+				section(h, "Issues", [
+					vstack(
+						h,
+						{ gap: "3", as: "ul" },
+						rows(2, (index) => findingCardSkeleton(h, index)),
+					),
+				]),
+				section(h, "CI runs", [ciRunsSkeleton(h, true)]),
+			]),
 		],
-		"flex flex-col gap-6",
+		vstackClass({ gap: "6" }),
 	),
 ]

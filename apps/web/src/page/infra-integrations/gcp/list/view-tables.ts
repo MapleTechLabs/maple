@@ -71,6 +71,8 @@ import {
 	workloadHref,
 	workloadRow,
 } from "./view-rows"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstackClass } from "../../../../ui/stack"
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 
@@ -312,7 +314,7 @@ export const subscriptionsTable = (
 											[
 												h.Class(
 													cn(
-														"font-mono text-xs tabular-nums",
+														typographyClass({ size: "xs", mono: true, numeric: true }),
 														growing ? TONE_TEXT.crit : "text-foreground-soft",
 													),
 												),
@@ -409,7 +411,7 @@ const quotaCell = (h: H, value: number | undefined, hidden?: string): Html =>
 		[h.Class(cn("flex w-20 flex-col items-end gap-1", hidden))],
 		[
 			h.span(
-				[h.Class(cn("font-mono text-xs tabular-nums", quotaText(value)))],
+				[h.Class(cn(typographyClass({ size: "xs", mono: true, numeric: true }), quotaText(value)))],
 				[value === undefined ? EMPTY_VALUE : formatPercentColumn(value)],
 			),
 			meter(h, { value: value ?? 0, tone: quotaTone(value ?? 0), className: "w-14" }),
@@ -624,7 +626,7 @@ export const serviceTableLoading = (h: H, service: GcpInfraServiceId): Html =>
 		skeletonRows(h, 5, () => [
 			dotLane(h),
 			h.div(
-				[h.Class(cn(GENERIC_NAME, "flex items-center gap-3"))],
+				[h.Class(cn(GENERIC_NAME, hstackClass({ gap: "3" })))],
 				[
 					skeleton(h, "size-7 shrink-0 rounded-md"),
 					h.div([], [skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-28")]),
@@ -671,18 +673,13 @@ export const serviceTable = (
 					[
 						healthDot(h, spec, rowHealth(GCP_WORKLOAD_RULES, row)),
 						h.div(
-							[h.Class(cn(GENERIC_NAME, "flex items-center gap-3"))],
+							[h.Class(cn(GENERIC_NAME, hstackClass({ gap: "3" })))],
 							[
 								gcpServiceIcon(h, { service }),
 								h.div(
 									[h.Class("min-w-0 flex-1")],
 									[
-										h.div(
-											[
-												h.Class(
-													"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-												),
-											],
+										typography(h, { size: "xs", tone: "foreground", weight: "medium", mono: true, truncate: true, as: "div", className: "transition-colors group-hover:text-primary" },
 											[row.name],
 										),
 										...(line === null ? [] : [line]),
@@ -695,7 +692,7 @@ export const serviceTable = (
 								[
 									h.Class(
 										cn(
-											"text-right font-mono text-xs tabular-nums",
+											typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" }),
 											VALUE_WIDTH,
 											valueClass(column, row.workload.values[index]),
 										),

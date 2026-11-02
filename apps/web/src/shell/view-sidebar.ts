@@ -22,6 +22,7 @@ import { Menu, Message } from "./message"
 import type { Model, ShellClerk } from "./model"
 import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
+import { typography } from "../ui/typography"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -73,7 +74,7 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 					h.div(
 						[h.Class("grid flex-1 text-left text-sm leading-tight")],
 						[
-							h.span([h.Class("truncate font-medium")], ["Self Hosted"]),
+							typography(h, { weight: "medium", truncate: true }, ["Self Hosted"]),
 							...Option.match(pinnedNamespaceOf(model), {
 								onNone: () => [],
 								onSome: (namespace) => [
@@ -166,32 +167,35 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 									h.div(
 										[h.Class("grid flex-1 text-left text-sm leading-tight")],
 										[
-											h.span(
-												[h.Class("truncate font-medium"), h.Title(orgName)],
+											typography(
+												h,
+												{
+													weight: "medium",
+													truncate: true,
+													attributes: [h.Title(orgName)],
+												},
 												[orgName],
 											),
 											Option.match(pinned, {
 												onNone: () =>
-													h.span(
-														[h.Class("truncate text-xs text-muted-foreground")],
+													typography(
+														h,
+														{ size: "xs", tone: "muted", truncate: true },
 														regionSuffix === ""
 															? ["Organization"]
 															: ["Organization", regionSuffix],
 													),
 												onSome: (namespace) =>
-													h.span(
-														[h.Class("truncate text-xs")],
-														[
-															h.span(
-																[h.Class("font-medium text-primary")],
-																[namespace],
-															),
-															h.span(
-																[h.Class("text-muted-foreground")],
-																[regionSuffix],
-															),
-														],
-													),
+													typography(h, { size: "xs", truncate: true }, [
+														h.span(
+															[h.Class("font-medium text-primary")],
+															[namespace],
+														),
+														h.span(
+															[h.Class("text-muted-foreground")],
+															[regionSuffix],
+														),
+													]),
 											}),
 										],
 									),

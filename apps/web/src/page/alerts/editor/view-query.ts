@@ -22,6 +22,8 @@ import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
 import { rawQueryEditor, REDUCER_SELECT_ID, type SqlView } from "./view-sql"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `RuleQuerySection`: Built-in, the query builder's
 // `QueryPanel`, or SQL, over the same draft.
@@ -161,7 +163,9 @@ const builtinRow = (h: H, text: string, htmlFor: string, hint: string | undefine
 				[h.Class("min-w-0 space-y-1")],
 				[
 					control,
-					...(hint === undefined ? [] : [h.p([h.Class("text-2xs text-muted-foreground")], [hint])]),
+					...(hint === undefined
+						? []
+						: [typography(h, { size: "2xs", tone: "muted", as: "p" }, [hint])]),
 				],
 			),
 		],
@@ -212,7 +216,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 							items: groupByItems(model),
 							placeholder: form.groupBy.length === 0 ? "service.name" : "",
 							emptyText: "No fields found",
-							className: "text-xs font-mono",
+							className: typographyClass({ size: "xs", mono: true }),
 							wrapperClassName: "w-full",
 							isDisabled: hasServices,
 						}),
@@ -240,7 +244,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 										inputGroupInput(h, {
 											id: "apdex-threshold",
 											type: "number",
-											controlClassName: "font-mono tabular-nums",
+											controlClassName: typographyClass({ mono: true, numeric: true }),
 											attributes: [
 												h.InputMode("numeric"),
 												h.Value(form.apdexThresholdMs),
@@ -310,10 +314,9 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 				},
 				toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 			}),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				["Each group is checked on its own and gets its own incident."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Each group is checked on its own and gets its own incident.",
+			]),
 		],
 	)
 
@@ -322,22 +325,19 @@ const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming 
 	return h.div(
 		[h.Class("space-y-2")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-3")],
-				[
-					segmentedSelect(h, {
-						options: KIND_OPTIONS,
-						value: kind,
-						onChange: (next) => Message.ClickedSignalKind({ kind: next }),
-						ariaLabel: "Query mode",
-						size: "sm",
-					}),
-					h.p(
-						[h.Class("min-w-0 flex-1 text-xs text-muted-foreground")],
-						[model.kindNotice ?? KIND_HINT.get(kind) ?? ""],
-					),
-				],
-			),
+			hstack(h, { gap: "3", wrap: true }, [
+				segmentedSelect(h, {
+					options: KIND_OPTIONS,
+					value: kind,
+					onChange: (next) => Message.ClickedSignalKind({ kind: next }),
+					ariaLabel: "Query mode",
+					size: "sm",
+				}),
+				h.p(
+					[h.Class("min-w-0 flex-1 text-xs text-muted-foreground")],
+					[model.kindNotice ?? KIND_HINT.get(kind) ?? ""],
+				),
+			]),
 			kind === "builtin"
 				? builtinForm(h, model, form)
 				: kind === "builder_query"

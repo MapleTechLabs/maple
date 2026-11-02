@@ -24,6 +24,7 @@ import { detailPanelHeader, edgeRow, healthTone, metricTile, metricValue, sample
 import { pickTimeSearch } from "../infra/kit/view-tabs"
 import { infrastructureTab } from "./view-service-infra"
 import * as ServiceMap from "../../service-map/map/service-map"
+import { hstack, vstack, vstackClass } from "../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -56,8 +57,7 @@ const header = (
 		accentColor,
 		[
 			statusDot(h, { tone: healthTone(errorRate) }),
-			h.div(
-				[h.Class("flex flex-col min-w-0")],
+			vstack(h, { shrink: true },
 				[
 					h.span([h.Class("text-sm font-semibold text-foreground truncate")], [inputs.serviceId]),
 					...(namespace
@@ -162,8 +162,7 @@ const cloudflareSection = (h: H, cloudflare: NonNullable<ReturnType<typeof cloud
 		[h.Class("space-y-3")],
 		[
 			separator(h, "horizontal", undefined),
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5" },
 				[
 					icon(h, "CloudflareIcon", { size: 12, style: { color: CLOUDFLARE_COLOR } }),
 					eyebrow(h, { as: "h4" }, ["Cloudflare edge"]),
@@ -281,8 +280,7 @@ export const servicePanel = (h: H, model: Model, inputs: ServicePanelInputs): Ht
 	const workloads = inputs.rows.workloads.filter((workload) => workload.serviceName === inputs.serviceId)
 	const runtimes = inputs.rows.runtimes.filter((runtime) => runtime.serviceName === inputs.serviceId)
 	const infraCount = workloads.length + runtimes.length
-	return h.div(
-		[h.Class("flex flex-col h-full bg-background overflow-hidden")],
+	return vstack(h, { className: "h-full bg-background overflow-hidden" },
 		[
 			header(h, inputs, accentColor, errorRate, overview?.serviceNamespace ?? ""),
 			h.submodel({
@@ -293,7 +291,7 @@ export const servicePanel = (h: H, model: Model, inputs: ServicePanelInputs): Ht
 				viewInputs: {
 					variant: "underline",
 					labels: ["Service", "Infrastructure"],
-					className: "flex flex-col flex-1 min-h-0",
+					className: vstackClass({ grow: true, className: "min-h-0" }),
 					listClassName: "shrink-0 px-4 pt-2",
 					panelClassName: "flex-1 min-h-0 mt-0",
 					tabContent: (value, label) =>

@@ -24,6 +24,7 @@ import {
 } from "../../../../components/infra/planetscale/metrics"
 import { formatWholePercent } from "../../../../components/infra/format"
 import { Message, type SortKey } from "./model"
+import { typography } from "../../../../ui/typography"
 
 // `PlanetScaleDatabaseTable` and its loading state.
 
@@ -128,7 +129,7 @@ const CELL = "text-right font-mono text-xs tabular-nums text-foreground-soft"
 const metaChip = (h: H, text: string): Html =>
 	h.span(
 		[h.Class("hidden shrink-0 xl:inline-flex")],
-		[h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])],
+		[typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])],
 	)
 
 const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [

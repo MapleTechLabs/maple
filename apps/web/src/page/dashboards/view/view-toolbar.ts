@@ -12,6 +12,7 @@ import type { Model } from "./model"
 import { isEditing } from "./update"
 import { variableSelects } from "./view-variables"
 import type { PageContext } from "../../contract"
+import { hstack } from "../../../ui/stack"
 
 // The dashboard toolbar and `RefreshControls`.
 
@@ -119,55 +120,52 @@ export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 				toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
 			}),
 			refreshControls(h, model),
-			h.div(
-				[h.Class("flex items-center gap-1")],
-				[
-					...(isEdit
-						? [
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										isDisabled: isReadOnly,
-										attributes: [
-											h.Key("add-widget"),
-											h.AriaLabel("Add widget"),
-											h.OnClick(Message.ClickedAddWidget()),
-										],
-									},
-									[
-										icon(h, "PlusIcon", {
-											attributes: [h.DataAttribute("icon", "inline-start")],
-										}),
-										h.span([h.Class("hidden @min-[560px]/page:inline")], ["Add widget"]),
+			hstack(h, { gap: "1" }, [
+				...(isEdit
+					? [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									isDisabled: isReadOnly,
+									attributes: [
+										h.Key("add-widget"),
+										h.AriaLabel("Add widget"),
+										h.OnClick(Message.ClickedAddWidget()),
 									],
-								),
-							]
-						: []),
-					button(
-						h,
-						{
-							variant: isEdit ? "default" : "outline",
-							size: "sm",
-							isDisabled: isReadOnly,
-							attributes: [
-								// One element across Edit and Done, so focus survives the toggle.
-								h.Key("toggle-edit"),
-								h.AriaLabel(isEdit ? "Done editing" : "Edit dashboard"),
-								h.OnClick(Message.ClickedToggleEdit()),
-							],
-						},
-						[
-							icon(h, isEdit ? "CheckIcon" : "PencilIcon", {
-								attributes: [h.DataAttribute("icon", "inline-start")],
-							}),
-							h.span([h.Class("hidden @min-[560px]/page:inline")], [isEdit ? "Done" : "Edit"]),
+								},
+								[
+									icon(h, "PlusIcon", {
+										attributes: [h.DataAttribute("icon", "inline-start")],
+									}),
+									h.span([h.Class("hidden @min-[560px]/page:inline")], ["Add widget"]),
+								],
+							),
+						]
+					: []),
+				button(
+					h,
+					{
+						variant: isEdit ? "default" : "outline",
+						size: "sm",
+						isDisabled: isReadOnly,
+						attributes: [
+							// One element across Edit and Done, so focus survives the toggle.
+							h.Key("toggle-edit"),
+							h.AriaLabel(isEdit ? "Done editing" : "Edit dashboard"),
+							h.OnClick(Message.ClickedToggleEdit()),
 						],
-					),
-					moreMenu(h, model),
-				],
-			),
+					},
+					[
+						icon(h, isEdit ? "CheckIcon" : "PencilIcon", {
+							attributes: [h.DataAttribute("icon", "inline-start")],
+						}),
+						h.span([h.Class("hidden @min-[560px]/page:inline")], [isEdit ? "Done" : "Edit"]),
+					],
+				),
+				moreMenu(h, model),
+			]),
 		],
 	)
 }

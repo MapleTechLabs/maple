@@ -25,6 +25,8 @@ import { type EventFilter, eventLineOf, unitContext, unitName } from "../kit/out
 import { EVENTS_PAGE } from "./command"
 import { Message, type Model, type UnitFilter } from "./model"
 import { emptyMessage } from "../../../ui/empty"
+import { typography, typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // The run's coverage ledger, its gaps and the event log.
 
@@ -51,25 +53,20 @@ const unitRow = (h: H, unit: SecurityAuditUnit): Html =>
 			tableCell(
 				h,
 				[
-					h.span(
-						[
-							h.Class("flex min-w-0 flex-col"),
-							h.Title(
+					vstack(h, { shrink: true, as: "span", attributes: [h.Title(
 								[unit.coverageId, unit.surface, unit.boundary, unit.agentId]
 									.filter((part) => part !== null)
 									.join("\n"),
-							),
-						],
+							)] },
 						[
 							h.span(
-								[h.Class(cn("truncate text-sm", unit.stale && "font-mono text-xs"))],
+								[h.Class(cn(typographyClass({ size: "sm", truncate: true }), unit.stale && typographyClass({ size: "xs", mono: true })))],
 								[unitName(unit)],
 							),
 							...(unit.stale || unitContext(unit) === ""
 								? []
 								: [
-										h.span(
-											[h.Class("truncate text-xs text-muted-foreground")],
+										typography(h, { size: "xs", tone: "muted", truncate: true },
 											[unitContext(unit)],
 										),
 									]),
@@ -87,12 +84,12 @@ const unitRow = (h: H, unit: SecurityAuditUnit): Html =>
 			tableCell(
 				h,
 				[unit.wave > 0 ? String(unit.wave) : ""],
-				cn("text-right font-mono tabular-nums", WIDE_COLUMN),
+				cn(typographyClass({ mono: true, numeric: true, className: "text-right" }), WIDE_COLUMN),
 			),
 			tableCell(
 				h,
 				[h.span([h.Class("block max-w-40 truncate"), h.Title(resultText(unit))], [resultText(unit)])],
-				cn("text-right text-xs text-muted-foreground", WIDE_COLUMN),
+				cn(typographyClass({ size: "xs", tone: "muted", className: "text-right" }), WIDE_COLUMN),
 			),
 		],
 		undefined,
@@ -157,7 +154,7 @@ export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Ht
 	panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Coverage ledger",
-			action: h.span([h.Class("text-xs text-muted-foreground")], [`${run.unitTotal} units`]),
+			action: typography(h, { size: "xs", tone: "muted" }, [`${run.unitTotal} units`]),
 		}),
 		h.div(
 			[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
@@ -190,8 +187,7 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 	return panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Gaps",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
+			action: typography(h, { size: "xs", tone: "muted" },
 				[`${gapCount(run)} units not covered`],
 			),
 		}),
@@ -205,7 +201,7 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 							[h.Class("font-mono text-lg tabular-nums")],
 							[String(entry.statuses.reduce((sum, status) => sum + countOf(run, status), 0))],
 						),
-						h.span([h.Class("text-xs text-muted-foreground")], [entry.label]),
+						typography(h, { size: "xs", tone: "muted" }, [entry.label]),
 					],
 				),
 			),
@@ -221,11 +217,10 @@ const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string): Html => {
 		[h.Key(event.id), h.Class("grid grid-cols-[4.5rem_1fr_auto] gap-3 px-4 py-3 text-xs")],
 		[
 			h.time(
-				[h.Class("font-mono tabular-nums text-muted-foreground"), h.Title(isoOf(event.at))],
+				[h.Class(typographyClass({ tone: "muted", mono: true, numeric: true })), h.Title(isoOf(event.at))],
 				[formatClock(event.at, timeZone)],
 			),
-			h.span(
-				[h.Class("flex min-w-0 flex-col gap-0.5")],
+			vstack(h, { gap: "0.5", shrink: true, as: "span" },
 				[
 					h.span(
 						[h.Class(cn("text-sm break-words", line.isProblem && "text-severity-warn"))],
@@ -233,11 +228,10 @@ const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string): Html => {
 					),
 					...(line.meta === null || line.meta === ""
 						? []
-						: [h.span([h.Class("font-mono text-muted-foreground")], [line.meta])]),
+						: [typography(h, { tone: "muted", mono: true }, [line.meta])]),
 				],
 			),
-			h.span(
-				[h.Class("font-mono tabular-nums text-muted-foreground")],
+			typography(h, { tone: "muted", mono: true, numeric: true },
 				[event.costUsd === null ? "" : formatUsd(event.costUsd)],
 			),
 		],
@@ -282,8 +276,7 @@ export const eventsPanel = (
 	panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Events",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
+			action: typography(h, { size: "xs", tone: "muted" },
 				[isLive(run) ? "Newest first · refreshes every 5 s" : "Newest first"],
 			),
 		}),

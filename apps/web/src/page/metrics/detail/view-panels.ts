@@ -32,6 +32,8 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { breakdownKeyOf } from "./update"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass } from "../../../ui/stack"
 
 // `MetricChart`, `MetricBreakdown` and `MetricMetadataPanel` (components/metrics/).
 
@@ -47,7 +49,7 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 			errorState(h, { failure, title: "Couldn't load metric data", onRetry: Message.ClickedRetryChart() }),
 		onData: (rows) =>
 			rows.length === 0
-				? emptyMessage(h, { className: "flex h-full items-center justify-center" }, [
+				? emptyMessage(h, { className: hstackClass({ justify: "center", className: "h-full" }) }, [
 						"No datapoints match this query in this window",
 					])
 				: model.themeColors === null || !isChartRuntimeReady(model.chartRuntime)
@@ -93,8 +95,7 @@ export const metricChart = (
 			title: h.span([h.Class("font-mono"), h.Title(label)], [label]),
 			action:
 				capped || unit !== ""
-					? h.span(
-							[h.Class("flex items-center gap-3 text-xs text-muted-foreground")],
+					? hstack(h, { gap: "3", as: "span", className: typographyClass({ size: "xs", tone: "muted" }) },
 							[
 								...(capped ? [h.span([], [`Top ${GROUP_BY_SERIES_LIMIT} series`])] : []),
 								...(unit === "" ? [] : [h.span([], ["unit: ", unit])]),
@@ -194,8 +195,7 @@ const attributesList = (h: H, model: Model): Html =>
 			}),
 		onData: (rows) =>
 			rows.length === 0
-				? h.p(
-						[h.Class("text-xs text-muted-foreground")],
+				? typography(h, { size: "xs", tone: "muted", as: "p" },
 						["This metric has no datapoint attributes."],
 					)
 				: h.ul(
@@ -207,7 +207,7 @@ const attributesList = (h: H, model: Model): Html =>
 									h.Class("flex items-center justify-between gap-2 text-xs"),
 								],
 								[
-									h.span([h.Class("truncate font-mono")], [row.attributeKey]),
+									typography(h, { mono: true, truncate: true }, [row.attributeKey]),
 									h.span(
 										[h.Class("shrink-0 font-mono text-muted-foreground")],
 										[formatNumber(row.usageCount)],
@@ -224,8 +224,7 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 		h.div(
 			[h.Class("space-y-2")],
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				hstack(h, { gap: "2", wrap: true },
 					[
 						metricTypeBadge(h, summary.metricType),
 						...(summary.unit === ""
@@ -242,7 +241,7 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 				),
 				...(summary.description === ""
 					? []
-					: [h.p([h.Class("text-xs text-muted-foreground")], [summary.description])]),
+					: [typography(h, { size: "xs", tone: "muted", as: "p" }, [summary.description])]),
 			],
 		),
 		keyValueList(h, { className: "gap-2" }, [
@@ -260,12 +259,10 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 					h.div(
 						[h.Class("space-y-1.5")],
 						[
-							h.p(
-								[h.Class("text-xs text-muted-foreground")],
+							typography(h, { size: "xs", tone: "muted", as: "p" },
 								["Emitted by ", countLabel(summary.services.length, "service")],
 							),
-							h.div(
-								[h.Class("flex flex-wrap gap-1.5")],
+							hstack(h, { gap: "1.5", align: "stretch", wrap: true },
 								summary.services.map((service) =>
 									badge(
 										h,
@@ -285,6 +282,6 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 				]),
 		h.div(
 			[h.Class("space-y-1.5")],
-			[h.p([h.Class("text-xs text-muted-foreground")], ["Attributes"]), attributesList(h, model)],
+			[typography(h, { size: "xs", tone: "muted", as: "p" }, ["Attributes"]), attributesList(h, model)],
 		),
 	])

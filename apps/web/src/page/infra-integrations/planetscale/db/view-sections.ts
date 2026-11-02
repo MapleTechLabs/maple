@@ -18,6 +18,8 @@ import type { EventEntry, QueryInsights } from "../data"
 import { presentEvent } from "./derive"
 import { Message } from "./model"
 import type { Trigger } from "./view-charts"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // The Activity feed and Top queries sections of `PlanetScaleDatabaseData`.
 
@@ -67,7 +69,7 @@ const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): H
 							[
 								h.AriaLabel("Open in PlanetScale"),
 								h.Class(
-									"shrink-0 text-muted-foreground hover:text-foreground active:text-foreground",
+									typographyClass({ tone: "muted", className: "shrink-0 hover:text-foreground active:text-foreground" }),
 								),
 								h.Href(event.url),
 								h.Rel("noreferrer"),
@@ -79,7 +81,7 @@ const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): H
 			relativeTime(h, {
 				value: event.occurredAt,
 				...clock,
-				className: "shrink-0 tabular-nums text-muted-foreground",
+				className: typographyClass({ tone: "muted", numeric: true, className: "shrink-0" }),
 				trigger: trigger(eventTriggerId(event)),
 			}),
 		],
@@ -109,8 +111,7 @@ export const activitySection = (
 		AsyncData.isIdle(slot) || AsyncData.isLoading(slot)
 			? activityLoading(h)
 			: AsyncData.isFailure(slot) || AsyncData.isStale(slot)
-				? h.p(
-						[h.Class("py-2 text-xs text-muted-foreground")],
+				? typography(h, { size: "xs", tone: "muted", as: "p", className: "py-2" },
 						["Couldn't load the deploy timeline for this window."],
 					)
 				: events.length === 0
@@ -130,8 +131,7 @@ export const activitySection = (
 		[
 			sectionHeading(h, {
  title: "Activity",
-				actions: h.span(
-					[h.Class("font-mono text-2xs text-muted-foreground")],
+				actions: typography(h, { size: "2xs", tone: "muted", mono: true },
 					[String(events.length)],
 				),
 			}),
@@ -194,8 +194,7 @@ const insightsList = (
 		[h.Class("space-y-1.5")],
 		response.rows.map((row) =>
 			panel(h, { className: "px-2.5 py-2" }, [
-				h.div(
-					[h.Class("flex items-start justify-between gap-2")],
+				hstack(h, { gap: "2", align: "start", justify: "between" },
 					[
 						h.p(
 							[
@@ -228,9 +227,8 @@ const insightsList = (
 						),
 					],
 					[
-						h.span([h.Class("font-mono tabular-nums")], [formatNumber(row.queryCount), " calls"]),
-						h.span(
-							[h.Class("font-mono tabular-nums")],
+						typography(h, { mono: true, numeric: true }, [formatNumber(row.queryCount), " calls"]),
+						typography(h, { mono: true, numeric: true },
 							[
 								"p50 ",
 								latencyValue(h, {
@@ -240,8 +238,7 @@ const insightsList = (
 								}),
 							],
 						),
-						h.span(
-							[h.Class("font-mono tabular-nums")],
+						typography(h, { mono: true, numeric: true },
 							[
 								"p99 ",
 								latencyValue(h, {
@@ -251,8 +248,7 @@ const insightsList = (
 								}),
 							],
 						),
-						h.span(
-							[h.Class("font-mono tabular-nums")],
+						typography(h, { mono: true, numeric: true },
 							[formatNumber(row.rowsReadPerQuery), " rows read/query"],
 						),
 						...(row.statementType ? [h.span([h.Class("uppercase")], [row.statementType])] : []),

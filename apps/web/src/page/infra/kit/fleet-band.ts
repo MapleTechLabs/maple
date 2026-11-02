@@ -7,6 +7,7 @@ import { segmentedBar } from "../../../ui/meter"
 import { skeleton } from "../../../ui/skeleton"
 import { statFigure } from "../../../ui/stat-figure"
 import { statRailItem } from "../../kit/stat-rail"
+import { typography } from "../../../ui/typography"
 
 // `FleetBand` and `FleetBandLoading`.
 
@@ -53,10 +54,10 @@ export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: Fleet
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0")],
 				[
 					// The same anatomy as the cells beside it: label, value, then the bar and its caption.
-					h.span(
-						[h.Class("truncate text-2xs font-medium text-muted-foreground")],
-						[capitalize(pluralize(2, options.noun)), " in scope"],
-					),
+					typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [
+						capitalize(pluralize(2, options.noun)),
+						" in scope",
+					]),
 					statFigure(h, { value: formatNumber(options.total), size: "sm", className: "-mt-1" }),
 					options.total > 0
 						? segmentedBar(h, {
@@ -73,7 +74,7 @@ export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: Fleet
 								})),
 							})
 						: h.div([h.Class("h-1.5 w-full rounded-full bg-muted")]),
-					h.span([h.Class("text-3xs text-muted-foreground")], [options.caption]),
+					typography(h, { size: "3xs", tone: "muted" }, [options.caption]),
 				],
 			),
 			...options.cells.map((cell) => {

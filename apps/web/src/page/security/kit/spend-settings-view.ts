@@ -9,6 +9,8 @@ import { meter } from "../../../ui/meter"
 import { formatUsd } from "./format"
 import { modelPicker } from "./model-picker"
 import { DIALOG_ID, draftLimitOf, errorsOf, Message, type Model, NO_ERRORS } from "./spend-settings"
+import { typography } from "../../../ui/typography"
+import { vstack, vstackClass } from "../../../ui/stack"
 
 // The Spend & models form inside the shared FormDialog.
 
@@ -90,18 +92,12 @@ const modelsField = (h: H, model: Model, error?: string): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-3 border-t pt-5")],
 		[
-			h.div(
-				[h.Class("flex flex-col gap-1")],
-				[
-					h.span([h.Class("text-sm font-medium")], ["Default models"]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground")],
-						[
-							"Verification runs on a different model than hunting, so it does not share the hunter's blind spots. A target can override both.",
-						],
-					),
-				],
-			),
+			vstack(h, { gap: "1" }, [
+				typography(h, { size: "sm", weight: "medium" }, ["Default models"]),
+				typography(h, { size: "xs", tone: "muted" }, [
+					"Verification runs on a different model than hunting, so it does not share the hunter's blind spots. A target can override both.",
+				]),
+			]),
 			h.div(
 				[h.Class("grid grid-cols-2 gap-2")],
 				[
@@ -121,7 +117,13 @@ const modelsField = (h: H, model: Model, error?: string): Html =>
 			),
 			...(error === undefined
 				? []
-				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive-foreground")], [error])]),
+				: [
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+							[error],
+						),
+					]),
 		],
 	)
 
@@ -147,7 +149,7 @@ const spendSettingsDialog = (h: H, model: Model): Html => {
 		onSubmit: Message.Submitted(),
 		submitLabel: "Save changes",
 		isPending: model.isPending,
-		panelClassName: "flex flex-col gap-5",
+		panelClassName: vstackClass({ gap: "5" }),
 		fields: [
 			...failureAlert(h, model),
 			limitField(h, model, errors.limit),

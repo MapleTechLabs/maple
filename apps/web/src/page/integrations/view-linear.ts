@@ -21,6 +21,8 @@ import { LINEAR_ACCENT } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
+import { typography } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // The Linear card: connect, the connected workspace, and a revoked grant that needs a reconnect.
 
@@ -81,8 +83,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 				h.div(
 					[],
 					[
-						h.div(
-							[h.Class("flex items-center gap-2")],
+						hstack(h, { gap: "2" },
 							[
 								heading(h, { level: 3, variant: "section" }, ["Linear"]),
 								status.revoked
@@ -90,8 +91,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 									: badge(h, { variant: "ok" }, ["Connected"]),
 							],
 						),
-						h.p(
-							[h.Class("mt-1 text-xs text-muted-foreground")],
+						typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-1" },
 							[
 								status.revoked
 									? "Linear rejected Maple's access, so incidents no longer open or update issues. Reconnect to resume."
@@ -117,8 +117,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 						]
 					: []),
 				model.isAdmin
-					? h.div(
-							[h.Class("flex flex-wrap gap-2")],
+					? hstack(h, { gap: "2", align: "stretch", wrap: true },
 							[
 								button(
 									h,
@@ -144,7 +143,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 								),
 							],
 						)
-					: h.p([h.Class("text-2xs text-muted-foreground")], [ADMIN_ONLY]),
+					: typography(h, { size: "2xs", tone: "muted", as: "p" }, [ADMIN_ONLY]),
 				disconnectDialog(h, model, "linear"),
 			],
 			"gap-2",

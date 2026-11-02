@@ -12,6 +12,8 @@ import { pickAttr } from "./cloud-platforms"
 import type { AggregatedDuration, FlowNodeData } from "./flow-graph"
 import type { SpanDescription } from "./span-category"
 import { describeSpan } from "./span-category"
+import { typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // `FlowSpanNode` (packages/ui `traces/flow-node.tsx`).
 
@@ -92,7 +94,7 @@ const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string 
 /** `outcomeBadgeStyle` (packages/ui `lib/cloud-platforms/types.ts`). */
 const outcomeBadgeStyle = (bad: boolean): string =>
 	bad
-		? "bg-severity-error-a2 text-severity-error border-severity-error-a3"
+		? typographyClass({ tone: "error", className: "bg-severity-error-a2 border-severity-error-a3" })
 		: "bg-severity-info-a2 text-severity-info border-severity-info-a3"
 
 const statusBadge = <M>(
@@ -165,7 +167,12 @@ const missingCard = <M>(
 					h.span([h.Class("flex-1")]),
 					h.span(
 						[
-							h.Class(cn("font-mono tabular-nums", "text-foreground-subtle truncate")),
+							h.Class(
+								cn(
+									typographyClass({ mono: true, numeric: true }),
+									typographyClass({ tone: "subtle", truncate: true }),
+								),
+							),
 							h.Title(data.span.spanId),
 						],
 						[shortId(data.span.spanId, "span")],
@@ -249,45 +256,35 @@ export const flowSpanNode = <M>(
 									: icon(h, category.icon, { size: 14 }),
 							],
 						),
-						h.div(
-							[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-							[
-								h.div(
-									[h.Class("flex min-w-0 items-center gap-1.5")],
-									[
-										h.span(
-											[
-												h.Class(
-													cn(
-														"block min-w-0 truncate",
-														"font-mono",
-														"flex-1 text-2xs font-medium text-foreground",
-													),
-												),
-												h.Title(text),
-											],
-											[text],
-										),
-										...(badge === null ? [] : [badge]),
-									],
-								),
-								h.div(
+						vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+							hstack(h, { gap: "1.5", shrink: true }, [
+								h.span(
 									[
 										h.Class(
-											"flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground",
+											cn(
+												"block min-w-0 truncate",
+												"font-mono",
+												"flex-1 text-2xs font-medium text-foreground",
+											),
 										),
+										h.Title(text),
 									],
-									[
-										serviceDot(h, span.serviceName, "size-1.5"),
-										h.span([h.Class("truncate")], [span.serviceName]),
-										h.span([h.Class("shrink-0 text-foreground-faint")], ["·"]),
-										h.span([h.Class("shrink-0")], [category.label]),
-										h.span([h.Class("flex-1")]),
-										h.span([h.Class("shrink-0 tabular-nums"), h.Title(tooltip)], [main]),
-									],
+									[text],
 								),
-							],
-						),
+								...(badge === null ? [] : [badge]),
+							]),
+							h.div(
+								[h.Class("flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground")],
+								[
+									serviceDot(h, span.serviceName, "size-1.5"),
+									h.span([h.Class("truncate")], [span.serviceName]),
+									h.span([h.Class("shrink-0 text-foreground-faint")], ["·"]),
+									h.span([h.Class("shrink-0")], [category.label]),
+									h.span([h.Class("flex-1")]),
+									h.span([h.Class("shrink-0 tabular-nums"), h.Title(tooltip)], [main]),
+								],
+							),
+						]),
 					],
 				),
 				h.div(

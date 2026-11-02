@@ -10,6 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { cloudflareConnected } from "./view-cloudflare-connected"
 import { disconnectDialog } from "./view-disconnect"
+import { hstack } from "../../ui/stack"
 
 // `CloudflareAccountCard` and `CloudflareHeaderActions`.
 
@@ -83,23 +84,20 @@ export const cloudflareHeaderActions = (h: H, model: Model): ReadonlyArray<Html>
 	const multi = isMultiAccount(model)
 	const busy = isBusy(model)
 	return [
-		h.div(
-			[h.Class("flex items-center gap-2")],
-			[
-				cloudflareReconnectButton(h, model),
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "outline",
-						isDisabled: busy,
-						isLoading: model.disconnect.isPending,
-						attributes: [h.OnClick(Message.ClickedDisconnect())],
-					},
-					[multi ? "Disconnect all" : "Disconnect"],
-				),
-				disconnectDialog(h, model, multi ? "cloudflare-multi" : "cloudflare"),
-			],
-		),
+		hstack(h, { gap: "2" }, [
+			cloudflareReconnectButton(h, model),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isDisabled: busy,
+					isLoading: model.disconnect.isPending,
+					attributes: [h.OnClick(Message.ClickedDisconnect())],
+				},
+				[multi ? "Disconnect all" : "Disconnect"],
+			),
+			disconnectDialog(h, model, multi ? "cloudflare-multi" : "cloudflare"),
+		]),
 	]
 }

@@ -17,6 +17,8 @@ import { sectionHeading } from "../../kit/section-heading"
 import { actorInitials, KIND_DOT, KIND_LABEL, type VersionRow } from "./history"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `DashboardHistoryPanel`, `VersionListItem` and `PreviewBanner`: the version history panel.
 
@@ -54,14 +56,12 @@ const versionItem = (
 							KIND_DOT[version.changeKind],
 						),
 					}),
-					h.div(
-						[h.Class("flex items-start gap-2")],
+					hstack(h, { gap: "2", align: "start" },
 						[
 							h.div(
 								[h.Class("min-w-0 flex-1")],
 								[
-									h.div(
-										[h.Class("flex items-center gap-1.5")],
+									hstack(h, { gap: "1.5" },
 										[
 											eyebrow(
 												h,
@@ -138,8 +138,7 @@ const loading = (h: H): Html =>
 	h.div(
 		[h.Role("status"), h.AriaLabel("Loading history"), h.Class("flex flex-col gap-4 px-4 py-4")],
 		[0, 1, 2, 3].map(() =>
-			h.div(
-				[h.Class("flex flex-col gap-1.5")],
+			vstack(h, { gap: "1.5" },
 				[skeleton(h, "h-3 w-32"), skeleton(h, "h-2.5 w-48 opacity-60")],
 			),
 		),
@@ -153,7 +152,7 @@ const noHistory = (h: H): Html =>
 				emptyMedia(h, { className: "mb-3 size-9 rounded-full bg-muted" }, [
 					icon(h, "HistoryIcon", { size: 16, className: "text-muted-foreground" }),
 				]),
-				emptyTitle(h, ["No history yet"], "text-xs font-medium"),
+				emptyTitle(h, ["No history yet"], typographyClass({ size: "xs", weight: "medium" })),
 				emptyDescription(
 					h,
 					["Each save is captured here so you can revisit or restore."],
@@ -189,8 +188,7 @@ const list = (h: H, model: Model, versions: ReadonlyArray<VersionRow>, clock: Cl
 export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 	const versions = model.history.versions
 	const count = AsyncData.getOrElse(versions, () => []).length
-	return h.div(
-		[h.Class("flex h-full flex-col")],
+	return vstack(h, { className: "h-full" },
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 border-b px-4 py-3")],
@@ -248,8 +246,7 @@ export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Cl
 					relativeTime(h, { value: version.createdAt, ...clock, className: "truncate" }),
 				],
 			),
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5" },
 				[
 					button(
 						h,

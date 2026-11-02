@@ -131,7 +131,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `ui/skeleton.ts` `skeleton`, `skeletonSlowNote`, `skeletonList`: Port of packages/ui/src/components/ui/skeleton.tsx.
 - `ui/spinner.ts` `spinner`: Port of packages/ui/src/components/ui/spinner.tsx: the loader glyph, spinning, as a status.
 - `ui/sql-editor.ts` `sqlEditor`: `SqlEditor`: a SQL textarea whose text is drawn, syntax-highlighted, by a `<pre>` laid under it.
-- `ui/stack.ts` `hstack`, `vstack`: `HStack` and `VStack`: a flex row (items centred by default) or column with its gap on the spacing scale, instead of a hand-written `flex items-center gap-2` string.
+- `ui/stack.ts` `hstackClass`, `vstackClass`, `hstack`, `vstack`: `HStack` and `VStack`: a flex row (items centred by default) or column with its gap on the spacing scale, instead of a hand-written `flex items-center gap-2` string.
 - `ui/stat-figure.ts` `statFigure`: Port of packages/ui/src/components/ui/stat-figure.tsx: a headline number with a muted unit.
 - `ui/status-dot.ts` `statusDot`: `<StatusDot>`: a static, decorative status dot.
 - `ui/switch.ts` `switchControl`, `labelId`, `view` (stateful: Model, init, update): Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox.

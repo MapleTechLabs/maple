@@ -38,6 +38,8 @@ import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } f
 import { Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
+import { typography } from "../../../ui/typography"
+import { vstackClass } from "../../../ui/stack"
 
 // `/security/code/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
 
@@ -139,14 +141,13 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 	const state = Field.stateOf(model.reason, reasonError !== null)
 	if (!model.isAdmin)
 		return detailRailGroup(h, "Triage", [
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				["Only org admins can change a finding's status."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Only org admins can change a finding's status.",
+			]),
 		])
 	return detailRailGroup(h, "Triage", [
 		h.form(
-			[h.Class("flex flex-col gap-3"), h.OnSubmit(Message.SubmittedTriage())],
+			[h.Class(vstackClass({ gap: "3" })), h.OnSubmit(Message.SubmittedTriage())],
 			[
 				ToggleGroup.view(h, {
 					model: model.triage,
@@ -157,14 +158,11 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 					className: "w-full",
 					itemClassName: "min-w-0 flex-1 px-1",
 				}),
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
-					[
-						finding.status === "fixed"
-							? "A later run no longer finds this. Reopen it, dismiss it or accept the risk."
-							: "Fixed is set by a later run that no longer finds this fingerprint. A fixed finding reopens if it comes back.",
-					],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					finding.status === "fixed"
+						? "A later run no longer finds this. Reopen it, dismiss it or accept the risk."
+						: "Fixed is set by a later run that no longer finds this fingerprint. A fixed finding reopens if it comes back.",
+				]),
 				Field.field(h, { state }, [
 					Field.fieldLabel(h, { ids, state }, "Reason"),
 					textarea(h, {
@@ -264,7 +262,7 @@ const detailsPanel = (
 			),
 		]),
 		detailRailRow(h, { label: "Fingerprint", title: finding.fingerprint }, [
-			h.span([h.Class("truncate font-mono text-xs")], [finding.fingerprint]),
+			typography(h, { size: "xs", mono: true, truncate: true }, [finding.fingerprint]),
 			copyButton(h, {
 				label: "fingerprint",
 				status: model.copy.status,
@@ -286,14 +284,14 @@ const activityItem = (h: H, text: string, at: number, timeZone: string): Html =>
 		[h.Key(`${at}-${text}`), h.Class("flex flex-col gap-0.5 border-l-2 pl-3")],
 		[
 			h.span([h.Class("text-sm")], [text]),
-			h.span([h.Class("text-xs text-muted-foreground")], [formatTimestampInTimezone(at, { timeZone })]),
+			typography(h, { size: "xs", tone: "muted" }, [formatTimestampInTimezone(at, { timeZone })]),
 		],
 	)
 
 /** What the record says happened to it, newest first. */
 const activity = (h: H, finding: SecurityAuditFinding, timeZone: string): ReadonlyArray<Html> => [
 	h.ol(
-		[h.Class("flex flex-col gap-3")],
+		[h.Class(vstackClass({ gap: "3" }))],
 		[
 			...(finding.statusChangedAt === null
 				? []

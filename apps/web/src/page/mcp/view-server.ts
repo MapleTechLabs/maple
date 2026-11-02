@@ -49,6 +49,8 @@ import {
 	toolColor,
 	volumeSpark,
 } from "./view-kit"
+import { typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `/mcp/:service`: the tools page's layout for one MCP server. Toolbar, scope, a metric strip that
 // picks the chart, the tools table, then who calls, why calls fail, the protocol and what is sent.
@@ -251,8 +253,7 @@ const toolRow = <M>(
 		h,
 		{ onClick: options.onOpenTool(row.tool) },
 		[
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
+			hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" },
 				[
 					h.span(
 						[
@@ -280,8 +281,7 @@ const toolRow = <M>(
 				],
 			),
 			lastSeenCell(h, row.lastCallMs, options.nowMs, options.env.timeZone),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
+			hstack(h, { justify: "end", as: "span", className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }) },
 				[icon(h, "ChevronRightIcon", { size: 14 })],
 			),
 		],
@@ -487,8 +487,7 @@ const failureRow = <M>(h: HtmlBuilder<M>, row: McpFailureKind, calls: number): H
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2 text-xs")],
+					hstack(h, { gap: "2", wrap: true, className: typographyClass({ size: "xs" }) },
 						[row.label, ...row.codes.map((code) => attr(h, code))],
 					),
 					h.div([h.Class("mt-0.5 font-prose text-xs text-muted-foreground")], [row.detail]),

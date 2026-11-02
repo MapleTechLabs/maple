@@ -10,6 +10,7 @@ import type { AwsSetupMethod, AwsSetupPart } from "./aws"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
+import { typographyClass } from "../../ui/typography"
 
 // The AWS stack's setup, by method: shared by the connected card and the connect flow.
 
@@ -19,7 +20,7 @@ type H = HtmlBuilder<Message>
 export const CLOUDSHELL_URL = "https://us-east-1.console.aws.amazon.com/cloudshell/home?region=us-east-1"
 const CREATE_STACK_URL =
 	"https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create"
-export const SMALL = "text-xs text-muted-foreground"
+export const SMALL = typographyClass({ size: "xs", tone: "muted" })
 
 /** A generated file to copy, its name in the eyebrow; a long one scrolls under its copy button. */
 export const fileBlock = (h: H, model: Model, id: string, name: string, text: string): Html =>

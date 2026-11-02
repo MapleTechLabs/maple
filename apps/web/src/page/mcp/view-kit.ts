@@ -18,6 +18,8 @@ import type { ToolPercentile, ToolSeriesPoint } from "../agent-sessions/tools-ki
 import { type ToolPlotInputs, toolPlotView } from "../agent-sessions/tools-kit/series-chart"
 import { volumeSparkCell } from "../agent-sessions/tools-kit/spark"
 import type { McpClientKind } from "./data"
+import { typography } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // Pieces every MCP view shares: the chart cell over `toolPlotView`, section headings, client glyphs.
 
@@ -237,12 +239,13 @@ export const sectionTitle = <M>(
 			h.div(
 				[h.Class("flex items-baseline gap-2.5 font-mono")],
 				[
-					h.span([h.Class("text-xs font-medium text-foreground")], [title]),
+					typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [title]),
 					...(count === undefined
 						? []
 						: [
-								h.span(
-									[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
+								typography(
+									h,
+									{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 									[count],
 								),
 							]),
@@ -279,7 +282,7 @@ export const attr = <M>(h: HtmlBuilder<M>, name: string): Html =>
 
 /** The muted mono note on the right of a heading. */
 export const headingNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.span([h.Class("font-mono text-2xs text-foreground-subtle")], [text])
+	typography(h, { size: "2xs", tone: "subtle", mono: true }, [text])
 
 const CLIENT_ICONS = new Map<string, IconName>([
 	["Claude Code", "ClaudeIcon"],
@@ -330,13 +333,10 @@ export const mcpScopeRow = <M>(h: HtmlBuilder<M>, scope: string, count: string, 
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					eyebrow(h, { variant: "mono" }, ["Scope"]),
-					h.span([h.Class("text-2xs text-foreground-subtle")], [scope]),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				eyebrow(h, { variant: "mono" }, ["Scope"]),
+				typography(h, { size: "2xs", tone: "subtle" }, [scope]),
+			]),
 			h.span(
 				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
 				[

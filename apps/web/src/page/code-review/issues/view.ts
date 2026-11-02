@@ -25,6 +25,7 @@ import { searchBox } from "../kit/search"
 import { type FilterKey, Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS } from "./update"
 import { findingsList } from "./view-list"
+import { vstack } from "../../../ui/stack"
 
 // The code review issues page.
 
@@ -138,8 +139,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							isLoading: AsyncData.isRefreshing(model.findings.data),
 							onLoadMore: Message.ClickedLoadMore(),
 						})
-			return h.div(
-				[h.Class("flex flex-col gap-3")],
+			return vstack(h, { gap: "3" },
 				[findingsList(h, model, response.findings, timeZone), ...(footer === null ? [] : [footer])],
 			)
 		},

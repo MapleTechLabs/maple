@@ -18,6 +18,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import type { ViewOverrides } from "../../../kit/message-response"
 import * as HbarChart from "../../../../charts/hbar-chart"
 import { type CodeHost, codeBlock } from "./view-code"
+import { typographyClass } from "../../../../ui/typography"
 
 // The chat's own markdown elements over Streamdown's: tables on Maple's `Table` with recognised
 // cells, and ```chart fences as the query builder's plots.
@@ -69,7 +70,7 @@ const cellValue = <M>(h: HtmlBuilder<M>, value: Exclude<CellValue, { kind: "plai
 				h,
 				`/traces/${encodeURIComponent(value.traceId)}`,
 				value.traceId,
-				"font-mono text-foreground",
+				typographyClass({ tone: "foreground", mono: true }),
 			)
 		case "service":
 			return entityRef(h, `/services/${encodeURIComponent(value.name)}`, value.name, "text-foreground")
@@ -177,7 +178,12 @@ const chartFrame = <M>(h: HtmlBuilder<M>, title: string | null, children: Readon
 		[
 			...(title === null
 				? []
-				: [h.figcaption([h.Class("text-2xs font-medium text-muted-foreground")], [title])]),
+				: [
+						h.figcaption(
+							[h.Class(typographyClass({ size: "2xs", tone: "muted", weight: "medium" }))],
+							[title],
+						),
+					]),
 			...children,
 		],
 	)

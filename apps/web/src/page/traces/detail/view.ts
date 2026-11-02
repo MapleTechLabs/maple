@@ -31,6 +31,7 @@ import { errorCallout, productEvents, traceErrors } from "./view-findings"
 import { detailLoading, traceNotFound } from "./view-states"
 import { anatomyStrip } from "./view-summary"
 import * as Waterfall from "./waterfall"
+import { vstackClass } from "../../../ui/stack"
 
 // The trace detail page on `ResultPage`.
 
@@ -91,7 +92,7 @@ export const traceViewTabs = (h: HtmlBuilder<Message>, model: Model): Html =>
 		viewInputs: {
 			variant: "underline",
 			labels: ["Waterfall", "Timeline", "Flow"],
-			className: "flex flex-col h-full",
+			className: vstackClass({ className: "h-full" }),
 			listClassName: "shrink-0",
 			panelClassName: "flex-1 min-h-0",
 			tabContent: (value: string, label: string) => [

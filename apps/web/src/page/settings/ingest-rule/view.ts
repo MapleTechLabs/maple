@@ -18,6 +18,8 @@ import type { Model } from "./model"
 import { actionClause } from "./view-action"
 import { conditionsClause, type H, signalsClause } from "./view-form"
 import { previewPanel } from "./view-preview"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `/settings/ingestion/rules/new` and `/:id`: the sentence form, its preview and the action bar.
 
@@ -58,8 +60,7 @@ const nameRow = (h: H, model: Model): Html =>
 
 const problemsList = (h: H, problems: ReadonlyArray<string>): Html =>
 	problems.length === 0
-		? h.span(
-				[h.Class("text-severity-info flex items-center gap-1.5 text-xs")],
+		? hstack(h, { gap: "1.5", as: "span", className: typographyClass({ size: "xs", className: "text-severity-info" }) },
 				[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
 			)
 		: h.div(
@@ -98,12 +99,10 @@ const actionBar = (h: H, model: Model): Html => {
 							alertDescription(h, [failureMessage(model.saveFailure)]),
 						]),
 					]),
-			h.div(
-				[h.Class("flex items-center justify-between gap-4")],
+			hstack(h, { gap: "4", justify: "between" },
 				[
 					problemsList(h, problems),
-					h.div(
-						[h.Class("flex shrink-0 items-center gap-2")],
+					hstack(h, { gap: "2", className: "shrink-0" },
 						[
 							linkButton(h, { variant: "outline", href: ingestionHref() }, ["Cancel"]),
 							button(

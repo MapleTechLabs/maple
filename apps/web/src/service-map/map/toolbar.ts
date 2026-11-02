@@ -12,6 +12,7 @@ import { toggle } from "../../ui/toggle"
 import * as Tooltip from "../../ui/tooltip"
 import { serviceDot } from "../../ui/values"
 import type { ColorMode, Focus } from "./state"
+import { hstack } from "../../ui/stack"
 
 // `ServiceMapToolbar` (packages/ui `service-map/service-map-toolbar.tsx`): focus a service (or the
 // focus chip, depth and "Hide rest"), the traffic threshold, colour mode and Re-sort.
@@ -208,8 +209,7 @@ const presentationControls = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, tr
 			// The value shows raw, capitalized by CSS.
 			renderValue: (value) => [value],
 			toView: (parts) =>
-				h.div(
-					[h.Class("ml-auto flex items-center gap-2")],
+				hstack(h, { gap: "2", className: "ml-auto" },
 					[
 						...parts,
 						button(

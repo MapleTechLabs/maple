@@ -22,6 +22,8 @@ import type { DisplayRow, Sort } from "./derive"
 import { Message } from "./message"
 import { errorChip as sharedErrorChip, TOOL_CHIP, TURN_CHIP } from "../kit/error-chip"
 import { moreChip } from "../kit/more-chip"
+import { typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass } from "../../../ui/stack"
 
 // The agent sessions list, windowed.
 // TODO(tooltip): every `Hint` is drawn as its trigger; the popups are not ported.
@@ -215,13 +217,12 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 		[h.Class("min-w-0")],
 		[
 			rowLink(h, { href, attributes: [h.AriaHidden(true), h.Tabindex(-1)] }),
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-2")],
+			hstack(h, { gap: "2", shrink: true },
 				[
 					h.span(
 						[
 							h.AriaLabel(vendor),
-							h.Class("flex shrink-0 items-center"),
+							h.Class(hstackClass({ className: "shrink-0" })),
 							...triggerAttributes(h),
 							h.Role("img"),
 						],
@@ -325,7 +326,7 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const total = hasBuckets ? drawnTotal : row.totalTokens
 	if (total === 0) return null
 	if (!hasBuckets) {
-		return hint(h, "font-mono text-xs tabular-nums text-muted-foreground", [formatNumber(total)])
+		return hint(h, typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }), [formatNumber(total)])
 	}
 	const input = {
 		label: "in",
@@ -366,7 +367,7 @@ const errorChip = (
 const errorChips = (h: H, row: DisplayRow): Html => {
 	// A measured zero reads "0"; the dash is kept for a value that does not apply.
 	if (row.errorSpanCount === 0)
-		return h.span([h.Class(cn("font-mono text-xs tabular-nums", NIL_VALUE))], ["0"])
+		return h.span([h.Class(cn(typographyClass({ size: "xs", mono: true, numeric: true }), NIL_VALUE))], ["0"])
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
 	return h.div(
@@ -406,11 +407,7 @@ const servicesCell = (h: H, services: ReadonlyArray<string>): Html | null => {
 	const first = servicePills(h, services.slice(0, 1))
 	return first === null
 		? null
-		: h.div(
-				[
-					h.Class("flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"),
-					h.Title(services.join(", ")),
-				],
+		: hstack(h, { gap: "1.5", shrink: true, className: typographyClass({ size: "xs", tone: "muted" }), attributes: [h.Title(services.join(", "))] },
 				[
 					first,
 					...(services.length > 1
@@ -427,11 +424,11 @@ const cellsOf = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<Html
 	sessionCell(h, row, context),
 	servicesCell(h, row.serviceNames),
 	modelCell(h, row, context),
-	hint(h, "font-mono text-xs tabular-nums", measure(h, formatSessionDuration(row.durationMs))),
+	hint(h, typographyClass({ size: "xs", mono: true, numeric: true }), measure(h, formatSessionDuration(row.durationMs))),
 	workCount(h, "PixelSparkleIcon", "text-chart-ai-inference", row.llmCalls),
 	workCount(h, "GearIcon", "text-chart-ai-tool", row.toolCalls),
 	tokenBar(h, row),
-	row.cost > 0 ? hint(h, "font-mono text-xs tabular-nums", [formatCost(row.cost)]) : null,
+	row.cost > 0 ? hint(h, typographyClass({ size: "xs", mono: true, numeric: true }), [formatCost(row.cost)]) : null,
 	errorChips(h, row),
 	startedAt(h, row, context, "block truncate text-xs text-muted-foreground"),
 ]

@@ -35,6 +35,8 @@ import {
 } from "../tools-kit/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -97,9 +99,9 @@ const SORT_FIELDS = new Map<string, (row: Prepared) => number>([
 
 const groupTitle = (h: H, row: Prepared): Html =>
 	row.fingerprint === UNGROUPED_FINGERPRINT
-		? h.span([h.Class("truncate text-muted-foreground")], ["Failures recorded before error grouping"])
+		? typography(h, { tone: "muted", truncate: true }, ["Failures recorded before error grouping"])
 		: row.display === ""
-			? h.span([h.Class("truncate text-muted-foreground")], ["No error message recorded"])
+			? typography(h, { tone: "muted", truncate: true }, ["No error message recorded"])
 			: errorTextLine(h, row.tokens)
 
 export type ErrorsTableInputs = Readonly<{
@@ -211,8 +213,7 @@ const errorRow = (
 				className:
 					"hidden w-24 shrink-0 text-right font-mono text-2xs tabular-nums text-foreground-subtle @min-[800px]/panel:block",
 			}),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
+			hstack(h, { justify: "end", as: "span", className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }) },
 				[icon(h, "ChevronRightIcon", { size: 14, attributes: [h.AriaHidden(true)] })],
 			),
 		],
@@ -392,15 +393,10 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 					h.div(
 						[h.Class("flex items-baseline gap-2.5")],
 						[
-							h.span([h.Class("text-xs font-medium text-foreground")], ["Errors"]),
+							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Errors"]),
 							inputs.isLoading
 								? skeleton(h, "h-2.5 w-36 self-center")
-								: h.span(
-										[
-											h.Class(
-												"text-2xs leading-3.5 tabular-nums text-foreground-subtle",
-											),
-										],
+								: typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 										[
 											formatNumber(failures),
 											" failed ",
@@ -497,8 +493,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 												],
 											),
 											...masks.map((label) =>
-												h.span(
-													[h.Key(label), h.Class("flex items-center gap-1.5")],
+												hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(label)] },
 													[
 														maskChip(h, label, "", "text-2xs leading-3.5"),
 														h.span([], [MASK_MEANINGS.get(label) ?? ""]),

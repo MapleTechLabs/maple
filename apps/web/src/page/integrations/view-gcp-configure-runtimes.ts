@@ -12,6 +12,7 @@ import { OTEL_DOCS } from "./gcp-configure-copy"
 import { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { GCP_LINK } from "./view-gcp-parts"
+import { typographyClass } from "../../ui/typography"
 
 // `RuntimeFields`: the runtimes whose application output Google Cloud forwards.
 
@@ -73,7 +74,7 @@ export const runtimeFields = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+								typographyClass({ size: "xs", tone: "muted", weight: "normal", className: "h-auto p-0 hover:text-foreground active:text-foreground" }),
 								GCP_LINK,
 							),
 							attributes: [h.OnClick(Message.ClickedGcpUseOpenTelemetry())],

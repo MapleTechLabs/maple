@@ -10,6 +10,8 @@ import { icon, type IconName } from "../../../../ui/icon"
 import { inlineCode } from "../../../../ui/inline-code"
 import { serviceDot } from "../../../../ui/values"
 import type { Message } from "./model"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `GcpWorkloadRail`.
 
@@ -124,8 +126,9 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 					? []
 					: [
 							detailRailField(h, { label: "Labels" }, [
-								h.div(
-									[h.Class("flex flex-wrap gap-1")],
+								hstack(
+									h,
+									{ gap: "1", align: "stretch", wrap: true },
 									labels.map((text) =>
 										h.span(
 											[h.Class("flex min-w-0 max-w-full"), h.Title(text)],
@@ -148,8 +151,9 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 				: [
 						detailRailGroup(h, "Traced as", [
 							options.traced.service === null
-								? h.p(
-										[h.Class("text-2xs leading-relaxed text-muted-foreground")],
+								? typography(
+										h,
+										{ size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" },
 										[
 											`No service named ${options.traced.name} sent spans in this window, so Google Cloud's metrics are all there is.`,
 										],

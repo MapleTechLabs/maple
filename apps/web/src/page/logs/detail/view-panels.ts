@@ -30,6 +30,7 @@ import {
 	TRACE_LOG_LIMIT,
 } from "./panels"
 import { copyStatusOf } from "./update"
+import { hstack } from "../../../ui/stack"
 
 // The log's error banner, context panel and trace timeline.
 
@@ -204,8 +205,7 @@ export const contextPanel = (
 	return h.div(
 		[h.Class("flex h-full min-h-0 flex-col gap-1.5")],
 		[
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-2")],
+			hstack(h, { gap: "2", className: "shrink-0" },
 				[
 					heading(
 						h,

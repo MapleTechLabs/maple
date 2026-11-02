@@ -14,6 +14,7 @@ import { serviceDot } from "../../../ui/values"
 import { severityLabel } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
+import { hstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -86,8 +87,7 @@ export const heroHeader = (
 	return h.div(
 		[h.Class("border-b px-4 py-3 shrink-0"), ...(tone === undefined ? [] : [h.Style(tone)])],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
+			hstack(h, { gap: "2" },
 				[
 					severityTrigger(h, log),
 					badge(h, { variant: "outline", size: "xs", mono: true }, [

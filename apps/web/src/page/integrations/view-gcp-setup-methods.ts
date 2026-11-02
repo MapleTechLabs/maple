@@ -10,6 +10,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
 import { copyOf, SMALL } from "./view-gcp-parts"
+import { typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // `GcpValue` and `GcpManualSteps`.
 
@@ -120,14 +122,11 @@ export const manualSteps = (
 ): Html => {
 	const firstTitle = options.steps[0]?.title ?? null
 	const open = configure.isManualTouched ? configure.manualOpen : firstTitle
-	return h.section(
-		[h.Class("flex flex-col gap-3")],
+	return vstack(h, { gap: "3", as: "section" },
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1")],
+			hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1" },
 				[
-					h.div(
-						[h.Class("flex flex-col gap-0.5")],
+					vstack(h, { gap: "0.5" },
 						[
 							heading(h, { level: 3, variant: "subsection" }, [options.heading]),
 							h.p([h.Class(SMALL)], [options.detail]),
@@ -146,8 +145,7 @@ export const manualSteps = (
 					return h.li(
 						[h.Key(step.title)],
 						[
-							h.div(
-								[h.Class("flex items-center gap-3 px-4 py-3")],
+							hstack(h, { gap: "3", className: "px-4 py-3" },
 								[
 									h.span(
 										[
@@ -183,7 +181,7 @@ export const manualSteps = (
 											icon(h, "ChevronDownIcon", {
 												size: 14,
 												className: cn(
-													"shrink-0 text-muted-foreground transition-transform",
+													typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }),
 													expanded && "rotate-180",
 												),
 											}),

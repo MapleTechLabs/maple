@@ -6,6 +6,7 @@ import * as ToggleGroup from "../../ui/toggle-group"
 import type { ConfigureModel, SetupMethod } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
+import { hstack, vstack, vstackClass } from "../../ui/stack"
 
 // `GcpMethodChoice`: one row per way to connect.
 
@@ -50,8 +51,7 @@ const flavourToggle = (h: H, configure: ConfigureModel, flavour: "terraform" | "
 	h.div(
 		[h.Class("flex flex-col gap-1.5 pl-7")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-3")],
+			hstack(h, { gap: "3", wrap: true },
 				[
 					ToggleGroup.view(h, {
 						model: { ...configure.flavourGroup, values: [flavour] },
@@ -83,7 +83,7 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 		items: ITEMS,
 	}
 	return h.fieldset(
-		[h.Class("flex flex-col gap-3")],
+		[h.Class(vstackClass({ gap: "3" }))],
 		[
 			h.legend(
 				[h.Class(cn(GCP_TITLE, "mb-3"))],
@@ -91,11 +91,9 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 			),
 			RadioGroup.radioGroup(h, { className: "gap-0 divide-y divide-border-subtle rounded-md border" }, [
 				...METHODS.map((option) =>
-					h.div(
-						[h.Key(option.value), h.Class("flex flex-col gap-3 p-4")],
+					vstack(h, { gap: "3", className: "p-4", attributes: [h.Key(option.value)] },
 						[
-							h.div(
-								[h.Class("flex items-start gap-3")],
+							hstack(h, { gap: "3", align: "start" },
 								[
 									...RadioGroup.radio(h, config, option.value, "mt-0.5"),
 									label(

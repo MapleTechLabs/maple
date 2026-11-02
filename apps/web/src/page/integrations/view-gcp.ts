@@ -26,6 +26,7 @@ import { gcpConfigure } from "./view-gcp-configure"
 import { gcpDialogs } from "./view-gcp-dialogs"
 import { copyScriptButton, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
+import { hstack, vstack } from "../../ui/stack"
 
 // `GcpIntegrationCard` and `GcpHeaderStatus`.
 
@@ -57,8 +58,7 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
+			hstack(h, { gap: "2", wrap: true },
 				[
 					openCloudShellButton(h, entry.hostProjectId),
 					copyScriptButton(h, model, `removed-${entry.id}`, entry.cleanupScript, "cleanup script"),
@@ -103,8 +103,7 @@ const byStatus = (
 		...gcpConfigure(h, model, timeZone),
 	]
 	if (connectors.length === 0)
-		return h.div(
-			[h.Class("flex flex-col gap-4")],
+		return vstack(h, { gap: "4" },
 			[
 				...cleanupPanels(h, model),
 				gcpReconnect(
@@ -122,8 +121,7 @@ const byStatus = (
 			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, model.nowMs)),
 	)
 	const band = usageBand(h, model, connectors)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(h, { gap: "4" },
 		[
 			...cleanupPanels(h, model),
 			...(band === null ? [] : [band]),

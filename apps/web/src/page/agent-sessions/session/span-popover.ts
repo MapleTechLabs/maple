@@ -27,6 +27,8 @@ import { CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 import { detailsSection, logsSection, metaStrip, toolCallsSection } from "./span-popover-details"
 import { messagesSection, POPOVER_KEY } from "./span-popover-messages"
 import { payloadCopyButton } from "./transcript-kit"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The span popover over its expansion: one span
 // inspected over the whole page, from the Overview's findings, the flow's nodes and the waterfall's rows.
@@ -87,8 +89,7 @@ const expansion = (
 				[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-border border-b px-5 pb-2")],
 				[
 					tabStrip(h, active, messages.length, toolCalls.length),
-					h.div(
-						[h.Class("ml-auto flex items-center gap-2")],
+					hstack(h, { gap: "2", className: "ml-auto" },
 						[
 							payloadCopyButton(h, model, {
 								key: `${keyPrefix}:json`,
@@ -243,9 +244,8 @@ const titleRow = (
 				attributes: [h.AriaHidden(true)],
 			}),
 			h.span([h.Class("min-w-0 truncate font-medium font-mono text-sm")], [span.spanName]),
-			...(subtitle === "" ? [] : [h.span([h.Class("text-muted-foreground text-xs")], [subtitle])]),
-			h.div(
-				[h.Class("ml-auto flex items-center gap-2")],
+			...(subtitle === "" ? [] : [typography(h, { size: "xs", tone: "muted" }, [subtitle])]),
+			hstack(h, { gap: "2", className: "ml-auto" },
 				[
 					...(isTraceDoor
 						? [

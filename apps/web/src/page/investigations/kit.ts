@@ -8,6 +8,8 @@ import { bareInput } from "../../ui/bare-input"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { icon, type IconName } from "../../ui/icon"
+import { typographyClass } from "../../ui/typography"
+import { hstackClass } from "../../ui/stack"
 
 // The investigation status badge and confidence meter.
 
@@ -91,13 +93,16 @@ export const confidenceMeter = <M>(
 ): Html => {
 	if (confidence === null)
 		return h.span(
-			[h.Class(cn("text-xs text-foreground-subtle", className)), h.Title("No diagnosis yet")],
+			[
+				h.Class(cn(typographyClass({ size: "xs", tone: "subtle" }), className)),
+				h.Title("No diagnosis yet"),
+			],
 			[EMPTY_VALUE],
 		)
 	const filled = FILLED[confidence]
 	return h.span(
 		[
-			h.Class(cn("inline-flex items-center gap-1.5", className)),
+			h.Class(cn(hstackClass({ gap: "1.5", inline: true }), className)),
 			h.Title(`Diagnosis confidence: ${confidence}`),
 		],
 		[

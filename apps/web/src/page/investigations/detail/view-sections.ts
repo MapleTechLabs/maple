@@ -35,6 +35,8 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Escalation, LogBucket, Model, OverviewRow, TracesRow } from "./model"
+import { typography } from "../../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../../ui/stack"
 
 // The Overview's lower sections and the Evidence tab: `ImpactStrip`, `SignalsCard`, `InvestigationMeta`,
 // `FollowUpComposer`, `CauseRecap`, `EvidenceTab` and `EvidenceChips`.
@@ -54,10 +56,10 @@ const STRIP = [
 ].join(" ")
 
 const factLane = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-1.5")],
-		[eyebrow(h, {}, [label]), h.div([h.Class("min-w-0 text-sm")], children)],
-	)
+	vstack(h, { gap: "1.5", shrink: true }, [
+		eyebrow(h, {}, [label]),
+		h.div([h.Class("min-w-0 text-sm")], children),
+	])
 
 const incidentWindow = (snapshot: V2Investigation["snapshot"], timeZone: string): string => {
 	const startedAt = snapshot.incidentStartedAt
@@ -95,7 +97,7 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 							services.map((service) =>
 								h.keyed("span")(
 									service,
-									[h.Class("flex items-center gap-1.5")],
+									[h.Class(hstackClass({ gap: "1.5" }))],
 									[
 										serviceDot(h, { serviceName: service, size: "sm" }),
 										h.span([h.Class("text-foreground")], [service]),
@@ -105,7 +107,7 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 						),
 			]),
 			factLane(h, "Incident window", [
-				h.span([h.Class("text-foreground tabular-nums")], [incidentWindow(snapshot, timeZone)]),
+				typography(h, { tone: "foreground", numeric: true }, [incidentWindow(snapshot, timeZone)]),
 			]),
 			...(occurrences != null && Number.isFinite(occurrences)
 				? [
@@ -131,24 +133,18 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 const rowLabel = (h: H, label: string): Html => eyebrow(h, { className: "w-14 shrink-0" }, [label])
 
 const figure = (h: H, value: string, unit: string, tone?: string): Html =>
-	h.span(
-		[h.Class("flex items-baseline gap-1.5")],
-		[
-			h.span([h.Class(cn("font-mono text-base text-foreground tabular-nums", tone))], [value]),
-			h.span([h.Class("text-xs text-muted-foreground")], [unit]),
-		],
-	)
+	hstack(h, { gap: "1.5", align: "baseline", as: "span" }, [
+		h.span([h.Class(cn("font-mono text-base text-foreground tabular-nums", tone))], [value]),
+		typography(h, { size: "xs", tone: "muted" }, [unit]),
+	])
 
 const rowSkeleton = (h: H, label: string, height: string): Html =>
-	h.div(
-		[h.Class("flex items-center gap-4")],
-		[rowLabel(h, label), skeleton(h, cn("flex-1 rounded-md", height))],
-	)
+	hstack(h, { gap: "4" }, [rowLabel(h, label), skeleton(h, cn("flex-1 rounded-md", height))])
 
 const rowNote = (h: H, label: string, note: string): Html =>
 	h.div(
 		[h.Class("flex items-baseline gap-4")],
-		[rowLabel(h, label), h.span([h.Class("text-sm text-muted-foreground")], [note])],
+		[rowLabel(h, label), typography(h, { size: "sm", tone: "muted" }, [note])],
 	)
 
 const segment = (h: H, share: number, color: string): ReadonlyArray<Html> =>
@@ -183,55 +179,49 @@ const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 		{ lines: 0, errors: 0, warnings: 0 },
 	)
 	const peak = Math.max(...bars.map((bar) => bar.total), 1)
-	return h.div(
-		[h.Class("flex flex-col gap-2.5")],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1")],
-				[
-					rowLabel(h, "Logs"),
-					figure(h, formatNumber(totals.lines), "lines"),
-					figure(
-						h,
-						formatNumber(totals.errors),
-						"errors",
-						totals.errors > 0 ? "text-severity-error" : undefined,
-					),
-					figure(
-						h,
-						formatNumber(totals.warnings),
-						"warnings",
-						totals.warnings > 0 ? "text-severity-warn" : undefined,
-					),
-				],
+	return vstack(h, { gap: "2.5" }, [
+		hstack(h, { align: "baseline", wrap: true, className: "gap-x-4 gap-y-1" }, [
+			rowLabel(h, "Logs"),
+			figure(h, formatNumber(totals.lines), "lines"),
+			figure(
+				h,
+				formatNumber(totals.errors),
+				"errors",
+				totals.errors > 0 ? "text-severity-error" : undefined,
 			),
-			h.div(
-				[h.Class("flex h-10 items-end gap-px"), h.AriaHidden(true)],
-				bars.map((bar) =>
-					h.keyed("span")(
-						bar.bucket,
-						[
-							h.Title(
-								`${formatNumber(bar.total)} lines${bar.errors ? ` · ${formatNumber(bar.errors)} errors` : ""}`,
-							),
-							h.Class("flex min-w-0 flex-1 flex-col justify-end overflow-hidden rounded-2xs"),
-							h.Style({
-								height: `${bar.total === 0 ? 0 : Math.max(6, (bar.total / peak) * 100)}%`,
-							}),
-						],
-						[
-							...segment(h, bar.errors / bar.total, SEVERITY_COLORS.ERROR ?? ""),
-							...segment(h, bar.warnings / bar.total, SEVERITY_COLORS.WARN ?? ""),
-							h.span([
-								h.Class("flex-1"),
-								h.Style({ "background-color": SEVERITY_COLORS.INFO ?? "" }),
-							]),
-						],
-					),
+			figure(
+				h,
+				formatNumber(totals.warnings),
+				"warnings",
+				totals.warnings > 0 ? "text-severity-warn" : undefined,
+			),
+		]),
+		h.div(
+			[h.Class("flex h-10 items-end gap-px"), h.AriaHidden(true)],
+			bars.map((bar) =>
+				h.keyed("span")(
+					bar.bucket,
+					[
+						h.Title(
+							`${formatNumber(bar.total)} lines${bar.errors ? ` · ${formatNumber(bar.errors)} errors` : ""}`,
+						),
+						h.Class("flex min-w-0 flex-1 flex-col justify-end overflow-hidden rounded-2xs"),
+						h.Style({
+							height: `${bar.total === 0 ? 0 : Math.max(6, (bar.total / peak) * 100)}%`,
+						}),
+					],
+					[
+						...segment(h, bar.errors / bar.total, SEVERITY_COLORS.ERROR ?? ""),
+						...segment(h, bar.warnings / bar.total, SEVERITY_COLORS.WARN ?? ""),
+						h.span([
+							h.Class("flex-1"),
+							h.Style({ "background-color": SEVERITY_COLORS.INFO ?? "" }),
+						]),
+					],
 				),
 			),
-		],
-	)
+		),
+	])
 }
 
 /** `SignalsCard`: what the one service did over the incident window, logs then traces. */
@@ -278,41 +268,35 @@ export const signalsCard = (h: H, model: Model, investigation: V2Investigation):
 		onRefreshing: tracesRow,
 	})
 	return panel(h, { className: "shrink-0 gap-4 px-5 py-4" }, [
-		h.header(
-			[h.Class("flex items-center gap-2")],
-			[
-				serviceDot(h, { serviceName: service }),
-				h.span(
-					[h.Class("min-w-0 truncate font-mono text-sm text-foreground"), h.Title(service)],
-					[service],
-				),
-				window.label
-					? h.span(
-							[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
-							["· ", window.label],
-						)
-					: h.span([h.Class("flex-1")]),
-				link(
-					h,
-					`/services/${encodeURIComponent(service)}`,
-					"shrink-0 text-xs text-primary hover:underline active:underline",
-					["Open service →"],
-				),
-			],
-		),
+		hstack(h, { gap: "2", as: "header" }, [
+			serviceDot(h, { serviceName: service }),
+			h.span(
+				[h.Class("min-w-0 truncate font-mono text-sm text-foreground"), h.Title(service)],
+				[service],
+			),
+			window.label
+				? h.span(
+						[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
+						["· ", window.label],
+					)
+				: h.span([h.Class("flex-1")]),
+			link(
+				h,
+				`/services/${encodeURIComponent(service)}`,
+				"shrink-0 text-xs text-primary hover:underline active:underline",
+				["Open service →"],
+			),
+		]),
 		logs,
 		traces,
 	])
 }
 
 const pair = (h: H, label: string, children: ReadonlyArray<Html | string>): Html =>
-	h.span(
-		[h.Class("flex min-w-0 items-baseline gap-2")],
-		[
-			h.span([h.Class("shrink-0 text-muted-foreground"), h.Title(label)], [label]),
-			h.span([h.Class("min-w-0 truncate text-foreground")], children),
-		],
-	)
+	hstack(h, { gap: "2", align: "baseline", shrink: true, as: "span" }, [
+		h.span([h.Class("shrink-0 text-muted-foreground"), h.Title(label)], [label]),
+		h.span([h.Class("min-w-0 truncate text-foreground")], children),
+	])
 
 const ESCALATION_LABEL = { queued: "Queued", sent: "Sent", skipped: "Skipped", failed: "Failed" } as const
 
@@ -425,10 +409,9 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 					...(issueId ? escalation(h, model) : []),
 				],
 			),
-			h.p(
-				[h.Class("text-2xs text-muted-foreground")],
-				[[investigation.model, tokens, opened].filter(Boolean).join(" · ")],
-			),
+			typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+				[investigation.model, tokens, opened].filter(Boolean).join(" · "),
+			]),
 		],
 	)
 }
@@ -472,38 +455,35 @@ export const evidenceChips = (
 ): Html | null =>
 	item.traceIds.length === 0 && item.logPatterns.length === 0
 		? null
-		: h.div(
-				[h.Class("flex flex-wrap items-center gap-1.5")],
-				[
-					...item.traceIds.map((traceId) =>
-						h.keyed("a")(
-							traceId,
-							[
-								h.Href(`/traces/${traceId}`),
-								h.Class("rounded-sm"),
-								...trigger(traceTipId(place, traceId)),
-							],
-							[
-								inlineCode(
-									h,
-									{
-										className:
-											"px-1.5 py-0.5 text-2xs text-primary hover:bg-surface-strong active:bg-surface-strong",
-									},
-									[shortId(traceId, "generic", { ellipsis: true })],
-								),
-							],
-						),
+		: hstack(h, { gap: "1.5", wrap: true }, [
+				...item.traceIds.map((traceId) =>
+					h.keyed("a")(
+						traceId,
+						[
+							h.Href(`/traces/${traceId}`),
+							h.Class("rounded-sm"),
+							...trigger(traceTipId(place, traceId)),
+						],
+						[
+							inlineCode(
+								h,
+								{
+									className:
+										"px-1.5 py-0.5 text-2xs text-primary hover:bg-surface-strong active:bg-surface-strong",
+								},
+								[shortId(traceId, "generic", { ellipsis: true })],
+							),
+						],
 					),
-					...item.logPatterns.map((pattern) =>
-						inlineCode(
-							h,
-							{ className: "bg-surface-strong px-1.5 py-0.5 text-2xs text-muted-foreground" },
-							[pattern],
-						),
+				),
+				...item.logPatterns.map((pattern) =>
+					inlineCode(
+						h,
+						{ className: "bg-surface-strong px-1.5 py-0.5 text-2xs text-muted-foreground" },
+						[pattern],
 					),
-				],
-			)
+				),
+			])
 
 /** `CauseRecap`: the suspected cause, one line above the evidence. */
 const causeRecap = (h: H, investigation: V2Investigation): ReadonlyArray<Html> => {
@@ -554,49 +534,46 @@ export const evidenceTab = (h: H, investigation: V2Investigation, trigger: TipTr
 		[h.Class("flex shrink-0 flex-col gap-6")],
 		[
 			...causeRecap(h, investigation),
-			h.section(
-				[h.Class("flex shrink-0 flex-col gap-3.5")],
-				[
-					sectionHeading(h, {
-						title: "Evidence",
-						hint: `${countLabel(evidence.length, "finding")}${traceCount > 0 ? ` · ${countLabel(traceCount, "trace")}` : ""}`,
+			vstack(h, { as: "section", className: "shrink-0 gap-3.5" }, [
+				sectionHeading(h, {
+					title: "Evidence",
+					hint: `${countLabel(evidence.length, "finding")}${traceCount > 0 ? ` · ${countLabel(traceCount, "trace")}` : ""}`,
+				}),
+				h.ol(
+					[h.Class("flex flex-col border-t")],
+					evidence.map((item, index) => {
+						const chips = evidenceChips(h, item, "evidence", trigger)
+						return h.keyed("li")(
+							`${index}:${item.note}`,
+							[h.Class("flex items-start gap-4 border-b px-1 py-4")],
+							[
+								h.span(
+									[
+										h.Class(
+											"mt-0.5 w-5.5 shrink-0 font-mono text-xs font-medium text-muted-foreground tabular-nums",
+										),
+									],
+									[String(index + 1).padStart(2, "0")],
+								),
+								h.div(
+									[h.Class("flex min-w-0 flex-1 flex-col gap-2")],
+									[
+										...(item.note
+											? [
+													h.p(
+														[h.Class("text-sm leading-6 text-foreground")],
+														[item.note],
+													),
+												]
+											: []),
+										...(chips === null ? [] : [chips]),
+									],
+								),
+							],
+						)
 					}),
-					h.ol(
-						[h.Class("flex flex-col border-t")],
-						evidence.map((item, index) => {
-							const chips = evidenceChips(h, item, "evidence", trigger)
-							return h.keyed("li")(
-								`${index}:${item.note}`,
-								[h.Class("flex items-start gap-4 border-b px-1 py-4")],
-								[
-									h.span(
-										[
-											h.Class(
-												"mt-0.5 w-5.5 shrink-0 font-mono text-xs font-medium text-muted-foreground tabular-nums",
-											),
-										],
-										[String(index + 1).padStart(2, "0")],
-									),
-									h.div(
-										[h.Class("flex min-w-0 flex-1 flex-col gap-2")],
-										[
-											...(item.note
-												? [
-														h.p(
-															[h.Class("text-sm leading-6 text-foreground")],
-															[item.note],
-														),
-													]
-												: []),
-											...(chips === null ? [] : [chips]),
-										],
-									),
-								],
-							)
-						}),
-					),
-				],
-			),
+				),
+			]),
 		],
 	)
 }

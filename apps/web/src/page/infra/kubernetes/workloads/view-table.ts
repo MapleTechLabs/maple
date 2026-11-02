@@ -14,6 +14,8 @@ import type { SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import { Message, type WorkloadSortKey } from "./message"
 import type { WorkloadKind, WorkloadRow } from "./model"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `WorkloadTable` / `WorkloadTableLoading`.
 
@@ -108,13 +110,12 @@ const workloadRow = (h: H, wl: WorkloadRow, inputs: WorkloadTableInputs): Html =
 			h.div(
 				[h.Class("w-0 min-w-64 flex-1")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2" },
 						[
 							truncatedText(h, {
 								text: wl.workloadName,
 								mono: true,
-								className: "text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+								className: typographyClass({ size: "xs", tone: "foreground", weight: "medium", className: "transition-colors group-hover:text-primary" }),
 							}),
 							hostStatusBadge(h, { quiet: true, lastSeen: wl.lastSeen, referenceMs: inputs.referenceTime }),
 						],
@@ -139,7 +140,7 @@ const workloadRow = (h: H, wl: WorkloadRow, inputs: WorkloadTableInputs): Html =
 				[
 					h.span([], [wl.restarts.toLocaleString("en-US")]),
 					...(wl.restarts > 0 && wl.lastTerminatedReason
-						? [h.span([h.Class("text-2xs text-muted-foreground")], [wl.lastTerminatedReason])]
+						? [typography(h, { size: "2xs", tone: "muted" }, [wl.lastTerminatedReason])]
 						: []),
 				],
 			),
@@ -159,7 +160,7 @@ const workloadRow = (h: H, wl: WorkloadRow, inputs: WorkloadTableInputs): Html =
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
 						mono: true,
-						className: "cursor-default text-2xs text-muted-foreground",
+						className: typographyClass({ size: "2xs", tone: "muted", className: "cursor-default" }),
 					}),
 				],
 			),

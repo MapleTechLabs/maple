@@ -24,6 +24,8 @@ import { gcpMessage } from "../gcp-message"
 import { Message, type Model } from "./model"
 import type { H, TimeSearch } from "./view-rows"
 import { workloadHref } from "./view-rows"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `GcpResources`: the inventory filtered by type and project.
 // TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
@@ -84,7 +86,7 @@ const filterSelect = (
 	})
 
 const metaChip = (h: H, text: string): Html =>
-	h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])
+	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
 
 const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch: TimeSearch): Html => {
 	const labels = Object.entries(resource.labels).map(([key, value]) => `${key}: ${value}`)
@@ -131,12 +133,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		),
 	]
 	return workload === undefined
-		? h.div(
-				[
-					h.Class(
-						"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
-					),
-				],
+		? hstack(h, { gap: "4", className: "border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken" },
 				cells,
 			)
 		: h.a(
@@ -187,8 +184,7 @@ const resourcesList = (
 				(projectParts) =>
 					listToolbar(h, {
 						className: "pb-0",
-						leading: h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
+						leading: hstack(h, { gap: "2", wrap: true },
 							[...typeParts, ...projectParts],
 						),
 						trailing: [

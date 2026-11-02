@@ -7,6 +7,8 @@ import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
+import { typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -19,12 +21,10 @@ export const thresholds = (h: H, state: EditorState): Html =>
 		{ className: "items-stretch gap-1.5", state: IDLE },
 		[
 			fieldGroupLabel(h, { isEyebrow: true }, "Thresholds"),
-			h.div(
-				[h.Class("flex flex-col gap-1.5")],
+			vstack(h, { gap: "1.5" },
 				[
 					...state.thresholds.map((threshold, index) =>
-						h.div(
-							[h.Class("flex items-center gap-1.5")],
+						hstack(h, { gap: "1.5" },
 							[
 								colorInput(h, {
 									value: threshold.color.startsWith("#") ? threshold.color : "#ef4444",
@@ -46,7 +46,7 @@ export const thresholds = (h: H, state: EditorState): Html =>
 										variant: "outline",
 										size: "icon",
 										label: "Remove threshold",
-										className: "text-muted-foreground hover:text-foreground active:text-foreground",
+										className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
 										attributes: [h.OnClick(Message.ClickedRemoveThreshold({ index }))],
 									},
 									[icon(h, "XmarkIcon")],

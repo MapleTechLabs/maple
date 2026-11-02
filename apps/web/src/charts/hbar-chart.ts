@@ -7,6 +7,7 @@ import { Submodel } from "foldkit"
 import { truncatedText } from "../ui/truncated-text"
 import { Message, type Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
+import { typography, typographyClass } from "../ui/typography"
 
 // Port of `QueryBuilderHbarChart` (packages/ui/src/components/charts/hbar/query-builder-hbar-chart.tsx):
 // ranked DOM bars sized from the measured card. The hovered row is the chart Model's `activeKey`.
@@ -51,7 +52,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 	if (bars.length === 0)
 		return h.div(
 			[h.Class(cn("relative h-full w-full grid place-items-center", inputs.className))],
-			[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
+			[typography(h, { size: "2xs", tone: "muted" }, ["No data"])],
 		)
 	const height = model.containerHeight
 	const maxRows = height > 0 ? Math.max(1, Math.floor((height - MORE_ROW_H) / ROW_FULL_H)) : bars.length
@@ -107,7 +108,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 						[
 							truncatedText(h, {
 								text: bar.name,
-								className: bar.unnamed ? "italic text-muted-foreground" : "text-foreground-soft",
+								className: bar.unnamed ? typographyClass({ tone: "muted", className: "italic" }) : "text-foreground-soft",
 							}),
 							h.div(
 								[

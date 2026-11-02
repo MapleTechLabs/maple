@@ -27,6 +27,7 @@ import {
 	MODEL_OPTIONS,
 } from "./update"
 import { settingsSection, settingsSections } from "../../settings/kit/section"
+import { typography } from "../../../ui/typography"
 
 // `CodeReviewSettingsView`: the code review settings page.
 
@@ -100,14 +101,11 @@ const notConnected = (h: H, isConnected: boolean): Html =>
 				isConnected ? "No repositories yet" : "Connect GitHub to review pull requests",
 			],
 		),
-		h.p(
-			[h.Class("text-sm text-muted-foreground")],
-			[
-				isConnected
-					? "Grant the Maple GitHub App access to a repository, and it appears here."
-					: "Maple reviews pull requests through its GitHub App. Install it on the repositories you want reviewed.",
-			],
-		),
+		typography(h, { size: "sm", tone: "muted", as: "p" }, [
+			isConnected
+				? "Grant the Maple GitHub App access to a repository, and it appears here."
+				: "Maple reviews pull requests through its GitHub App. Install it on the repositories you want reviewed.",
+		]),
 		linkButton(
 			h,
 			{
@@ -156,10 +154,9 @@ const repoConfigBody = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.repoConfig.data, {
 		onEmpty: () => rulesFormSkeleton(h, "repository"),
 		onFailure: (failure) =>
-			h.p(
-				[h.Class("text-xs text-severity-error"), h.Role("alert")],
-				[isUnexpectedError(failure) ? "Couldn't load the repository's rules." : failure.message],
-			),
+			typography(h, { size: "xs", tone: "error", as: "p", attributes: [h.Role("alert")] }, [
+				isUnexpectedError(failure) ? "Couldn't load the repository's rules." : failure.message,
+			]),
 		onData: () =>
 			model.repoForm === null
 				? h.empty

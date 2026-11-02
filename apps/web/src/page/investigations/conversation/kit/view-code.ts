@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { iconButton } from "../../../../ui/icon-button"
 import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../../kit/message-response"
 import { type HighlightedCode, highlightKey } from "./code-highlight"
+import { typographyClass } from "../../../../ui/typography"
 
 // Streamdown's full code block, its lines coloured by `code-highlight.ts`.
 
@@ -46,7 +47,10 @@ const action = <M>(
 			label,
 			size: "icon-xs",
 			hasTooltip: false,
-			className: "text-muted-foreground hover:text-foreground active:text-foreground",
+			className: typographyClass({
+				tone: "muted",
+				className: "hover:text-foreground active:text-foreground",
+			}),
 			attributes: [
 				...(slot === null ? [] : [h.DataAttribute("streamdown", slot)]),
 				h.Title(label),

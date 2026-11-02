@@ -6,6 +6,7 @@ import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
 import type { Message } from "./chart"
 import { labelOf, NODE_W, type PathLink, type PathNode, type PathsLayout, type PlacedNode } from "./paths-layout"
+import { typography } from "../ui/typography"
 
 // The hover card of `PathsChart`: who reached the node, and the top three flows into it.
 
@@ -115,7 +116,7 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 					h.span(
 						[h.Class("flex items-baseline gap-1.5 whitespace-nowrap")],
 						[
-							h.span([h.Class("font-semibold text-foreground")], [node.count.toLocaleString("en-US")]),
+							typography(h, { tone: "foreground", weight: "semibold" }, [node.count.toLocaleString("en-US")]),
 							h.span(
 								[h.Class("text-3xs whitespace-nowrap text-muted-foreground")],
 								[`${formatPercent(node.count / anchor.count)} of anchor`],

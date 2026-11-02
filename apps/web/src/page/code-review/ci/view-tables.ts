@@ -15,6 +15,8 @@ import { truncatedId } from "../../../ui/truncated-id"
 import { ciResultBadge, traceKept } from "../kit/parts"
 import { listRelativeTime, relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `WorkflowsTable`, `RedStreakLine` and `JobsTable`.
 
@@ -29,7 +31,7 @@ const repositoryLabel = (row: { readonly owner: string; readonly repository: str
 	row.owner === "" ? row.repository : `${row.owner}/${row.repository}`
 
 const rateClass = (rate: number | null) =>
-	cn("px-3 text-right tabular-nums", rate !== null && rate > 0 ? TONE_TEXT.crit : "text-muted-foreground")
+	cn(typographyClass({ numeric: true, className: "px-3 text-right" }), rate !== null && rate > 0 ? TONE_TEXT.crit : "text-muted-foreground")
 
 const head = (h: H, cells: ReadonlyArray<readonly [string, string, string?]>) =>
 	tableHeader(
@@ -58,7 +60,7 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 			traceKept(red.since, time.nowMs)
 				? h.a(
 						[
-							h.Class("text-foreground underline-offset-4 hover:underline active:underline"),
+							h.Class(typographyClass({ tone: "foreground", className: "underline-offset-4 hover:underline active:underline" })),
 							h.Href(traceHref),
 							h.Title("Open the first failed run's trace"),
 							// `event.stopPropagation()` keeps the row's click off; the page follows the link itself.
@@ -118,7 +120,7 @@ const workflowRow = (
 							attributes: [h.OnClick(select, { propagation: "Stop" })],
 						},
 						[
-							h.span([h.Class("truncate font-medium"), h.Title(row.pipeline)], [row.pipeline]),
+							typography(h, { weight: "medium", truncate: true, attributes: [h.Title(row.pipeline)] }, [row.pipeline]),
 							...(row.red
 								? [
 										badge(h, { size: "sm", className: cn("shrink-0", TONE_SOFT.crit) }, [
@@ -142,7 +144,7 @@ const workflowRow = (
 				],
 				"px-4 py-2.5 leading-normal",
 			),
-			tableCell(h, [formatNumber(row.runs)], "px-3 text-right tabular-nums"),
+			tableCell(h, [formatNumber(row.runs)], typographyClass({ numeric: true, className: "px-3 text-right" })),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),
 			tableCell(
 				h,
@@ -162,14 +164,13 @@ const workflowRow = (
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2", as: "span" },
 						[
 							ciResultBadge(h, row.lastResult),
 							listRelativeTime(h, {
 								value: row.lastStartedAt,
 								variant: "short",
-								className: "text-xs text-muted-foreground",
+								className: typographyClass({ size: "xs", tone: "muted" }),
 								...time,
 							}),
 						],
@@ -220,7 +221,7 @@ const jobRow = (h: H, row: CodeReviewCiJob): Html => {
 			tableCell(
 				h,
 				[
-					h.div([h.Class("truncate font-medium"), h.Title(row.job)], [row.job]),
+					typography(h, { weight: "medium", truncate: true, as: "div", attributes: [h.Title(row.job)] }, [row.job]),
 					h.div(
 						[
 							h.Class("mt-0.5 truncate text-xs text-muted-foreground"),
@@ -231,7 +232,7 @@ const jobRow = (h: H, row: CodeReviewCiJob): Html => {
 				],
 				"px-4 py-2.5 leading-normal",
 			),
-			tableCell(h, [formatNumber(row.runs)], "px-3 text-right tabular-nums"),
+			tableCell(h, [formatNumber(row.runs)], typographyClass({ numeric: true, className: "px-3 text-right" })),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),
 			tableCell(
 				h,

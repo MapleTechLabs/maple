@@ -14,6 +14,8 @@ import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
 import { confidenceMeter } from "../kit"
 import { elapsedBetween } from "./derive"
+import { typography } from "../../../ui/typography"
+import { hstack, hstackClass, vstack, vstackClass } from "../../../ui/stack"
 
 // `VerdictCard` and `RunProgress`: the verdict and the run's progress.
 
@@ -155,7 +157,7 @@ const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html
 				[
 					eyebrow(h, {}, ["What to do"]),
 					h.ol(
-						[h.Class("flex flex-col gap-2")],
+						[h.Class(vstackClass({ gap: "2" }))],
 						actions.map((action, index) =>
 							h.keyed("li")(
 								String(index),
@@ -165,8 +167,9 @@ const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html
 									),
 								],
 								[
-									h.span(
-										[h.Class("shrink-0 text-xs tabular-nums text-muted-foreground")],
+									typography(
+										h,
+										{ size: "xs", tone: "muted", numeric: true, className: "shrink-0" },
 										[String(index + 1)],
 									),
 									h.span(
@@ -188,10 +191,9 @@ const diagnosed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Html =
 			"bg-border",
 			[
 				eyebrow(h, { as: "div" }, ["No diagnosis recorded"]),
-				h.p(
-					[h.Class("text-sm text-muted-foreground")],
-					["The pass finished without attaching a report. Run it again to try for a cause."],
-				),
+				typography(h, { size: "sm", tone: "muted", as: "p" }, [
+					"The pass finished without attaching a report. Run it again to try for a cause.",
+				]),
 			],
 			[stat(h, "Confidence", [confidenceMeter(h, investigation.confidence)], true)],
 		)
@@ -265,9 +267,9 @@ const runProgress = <M>(
 				)
 			: null
 	return h.div(
-		[h.Class(cn("flex flex-col gap-2.5", className))],
+		[h.Class(cn(vstackClass({ gap: "2.5" }), className))],
 		[
-			eyebrow(h, { as: "div", className: "flex items-baseline gap-2" }, [
+			eyebrow(h, { as: "div", className: hstackClass({ gap: "2", align: "baseline" }) }, [
 				h.span([], [countLabel(progress?.stepCount ?? 0, "step")]),
 				...(isStalled
 					? [
@@ -326,10 +328,7 @@ const investigating = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, now
 		"bg-primary",
 		[
 			eyebrow(h, { as: "div", className: "flex flex-wrap items-center gap-2 text-primary" }, [
-				h.span(
-					[h.Class("flex items-center gap-1.5")],
-					[statusDot(h, { tone: "live" }), "Investigating"],
-				),
+				hstack(h, { gap: "1.5", as: "span" }, [statusDot(h, { tone: "live" }), "Investigating"]),
 			]),
 			verdictHeading(h, "Maple is gathering evidence."),
 			h.p(
@@ -407,31 +406,29 @@ const partialList = <M>(
 	if (items.length === 0) return null
 	const visible = items.slice(0, PARTIAL_VISIBLE_MAX)
 	const hidden = items.length - visible.length
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-2")],
-		[
-			eyebrow(h, {}, [label]),
-			h.ul(
-				[h.Class("flex flex-col gap-1.5")],
-				visible.map((item) =>
-					h.keyed("li")(
-						item,
-						[h.Class(cn("flex gap-2 text-sm leading-6", tone))],
-						[
-							icon(h, iconName, {
-								size: 14,
-								className: "mt-0.5 shrink-0 text-foreground-subtle",
-							}),
-							h.span([h.Class("min-w-0")], [item]),
-						],
-					),
+	return vstack(h, { gap: "2", shrink: true }, [
+		eyebrow(h, {}, [label]),
+		vstack(
+			h,
+			{ gap: "1.5", as: "ul" },
+			visible.map((item) =>
+				h.keyed("li")(
+					item,
+					[h.Class(cn("flex gap-2 text-sm leading-6", tone))],
+					[
+						icon(h, iconName, {
+							size: 14,
+							className: "mt-0.5 shrink-0 text-foreground-subtle",
+						}),
+						h.span([h.Class("min-w-0")], [item]),
+					],
 				),
 			),
-			...(hidden > 0
-				? [h.span([h.Class("text-xs text-muted-foreground")], [`+${hidden} more in the report`])]
-				: []),
-		],
-	)
+		),
+		...(hidden > 0
+			? [typography(h, { size: "xs", tone: "muted" }, [`+${hidden} more in the report`])]
+			: []),
+	])
 }
 
 const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Html => {
@@ -460,7 +457,7 @@ const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Htm
 		[
 			stat(h, "Ran for", [bigStat(h, ranForOf(investigation))]),
 			stat(h, "Ruled out", [
-				h.span([h.Class("text-foreground tabular-nums")], [String(ruledOut.length)]),
+				typography(h, { tone: "foreground", numeric: true }, [String(ruledOut.length)]),
 			]),
 			stat(
 				h,

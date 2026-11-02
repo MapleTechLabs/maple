@@ -8,6 +8,8 @@ import { relativeTime } from "../../../kit/relative-time"
 import { statRailItem } from "../../../kit/stat-rail"
 import type { RailwayServiceRow } from "../model"
 import { fleetSync } from "./derive"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `RailwayFleetBand` and `RailwayFleetBandLoading`.
 
@@ -77,15 +79,13 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-[26rem] md:shrink-0")],
 				[
-					h.span(
-						[h.Class("flex items-baseline gap-1.5")],
+					hstack(h, { gap: "1.5", align: "baseline", as: "span" },
 						[
 							h.span(
 								[h.Class("font-mono text-base font-semibold tabular-nums")],
 								[formatBytes(total)],
 							),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
+							typography(h, { size: "2xs", tone: "muted" },
 								[
 									"summed average memory across ",
 									String(count),
@@ -109,8 +109,7 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 							...ranked
 								.slice(0, LEGEND_NAMES)
 								.map((row) =>
-									h.span(
-										[h.Class("truncate font-mono")],
+									typography(h, { mono: true, truncate: true },
 										[nameOf(row), " ", formatBytes(row.memoryAvg)],
 									),
 								),

@@ -9,6 +9,8 @@ import { switchControl } from "../../ui/switch"
 import { type AwsSelection, selectionOf } from "./aws"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "../../ui/typography"
+import { vstack } from "../../ui/stack"
 
 // Which regions and services a connection streams: Choose data in the connect flow, and Edit data
 // on the connected card.
@@ -104,11 +106,10 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 					),
 				],
 				[
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-0.5")],
+					vstack(h, { gap: "0.5", shrink: true },
 						[
 							h.span([h.Class("text-sm"), h.Id(`${id}-label`)], [NAMESPACE_LABEL[namespace]]),
-							h.span([h.Class("font-mono text-xs text-muted-foreground")], [namespace]),
+							typography(h, { size: "xs", tone: "muted", mono: true }, [namespace]),
 						],
 					),
 					...switchControl(h, {
@@ -127,15 +128,12 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 export const dataPicker = (h: H, model: Model, connection: V2AwsConnection): ReadonlyArray<Html> => {
 	const selection = selectionOf(connection, model.awsCard.selection)
 	return [
-		h.section(
-			[h.Class("flex flex-col gap-3"), h.AriaLabel("Regions to stream")],
+		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabel("Regions to stream")] },
 			[
-				h.div(
-					[h.Class("flex flex-col gap-1")],
+				vstack(h, { gap: "1" },
 					[
 						heading(h, { level: 3, variant: "subsection" }, ["Regions"]),
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
 							["Each region gets its own metric stream. Regions added in AWS later stay off."],
 						),
 					],
@@ -143,15 +141,12 @@ export const dataPicker = (h: H, model: Model, connection: V2AwsConnection): Rea
 				regionList(h, connection, selection),
 			],
 		),
-		h.section(
-			[h.Class("flex flex-col gap-3"), h.AriaLabel("Services to stream")],
+		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabel("Services to stream")] },
 			[
-				h.div(
-					[h.Class("flex flex-col gap-1")],
+				vstack(h, { gap: "1" },
 					[
 						heading(h, { level: 3, variant: "subsection" }, ["Services"]),
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
 							["CloudWatch namespaces in the picked regions. Off means no metrics."],
 						),
 					],

@@ -24,6 +24,8 @@ import {
 	getScenario,
 	PLATFORM_FEATURE_ICONS,
 } from "./pricing-plans"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -121,23 +123,20 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 		h,
 		[
 			cardHeader(h, [
-				h.div(
-					[h.Class("flex items-center justify-between gap-2")],
-					[
-						cardTitle(h, [plan.name], cn(eyebrowVariants(), isUpgrade && "text-primary")),
-						...(isActive
-							? [badge(h, { variant: "secondary", size: "xs" }, ["Current"])]
-							: isUpgrade
-								? [
-										badge(
-											h,
-											{ variant: "secondary", size: "xs", className: "text-primary" },
-											["Recommended"],
-										),
-									]
-								: []),
-					],
-				),
+				hstack(h, { gap: "2", justify: "between" }, [
+					cardTitle(h, [plan.name], cn(eyebrowVariants(), isUpgrade && "text-primary")),
+					...(isActive
+						? [badge(h, { variant: "secondary", size: "xs" }, ["Current"])]
+						: isUpgrade
+							? [
+									badge(
+										h,
+										{ variant: "secondary", size: "xs", className: "text-primary" },
+										["Recommended"],
+									),
+								]
+							: []),
+				]),
 				h.div(
 					[h.Class("mt-3 flex items-baseline gap-1")],
 					[
@@ -209,10 +208,9 @@ const enterpriseCard = (h: H): Html =>
 		h,
 		[
 			cardHeader(h, [
-				h.div(
-					[h.Class("flex items-center justify-between gap-2")],
-					[cardTitle(h, ["Enterprise"], eyebrowVariants())],
-				),
+				hstack(h, { gap: "2", justify: "between" }, [
+					cardTitle(h, ["Enterprise"], eyebrowVariants()),
+				]),
 				h.div(
 					[h.Class("mt-3 flex items-baseline gap-1")],
 					[
@@ -285,13 +283,10 @@ const checkoutConfirming = (h: H): Html =>
 		},
 		[
 			spinner(h, "size-5"),
-			h.p([h.Class("text-sm font-medium")], ["Confirming your subscription…"]),
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
-				[
-					"Stripe is letting us know your checkout finished. This usually takes a few seconds; there's nothing else to click.",
-				],
-			),
+			typography(h, { size: "sm", weight: "medium", as: "p" }, ["Confirming your subscription…"]),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"Stripe is letting us know your checkout finished. This usually takes a few seconds; there's nothing else to click.",
+			]),
 		],
 	)
 
@@ -301,7 +296,7 @@ const checkoutTimedOut = (h: H): Html =>
 		h,
 		{
 			tone: "muted",
-			className: "px-4 py-3 text-sm text-muted-foreground",
+			className: typographyClass({ size: "sm", tone: "muted", className: "px-4 py-3" }),
 			attributes: [h.Role("status")],
 		},
 		[

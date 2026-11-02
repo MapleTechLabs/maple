@@ -15,6 +15,7 @@ import type { Model } from "./model"
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
 import { typeSettings } from "./view-rail-types"
+import { vstack } from "../../../ui/stack"
 
 // `WidgetSettingsBar` and the `WidgetSettings` fields the timeseries panels compose.
 
@@ -248,19 +249,16 @@ export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyAr
 		},
 	),
 	divider(h),
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			checkboxRow(
-				h,
-				"qb-percent-change",
-				"% change",
-				state.includePercentChange,
-				Message.ToggledPercentChange(),
-				state.comparisonMode === "none",
-			),
-		],
-	),
+	vstack(h, { gap: "3" }, [
+		checkboxRow(
+			h,
+			"qb-percent-change",
+			"% change",
+			state.includePercentChange,
+			Message.ToggledPercentChange(),
+			state.comparisonMode === "none",
+		),
+	]),
 ]
 
 /** `TimeSeriesSettings`: stacking on bar and area, curve and points on line and area. */
@@ -324,19 +322,16 @@ export const settingsRail = (h: H, model: Model, timeZone: string): Html => {
 	const state = model.state
 	if (state === null) return h.empty
 	const panel = toPanelType(state.visualization, state.chartId)
-	return h.div(
-		[h.Class("flex flex-col gap-5")],
-		[
-			eyebrow(h, { variant: "label", as: "p" }, ["Panel options"]),
-			nameField(h, state),
-			descriptionField(h, state),
-			// A note never queries, so it has no window of its own.
-			...(panel === "markdown" ? [] : [timeRangeField(h, model, state, timeZone)]),
-			divider(h),
-			typePicker(h, state),
-			...(panel === "line" || panel === "bar" || panel === "area"
-				? timeseriesSettings(h, model, state)
-				: typeSettings(h, model, state, panel)),
-		],
-	)
+	return vstack(h, { gap: "5" }, [
+		eyebrow(h, { variant: "label", as: "p" }, ["Panel options"]),
+		nameField(h, state),
+		descriptionField(h, state),
+		// A note never queries, so it has no window of its own.
+		...(panel === "markdown" ? [] : [timeRangeField(h, model, state, timeZone)]),
+		divider(h),
+		typePicker(h, state),
+		...(panel === "line" || panel === "bar" || panel === "area"
+			? timeseriesSettings(h, model, state)
+			: typeSettings(h, model, state, panel)),
+	])
 }

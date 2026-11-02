@@ -29,6 +29,7 @@ import {
 	ORG_PREFIX,
 } from "./clerk-org-switcher"
 import { hasNamespaceSearch, namespaceRows, namespaceSearchRow, noNamespacesMatch } from "./namespace-search"
+import { typography } from "../ui/typography"
 
 /** The namespace submenu's data (`NamespaceScopeList`), sidebar switcher only. */
 export type NamespaceScope = Readonly<{
@@ -130,7 +131,7 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 					label: name,
 					content: [
 						h.span([h.Class("truncate")], [name]),
-						h.span([h.Class("ml-2 text-xs text-muted-foreground")], ["no recent data"]),
+						typography(h, { size: "xs", tone: "muted", className: "ml-2" }, ["no recent data"]),
 						checkIcon(h),
 					],
 				},

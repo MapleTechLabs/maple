@@ -17,16 +17,18 @@ import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
 import { isSettingsDirty } from "./update"
 import type { Model, RevealedToken, SettingsForm } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `SourceSetupTab` and `SourceSettings`.
 
 type H = HtmlBuilder<Message>
 
-const LINK_CLASS = "text-foreground underline underline-offset-2"
+const LINK_CLASS = typographyClass({ tone: "foreground", className: "underline underline-offset-2" })
 const INGESTION_HREF = hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))
 
 const note = (h: H, children: ReadonlyArray<Html | string>) =>
-	h.p([h.Class("text-muted-foreground text-sm")], children)
+	typography(h, { size: "sm", tone: "muted", as: "p" }, children)
 
 export const setupTab = (h: H, model: Model, source: V2Source, revealed: RevealedToken | null): Html => {
 	if (source.is_default)
@@ -76,8 +78,7 @@ const generalSection = (h: H, form: SettingsForm, source: V2Source): Html => {
 	const nameState = stateOf(form.name, source.name)
 	const descriptionState = stateOf(form.description, source.description ?? "")
 	return settingsSection(h, { id: "source-settings-general", title: "General" }, [
-		h.div(
-			[h.Class("flex flex-col gap-4")],
+		vstack(h, { gap: "4" },
 			[
 				field(h, { state: nameState }, [
 					fieldLabel(h, { ids: NAME_IDS, state: nameState }, "Name"),
@@ -95,7 +96,7 @@ const generalSection = (h: H, form: SettingsForm, source: V2Source): Html => {
 					fieldLabel(h, { ids: DESCRIPTION_IDS, state: descriptionState }, [
 						"Description",
 						" ",
-						h.span([h.Class("text-muted-foreground font-normal")], ["(optional)"]),
+						typography(h, { tone: "muted", weight: "normal" }, ["(optional)"]),
 					]),
 					textarea(h, {
 						id: DESCRIPTION_IDS.control,
@@ -143,15 +144,12 @@ const ingestionSection = (h: H, model: Model, source: V2Source): Html => {
 			],
 		},
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-4")],
+			hstack(h, { gap: "4", justify: "between" },
 				[
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-1")],
+					vstack(h, { gap: "1", shrink: true },
 						[
 							sourceStatusBadge(h, source, { nowMs: model.nowMs ?? 0, showTime: false }),
-							h.span(
-								[h.Class("text-muted-foreground text-xs")],
+							typography(h, { size: "xs", tone: "muted" },
 								[isPaused ? pausedLabel(source) : "Collected and stored as it arrives"],
 							),
 						],

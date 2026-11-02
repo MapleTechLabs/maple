@@ -9,6 +9,7 @@ import { textLink } from "../../../../ui/text-link"
 import { copyButton, statusOf } from "./copy"
 import { Message } from "./message"
 import type { PanelState as Model } from "./model"
+import { hstack } from "../../../../ui/stack"
 
 // `ErrorSection` (packages/ui/src/components/error-section.tsx), with a "Copy as prompt" payload.
 
@@ -43,52 +44,49 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-2")],
-				[
-					icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-error" }),
-					eyebrow(h, { variant: "label", className: "shrink-0 text-severity-error" }, ["Error"]),
-					...(input.badge === undefined || input.badge === ""
-						? []
-						: [
-								h.span(
-									[
-										h.Class("min-w-0 truncate font-mono text-2xs text-foreground-soft"),
-										h.Title(input.badge),
-									],
-									[input.badge],
-								),
-							]),
-					...(body.format === "json"
-						? [
-								h.span(
-									[
-										h.Class(
-											"flex shrink-0 items-center gap-1 rounded-sm border border-severity-error-a3 px-1 py-px font-mono text-4xs text-severity-error uppercase",
-										),
-										h.Title("JSON payload"),
-									],
-									[icon(h, "BracketsCurlyIcon", { size: 9 }), "json"],
-								),
-							]
-						: []),
-					copyButton(h, model, {
-						id: "error-prompt",
-						value: formatErrorPrompt({
-							message,
-							serviceName: input.prompt.serviceName,
-							operation: input.prompt.operation,
-							attributes: { ...input.prompt.attributes },
-						}),
-						label: "error as an AI prompt",
-						idleIcon: "SparkleIcon",
-						iconSize: 12,
-						tooltipId: "span-panel-error-prompt",
-						className:
-							"ml-auto size-5 shrink-0 rounded-sm text-muted-foreground hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
+			hstack(h, { gap: "2", shrink: true }, [
+				icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-error" }),
+				eyebrow(h, { variant: "label", className: "shrink-0 text-severity-error" }, ["Error"]),
+				...(input.badge === undefined || input.badge === ""
+					? []
+					: [
+							h.span(
+								[
+									h.Class("min-w-0 truncate font-mono text-2xs text-foreground-soft"),
+									h.Title(input.badge),
+								],
+								[input.badge],
+							),
+						]),
+				...(body.format === "json"
+					? [
+							h.span(
+								[
+									h.Class(
+										"flex shrink-0 items-center gap-1 rounded-sm border border-severity-error-a3 px-1 py-px font-mono text-4xs text-severity-error uppercase",
+									),
+									h.Title("JSON payload"),
+								],
+								[icon(h, "BracketsCurlyIcon", { size: 9 }), "json"],
+							),
+						]
+					: []),
+				copyButton(h, model, {
+					id: "error-prompt",
+					value: formatErrorPrompt({
+						message,
+						serviceName: input.prompt.serviceName,
+						operation: input.prompt.operation,
+						attributes: { ...input.prompt.attributes },
 					}),
-				],
-			),
+					label: "error as an AI prompt",
+					idleIcon: "SparkleIcon",
+					iconSize: 12,
+					tooltipId: "span-panel-error-prompt",
+					className:
+						"ml-auto size-5 shrink-0 rounded-sm text-muted-foreground hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
+				}),
+			]),
 			pressable(
 				h,
 				{

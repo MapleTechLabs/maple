@@ -25,6 +25,7 @@ import { chatMarkdownOverrides } from "./kit/view-markdown"
 import { type TranscriptHost, transcript } from "./kit/view-transcript"
 import { Message } from "./message"
 import { isLoading, type Model } from "./model"
+import { hstackClass } from "../../../ui/stack"
 
 // One conversation: transcript, notices, composer.
 
@@ -256,7 +257,7 @@ const suggestionPills = <M>(
 	suggestions: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>,
 ): Html =>
 	h.div(
-		[h.Class(cn("flex flex-wrap items-center gap-2", "mb-3"))],
+		[h.Class(cn(hstackClass({ gap: "2", wrap: true }), "mb-3"))],
 		suggestions.items.map((suggestion) =>
 			button(
 				h,

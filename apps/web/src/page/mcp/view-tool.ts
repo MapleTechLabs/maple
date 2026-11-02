@@ -36,6 +36,8 @@ import {
 	sectionTitle,
 	seriesRows,
 } from "./view-kit"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `/mcp/:service/tools/:tool`: the agent tool detail page for one MCP tool. Four charts, the
 // failures grouped by `error.type` (and message, once the server records one), then the calls.
@@ -125,8 +127,8 @@ const errorRow = <M>(
 				[
 					errorTypeChip(h, group.errorType),
 					group.message === null
-						? h.span([h.Class("truncate text-foreground-subtle")], ["no message recorded"])
-						: h.span([h.Class("truncate text-foreground")], [group.message]),
+						? typography(h, { tone: "subtle", truncate: true }, ["no message recorded"])
+						: typography(h, { tone: "foreground", truncate: true }, [group.message]),
 				],
 			),
 			h.span(
@@ -156,8 +158,7 @@ const errorRow = <M>(
 				"hidden w-20 text-muted-foreground @min-[640px]/panel:block",
 			),
 			lastSeenCell(h, group.lastSeenMs, options.nowMs, options.env.timeZone),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
+			hstack(h, { justify: "end", as: "span", className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }) },
 				[icon(h, "ChevronRightIcon", { size: 14 })],
 			),
 		],
@@ -173,8 +174,7 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 				h,
 				"Failures",
 				`${data.errors} ${pluralize(data.errors, "failed call")} · ${data.errorGroups.length} ${pluralize(data.errorGroups.length, "kind")}`,
-				h.span(
-					[h.Class("font-mono text-2xs text-muted-foreground")],
+				typography(h, { size: "2xs", tone: "muted", mono: true },
 					["grouped by ", attr(h, "error.type")],
 				),
 			),
@@ -224,7 +224,7 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 							[
 								icon(h, "CircleInfoIcon", {
 									size: 14,
-									className: "mt-0.5 shrink-0 text-muted-foreground",
+									className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
 								}),
 								h.p(
 									[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
@@ -291,8 +291,7 @@ const callRow = <M>(h: HtmlBuilder<M>, call: McpCallRow, max: number, options: T
 				call.traceId.slice(0, 8),
 				"hidden w-20 text-muted-foreground @min-[800px]/panel:block",
 			),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
+			hstack(h, { justify: "end", as: "span", className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }) },
 				[icon(h, "ArrowRightIcon", { size: 14 })],
 			),
 		],

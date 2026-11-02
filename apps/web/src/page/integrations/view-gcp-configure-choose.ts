@@ -10,6 +10,7 @@ import { Message } from "./message"
 import { collectFields } from "./view-gcp-configure-collect"
 import { logFilter } from "./view-gcp-configure-filter"
 import { configureFooter, configureHeader, configurePanel, footerNote } from "./view-gcp-configure-parts"
+import { typographyClass } from "../../ui/typography"
 
 // `ChooseStage`: a connection's data step, and the confirmation for a change that acts at once.
 
@@ -90,7 +91,9 @@ const confirmSave = (h: H, configure: ConfigureModel, connector: V2GcpConnector,
 			[],
 			[
 				h.dt([h.Class("font-medium")], [term]),
-				...lines.map((line) => h.dd([h.Class("text-pretty text-muted-foreground")], [line])),
+				...lines.map((line) =>
+					h.dd([h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))], [line]),
+				),
 			],
 		)
 	return confirmDialog(h, {

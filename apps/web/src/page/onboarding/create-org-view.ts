@@ -15,6 +15,8 @@ import { Message, type Model, MountDitherField } from "./create-org"
 import { optionCard } from "./option-card"
 import { REGION_CARDS } from "./quick-start-region-view"
 import { regionFlag } from "./region-flag"
+import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // The `/org-required` screen: the form on the left, a preview of the workspace being made on the right.
 
@@ -27,8 +29,7 @@ const nameOf = (name: string): string => name.trim() || "your organization"
 const initialOf = (name: string): string => nameOf(name).charAt(0).toUpperCase()
 
 const header = (h: H, email: string | null): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-4")],
+	hstack(h, { gap: "4", justify: "between" },
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 text-foreground")],
@@ -43,7 +44,7 @@ const header = (h: H, email: string | null): Html =>
 			h.div(
 				[h.Class("flex min-w-0 items-center gap-3 text-xs")],
 				[
-					...(email === null ? [] : [h.span([h.Class("truncate text-muted-foreground")], [email])]),
+					...(email === null ? [] : [typography(h, { tone: "muted", truncate: true }, [email])]),
 					textLink(
 						h,
 						{
@@ -59,14 +60,12 @@ const header = (h: H, email: string | null): Html =>
 	)
 
 const nameField = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-2.5")],
+	vstack(h, { gap: "2.5" },
 		[
 			label(h, { className: "text-sm sm:text-sm", attributes: [h.For("org-required-name")] }, [
 				"What should we call it?",
 			]),
-			h.div(
-				[h.Class("flex items-center gap-3")],
+			hstack(h, { gap: "3" },
 				[
 					h.span(
 						[
@@ -94,8 +93,7 @@ const nameField = (h: H, model: Model): Html =>
 					}),
 				],
 			),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
+			typography(h, { size: "xs", tone: "muted", as: "p" },
 				[
 					model.suggestedFrom === null
 						? "You can rename it whenever you like."
@@ -127,8 +125,7 @@ const regionField = (h: H, model: Model): Html =>
 					}),
 				),
 			),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
+			typography(h, { size: "xs", tone: "muted", as: "p" },
 				["Pick once: the region can't be changed later."],
 			),
 		],
@@ -167,7 +164,7 @@ const orgRow = (h: H, options: OrgRowOptions): Html =>
 					]),
 			h.span(
 				[h.Class("min-w-0 flex-1 text-sm leading-snug text-muted-foreground line-clamp-2")],
-				[options.lead, " ", h.span([h.Class("font-medium text-foreground")], [options.name])],
+				[options.lead, " ", typography(h, { tone: "foreground", weight: "medium" }, [options.name])],
 			),
 			button(
 				h,
@@ -221,8 +218,7 @@ const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>)
 		[
 			nameField(h, model),
 			...(hasMultipleRegions ? [regionField(h, model)] : []),
-			h.div(
-				[h.Class("flex flex-col gap-3")],
+			vstack(h, { gap: "3" },
 				[
 					...(model.errorMessage === null
 						? []
@@ -254,8 +250,7 @@ const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>)
 					...(model.invitationsError === null
 						? []
 						: [
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
+								typography(h, { size: "xs", tone: "muted", as: "p" },
 									[`Couldn't check whether anyone invited you: ${model.invitationsError}`],
 								),
 							]),
@@ -278,7 +273,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 	h.div(
 		[h.AriaHidden(true), h.Class("relative flex w-full max-w-[640px] flex-col items-center gap-5")],
 		[
-			h.span([h.Class("text-xs text-muted-foreground")], ["A peek at your new workspace"]),
+			typography(h, { size: "xs", tone: "muted" }, ["A peek at your new workspace"]),
 			h.div(
 				[h.Class("w-full overflow-hidden rounded-md border border-border bg-background")],
 				[
@@ -316,8 +311,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 												: []),
 										],
 									),
-									h.div(
-										[h.Class("flex flex-col gap-0.5")],
+									vstack(h, { gap: "0.5" },
 										NAV.map(([iconName, label], index) =>
 											h.div(
 												[
@@ -358,8 +352,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 												[h.Class("text-ui font-medium")],
 												["Waiting for your first span"],
 											),
-											h.span(
-												[h.Class("text-xs text-muted-foreground")],
+											typography(h, { size: "xs", tone: "muted" },
 												["Connect a service and it shows up here."],
 											),
 										],
@@ -397,11 +390,9 @@ export const view = (
 							h.div(
 								[h.Class("flex max-w-lg flex-col gap-10 pt-4")],
 								[
-									h.div(
-										[h.Class("flex flex-col gap-3")],
+									vstack(h, { gap: "3" },
 										[
-											h.p(
-												[h.Class("text-sm text-muted-foreground")],
+											typography(h, { size: "sm", tone: "muted", as: "p" },
 												["Welcome to Maple"],
 											),
 											heading(

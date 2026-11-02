@@ -9,6 +9,8 @@ import { icon } from "../../../ui/icon"
 import { pressable } from "../../../ui/pressable"
 import { isEmptyError, type WidgetDataState } from "./data-state"
 import { NARROW_RANGE_LABEL } from "./widget-data"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 /** `useId` of the grid's hidden rearranging instructions, which every grip describes itself by. */
 export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
@@ -71,11 +73,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 			),
 			...(overflow > 0
 				? [
-						h.span(
-							[
-								h.Class("shrink-0 text-3xs text-muted-foreground"),
-								h.Title(items.map((i) => i.label).join(", ")),
-							],
+						typography(h, { size: "3xs", tone: "muted", className: "shrink-0", attributes: [h.Title(items.map((i) => i.label).join(", "))] },
 							[`+${overflow}`],
 						),
 					]
@@ -119,8 +117,7 @@ export const widgetShell = <M>(
 			cardHeader(
 				h,
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
+					hstack(h, { gap: "2", shrink: true },
 						[
 							...(options.isEdit && options.hasGrip ? [grip(h, options.title)] : []),
 							eyebrow(
@@ -189,8 +186,7 @@ const mutedError = <M>(
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
 		[
-			h.span(
-				[h.Class("text-xs font-medium text-muted-foreground")],
+			typography(h, { size: "xs", tone: "muted", weight: "medium" },
 				[state.title ?? (state.kind === "range" ? "Range too wide" : "Not configured")],
 			),
 			...(state.message === null
@@ -245,7 +241,7 @@ const failedState = <M>(
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
 		[
-			h.span([h.Class(cn("text-xs font-medium", TONE_TEXT.crit))], [state.title ?? "Unable to load"]),
+			h.span([h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))], [state.title ?? "Unable to load"]),
 			...(state.message === null
 				? []
 				: [

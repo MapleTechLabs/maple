@@ -37,6 +37,8 @@ import { metaLine } from "../../../infra/kit/meta-line"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { QueueRow, ZoneRow } from "../data"
 import { Message, type QueueSortKey, type ZoneSortKey } from "./model"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstackClass } from "../../../../ui/stack"
 
 // `CloudflareZoneTable`, `CloudflareWorkerTable`, `CloudflareQueueTable`.
 
@@ -45,7 +47,7 @@ type H = HtmlBuilder<Message>
 // The server caps the list at 500 rows, so the row area scrolls rather than growing the page.
 // Capped: a short zone name on a wide page otherwise opens a gulf before its numbers.
 const NAME = "w-0 flex-1 min-w-52 max-w-90"
-const NUMBER = "text-right font-mono text-xs tabular-nums"
+const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
 
 export type SparkContext = Readonly<{ theme: ThemeColors | null; isChartReady: boolean }>
 
@@ -230,13 +232,7 @@ const zoneRow = (
 			h.div(
 				[h.Class(cn(NAME, "space-y-0.5"))],
 				[
-					h.div(
-						[
-							h.Class(
-								"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-							),
-							h.Title(zone.zoneName),
-						],
+					typography(h, { size: "xs", tone: "foreground", weight: "medium", mono: true, truncate: true, as: "div", className: "transition-colors group-hover:text-primary", attributes: [h.Title(zone.zoneName)] },
 						[zone.zoneName],
 					),
 					...(meta === null ? [] : [meta]),
@@ -280,12 +276,10 @@ const zoneRow = (
 			h.div(
 				[h.Class("hidden w-32 flex-col items-end gap-0.5 lg:flex")],
 				[
-					h.span(
-						[h.Class("font-mono text-xs tabular-nums text-foreground-soft")],
+					typography(h, { size: "xs", tone: "soft", mono: true, numeric: true },
 						[zone.cacheHitRate === null ? EMPTY_VALUE : formatPercentColumn(zone.cacheHitRate)],
 					),
-					h.span(
-						[h.Class("font-mono text-3xs text-muted-foreground")],
+					typography(h, { size: "3xs", tone: "muted", mono: true },
 						[
 							zone.cacheHitRate === null
 								? "nothing cacheable"
@@ -386,13 +380,7 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 			h.div(
 				[h.Class("w-0 min-w-56 flex-1 space-y-0.5")],
 				[
-					h.div(
-						[
-							h.Class(
-								"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-							),
-							h.Title(row.scriptName),
-						],
+					typography(h, { size: "xs", tone: "foreground", weight: "medium", mono: true, truncate: true, as: "div", className: "transition-colors group-hover:text-primary", attributes: [h.Title(row.scriptName)] },
 						[row.scriptName],
 					),
 					...(meta === null ? [] : [meta]),
@@ -485,7 +473,7 @@ export const workerTable = (
 // QUEUES
 
 const QUEUE_ROW =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
+	hstackClass({ gap: "4", className: "border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken" })
 
 const numCell = (h: H, value: string, hidden?: boolean): Html =>
 	h.div(

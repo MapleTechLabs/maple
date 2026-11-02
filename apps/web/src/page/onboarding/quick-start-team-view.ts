@@ -14,6 +14,8 @@ import { label } from "../../ui/label"
 import { Message } from "./quick-start"
 import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
 import { isAlreadyInvited, type Team, TeamMessage } from "./quick-start-team"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -81,7 +83,7 @@ const toolRow = (h: H, tool: Tool): Html =>
 			h.div(
 				[h.Class("flex min-w-0 flex-1 basis-48 flex-col gap-1")],
 				[
-					h.span([h.Class("text-sm font-medium")], [tool.name]),
+					typography(h, { size: "sm", weight: "medium" }, [tool.name]),
 					h.span([h.Class("text-xs leading-snug text-muted-foreground")], [tool.line]),
 				],
 			),
@@ -109,8 +111,7 @@ export const teamStep = (h: H, team: Team): Html => {
 	return h.div(
 		[h.Class(STEP_BODY_CLASS)],
 		[
-			h.div(
-				[h.Class("flex flex-col gap-2.5")],
+			vstack(h, { gap: "2.5" },
 				[
 					heading(h, { level: 1, variant: "display" }, ["Bring in your team and tools"]),
 					h.p(
@@ -135,14 +136,12 @@ export const teamStep = (h: H, team: Team): Html => {
 				],
 			),
 			team.isLoaded
-				? h.div(
-						[h.Class("flex flex-col gap-4")],
+				? vstack(h, { gap: "4" },
 						[
 							...(team.unavailableReason === null
 								? []
 								: [
-										h.p(
-											[h.Class("text-sm text-muted-foreground")],
+										typography(h, { size: "sm", tone: "muted", as: "p" },
 											[team.unavailableReason],
 										),
 									]),
@@ -165,7 +164,7 @@ export const teamStep = (h: H, team: Team): Html => {
 							),
 						],
 					)
-				: h.output([h.Class("text-sm text-muted-foreground")], ["Loading your team…"]),
+				: h.output([h.Class(typographyClass({ size: "sm", tone: "muted" }))], ["Loading your team…"]),
 			h.div(
 				[h.Class(cn(STEP_FOOTER_CLASS, "justify-between"))],
 				[
@@ -242,7 +241,7 @@ export const teamPreview = (h: H): Html =>
 					],
 				),
 			),
-			h.span([h.Class("text-2xs text-muted-foreground")], ["Examples of what each one looks like."]),
+			typography(h, { size: "2xs", tone: "muted" }, ["Examples of what each one looks like."]),
 		],
 	)
 
@@ -307,8 +306,7 @@ const inviteForm = (h: H, team: Team, isBusy: boolean): Html =>
 		[h.Class("space-y-3"), h.OnSubmit(toTeam(TeamMessage.SubmittedInvite()))],
 		[
 			label(h, { attributes: [h.For("onboarding-teammate-email")] }, ["Invite a teammate"]),
-			h.div(
-				[h.Class("flex flex-wrap gap-2")],
+			hstack(h, { gap: "2", align: "stretch", wrap: true },
 				[
 					input(h, {
 						id: "onboarding-teammate-email",
@@ -340,8 +338,7 @@ const inviteForm = (h: H, team: Team, isBusy: boolean): Html =>
 					),
 				],
 			),
-			h.p(
-				[h.Id("onboarding-invite-help"), h.Class("text-xs leading-relaxed text-muted-foreground")],
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed", attributes: [h.Id("onboarding-invite-help")] },
 				[
 					isAlreadyInvited(team)
 						? "This teammate already has a pending invitation."

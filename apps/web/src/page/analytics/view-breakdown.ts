@@ -13,6 +13,8 @@ import { type FilterKey, Message } from "./message"
 import type { Model, PanelState } from "./model"
 import { panelOf } from "./update"
 import { analyticsRowIcon, dimensionHasIcons } from "./view-icons"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `AnalyticsBreakdownPanel`: one breakdown card.
 
@@ -222,34 +224,32 @@ export const breakdownTable = (
 										),
 									]
 								: []),
-							h.span(
-								[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
-								[
-									...(rowIcon !== undefined
-										? [rowIcon]
-										: hasIcons
-											? [h.span([h.Class("size-4 shrink-0"), h.AriaHidden(true)], [])]
-											: []),
-									h.span(
-										[
-											h.Class(
-												cn(
-													"min-w-0 truncate text-xs transition-colors",
-													isSelected
-														? "font-medium text-foreground"
-														: "text-foreground-soft group-hover:text-foreground",
-												),
+							hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
+								...(rowIcon !== undefined
+									? [rowIcon]
+									: hasIcons
+										? [h.span([h.Class("size-4 shrink-0"), h.AriaHidden(true)], [])]
+										: []),
+								h.span(
+									[
+										h.Class(
+											cn(
+												"min-w-0 truncate text-xs transition-colors",
+												isSelected
+													? typographyClass({
+															tone: "foreground",
+															weight: "medium",
+														})
+													: "text-foreground-soft group-hover:text-foreground",
 											),
-											h.Title(
-												row.secondary
-													? `${row.secondary}${row.name}`
-													: label(row.name),
-											),
-										],
-										[label(row.name)],
-									),
-								],
-							),
+										),
+										h.Title(
+											row.secondary ? `${row.secondary}${row.name}` : label(row.name),
+										),
+									],
+									[label(row.name)],
+								),
+							]),
 							...(hasViews
 								? [
 										h.span(
@@ -354,14 +354,15 @@ export const breakdownPanel = (
 								"flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
 						},
 						[
-							h.span(
-								[h.Class("flex items-center gap-1.5")],
-								[icon(h, "MaximizeIcon", { size: 12 }), "Expand table"],
-							),
-							h.span(
-								[h.Class("font-mono tabular-nums")],
-								[formatNumber(dimension.rows.length), " ", dimension.nounPlural],
-							),
+							hstack(h, { gap: "1.5", as: "span" }, [
+								icon(h, "MaximizeIcon", { size: 12 }),
+								"Expand table",
+							]),
+							typography(h, { mono: true, numeric: true }, [
+								formatNumber(dimension.rows.length),
+								" ",
+								dimension.nounPlural,
+							]),
 						],
 					),
 				]),

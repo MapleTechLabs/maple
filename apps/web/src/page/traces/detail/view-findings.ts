@@ -12,6 +12,7 @@ import { serviceDot } from "../../../ui/values"
 import { Message } from "./message"
 import type { ProductEvent } from "./model"
 import { type SpanNodeData, toSpanNode } from "./trace-data"
+import { typography } from "../../../ui/typography"
 
 // The trace's error callout and product events.
 
@@ -35,7 +36,7 @@ export const errorCallout = (
 			[
 				h.span([h.Class("text-severity-error")], [countLabel(errors.spans.length, "failed span")]),
 				errors.spans.length > 1
-					? h.span([h.Class("text-muted-foreground font-normal")], ["likely origin"])
+					? typography(h, { tone: "muted", weight: "normal" }, ["likely origin"])
 					: null,
 				h.span(
 					[h.Class("flex min-w-0 items-center gap-1.5 font-mono font-normal")],

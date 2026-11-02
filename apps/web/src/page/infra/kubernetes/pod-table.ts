@@ -29,6 +29,8 @@ import { listRelativeTime } from "../../kit/relative-time"
 import { hostStatusBadge } from "../kit/status"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { PodRow } from "./pod-data"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `PodTable` / `PodTableLoading`.
 
@@ -169,27 +171,28 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 			h.div(
 				[h.Class("w-0 min-w-64 flex-1")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[
-							middleTruncate(h, {
-								text: pod.podName,
-								tail: 12,
-								mono: true,
-								className:
-									"text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+					hstack(h, { gap: "2" }, [
+						middleTruncate(h, {
+							text: pod.podName,
+							tail: 12,
+							mono: true,
+							className: typographyClass({
+								size: "xs",
+								tone: "foreground",
+								weight: "medium",
+								className: "transition-colors group-hover:text-primary",
 							}),
-							hostStatusBadge(h, {
-								quiet: true,
-								lastSeen: pod.lastSeen,
-								referenceMs: inputs.referenceTime,
-							}),
-							restartMarker(
-								h,
-								Option.getOrUndefined(Option.map(inputs.restarts, (map) => map.get(key))),
-							),
-						],
-					),
+						}),
+						hostStatusBadge(h, {
+							quiet: true,
+							lastSeen: pod.lastSeen,
+							referenceMs: inputs.referenceTime,
+						}),
+						restartMarker(
+							h,
+							Option.getOrUndefined(Option.map(inputs.restarts, (map) => map.get(key))),
+						),
+					]),
 					metaLine(
 						h,
 						[
@@ -234,7 +237,11 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
 						mono: true,
-						className: "cursor-default text-2xs text-muted-foreground",
+						className: typographyClass({
+							size: "2xs",
+							tone: "muted",
+							className: "cursor-default",
+						}),
 					}),
 				],
 			),

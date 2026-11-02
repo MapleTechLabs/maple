@@ -22,6 +22,7 @@ import {
 import { Message } from "./message"
 import type { Model, ReadinessFilter } from "./model"
 import { filteredEmpty as filteredEmptyState } from "../../kit/signal-empty-state"
+import { typography, typographyClass } from "../../../ui/typography"
 
 // `TemplateList`: the templates as rows.
 
@@ -77,7 +78,9 @@ const templateRow = (
 							h.Class(
 								cn(
 									"min-w-0 grow truncate text-sm",
-									isSelected ? "font-medium text-foreground" : "text-foreground",
+									isSelected
+										? typographyClass({ tone: "foreground", weight: "medium" })
+										: "text-foreground",
 								),
 							),
 						],
@@ -263,7 +266,7 @@ export const templateList = (
 								),
 							],
 							[
-								h.span([h.Class("font-mono text-foreground")], [String(searched.length)]),
+								typography(h, { tone: "foreground", mono: true }, [String(searched.length)]),
 								h.span(
 									[h.Class("text-muted-foreground")],
 									["of ", String(listed.length), " match name, description or tag"],
@@ -320,8 +323,8 @@ export const templateList = (
 					h.span(
 						[h.Class("flex min-w-0 grow items-baseline gap-2.25")],
 						[
-							h.span([h.Class("text-sm text-foreground")], ["Blank dashboard"]),
-							h.span([h.Class("text-muted-foreground text-2xs")], ["start from nothing"]),
+							typography(h, { size: "sm", tone: "foreground" }, ["Blank dashboard"]),
+							typography(h, { size: "2xs", tone: "muted" }, ["start from nothing"]),
 						],
 					),
 					icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),

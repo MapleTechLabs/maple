@@ -59,6 +59,8 @@ import { activitySection, eventTriggerId, insightTriggerId, topQueries } from ".
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstack, hstackClass } from "../../../../ui/stack"
 
 // `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
@@ -239,8 +241,7 @@ const dataSections = (
 									}),
 								],
 							),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
+							typography(h, { size: "2xs", tone: "muted" },
 								["PlanetScale Query Insights"],
 							),
 						],
@@ -256,22 +257,21 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model))
 	if (chips.length === 0) return []
 	const chipClass =
-		"inline-flex items-center gap-1 rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
+		hstackClass({ gap: "1", inline: true, className: typographyClass({ size: "3xs", tone: "muted", mono: true, className: "rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5" }) })
 	return [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],
+		hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] },
 			[
 				...chips.slice(0, 6).map((chip) =>
 					h.span(
 						[h.Class(chipClass)],
 						[
-							h.span([h.Class("max-w-[22ch] truncate text-foreground-soft")], [chip.label]),
+							typography(h, { tone: "soft", truncate: true, className: "max-w-[22ch]" }, [chip.label]),
 							button(
 								h,
 								{
 									variant: "ghost",
 									size: "icon-2xs",
-									className: "text-muted-foreground hover:text-foreground active:text-foreground",
+									className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
 									attributes: [
 										h.AriaLabel(`Remove ${chip.label}`),
 										h.OnClick(
@@ -301,7 +301,7 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 
 const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 	const candidates = candidatesOf(model)
-	if (candidates.length === 0) return h.div([h.Class("flex flex-wrap items-center gap-2")], [timeControls])
+	if (candidates.length === 0) return hstack(h, { gap: "2", wrap: true }, [timeControls])
 	const selected = selectedBranchOf(model)
 	return h.submodel({
 		slotId: "planetscale-branch-select",
@@ -323,7 +323,7 @@ const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 					: []),
 			],
 			toView: (parts) =>
-				h.div([h.Class("flex flex-wrap items-center gap-2")], [...parts, timeControls]),
+				hstack(h, { gap: "2", wrap: true }, [...parts, timeControls]),
 		},
 	})
 }
@@ -424,8 +424,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								actions:
 									heroActions.length === 0
 										? branchSelect(h, model, timeControls)
-										: h.div(
-												[h.Class("flex flex-wrap items-center gap-2")],
+										: hstack(h, { gap: "2", wrap: true },
 												[...heroActions, branchSelect(h, model, timeControls)],
 											),
 								// TODO(alert-menu): see the note at the top of this file.

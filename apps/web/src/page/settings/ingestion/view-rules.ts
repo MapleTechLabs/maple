@@ -22,6 +22,8 @@ import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 import { settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model, RecommendationTab } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `RecommendedMappingsSection` and `AttributeMappingsSection`.
 
@@ -40,7 +42,7 @@ const STATUS_BADGE = {
 } as const
 
 const code = (h: H, text: string) => inlineCode(h, { variant: "plain" }, [text])
-const strong = (h: H, text: string) => h.span([h.Class("text-foreground font-medium")], [text])
+const strong = (h: H, text: string) => typography(h, { tone: "foreground", weight: "medium" }, [text])
 const muted = (h: H, text: string) => h.span([h.Class("text-muted-foreground")], [text])
 
 const sentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string> => {
@@ -107,7 +109,7 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 			{
 				variant: "ghost",
 				size: "sm",
-				className: "text-muted-foreground hover:text-foreground active:text-foreground",
+				className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
 				isLoading: isPending,
 				attributes: [h.OnClick(Message.ClickedDismissRecommendation({ id: issue.id }))],
 			},
@@ -136,8 +138,7 @@ const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html =>
 						],
 						sentence(h, issue),
 					),
-					h.p(
-						[h.Class("text-muted-foreground text-2xs")],
+					typography(h, { size: "2xs", tone: "muted", as: "p" },
 						[
 							formatNumber(issue.usage_count),
 							" spans in 24h ·",
@@ -149,7 +150,7 @@ const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html =>
 					),
 				],
 			),
-			h.div([h.Class("flex shrink-0 items-center gap-1.5")], recommendationActions(h, model, issue)),
+			hstack(h, { gap: "1.5", className: "shrink-0" }, recommendationActions(h, model, issue)),
 		],
 	)
 }
@@ -419,7 +420,7 @@ export const deleteMappingDialog = (h: H, model: Model): Html =>
 		description: [
 			"Are you sure you want to delete",
 			" ",
-			h.span([h.Class("text-foreground font-medium")], [model.deleting?.name ?? ""]),
+			typography(h, { tone: "foreground", weight: "medium" }, [model.deleting?.name ?? ""]),
 			"? This action cannot be undone.",
 		],
 		confirmLabel: "Delete mapping",

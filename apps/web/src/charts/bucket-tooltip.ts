@@ -1,5 +1,6 @@
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ChartTooltip } from "./chart-spec"
+import { hstackClass } from "../ui/stack"
 
 // `PlotTooltipBody` for a time-bucketed chart (fixed metrics, query-builder areas): the bucket
 // heading, then one swatch, label and value per series; a dashed swatch for a partial series.
@@ -28,7 +29,7 @@ export const bucketTooltipBody = <Message>(
 							h.Class(
 								row.label === tooltip.highlighted
 									? "flex w-full items-center gap-2 [&_*]:font-semibold"
-									: "flex w-full items-center gap-2",
+									: hstackClass({ gap: "2", className: "w-full" }),
 							),
 						],
 						[

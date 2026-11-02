@@ -33,6 +33,8 @@ import type { Model } from "./model"
 import { hostnameOf } from "./prometheus"
 import { isFormValid, parsedInterval } from "./update-prometheus"
 import { authField, credentialFields, textField } from "./view-prometheus-form"
+import { typography } from "../../ui/typography"
+import { vstack, vstackClass } from "../../ui/stack"
 
 // Prometheus and WarpStream in the connect flow: save and probe an endpoint, name it, then watch
 // the first scheduled scrape land.
@@ -223,30 +225,20 @@ const failedRow = (
 			...(diagnosis === null || diagnosis.fixes.length === 0
 				? []
 				: [
-						h.div(
-							[h.Class("flex flex-col gap-1.5")],
-							[
-								h.span([h.Class("text-xs font-medium")], ["How to fix it"]),
-								h.ul(
-									[
-										h.Class(
-											"flex list-disc flex-col gap-1 pl-4 text-xs text-muted-foreground",
-										),
-									],
-									diagnosis.fixes.map((fix) => h.li([], [fix])),
-								),
-							],
-						),
+						vstack(h, { gap: "1.5" }, [
+							typography(h, { size: "xs", weight: "medium" }, ["How to fix it"]),
+							h.ul(
+								[h.Class("flex list-disc flex-col gap-1 pl-4 text-xs text-muted-foreground")],
+								diagnosis.fixes.map((fix) => h.li([], [fix])),
+							),
+						]),
 					]),
 			...(integration === "prometheus"
 				? []
 				: [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Agents only reachable inside your VPC? Run an OpenTelemetry Collector next to them and send to Maple instead.",
-							],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Agents only reachable inside your VPC? Run an OpenTelemetry Collector next to them and send to Maple instead.",
+						]),
 					]),
 			...(target === null
 				? []
@@ -275,10 +267,10 @@ const connectStep = (h: H, model: Model, integration: ScrapeIntegration): Html =
 		h,
 		[
 			stepCard(h, { icon: "LinkIcon", title: copy.title, note: "Credentials encrypted at rest" }, [
-				h.p([h.Class("text-xs text-muted-foreground")], [copy.intro]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [copy.intro]),
 				...(integration === "warpstream" ? [warpstreamGuide(h)] : []),
 				h.form(
-					[h.Class("flex flex-col gap-4"), h.OnSubmit(Message.SubmittedTargetForm())],
+					[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(Message.SubmittedTargetForm())],
 					[
 						textField(h, model, {
 							field: "url",
@@ -321,12 +313,11 @@ const chooseStep = (h: H, model: Model, integration: ScrapeIntegration): Html =>
 		h,
 		[
 			stepCard(h, { icon: "TagIcon", title: "Name this target" }, [
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
-					["How it shows up in Sources and on every metric it sends."],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"How it shows up in Sources and on every metric it sends.",
+				]),
 				h.form(
-					[h.Class("flex flex-col gap-4"), h.OnSubmit(Message.SubmittedTargetForm())],
+					[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(Message.SubmittedTargetForm())],
 					[
 						h.div(
 							[h.Class("grid grid-cols-1 gap-4 @2xl/page:grid-cols-3")],
@@ -357,14 +348,11 @@ const chooseStep = (h: H, model: Model, integration: ScrapeIntegration): Html =>
 								}),
 							],
 						),
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Metrics appear under service.name ",
-								inlineCode(h, {}, [service === "" ? "the target name" : service]),
-								". Interval is 5 to 300 seconds.",
-							],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Metrics appear under service.name ",
+							inlineCode(h, {}, [service === "" ? "the target name" : service]),
+							". Interval is 5 to 300 seconds.",
+						]),
 						button(
 							h,
 							{

@@ -38,6 +38,8 @@ import {
 } from "./derive"
 import { SEVERITY_FILL } from "../../errors/kit/severity"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass, vstackClass } from "../../../ui/stack"
 
 // Each connected repository as a row: its latest scan, open findings by severity, the upgrades
 // that clear them and what production runs. A row opens the repository's breakdown.
@@ -66,7 +68,7 @@ const lockfileIssue = (h: H, lockfile: DependencyScanLockfile): Html =>
 	h.li(
 		[h.Key(lockfile.path), h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs")],
 		[
-			h.span([h.Class("font-mono text-foreground")], [lockfile.path]),
+			typography(h, { tone: "foreground", mono: true }, [lockfile.path]),
 			badge(h, { variant: lockfile.status === "failed" ? "crit" : "muted" }, [
 				LOCKFILE_STATUS_LABEL[lockfile.status],
 			]),
@@ -142,7 +144,7 @@ const scanState = (h: H, scan: DependencyScanSummary | null): ReadonlyArray<Html
 export const repositoryHref = (repositoryId: string | null): string =>
 	hrefOf(AppRoute.SecurityDependencies({ search: repositoryId === null ? {} : { repo: repositoryId } }))
 
-const muted = (h: H, text: string): Html => h.span([h.Class("text-xs text-muted-foreground")], [text])
+const muted = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted" }, [text])
 
 const RANKED = ["critical", "high", "medium", "low"] as const
 
@@ -163,7 +165,7 @@ const severityCounts = (h: H, findings: ReadonlyArray<DependencyFindingView>): H
 						h.Key(severity),
 						h.Class(
 							cn(
-								"inline-flex items-center gap-1.5",
+								hstackClass({ gap: "1.5", inline: true }),
 								counts[severity] === 0 && "text-foreground-faint",
 								ROW_LINK_LIFT,
 							),
@@ -225,7 +227,7 @@ const productionCell = (h: H, repository: DependencyScanRepository): Html => {
 		: h.span(
 				[h.Class(cn("flex min-w-0 max-w-40 flex-col", ROW_LINK_LIFT)), h.Title(services.join(", "))],
 				[
-					h.span([h.Class("truncate text-sm")], [first]),
+					typography(h, { size: "sm", truncate: true }, [first]),
 					...(services.length > 1
 						? [muted(h, `+${countLabel(services.length - 1, "service")}`)]
 						: []),
@@ -291,7 +293,7 @@ const repositoryRow = (
 											h.AriaLabel(`Open ${repository.fullName} on GitHub`),
 											h.Class(
 												cn(
-													"shrink-0 text-muted-foreground hover:text-foreground active:text-foreground",
+													typographyClass({ tone: "muted", className: "shrink-0 hover:text-foreground active:text-foreground" }),
 													ROW_LINK_LIFT,
 												),
 											),
@@ -305,12 +307,12 @@ const repositoryRow = (
 								: scanSummary(h, scan, clock),
 							...(scan?.error === null || scan?.error === undefined
 								? []
-								: [h.p([h.Class("text-xs text-severity-error")], [scan.error])]),
+								: [typography(h, { size: "xs", tone: "error", as: "p" }, [scan.error])]),
 							...(issues.length === 0
 								? []
 								: [
 										h.ul(
-											[h.Class(cn("flex flex-col gap-1", ROW_LINK_LIFT))],
+											[h.Class(cn(vstackClass({ gap: "1" }), ROW_LINK_LIFT))],
 											issues.map((lockfile) => lockfileIssue(h, lockfile)),
 										),
 									]),
@@ -334,8 +336,7 @@ const repositoryRow = (
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center justify-end gap-2")],
+					hstack(h, { gap: "2", justify: "end" },
 						[...scanState(h, scan), scanButton(h, model, repository)],
 					),
 				],
@@ -358,8 +359,7 @@ export const repositoriesPanel = (
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Repositories",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
+			action: typography(h, { size: "xs", tone: "muted" },
 				["Select a repository for its upgrade plan"],
 			),
 		}),

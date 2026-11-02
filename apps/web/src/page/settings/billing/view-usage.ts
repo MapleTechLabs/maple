@@ -22,6 +22,8 @@ import { panel } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -67,18 +69,16 @@ export const usageTableSkeleton = (h: H): Html =>
 
 const capEditor = (h: H, model: Model, feature: FeatureSpend): Html => {
 	const parsed = parseCapInput(model.capDraft)
-	return h.div(
-		[h.Class("flex flex-col gap-1.5")],
+	return vstack(h, { gap: "1.5" },
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
+			hstack(h, { gap: "1.5" },
 				[
 					inputGroup(h, { className: "w-28" }, [
 						inputGroupInput(h, {
 							id: CAP_INPUT_ID,
 							// Text, not number: a number input reports unparseable text as "", which reads as "no cap".
 							type: "text",
-							controlClassName: "font-mono tabular-nums",
+							controlClassName: typographyClass({ mono: true, numeric: true }),
 							attributes: [
 								h.AriaLabel(`${feature.label} paid overage cap`),
 								h.InputMode("decimal"),
@@ -142,11 +142,9 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 	}
 	if (cap === undefined) return h.span([h.Class("text-muted-foreground")], ["Uncapped"])
 	const isReached = feature.overageUnits > 0 && feature.overageUnits >= cap
-	return h.div(
-		[h.Class("flex min-w-0 flex-col")],
+	return vstack(h, { shrink: true },
 		[
-			h.span(
-				[h.Class("font-mono tabular-nums")],
+			typography(h, { mono: true, numeric: true },
 				[cap === 0 ? "No overage" : `+${withUnit(feature.featureId, cap)}`],
 			),
 			h.span(
@@ -195,8 +193,7 @@ const featureRow = (
 		h,
 		[
 			tableCell(h, [
-				h.div(
-					[h.Class("flex min-w-0 items-center gap-2")],
+				hstack(h, { gap: "2", shrink: true },
 					[
 						h.span([
 							h.AriaHidden(true),
@@ -208,8 +205,7 @@ const featureRow = (
 				),
 			]),
 			tableCell(h, [
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-1.5")],
+				vstack(h, { gap: "1.5", shrink: true },
 					[
 						segmentedBar(h, {
 							className: "h-1 w-full rounded-none bg-muted",
@@ -236,7 +232,7 @@ const featureRow = (
 							h.span(
 								[
 									h.Class(
-										cn("font-mono tabular-nums", !hasOverage && "text-muted-foreground"),
+										cn(typographyClass({ mono: true, numeric: true }), !hasOverage && "text-muted-foreground"),
 									),
 								],
 								[
@@ -245,8 +241,7 @@ const featureRow = (
 										: formatCurrency(feature.overageCents / 100, spend.currency),
 								],
 							),
-							h.span(
-								[h.Class("font-mono text-2xs tabular-nums text-muted-foreground")],
+							typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true },
 								[rateCaption(feature)],
 							),
 						],
@@ -257,8 +252,7 @@ const featureRow = (
 			tableCell(h, [
 				isEditing
 					? capEditor(h, model, feature)
-					: h.div(
-							[h.Class("flex items-center justify-between gap-2")],
+					: hstack(h, { gap: "2", justify: "between" },
 							[
 								capSummary(h, feature, cap),
 								...(model.isAdmin && capApplies(feature) && featureId !== null

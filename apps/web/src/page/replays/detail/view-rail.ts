@@ -26,6 +26,8 @@ import { Message } from "./message"
 import type { EventFilter, EventRow, Model, RailTab, ReplayDetail, TraceSummary } from "./model"
 import { sessionTab } from "./view-session"
 import { noLinkedTraces } from "./view-timeline"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The session rail: Events, Traces and Session tabs.
 // TODO(rail-virtualize): the event list renders every row; long sessions should virtualize.
@@ -184,7 +186,7 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 					tone: "text-muted-foreground",
 					selected: "bg-muted text-foreground",
 				},
-				[h.span([h.Class("text-2xs font-medium")], ["All"])],
+				[typography(h, { size: "2xs", weight: "medium" }, ["All"])],
 			),
 			...KIND_FILTERS.map((filter) =>
 				filterButton(
@@ -343,8 +345,7 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 							),
 							...(visual.trail
 								? [
-										h.span(
-											[h.Class("shrink-0 text-3xs text-muted-foreground")],
+										typography(h, { size: "3xs", tone: "muted", className: "shrink-0" },
 											[visual.trail],
 										),
 									]
@@ -418,8 +419,7 @@ const eventsTab = (h: H, model: RailView): Html =>
 		onData: (events) => {
 			const filter = model.eventFilter
 			const rows = filter === "all" ? events : events.filter((ev) => ev.type === filter)
-			return h.div(
-				[h.Class("flex min-h-0 flex-1 flex-col")],
+			return vstack(h, { grow: true, className: "min-h-0" },
 				[
 					filterBar(h, model, events),
 					rows.length === 0
@@ -473,8 +473,7 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 						),
 					]
 				: []),
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
+			hstack(h, { gap: "2.5" },
 				[
 					textLink(
 						h,
@@ -492,7 +491,7 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 						spanKind: summary.rootSpanKind,
 						className: "min-w-0 flex-1",
 						textClassName: cn(
-							"truncate text-xs font-medium",
+							typographyClass({ size: "xs", weight: "medium", truncate: true }),
 							isError ? "text-severity-error" : "text-foreground",
 						),
 					}),

@@ -17,6 +17,7 @@ import { cyclePanel, cyclePanelSkeleton } from "./view-cycle"
 import { planSection } from "./view-plan"
 import { detailsSection, invoicesSection, unpaidInvoicesNotice } from "./view-records"
 import { usageTable, usageTableSkeleton } from "./view-usage"
+import { typographyClass } from "../../../ui/typography"
 
 export type ViewInputs = Readonly<{
 	/** The settings page's `billingCustomerAtom`. */
@@ -194,7 +195,7 @@ const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 					h,
 					{
 						tone: "muted",
-						className: "px-4 py-3 text-sm text-muted-foreground",
+						className: typographyClass({ size: "sm", tone: "muted", className: "px-4 py-3" }),
 						attributes: [h.Role("status")],
 					},
 					[

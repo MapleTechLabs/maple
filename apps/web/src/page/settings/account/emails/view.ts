@@ -18,6 +18,8 @@ import { textField } from "../fields"
 import type { AccountEmail, AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { canRemove } from "./update"
+import { typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -66,11 +68,10 @@ const emailRow = (h: H, model: Model, user: AccountUser, address: AccountEmail):
 			truncatedTableCell(
 				h,
 				[truncatedText(h, { text: address.email })],
-				"font-medium text-xs",
+				typographyClass({ size: "xs", weight: "medium" }),
 			),
 			tableCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-1.5")],
+				hstack(h, { gap: "1.5" },
 					[
 						...(isPrimary ? [badge(h, { variant: "secondary" }, ["Primary"])] : []),
 						address.isVerified

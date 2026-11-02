@@ -27,6 +27,7 @@ import { runsList } from "./view-runs"
 import { ciSkeleton } from "../kit/skeletons"
 import { chartsRow, headlineStrip, RESULT_SERIES } from "./view-stats"
 import { jobsTable, workflowsTable } from "./view-tables"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `CodeReviewCiPage` and `CiAnalyticsView`.
 
@@ -64,8 +65,7 @@ const noCiRuns = (h: H): Html =>
 	)
 
 const runsActions = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
+	hstack(h, { gap: "2", wrap: true },
 		[
 			...(model.search.branch
 				? [
@@ -110,11 +110,9 @@ const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, tim
 	const theme = model.themeColors
 	const time = { nowMs: model.frame.nowMs, timeZone }
 	if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return ciSkeleton(h)
-	return h.div(
-		[h.Class("flex flex-col gap-6")],
+	return vstack(h, { gap: "6" },
 		[
-			h.div(
-				[h.Class("flex flex-col gap-6")],
+			vstack(h, { gap: "6" },
 				[
 					headlineStrip(h, analytics.current, analytics.previous, windowLabel),
 					chartsRow(h, model, analytics, { theme, ...time }),
@@ -122,11 +120,9 @@ const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, tim
 					jobsTable(h, analytics.jobs),
 				],
 			),
-			h.section(
-				[h.Class("flex flex-col gap-3")],
+			vstack(h, { gap: "3", as: "section" },
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")],
+					hstack(h, { justify: "between", wrap: true, className: "gap-x-3 gap-y-2" },
 						[sectionHeading(h, { title: "Runs" }), runsActions(h, model)],
 					),
 					runsList(

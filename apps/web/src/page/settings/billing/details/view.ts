@@ -17,6 +17,8 @@ import * as SelectView from "../../../../ui/select-view"
 import { fieldIds, stateFor, textField } from "../../account/fields"
 import { type AddressField, Message, type Model } from "./model"
 import { COUNTRY_NAMES, TYPE_OPTIONS } from "./update"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -27,11 +29,10 @@ const changed = (field: AddressField) => (value: string) => Message.ChangedField
 /** A tax ID as it prints: value, type and Stripe's verification badge. */
 export const taxIdValue = <M>(h: HtmlBuilder<M>, taxId: BillingTaxId): Html => {
 	const verification = verificationBadge(taxId.verificationStatus)
-	return h.span(
-		[h.Class("flex min-w-0 items-center gap-3")],
+	return hstack(h, { gap: "3", shrink: true, as: "span" },
 		[
-			h.span([h.Class("font-mono tabular-nums")], [taxId.value]),
-			h.span([h.Class("truncate text-muted-foreground")], [taxIdLabel(taxId.type)]),
+			typography(h, { mono: true, numeric: true }, [taxId.value]),
+			typography(h, { tone: "muted", truncate: true }, [taxIdLabel(taxId.type)]),
 			...(verification === null ? [] : [badge(h, { size: "sm", variant: verification.variant }, [verification.label])]),
 		],
 	)
@@ -60,8 +61,7 @@ const countryField = (h: H, model: Model): Html => {
 const addTaxRow = (h: H, model: Model, profile: BillingProfile): Html => {
 	const state = stateFor(model.taxValue, model.isMissingTaxValue)
 	return field(h, { state, className: "gap-1.5" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-2")],
+		hstack(h, { gap: "2", wrap: true },
 			[
 				h.submodel({
 					slotId: "billing-tax-type",
@@ -112,7 +112,7 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 	field(h, { state: IDLE, className: "gap-2" }, [
 		fieldLabel(h, { ids: fieldIds("billing-tax-ids"), state: IDLE }, "Tax IDs"),
 		...(!profile.linked
-			? [h.p([h.Class("text-xs text-muted-foreground")], ["Available once your organization has a plan."])]
+			? [typography(h, { size: "xs", tone: "muted", as: "p" }, ["Available once your organization has a plan."])]
 			: [
 					...(profile.taxIds.length === 0
 						? []

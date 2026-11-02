@@ -24,6 +24,8 @@ import { emptyValue } from "../../../ui/values"
 import { authorLabel } from "../kit/author"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass } from "../../../ui/stack"
 
 // `ReviewTable`: the pull requests and their reviews.
 
@@ -64,11 +66,13 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 						},
 						[
 							h.span([h.Class("shrink-0 text-muted-foreground")], ["#", String(review.number)]),
-							h.span(
-								[
-									h.Class("truncate font-medium"),
-									h.Title(review.title ?? "Untitled pull request"),
-								],
+							typography(
+								h,
+								{
+									weight: "medium",
+									truncate: true,
+									attributes: [h.Title(review.title ?? "Untitled pull request")],
+								},
 								[review.title ?? "Untitled pull request"],
 							),
 						],
@@ -96,7 +100,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				h,
 				[
 					h.span(
-						[h.Class(cn("inline-flex items-center gap-1.5", outcome.tone))],
+						[h.Class(cn(hstackClass({ gap: "1.5", inline: true }), outcome.tone))],
 						[
 							outcome.kind === "running"
 								? spinner(h, undefined, 14)
@@ -106,10 +110,9 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 					),
 					...(review.status === "skipped" && review.skipReason !== null
 						? [
-								h.div(
-									[h.Class("text-xs text-muted-foreground")],
-									[SKIP_LABELS[review.skipReason]],
-								),
+								typography(h, { size: "xs", tone: "muted", as: "div" }, [
+									SKIP_LABELS[review.skipReason],
+								]),
 							]
 						: []),
 				],
@@ -130,28 +133,25 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				[
 					review.status !== "completed"
 						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
-						: h.span(
-								[h.Class("inline-flex items-center gap-1.5")],
-								[
-									...(review.criticalFindings > 0
-										? [
-												badge(
-													h,
-													{
-														size: "xs",
-														mono: true,
-														className: TONE_SOFT.crit,
-														attributes: [h.Title("Critical")],
-													},
-													[String(review.criticalFindings)],
-												),
-											]
-										: []),
-									formatNumber(review.findings),
-								],
-							),
+						: hstack(h, { gap: "1.5", inline: true, as: "span" }, [
+								...(review.criticalFindings > 0
+									? [
+											badge(
+												h,
+												{
+													size: "xs",
+													mono: true,
+													className: TONE_SOFT.crit,
+													attributes: [h.Title("Critical")],
+												},
+												[String(review.criticalFindings)],
+											),
+										]
+									: []),
+								formatNumber(review.findings),
+							]),
 				],
-				"px-3 text-right tabular-nums",
+				typographyClass({ numeric: true, className: "px-3 text-right" }),
 			),
 			tableCell(
 				h,

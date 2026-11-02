@@ -29,6 +29,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The page itself as the editor: a sidebar beside the preview. The sidebar lists what is on the
 // page; an opened component, incident or Add takes its place. Below `lg` the sidebar stacks on top.
@@ -253,61 +255,57 @@ const onThisPage = (h: H, model: Model): Html => {
 			h.Class("flex min-w-0 flex-col gap-5 outline-none"),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-col gap-1.5")],
-				[
-					eyebrow(h, { as: "h2", className: "px-2" }, ["On this page"]),
-					components.length === 0
-						? h.p(
-								[h.Class("px-2 text-xs text-muted-foreground")],
-								[
-									model.isAdmin
-										? "Nothing yet. Add a monitor and visitors see its status and uptime."
-										: "No monitors on this page yet.",
-								],
-							)
-						: h.ul(
-								[h.AriaLabel("Components"), h.Class("flex flex-col gap-0.5")],
-								components.map((component, index) =>
-									componentItem(h, model, component, {
-										isFirst: index === 0,
-										isLast: index === components.length - 1,
-									}),
-								),
+			vstack(h, { gap: "1.5" }, [
+				eyebrow(h, { as: "h2", className: "px-2" }, ["On this page"]),
+				components.length === 0
+					? h.p(
+							[h.Class("px-2 text-xs text-muted-foreground")],
+							[
+								model.isAdmin
+									? "Nothing yet. Add a monitor and visitors see its status and uptime."
+									: "No monitors on this page yet.",
+							],
+						)
+					: vstack(
+							h,
+							{ gap: "0.5", as: "ul", attributes: [h.AriaLabel("Components")] },
+							components.map((component, index) =>
+								componentItem(h, model, component, {
+									isFirst: index === 0,
+									isLast: index === components.length - 1,
+								}),
 							),
-					...(model.isAdmin
-						? [
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										className: "mt-1.5",
-										// Reopened mid-save, Add would list the monitors being added again.
-										isLoading: model.isAddingComponents,
-										attributes: [h.OnClick(Message.ClickedAddComponent())],
-									},
-									[icon(h, "PlusIcon"), "Add monitor"],
-								),
-							]
-						: []),
-				],
-			),
-			h.div(
-				[h.Class("flex flex-col gap-1.5")],
-				[
-					eyebrow(h, { as: "h2", className: "px-2" }, ["Incidents"]),
-					open.length + recent.length === 0
-						? h.p(
-								[h.Class("px-2 text-xs text-muted-foreground")],
-								["Nothing posted. Post incident when something breaks."],
-							)
-						: h.ul(
-								[h.AriaLabel("Incidents"), h.Class("flex flex-col gap-0.5")],
-								[...open, ...recent].map((incident) => incidentItem(h, model, incident)),
+						),
+				...(model.isAdmin
+					? [
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									className: "mt-1.5",
+									// Reopened mid-save, Add would list the monitors being added again.
+									isLoading: model.isAddingComponents,
+									attributes: [h.OnClick(Message.ClickedAddComponent())],
+								},
+								[icon(h, "PlusIcon"), "Add monitor"],
 							),
-				],
-			),
+						]
+					: []),
+			]),
+			vstack(h, { gap: "1.5" }, [
+				eyebrow(h, { as: "h2", className: "px-2" }, ["Incidents"]),
+				open.length + recent.length === 0
+					? h.p(
+							[h.Class("px-2 text-xs text-muted-foreground")],
+							["Nothing posted. Post incident when something breaks."],
+						)
+					: vstack(
+							h,
+							{ gap: "0.5", as: "ul", attributes: [h.AriaLabel("Incidents")] },
+							[...open, ...recent].map((incident) => incidentItem(h, model, incident)),
+						),
+			]),
 		],
 	)
 }
@@ -332,40 +330,33 @@ const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> =>
 }
 
 const previewColumn = (h: H, model: Model, page: V2StatusPage): Html =>
-	h.section(
-		[h.AriaLabel("Page preview"), h.Class("flex min-w-0 flex-col gap-2")],
-		[
-			h.div(
-				[h.Class("flex min-h-7 items-center justify-between gap-3")],
-				[
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						["Click a component or incident to edit it."],
-					),
-					...(page.theme.appearance === "auto"
-						? [
-								segmentedSelect(h, {
-									size: "xs",
-									ariaLabel: "Preview mode",
-									value: model.previewScheme,
-									onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
-									options: [
-										{ value: "light", label: "Light" },
-										{ value: "dark", label: "Dark" },
-									],
-								}),
-							]
-						: []),
-				],
-			),
-			previewFrame(h, {
-				title: `${page.name} as visitors see it`,
-				document: canvasDocument(model, page),
-				isSelectable: true,
-				className: "h-[640px] lg:h-[calc(100vh-16rem)] lg:min-h-[520px]",
-			}),
-		],
-	)
+	vstack(h, { gap: "2", shrink: true, as: "section", attributes: [h.AriaLabel("Page preview")] }, [
+		hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Click a component or incident to edit it.",
+			]),
+			...(page.theme.appearance === "auto"
+				? [
+						segmentedSelect(h, {
+							size: "xs",
+							ariaLabel: "Preview mode",
+							value: model.previewScheme,
+							onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
+							options: [
+								{ value: "light", label: "Light" },
+								{ value: "dark", label: "Dark" },
+							],
+						}),
+					]
+				: []),
+		]),
+		previewFrame(h, {
+			title: `${page.name} as visitors see it`,
+			document: canvasDocument(model, page),
+			isSelectable: true,
+			className: "h-[640px] lg:h-[calc(100vh-16rem)] lg:min-h-[520px]",
+		}),
+	])
 
 export const canvas = (h: H, model: Model, page: V2StatusPage, time: TimeInputs): Html => {
 	const panel = panelView(h, model, time)

@@ -26,6 +26,8 @@ import {
 	integrationErrorNotice,
 	integrationStatusCard,
 } from "./view-integration-card"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstackClass, vstack } from "../../ui/stack"
 
 // The Supabase card: connect, then the organization's projects and their switches.
 
@@ -194,23 +196,25 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 			h.Key(project.ref),
 			h.Class(
 				cn(
-					"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
+					hstackClass({
+						gap: "4",
+						className: typographyClass({
+							size: "sm",
+							className: "border-b border-border-subtle px-4 py-2.5 last:border-0",
+						}),
+					}),
 					isPaused && "opacity-60",
 				),
 			),
 		],
 		[
-			h.span(
-				[h.Class("flex w-0 min-w-48 flex-1 flex-col")],
-				[
-					h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
-					h.span(
-						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
-						[project.region === "" ? project.ref : `${project.ref} · ${project.region}`],
-					),
-					...supabaseProjectNotes(h, project),
-				],
-			),
+			vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
+				h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
+				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+					project.region === "" ? project.ref : `${project.ref} · ${project.region}`,
+				]),
+				...supabaseProjectNotes(h, project),
+			]),
 			h.span(
 				[h.Class("flex w-24 shrink-0")],
 				[

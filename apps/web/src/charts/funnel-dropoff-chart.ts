@@ -12,6 +12,8 @@ import { MeasureChartContainer } from "./chart-mounts"
 import type { FunnelChartInputs } from "./funnel-chart"
 import { fmtValue } from "./funnel-chart"
 import { fmtSpan, leaverRows, type Step, toSteps } from "./funnel-dropoff-steps"
+import { typography, typographyClass } from "../ui/typography"
+import { hstack, vstack } from "../ui/stack"
 
 // Port of `FunnelDropoffChart` (packages/ui/src/components/charts/funnel/funnel-dropoff-chart.tsx).
 // The hovered column is the chart Model's `activeKey` (its index).
@@ -36,11 +38,11 @@ const tipRow = (
 	h.div(
 		[h.Class("flex items-center justify-between gap-3 py-px tabular-nums")],
 		[
-			h.span([h.Class("flex items-center gap-1.5 text-muted-foreground")], [glyph, label]),
+			hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [glyph, label]),
 			h.span(
 				[h.Class("flex items-baseline gap-1.5 truncate")],
 				[
-					h.span([h.Class("font-semibold text-foreground")], [value]),
+					typography(h, { tone: "foreground", weight: "semibold" }, [value]),
 					...(share === undefined ? [] : [h.span([h.Class(cn("text-3xs", shareClass))], [share])]),
 				],
 			),
@@ -59,8 +61,7 @@ const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 					h.div(
 						[h.Class("my-0.5")],
 						[
-							h.div(
-								[h.Class("flex items-center gap-2")],
+							hstack(h, { gap: "2" },
 								[
 									h.span(
 										[
@@ -73,7 +74,7 @@ const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 										],
 										[entry.name],
 									),
-									h.span([h.Class("tabular-nums text-muted-foreground")], [formatPercent(entry.share)]),
+									typography(h, { tone: "muted", numeric: true }, [formatPercent(entry.share)]),
 								],
 							),
 							h.div(
@@ -258,12 +259,7 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 	const prev = ctx.visible[index - 1]
 	const fade = ctx.hover !== null && ctx.hover !== index ? 0.6 : 1
 	const isLast = index === ctx.steps.length - 1
-	return h.div(
-		[
-			h.Class("flex min-w-0 flex-col"),
-			h.OnMouseEnter(Message.EnteredLegendItem({ key: String(index) })),
-			h.DataAttribute("slot", "funnel-dropoff-step"),
-		],
+	return vstack(h, { shrink: true, attributes: [h.OnMouseEnter(Message.EnteredLegendItem({ key: String(index) })), h.DataAttribute("slot", "funnel-dropoff-step")] },
 		[
 			h.div(
 				[h.Class("flex flex-col gap-1 leading-none")],
@@ -273,7 +269,7 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 							h.Class(
 								cn(
 									"truncate text-2xs font-medium",
-									step.unnamed ? "italic text-muted-foreground" : "text-foreground-soft",
+									step.unnamed ? typographyClass({ tone: "muted", className: "italic" }) : "text-foreground-soft",
 								),
 							),
 							h.Title(step.name),
@@ -365,7 +361,7 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 	if (steps.length === 0 || (steps[0]?.value ?? 0) <= 0)
 		return h.div(
 			[h.Class(cn("relative grid h-full w-full place-items-center", inputs.className))],
-			[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
+			[typography(h, { size: "2xs", tone: "muted" }, ["No data"])],
 		)
 	const width = model.containerWidth
 	const isGrouped = legend.length > 0

@@ -19,6 +19,7 @@ import { presetSpanLabel } from "../../kit/time-controls"
 import { issuesCard, SEVERITY_SERIES, volumeCard } from "./view-charts"
 import { authorsCard, categoriesCard, outcomesCard } from "./view-lists"
 import { headlineStrip, secondaryStats } from "./view-stats"
+import { vstack } from "../../../ui/stack"
 
 // `CodeReviewAnalyticsPage` and `CodeReviewAnalyticsView`.
 
@@ -64,8 +65,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				model.search.startTime !== undefined
 				? "period"
 				: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
-			return h.div(
-				[h.Class("flex flex-col gap-6")],
+			return vstack(h, { gap: "6" },
 				[
 					headlineStrip(h, analytics.current, analytics.previous, windowLabel),
 					h.div(

@@ -7,6 +7,7 @@ import { textLink } from "../../../../ui/text-link"
 import type { ZoneRow } from "../data"
 import type { ZoneRailDns } from "./derive"
 import { Message, type Model, type ZoneTab } from "./model"
+import { typography } from "../../../../ui/typography"
 
 // `CloudflareZoneRail`.
 
@@ -20,7 +21,7 @@ const railLink = (h: H, name: IconName, tab: ZoneTab, children: ReadonlyArray<st
 	)
 
 const note = (h: H, text: string): Html =>
-	h.p([h.Class("text-2xs leading-relaxed text-muted-foreground")], [text])
+	typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [text])
 
 export const zoneRail = (
 	h: H,

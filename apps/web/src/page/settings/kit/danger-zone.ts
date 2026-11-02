@@ -1,6 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { panel } from "../../../ui/panel"
 import { settingsSection } from "./section"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // The one "Danger zone" section: a destructive-edged panel of rows, each a title, what it does, and its action.
 
@@ -30,14 +32,15 @@ export const dangerRow = <M>(
 	h.div(
 		[h.Class("flex items-start justify-between gap-6 p-4")],
 		[
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
-				[
-					h.p([h.Class("text-sm font-medium text-foreground")], [options.title]),
-					h.p([h.Class("font-prose text-xs text-muted-foreground")], options.description),
-					...(options.details === undefined ? [] : [h.div([h.Class("pt-1")], [options.details])]),
-				],
-			),
+			vstack(h, { gap: "1", shrink: true, grow: true }, [
+				typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [options.title]),
+				typography(
+					h,
+					{ size: "xs", tone: "muted", as: "p", className: "font-prose" },
+					options.description,
+				),
+				...(options.details === undefined ? [] : [h.div([h.Class("pt-1")], [options.details])]),
+			]),
 			h.div([h.Class("shrink-0")], [options.action]),
 		],
 	)

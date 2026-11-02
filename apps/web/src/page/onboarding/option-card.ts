@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { choiceCard } from "../../ui/choice-card"
 import { PIXEL_GLYPHS } from "../../ui/icons.generated"
+import { typography } from "../../ui/typography"
 
 // `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
 // its end state.
@@ -100,7 +101,9 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("min-w-0 flex-1 pt-px")],
 						[
-							h.span([h.Class("block text-sm font-semibold")], [options.title]),
+							typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+								options.title,
+							]),
 							h.span(
 								[h.Class("mt-1 block text-xs leading-relaxed text-muted-foreground")],
 								[options.description],

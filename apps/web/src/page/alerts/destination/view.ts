@@ -30,6 +30,8 @@ import { linearFields } from "./linear-fields-view"
 import { waitingFor } from "../shared/chat-connect"
 import { spinner } from "../../../ui/spinner"
 import { type TextField, toFormState } from "./form"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, hstackClass } from "../../../ui/stack"
 
 // The destination dialog. The Email, Linear and chat fields live in `*-fields-view.ts`.
 
@@ -140,7 +142,7 @@ const providerTile = (
 				[h.Class("relative flex w-full items-center gap-2.5")],
 				[
 					logo(h, model, options.type, 32, options.chatConnector),
-					h.span([h.Class("truncate text-sm font-semibold")], [options.label ?? provider.label]),
+					typography(h, { size: "sm", weight: "semibold", truncate: true }, [options.label ?? provider.label]),
 					...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
 				],
 			),
@@ -233,7 +235,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current key"
 							: "e.g. R0XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 						hasDescription: true,
 					}),
 					...(isBadKey
@@ -290,7 +292,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current webhook"
 							: "https://discord.com/api/webhooks/...",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 						hasDescription: true,
 					}),
 					fieldDescription(
@@ -318,7 +320,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current webhook"
 							: "https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 						hasDescription: true,
 					}),
 					...(isBadUrl
@@ -354,7 +356,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current URL"
 							: "https://example.com/maple-alerts",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 					}),
 				]),
 				fieldBlock(h, [
@@ -369,7 +371,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						placeholder: isEditing
 							? "Leave blank to keep current secret"
 							: "Optional HMAC secret",
-						className: "font-mono text-xs",
+						className: typographyClass({ size: "xs", mono: true }),
 					}),
 				]),
 			]
@@ -383,8 +385,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						}),
 					]
 				: [
-						h.p(
-							[h.Class("text-2xs text-muted-foreground")],
+						typography(h, { size: "2xs", tone: "muted", as: "p" },
 							[
 								"Email destinations target workspace members and require Clerk authentication, which is not enabled in this deployment.",
 							],
@@ -429,7 +430,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 				name: "telegram-token",
 				field: "telegramBotToken",
 				placeholder: isEditing ? "Leave blank to keep current token" : "123456789:ABC-DEF...",
-				className: "font-mono text-xs",
+				className: typographyClass({ size: "xs", mono: true }),
 				type: "password",
 				hasDescription: true,
 			}),
@@ -448,8 +449,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 			[h.Class("space-y-1.5")],
 			[
 				field(h, { className: "items-stretch gap-2", state: IDLE }, [
-					h.div(
-						[h.Class("flex items-center justify-between gap-2")],
+					hstack(h, { gap: "2", justify: "between" },
 						[
 							fieldLabel(h, { ids: chatIds, className: "text-xs", state: IDLE }, "Chat ID"),
 							button(
@@ -486,8 +486,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 						: []),
 					...(model.telegramChats !== null && model.telegramChats.length === 0
 						? [
-								h.p(
-									[h.Class("text-2xs text-muted-foreground")],
+								typography(h, { size: "2xs", tone: "muted", as: "p" },
 									[
 										"No recent chats. Add the bot to the group or channel (or send it a message), then detect again. Telegram only keeps the last 24 hours.",
 									],
@@ -505,8 +504,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 												density: "compact",
 												className: "gap-2 rounded-sm px-2",
 												title: chat.title,
-												trailing: h.span(
-													[h.Class("text-3xs text-muted-foreground")],
+												trailing: typography(h, { size: "3xs", tone: "muted" },
 													[TELEGRAM_CHAT_TYPE_LABELS.get(chat.type) ?? chat.type],
 												),
 												onClick: Message.ClickedTelegramChat({ chatId: chat.id }),
@@ -522,10 +520,9 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 					name: "telegram-chat",
 					field: "telegramChatId",
 					placeholder: "-1001234567890 or @mychannel",
-					className: "font-mono text-xs",
+					className: typographyClass({ size: "xs", mono: true }),
 				}),
-				h.p(
-					[h.Class("text-2xs text-muted-foreground")],
+				typography(h, { size: "2xs", tone: "muted", as: "p" },
 					[
 						"Add the bot to the chat, then hit ",
 						h.strong([], ["Detect chats"]),
@@ -565,7 +562,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 		model: model.dialog,
 		toParentMessage: (message) => Message.GotDialogMessage({ message }),
 		className: "sm:max-w-xl",
-		titleClassName: "flex items-center gap-2.5",
+		titleClassName: hstackClass({ gap: "2.5" }),
 		title: [
 			...(isEditing ? [logo(h, model, model.form.type, 28, model.form.chatConnector)] : []),
 			isEditing ? `Edit ${provider.label} destination` : "Add destination",
@@ -588,12 +585,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 													"flex-row items-center justify-between gap-3 px-3 py-2",
 											},
 											[
-												h.span(
-													[
-														h.Class(
-															"flex min-w-0 items-center gap-2.5",
-														),
-													],
+												hstack(h, { gap: "2.5", shrink: true, as: "span" },
 													[
 														logo(
 															h,
@@ -602,12 +594,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 															28,
 															model.form.chatConnector,
 														),
-														h.span(
-															[
-																h.Class(
-																	"truncate text-sm font-medium",
-																),
-															],
+														typography(h, { size: "sm", weight: "medium", truncate: true },
 															[provider.label],
 														),
 													],
@@ -634,8 +621,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 			h.div(
 				[h.Class("space-y-2")],
 				[
-					h.div(
-						[h.Class("flex items-center justify-between")],
+					hstack(h, { justify: "between" },
 						[
 							eyebrow(h, { variant: "label", as: "div" }, ["Connection"]),
 							...fieldHelper(h, model.form.type),
@@ -655,12 +641,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 									...(isEditing
 										? []
 										: [
-												h.span(
-													[
-														h.Class(
-															"font-normal text-muted-foreground",
-														),
-													],
+												typography(h, { tone: "muted", weight: "normal" },
 													["optional"],
 												),
 											]),

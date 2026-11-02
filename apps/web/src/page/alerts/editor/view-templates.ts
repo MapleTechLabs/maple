@@ -8,6 +8,8 @@ import { inlineCode } from "../../../ui/inline-code"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `RuleTemplatesOverlay`: the first-touch picker.
 
@@ -19,20 +21,17 @@ const tileHead = (h: H, iconName: IconName, title: string, subtitle: string): Ht
 	h.div(
 		[h.Class("space-y-1")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					h.span(
-						[
-							h.Class(
-								"flex size-7 items-center justify-center rounded-md bg-primary-a2 text-primary",
-							),
-						],
-						[icon(h, iconName, { size: 18 })],
-					),
-					h.span([h.Class("font-prose font-medium text-sm")], [title]),
-				],
-			),
+			hstack(h, { gap: "2" }, [
+				h.span(
+					[
+						h.Class(
+							"flex size-7 items-center justify-center rounded-md bg-primary-a2 text-primary",
+						),
+					],
+					[icon(h, iconName, { size: 18 })],
+				),
+				h.span([h.Class("font-prose font-medium text-sm")], [title]),
+			]),
 			h.p([h.Class("font-prose text-muted-foreground text-xs leading-snug")], [subtitle]),
 		],
 	)
@@ -88,7 +87,12 @@ const tiles = (h: H): ReadonlyArray<Html> => [
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Dashboards({ search: {} }))),
-							h.Class("text-foreground underline underline-offset-2"),
+							h.Class(
+								typographyClass({
+									tone: "foreground",
+									className: "underline underline-offset-2",
+								}),
+							),
 						],
 						["Dashboards"],
 					),

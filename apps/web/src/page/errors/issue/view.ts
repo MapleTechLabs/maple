@@ -37,6 +37,7 @@ import { textLinkClass } from "../../../ui/text-link"
 import { AppRoute, hrefOf } from "../../../route"
 import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
+import { vstack } from "../../../ui/stack"
 
 // `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
 
@@ -150,8 +151,9 @@ const overview = (
 		...clock,
 	})
 	const fix = getItFixedPanel(h, model, issue, linkedInvestigationOf(model))
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(
+		h,
+		{ gap: "4" },
 		issue.kind === "alert"
 			? [
 					alertSourceCard(h, issue),
@@ -174,23 +176,20 @@ const overview = (
 const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html => {
 	const verification = latestVerificationOf(model)
 	const pullRequests = pullRequestsOf(model)
-	return h.div(
-		[h.Class("flex flex-col gap-4"), h.OnMount(MountRightRail())],
-		[
-			issueSidebar(h, model, detail.issue, detail.environments),
-			h.div(
-				[h.Class("flex flex-col gap-4 px-4 pb-4")],
-				[
-					...(verification !== null
-						? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
-						: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
-							? [attachNudge(h)]
-							: []),
-					pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
-				],
-			),
-		],
-	)
+	return vstack(h, { gap: "4", attributes: [h.OnMount(MountRightRail())] }, [
+		issueSidebar(h, model, detail.issue, detail.environments),
+		h.div(
+			[h.Class("flex flex-col gap-4 px-4 pb-4")],
+			[
+				...(verification !== null
+					? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
+					: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
+						? [attachNudge(h)]
+						: []),
+				pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
+			],
+		),
+	])
 }
 
 /** The Occurrences table, or the Activity timeline with its composer. */

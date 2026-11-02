@@ -7,6 +7,7 @@ import { keyValue, keyValueList } from "../../../../ui/key-value"
 import { copyButton, statusOf } from "./copy"
 import { Message } from "./message"
 import type { Model, SpanEventData } from "./model"
+import { hstack } from "../../../../ui/stack"
 
 // The span's events section.
 
@@ -51,33 +52,30 @@ const stackTrace = (h: H, model: Model, eventId: string, stacktrace: string): Ht
 	return h.div(
 		[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1")],
-				[
-					collapsibleTrigger(
-						h,
-						{
-							isOpen,
-							onToggle: Message.ToggledCollapsible({ id }),
-							className:
-								"group flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
-						},
-						[
-							icon(h, "ChevronRightIcon", {
-								size: 10,
-								className: "transition-transform group-data-[panel-open]:rotate-90",
-							}),
-							"Stack trace",
-						],
-					),
-					copyButton(h, model, {
-						id: `${id}:copy`,
-						value: stacktrace,
-						label: "stack trace",
-						iconSize: 10,
-					}),
-				],
-			),
+			hstack(h, { gap: "1" }, [
+				collapsibleTrigger(
+					h,
+					{
+						isOpen,
+						onToggle: Message.ToggledCollapsible({ id }),
+						className:
+							"group flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
+					},
+					[
+						icon(h, "ChevronRightIcon", {
+							size: 10,
+							className: "transition-transform group-data-[panel-open]:rotate-90",
+						}),
+						"Stack trace",
+					],
+				),
+				copyButton(h, model, {
+					id: `${id}:copy`,
+					value: stacktrace,
+					label: "stack trace",
+					iconSize: 10,
+				}),
+			]),
 			...(isOpen
 				? [
 						h.pre(
@@ -108,13 +106,10 @@ const eventRow = (h: H, model: Model, event: SpanEventData, index: number): Html
 		return h.li(
 			[h.Class("space-y-1 p-2")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 items-baseline gap-2")],
-					[
-						offset,
-						h.span([h.Class("min-w-0 truncate font-mono text-xs")], [event.name || "(unnamed)"]),
-					],
-				),
+				hstack(h, { gap: "2", align: "baseline", shrink: true }, [
+					offset,
+					h.span([h.Class("min-w-0 truncate font-mono text-xs")], [event.name || "(unnamed)"]),
+				]),
 				...eventAttributes(h, model, eventId, described.attributes),
 			],
 		)
@@ -122,19 +117,16 @@ const eventRow = (h: H, model: Model, event: SpanEventData, index: number): Html
 	return h.li(
 		[h.Class("space-y-1 p-2")],
 		[
-			h.div(
-				[h.Class("flex min-w-0 items-baseline gap-2")],
-				[
-					offset,
-					h.span(
-						[h.Class("flex min-w-0 items-center gap-1 font-mono text-xs text-severity-error")],
-						[
-							icon(h, "CircleXmarkIcon", { size: 12, className: "shrink-0 self-center" }),
-							h.span([h.Class("truncate")], [described.type ?? "exception"]),
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "baseline", shrink: true }, [
+				offset,
+				h.span(
+					[h.Class("flex min-w-0 items-center gap-1 font-mono text-xs text-severity-error")],
+					[
+						icon(h, "CircleXmarkIcon", { size: 12, className: "shrink-0 self-center" }),
+						h.span([h.Class("truncate")], [described.type ?? "exception"]),
+					],
+				),
+			]),
 			...(described.message === undefined
 				? []
 				: [

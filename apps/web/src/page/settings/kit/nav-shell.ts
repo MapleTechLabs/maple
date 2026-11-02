@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
 import { navRailRow } from "../../../ui/nav-rail-row"
+import { vstack, vstackClass } from "../../../ui/stack"
 
 // `SettingsNavShell`: the rail of `/settings`, `/account` and `/integrations`. Tabs are buttons, sibling
 // pages are links.
@@ -29,14 +30,12 @@ export const navShell = <M, Id extends string>(
 	ariaLabel?: string,
 ): Html =>
 	h.nav(
-		[h.Class("flex flex-col gap-5"), ...(ariaLabel === undefined ? [] : [h.AriaLabel(ariaLabel)])],
+		[h.Class(vstackClass({ gap: "5" })), ...(ariaLabel === undefined ? [] : [h.AriaLabel(ariaLabel)])],
 		sections.map((section) =>
-			h.div(
-				[h.Key(section.id), h.Class("flex flex-col gap-1")],
+			vstack(h, { gap: "1", attributes: [h.Key(section.id)] },
 				[
 					eyebrow(h, { as: "div", className: "flex h-6 items-center px-2" }, [section.title]),
-					h.div(
-						[h.Class("flex flex-col gap-0.5")],
+					vstack(h, { gap: "0.5" },
 						section.items.map((row) => {
 							const isActive = row.id === active
 							return row.kind === "link"

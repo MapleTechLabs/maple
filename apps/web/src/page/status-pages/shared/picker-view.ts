@@ -10,6 +10,8 @@ import { nativeOption, nativeSelect } from "../../../ui/native-select"
 import { label } from "../../../ui/label"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_OPTIONS } from "./derive"
 import { checkedRows, monitorTarget, type Picker, PickerMessage, type PickerRow, rowIssue } from "./picker"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The checklist view: checked rows rename, group and move in place; the URL field and the
 // add-by-hand row sit under it.
@@ -68,8 +70,7 @@ const moveButtons = <M>(
 	position: Readonly<{ isFirst: boolean; isLast: boolean }>,
 ): Html => {
 	const name = row.name.trim() === "" ? "component" : row.name.trim()
-	return h.div(
-		[h.Class("flex shrink-0 items-center")],
+	return hstack(h, { className: "shrink-0" },
 		[
 			iconButton(
 				h,
@@ -112,8 +113,7 @@ const editFields = <M>(
 	const error = rowIssue(row)
 	const nameId = rowId(options.idPrefix, row, "name")
 	const isDisabled = options.isDisabled === true
-	return h.div(
-		[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
+	return vstack(h, { gap: "1", shrink: true, grow: true },
 		[
 			h.div(
 				[h.Class("grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]")],
@@ -146,7 +146,7 @@ const editFields = <M>(
 			),
 			...(error === null
 				? []
-				: [h.p([h.Id(`${nameId}-error`), h.Class("text-xs text-destructive-foreground")], [error])]),
+				: [typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Id(`${nameId}-error`)] }, [error])]),
 		],
 	)
 }
@@ -206,18 +206,17 @@ const monitorRowView = <M>(
 				],
 			),
 			row.isChecked
-				? h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
+				? vstack(h, { gap: "1", shrink: true, grow: true },
 						[
 							editFields(h, options, row, name),
-							h.p([h.Class("truncate font-mono text-xs text-muted-foreground")], [target]),
+							typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, as: "p" }, [target]),
 						],
 					)
 				: h.div(
 						[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 pt-1")],
 						[
-							h.span([h.Class("truncate text-sm")], [name]),
-							h.span([h.Class("truncate font-mono text-xs")], [target]),
+							typography(h, { size: "sm", truncate: true }, [name]),
+							typography(h, { size: "xs", mono: true, truncate: true }, [target]),
 						],
 					),
 			...(row.isChecked && options.isOrderable !== false
@@ -241,21 +240,18 @@ const manualRowView = <M>(
 				[h.AriaHidden(true), h.Class("mt-2 flex size-4 shrink-0 items-center justify-center")],
 				[icon(h, "PencilIcon", { size: 12, className: "text-muted-foreground" })],
 			),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
+			vstack(h, { gap: "1", shrink: true, grow: true },
 				[
 					editFields(h, options, row, label),
-					h.div(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2" },
 						[
 							statusSelect(h, options, row, label),
-							h.span([h.Class("text-xs text-muted-foreground")], ["Updated by hand"]),
+							typography(h, { size: "xs", tone: "muted" }, ["Updated by hand"]),
 						],
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 items-center")],
+			hstack(h, { className: "shrink-0" },
 				[
 					...(options.isOrderable === false ? [] : [moveButtons(h, options, row, position)]),
 					iconButton(
@@ -299,8 +295,7 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 			h.AriaLabel("Monitor a URL"),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
+			hstack(h, { gap: "2", wrap: true },
 				[
 					input(h, {
 						id,
@@ -350,11 +345,10 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 				],
 			),
 			picker.urlIssue === null
-				? h.p(
-						[h.Class("text-xs text-muted-foreground")],
+				? typography(h, { size: "xs", tone: "muted", as: "p" },
 						["Maple checks it every minute and the page shows its uptime."],
 					)
-				: h.p([h.Id(`${id}-error`), h.Class("text-xs text-destructive-foreground")], [picker.urlIssue]),
+				: typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Id(`${id}-error`)] }, [picker.urlIssue]),
 		],
 	)
 }
@@ -367,13 +361,11 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 		isLast: checked.at(-1)?.key === row.key,
 	})
 	const isEmpty = picker.rows.length === 0
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
+	return vstack(h, { gap: "3" },
 		[
 			...(isEmpty
 				? [
-						h.p(
-							[h.Class("text-sm text-muted-foreground")],
+						typography(h, { size: "sm", tone: "muted", as: "p" },
 							["Paste a URL to monitor, or add a component you'll update by hand."],
 						),
 					]

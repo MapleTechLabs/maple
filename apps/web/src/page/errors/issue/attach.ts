@@ -18,6 +18,8 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { LinkPullRequest } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The attach pull request dialog: pick a pull request
 // of the connected repository (a Select picks it when the org has several), or paste a link.
@@ -166,8 +168,7 @@ const pasteField = (h: H, model: Model): Html =>
 					h.OnInput((value) => Message.ChangedAttachDraft({ value })),
 				],
 			}),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
+			typography(h, { size: "xs", tone: "muted", as: "p" },
 				[
 					h.a(
 						[
@@ -185,14 +186,11 @@ const pasteField = (h: H, model: Model): Html =>
 	)
 
 const pullRequestItem = (h: H, pr: PullRequestSummary): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-0.5")],
+	vstack(h, { gap: "0.5", shrink: true },
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
+			hstack(h, { gap: "2" },
 				[
-					h.span(
-						[h.Class("truncate text-xs font-medium")],
+					typography(h, { size: "xs", weight: "medium", truncate: true },
 						["#", String(pr.number), " ", pr.title],
 					),
 					badge(
@@ -205,8 +203,7 @@ const pullRequestItem = (h: H, pr: PullRequestSummary): ReadonlyArray<Html> => [
 					),
 				],
 			),
-			h.span(
-				[h.Class("truncate text-2xs text-muted-foreground")],
+			typography(h, { size: "2xs", tone: "muted", truncate: true },
 				[pr.headRef, ...(pr.authorLogin ? [` · ${pr.authorLogin}`] : [])],
 			),
 		],
@@ -236,7 +233,7 @@ const pickerField = (h: H, model: Model): Html => {
 				? "No pull requests in this repository yet."
 				: "Nothing matches that search."
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		fieldLabel(h, { ids: FIELD_IDS, className: "text-xs text-muted-foreground", state }, "Pull request"),
+		fieldLabel(h, { ids: FIELD_IDS, className: typographyClass({ size: "xs", tone: "muted" }), state }, "Pull request"),
 		h.submodel({
 			slotId: model.attachCombobox.id,
 			model: model.attachCombobox,
@@ -268,7 +265,7 @@ const REPOSITORY_IDS = {
 const repositoryField = (h: H, model: Model, repositories: ReadonlyArray<string>, value: string | null): Html => {
 	const state = { isInvalid: false, isDirty: false, isFilled: value !== null, isFocused: false, isTouched: false }
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		fieldLabel(h, { ids: REPOSITORY_IDS, className: "text-xs text-muted-foreground", state }, "Repository"),
+		fieldLabel(h, { ids: REPOSITORY_IDS, className: typographyClass({ size: "xs", tone: "muted" }), state }, "Repository"),
 		h.submodel({
 			slotId: model.repositorySelect.id,
 			model: { ...model.repositorySelect, value: value ?? "" },

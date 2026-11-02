@@ -9,6 +9,7 @@ import type { Model } from "./model"
 import { checkboxRow, divider, legendField, queryOptions, railSetting, segments, unitField } from "./view-rail"
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
+import { hstack } from "../../../ui/stack"
 
 // Each non-timeseries panel type's `ConfigPanel` over the `WidgetSettings` fields.
 
@@ -102,7 +103,7 @@ const rampSwatch = (h: H, scale: string): Html =>
 	)
 
 const swatchLabel = (h: H, scale: string): ReadonlyArray<Html | string> => [
-	h.span([h.Class("flex items-center gap-2")], [rampSwatch(h, scale), titleCase(scale)]),
+	hstack(h, { gap: "2", as: "span" }, [rampSwatch(h, scale), titleCase(scale)]),
 ]
 
 /** `HeatmapColors`: an unset palette shows the ramp the chart already renders. */

@@ -16,6 +16,8 @@ import { skeleton } from "../../../ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
 import { type ErrorDetail, Message, type Model } from "./error-modal-model"
 import type { ModalInputs } from "./view-error-modal"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // The rail of `ToolErrorModal`: the variants a group folded, where it happens, which sessions hit it.
 
@@ -30,7 +32,7 @@ const variantText = (
 	difference: VariantDifference | undefined,
 ): ReadonlyArray<Html> =>
 	difference === undefined || difference.middle === ""
-		? [h.span([h.Class("truncate text-muted-foreground")], [unwrapToolErrorText(message).text])]
+		? [typography(h, { tone: "muted", truncate: true }, [unwrapToolErrorText(message).text])]
 		: [
 				h.span(
 					[h.Class("min-w-0 truncate whitespace-pre text-muted-foreground")],
@@ -122,12 +124,7 @@ const whereItHappens = (h: H, rows: ReadonlyArray<BreakdownRow>, isLoading: bool
 		[
 			h.span([h.Class(RAIL_TITLE)], ["Where it happens"]),
 			...(isLoading && rows.length === 0
-				? [
-						h.div(
-							[h.Class("flex flex-col gap-2")],
-							[skeleton(h, "h-3 w-3/4"), skeleton(h, "h-3 w-1/2")],
-						),
-					]
+				? [vstack(h, { gap: "2" }, [skeleton(h, "h-3 w-3/4"), skeleton(h, "h-3 w-1/2")])]
 				: [
 						breakdown(
 							h,
@@ -385,47 +382,44 @@ const breakdown = (
 	blank: string,
 ): Html => {
 	const max = rows[0]?.[1] ?? 1
-	return h.div(
-		[h.Class("flex flex-col gap-1.5")],
-		[
-			eyebrow(h, { variant: "mono", className: "leading-3.5" }, [label]),
-			...rows.map(([key, calls], index) =>
-				h.div(
-					[h.Key(key), h.Class("flex items-center gap-2.5 font-mono text-xs leading-4")],
-					[
-						h.span(
-							[
-								h.Class(
-									cn(
-										"w-0 min-w-0 flex-1 truncate",
-										index === 0 ? "text-foreground" : "text-muted-foreground",
-										key === "" && "italic",
-									),
+	return vstack(h, { gap: "1.5" }, [
+		eyebrow(h, { variant: "mono", className: "leading-3.5" }, [label]),
+		...rows.map(([key, calls], index) =>
+			h.div(
+				[h.Key(key), h.Class("flex items-center gap-2.5 font-mono text-xs leading-4")],
+				[
+					h.span(
+						[
+							h.Class(
+								cn(
+									"w-0 min-w-0 flex-1 truncate",
+									index === 0 ? "text-foreground" : "text-muted-foreground",
+									key === "" && "italic",
 								),
-							],
-							[key === "" ? blank : key],
-						),
-						meter(h, {
-							value: calls,
-							max,
-							minVisible: 4,
-							fillClassName: "bg-muted-foreground",
-							className: "w-14 shrink-0 rounded-xs bg-muted",
-						}),
-						h.span(
-							[
-								h.Class(
-									cn(
-										"w-10 shrink-0 text-right tabular-nums",
-										index === 0 ? "text-foreground" : "text-muted-foreground",
-									),
+							),
+						],
+						[key === "" ? blank : key],
+					),
+					meter(h, {
+						value: calls,
+						max,
+						minVisible: 4,
+						fillClassName: "bg-muted-foreground",
+						className: "w-14 shrink-0 rounded-xs bg-muted",
+					}),
+					h.span(
+						[
+							h.Class(
+								cn(
+									"w-10 shrink-0 text-right tabular-nums",
+									index === 0 ? "text-foreground" : "text-muted-foreground",
 								),
-							],
-							[formatNumber(calls)],
-						),
-					],
-				),
+							),
+						],
+						[formatNumber(calls)],
+					),
+				],
 			),
-		],
-	)
+		),
+	])
 }

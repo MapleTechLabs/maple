@@ -4,6 +4,8 @@ import type { FixedMetricSeries } from "../../charts/fixed-metric-series"
 import { card, cardHeader, cardPanel } from "../../ui/card"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
+import { typography } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // A read-only widget shell in view
 // mode with no widget actions: title, hoisted legend chips, headline value, content and footer.
@@ -49,11 +51,14 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 				),
 				...(overflow > 0
 					? [
-							h.span(
-								[
-									h.Class("shrink-0 text-xs text-muted-foreground"),
-									h.Title(items.map((item) => item.label).join(", ")),
-								],
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "muted",
+									className: "shrink-0",
+									attributes: [h.Title(items.map((item) => item.label).join(", "))],
+								},
 								[`+${overflow}`],
 							),
 						]
@@ -111,37 +116,34 @@ export const widgetShell = <M>(h: HtmlBuilder<M>, options: WidgetShellOptions, c
 			cardHeader(
 				h,
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							eyebrow(
-								h,
-								{
-									variant: "label",
-									as: "div",
-									className: "min-w-0 truncate",
-									attributes: [h.Title(options.title)],
-								},
-								[options.title],
-							),
-							...(options.titleHint === undefined
-								? []
-								: [titleHint(h, options.title, options.titleHint)]),
-							...headerLegend(h, options.legend),
-							...(options.headerValue === undefined
-								? []
-								: [
-										h.div(
-											[
-												h.Class(
-													"ml-auto shrink-0 font-mono font-semibold text-xs tabular-nums",
-												),
-											],
-											[options.headerValue],
-										),
-									]),
-						],
-					),
+					hstack(h, { gap: "2", shrink: true }, [
+						eyebrow(
+							h,
+							{
+								variant: "label",
+								as: "div",
+								className: "min-w-0 truncate",
+								attributes: [h.Title(options.title)],
+							},
+							[options.title],
+						),
+						...(options.titleHint === undefined
+							? []
+							: [titleHint(h, options.title, options.titleHint)]),
+						...headerLegend(h, options.legend),
+						...(options.headerValue === undefined
+							? []
+							: [
+									h.div(
+										[
+											h.Class(
+												"ml-auto shrink-0 font-mono font-semibold text-xs tabular-nums",
+											),
+										],
+										[options.headerValue],
+									),
+								]),
+					]),
 				],
 				"py-2.5",
 			),

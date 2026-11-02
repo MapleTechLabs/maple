@@ -7,6 +7,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Popover from "../../ui/popover"
 import { pressable } from "../../ui/pressable"
 import { statusDot } from "../../ui/status-dot"
+import { typography } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `ServiceMapLegend` (packages/ui `service-map/service-map-canvas.tsx`), with the "+N more"
 // popover listing every service.
@@ -21,35 +23,29 @@ const LEGEND_PLATFORMS = [
 ] as const
 
 const swatch = <M>(h: HtmlBuilder<M>, color: string, label: string): Html =>
-	h.div(
-		[h.Class("flex items-center gap-1.5")],
-		[
-			h.div([h.Class("size-2.5 rounded-sm shrink-0"), h.Style({ "background-color": color })]),
-			h.span([h.Class("font-medium")], [label]),
-		],
-	)
+	hstack(h, { gap: "1.5" }, [
+		h.div([h.Class("size-2.5 rounded-sm shrink-0"), h.Style({ "background-color": color })]),
+		h.span([h.Class("font-medium")], [label]),
+	])
 
 const serviceSwatchColor = (service: string) =>
 	getServiceMapNodeColor({ label: service, kind: "service", errorRate: 0 }, "service")
 
 const health = <M>(h: HtmlBuilder<M>, tone: "ok" | "warn" | "crit", label: string): Html =>
-	h.div([h.Class("flex items-center gap-1.5")], [statusDot(h, { tone, size: "lg" }), h.span([], [label])])
+	hstack(h, { gap: "1.5" }, [statusDot(h, { tone, size: "lg" }), h.span([], [label])])
 
 /** The popover's grid: every service with its swatch. */
 const allServices = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Html =>
 	h.div(
 		[h.Class("grid grid-cols-2 gap-2 text-2xs")],
 		services.map((service) =>
-			h.div(
-				[h.Class("flex items-center gap-1.5 min-w-0")],
-				[
-					h.div([
-						h.Class("size-2.5 rounded-sm shrink-0"),
-						h.Style({ "background-color": serviceSwatchColor(service) }),
-					]),
-					h.span([h.Class("truncate font-medium")], [service]),
-				],
-			),
+			hstack(h, { gap: "1.5", shrink: true }, [
+				h.div([
+					h.Class("size-2.5 rounded-sm shrink-0"),
+					h.Style({ "background-color": serviceSwatchColor(service) }),
+				]),
+				typography(h, { weight: "medium", truncate: true }, [service]),
+			]),
 		),
 	)
 
@@ -119,9 +115,10 @@ export const serviceMapLegend = <M>(
 					]
 				: []),
 			h.span([h.Class("flex-1")]),
-			h.div(
-				[h.Class("flex items-center gap-3")],
-				[health(h, "ok", "Healthy"), health(h, "warn", "Degraded"), health(h, "crit", "Error")],
-			),
+			hstack(h, { gap: "3" }, [
+				health(h, "ok", "Healthy"),
+				health(h, "warn", "Degraded"),
+				health(h, "crit", "Error"),
+			]),
 		],
 	)

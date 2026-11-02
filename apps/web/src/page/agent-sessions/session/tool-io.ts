@@ -11,6 +11,8 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
 import { clampedBody, payloadCopyButton } from "./transcript-kit"
+import { typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // Tool input and output, and its summary: one invocation, both halves, joined by a spine.
 
@@ -18,7 +20,7 @@ type H = HtmlBuilder<Message>
 
 const IN_CLAMP: ClampLines = 8
 const OUT_CLAMP: ClampLines = 14
-const META = "font-mono text-3xs text-muted-foreground"
+const META = typographyClass({ size: "3xs", tone: "muted", mono: true })
 const GUTTER = "flex w-8 shrink-0 flex-col items-center gap-1.5 pt-2.5"
 
 const sizeLine = (payload: TranscriptPayload): string => {
@@ -179,33 +181,30 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 			h.div(
 				[h.Class("flex min-w-0 grow flex-col gap-2 pt-2.5 pr-3 pb-3")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
-						[
-							eyebrow(
-								h,
-								{
-									variant: "mono",
-									className: half.isFailed ? "text-severity-error" : "text-foreground",
-								},
-								[half.label],
-							),
-							h.span(
-								[h.Class(META)],
-								[
-									[half.name, half.meta, sizeLine(half.payload)]
-										.filter((part) => part !== undefined && part !== "")
-										.join(" · "),
-								],
-							),
-							...(half.payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
-							...payloadActions(h, model, {
-								payload: half.payload,
-								textKey: half.textKey,
-								label: half.name,
-							}),
-						],
-					),
+					hstack(h, { gap: "2", wrap: true }, [
+						eyebrow(
+							h,
+							{
+								variant: "mono",
+								className: half.isFailed ? "text-severity-error" : "text-foreground",
+							},
+							[half.label],
+						),
+						h.span(
+							[h.Class(META)],
+							[
+								[half.name, half.meta, sizeLine(half.payload)]
+									.filter((part) => part !== undefined && part !== "")
+									.join(" · "),
+							],
+						),
+						...(half.payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
+						...payloadActions(h, model, {
+							payload: half.payload,
+							textKey: half.textKey,
+							label: half.name,
+						}),
+					]),
 					...payloadBody(h, model, {
 						payload: half.payload,
 						textKey: half.textKey,

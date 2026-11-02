@@ -12,6 +12,7 @@ import { skeletonList } from "../../../../ui/skeleton"
 import { serviceDot } from "../../../../ui/values"
 import type { TimeSearch } from "../../kit/view-tabs"
 import type { Model } from "./rail"
+import { typography, typographyClass } from "../../../../ui/typography"
 
 // `ServiceLensRail` and the rail rows `useServiceLensRail` folds out of the join.
 
@@ -98,13 +99,13 @@ export const lensRail = <M>(
 									state.unlinkedCount === 1 ? "service" : "services",
 									" not linked",
 								]),
-								h.p([h.Class("text-2xs leading-relaxed text-muted-foreground")], [
+								typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 									"Their spans carry no workload identity, so the lens can't reach their pods.",
 									" ",
 									h.a(
 										[
 											h.Href(hrefOf(AppRoute.InfraKubernetesPods({ search: timeSearch }))),
-											h.Class("text-primary hover:underline active:underline"),
+											h.Class(typographyClass({ tone: "primary", className: "hover:underline active:underline" })),
 										],
 										["Browse pods directly"],
 									),

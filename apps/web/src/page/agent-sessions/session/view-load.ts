@@ -9,6 +9,7 @@ import { spinner } from "../../../ui/spinner"
 import type { LoadProgress } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstack } from "../../../ui/stack"
 
 // The session load indicator: how far a large session has loaded.
 
@@ -42,8 +43,7 @@ export const loadIndicator = (h: H, model: Model, progress: LoadProgress, classN
 			h.Class(cn("flex min-w-0 flex-col gap-1 text-xs text-muted-foreground", className)),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
+			hstack(h, { gap: "2" },
 				[
 					spinner(h, "shrink-0", 12),
 					h.span(

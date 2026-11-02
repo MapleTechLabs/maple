@@ -7,6 +7,8 @@ import { bar } from "../kit/skeletons"
 import { RULES_COPY } from "./copy"
 import { ALL_CATEGORIES } from "./state"
 import { valueState } from "./view-fields"
+import { typography } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `RulesFormView` before its config loads: the real field labels and hints, bars for the values.
 
@@ -74,25 +76,22 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 				control: "h-[68px]",
 				description: RULES_COPY.ignoreHint,
 			}),
-			h.div(
-				[h.Class("flex flex-col gap-2")],
-				[
-					h.span(
-						[h.Class("mb-2 flex items-center justify-between gap-3 text-sm font-medium")],
-						["Lenses", ...(isRepository ? [bar(h, "h-4 w-40")] : [])],
-					),
-					h.div(
-						[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
-						ALL_CATEGORIES.map(() =>
-							h.span(
-								[h.Class("flex h-5 items-center gap-2")],
-								[bar(h, "size-4"), bar(h, "h-3 w-24")],
-							),
+			vstack(h, { gap: "2" }, [
+				h.span(
+					[h.Class("mb-2 flex items-center justify-between gap-3 text-sm font-medium")],
+					["Lenses", ...(isRepository ? [bar(h, "h-4 w-40")] : [])],
+				),
+				h.div(
+					[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
+					ALL_CATEGORIES.map(() =>
+						h.span(
+							[h.Class("flex h-5 items-center gap-2")],
+							[bar(h, "size-4"), bar(h, "h-3 w-24")],
 						),
 					),
-					h.p([h.Class("text-xs text-muted-foreground")], [RULES_COPY.lensesHint]),
-				],
-			),
+				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [RULES_COPY.lensesHint]),
+			]),
 			h.div(
 				[h.Class("grid gap-6 sm:grid-cols-2")],
 				[

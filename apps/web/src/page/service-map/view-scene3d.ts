@@ -32,6 +32,7 @@ import {
 	WatchTheme,
 } from "./scene3d"
 import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
+import { hstack } from "../../ui/stack"
 
 // The 3D viewport: the perspective bar, the
 // paper section with the canvas wrappers, the timber sign labels, the HUD, legend and camera
@@ -335,8 +336,7 @@ const overlays = <M>(
 				),
 			],
 			(["healthy", "elevated", "degraded"] as const).map((status) =>
-				h.span(
-					[h.Class("flex items-center gap-1.5")],
+				hstack(h, { gap: "1.5", as: "span" },
 					[
 						statusDot(h, {
 							tone: "custom",

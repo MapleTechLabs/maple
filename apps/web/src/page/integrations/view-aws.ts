@@ -26,6 +26,8 @@ import { dataPicker } from "./view-aws-choose"
 import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { disconnectConfirm } from "./view-disconnect"
 import { externalLink } from "./view-gcp-configure-parts"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // `AwsIntegrationCard`.
 
@@ -59,9 +61,8 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 			...dataPicker(h, model, connection),
 			...(card.metricsError === null
 				? []
-				: [h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [card.metricsError])]),
-			h.div(
-				[h.Class("flex flex-wrap gap-2")],
+				: [typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [card.metricsError])]),
+			hstack(h, { gap: "2", align: "stretch", wrap: true },
 				[
 					button(
 						h,
@@ -141,8 +142,7 @@ const stepList = (h: H, steps: ReadonlyArray<Step>): Html =>
 				[h.Class("flex gap-2.5"), h.DataAttribute("step-state", step.state)],
 				[
 					h.span([h.Class("mt-0.5")], [stepGlyph(h, step.state, index)]),
-					h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
+					vstack(h, { gap: "1", shrink: true, grow: true },
 						[
 							h.p(
 								[
@@ -380,7 +380,7 @@ const ingestBody = (
 								h,
 								[
 									tableCell(h, [group.namespace], "font-mono"),
-									tableCell(h, [group.region ?? "unknown"], "font-mono text-muted-foreground"),
+									tableCell(h, [group.region ?? "unknown"], typographyClass({ tone: "muted", mono: true })),
 									tableCell(h, [formatNumber(group.metrics)], "text-right tabular-nums"),
 									tableCell(h, [formatNumber(group.data_points)], "text-right tabular-nums"),
 									tableCell(
@@ -420,8 +420,7 @@ const ingestBody = (
 			],
 		),
 		...silentRegions.map((region) =>
-			h.p(
-				[h.Class("text-xs text-severity-warn")],
+			typography(h, { size: "xs", tone: "warning", as: "p" },
 				[
 					`Nothing from ${region} in the last hour. If its resources publish metrics, its stack may not be deployed: run the setup script again.`,
 				],
@@ -491,12 +490,11 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 		itemContent(
 			h,
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				hstack(h, { gap: "2", wrap: true },
 					[
 						heading(
 							h,
-							{ level: 3, variant: "section", className: "font-mono tabular-nums" },
+							{ level: 3, variant: "section", className: typographyClass({ mono: true, numeric: true }) },
 							[connection.account_id],
 						),
 						badge(h, { variant: CONDITION_VARIANT[condition] }, [AWS_CONDITION_LABEL[condition]]),
@@ -549,8 +547,7 @@ const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	return h.div(
 		[h.Class("mt-2 flex w-full flex-col gap-3 rounded-md border bg-surface-faint p-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
+			hstack(h, { gap: "2", wrap: true },
 				[
 					heading(
 						h,
@@ -581,8 +578,7 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 			h.div(
 				[h.Class("flex flex-col gap-3 rounded-md border p-4")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
+					hstack(h, { gap: "2", wrap: true },
 						[
 							heading(
 								h,
@@ -654,8 +650,7 @@ const connectedView = (
 	focusId: string | null,
 ): Html => {
 	const shown = status.connections.filter((connection) => focusId === null || connection.id === focusId)
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
+	return vstack(h, { gap: "3" },
 		[
 			...removedPanel(h, model, focusId),
 			...shown.map((connection) => connectionRow(h, model, connection, timeZone)),
@@ -684,7 +679,7 @@ const reconnectLink = (h: H): Html =>
 		[
 			"This AWS account is no longer connected. ",
 			h.a(
-				[h.Href(AWS_FLOW_HREF), h.Class("text-foreground underline-offset-4 hover:underline active:underline")],
+				[h.Href(AWS_FLOW_HREF), h.Class(typographyClass({ tone: "foreground", className: "underline-offset-4 hover:underline active:underline" }))],
 				["Reconnect"],
 			),
 		],
@@ -699,7 +694,7 @@ const byStatus = (
 ): Html =>
 	status.connections.some((connection) => focusId === null || connection.id === focusId)
 		? connectedView(h, model, status, timeZone, focusId)
-		: h.div([h.Class("flex flex-col gap-3")], [...removedPanel(h, model, focusId), reconnectLink(h)])
+		: vstack(h, { gap: "3" }, [...removedPanel(h, model, focusId), reconnectLink(h)])
 
 export const awsCard = (h: H, model: Model, timeZone: string, focusId: string | null): Html =>
 	AsyncData.match(model.statuses.aws.data, {

@@ -6,6 +6,7 @@ import { STEPS } from "./gcp-configure-copy"
 import { CONFIGURE_DIALOG_ID } from "./gcp-configure"
 import type { Message } from "./message"
 import { GCP_LINK } from "./view-gcp-parts"
+import { hstackClass } from "../../ui/stack"
 
 // `GcpExternalLink`, `Mono`, `Chip`, `FooterNote`, `Stepper` and `ConfigureHeader`.
 
@@ -65,7 +66,7 @@ const stepper = (h: H, current: StepIndex): Html =>
 					...(active ? [h.AriaCurrent("step")] : []),
 					h.Class(
 						cn(
-							"inline-flex items-center gap-1.5",
+							hstackClass({ gap: "1.5", inline: true }),
 							active
 								? "font-medium text-foreground underline decoration-primary underline-offset-4"
 								: "text-muted-foreground",

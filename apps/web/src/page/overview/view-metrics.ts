@@ -27,6 +27,7 @@ import { stableSlice } from "../kit/stable-slice"
 import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
 import { widgetShell } from "./view-widget"
+import { typography } from "../../ui/typography"
 
 type MetricsData = Pick<Model, "overviewSeries" | "logSeries" | "refinement" | "presence">
 type CardId = "throughput" | "error-rate" | "latency" | "log-volume"
@@ -235,10 +236,9 @@ const gridItem = (
 							onNone: () => [
 								"Total",
 								" ",
-								h.span(
-									[h.Class("font-medium text-foreground tabular-nums")],
-									[formatNumber(points.reduce((sum, point) => sum + point.throughput, 0))],
-								),
+								typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+									formatNumber(points.reduce((sum, point) => sum + point.throughput, 0)),
+								]),
 							],
 							onSome: (error) => [error],
 						}),

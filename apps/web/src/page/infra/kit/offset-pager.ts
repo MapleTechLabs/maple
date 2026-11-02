@@ -1,6 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { listFooter } from "../../../ui/list-footer"
+import { hstack } from "../../../ui/stack"
 
 // `OffsetPager` and `pageRangeLabel`, on `ListFooter align="start"` with children only. Counts
 // use `toLocaleString()` (en-US).
@@ -34,8 +35,7 @@ export const offsetPager = <M>(
 		className: "px-0 py-1",
 		children: [
 			h.span([], [pageRangeLabel(options.offset, options.shown, options.total, options.noun)]),
-			h.div(
-				[h.Class("ml-auto flex items-center gap-2")],
+			hstack(h, { gap: "2", className: "ml-auto" },
 				[
 					h.span([], ["Page ", count(page), " of ", count(pages)]),
 					button(

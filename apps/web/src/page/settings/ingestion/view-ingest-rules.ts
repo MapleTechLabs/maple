@@ -25,6 +25,7 @@ import { TEMPLATE_IDS, TEMPLATES } from "../ingest-rule/templates"
 import { settingsSection } from "../kit/section"
 import { hourlyMatches, menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
+import { typography } from "../../../ui/typography"
 
 // `IngestRulesSection`: above the attribute mappings on the ingestion tab.
 
@@ -70,7 +71,7 @@ const rowEntries = (index: number, count: number): ReadonlyArray<MenuView.MenuEn
 	]
 }
 
-const muted = (h: H, text: string): Html => h.span([h.Class("text-muted-foreground text-xs")], [text])
+const muted = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted" }, [text])
 
 /** Last 24h: dropped or redacted count and hourly matches; `-` when the stats did not load. */
 const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
@@ -85,7 +86,7 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 					? `${formatNumber(totals.dropped)} dropped`
 					: `${formatNumber(totals.redacted_values)} redacted`
 			return [
-				h.span([h.Class("text-xs tabular-nums")], [count]),
+				typography(h, { size: "xs", numeric: true }, [count]),
 				miniBars(h, {
 					values: hourlyMatches(stats, rule.id),
 					// Empty hours draw a baseline so a single busy hour reads as a chart, not a stray tick.
@@ -126,10 +127,9 @@ const ruleRow = (
 				[h.Class("flex w-28 shrink-0 flex-col gap-1 md:w-40")],
 				[
 					truncatedText(h, { text: rule.name, className: "text-sm" }),
-					h.span(
-						[h.Class("text-muted-foreground text-2xs")],
-						[rule.signals.map((signal) => SIGNAL_LABELS[signal]).join(", ")],
-					),
+					typography(h, { size: "2xs", tone: "muted" }, [
+						rule.signals.map((signal) => SIGNAL_LABELS[signal]).join(", "),
+					]),
 				],
 			),
 			h.div(
@@ -281,7 +281,7 @@ export const deleteRuleDialog = (h: H, model: Model): Html =>
 		description: [
 			"Are you sure you want to delete",
 			" ",
-			h.span([h.Class("text-foreground font-medium")], [model.deleting?.name ?? ""]),
+			typography(h, { tone: "foreground", weight: "medium" }, [model.deleting?.name ?? ""]),
 			"? Data already stored is unchanged.",
 		],
 		confirmLabel: "Delete rule",

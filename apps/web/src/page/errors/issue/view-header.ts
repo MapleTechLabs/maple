@@ -21,6 +21,8 @@ import * as MenuView from "../../../ui/menu-view"
 import { openAnomalyBadge } from "./view-anomalies"
 import type { Model } from "./model"
 import { SURGE_THRESHOLD } from "./view-overview"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // The issue header over `DetailHeader`, and the issue tabs.
 
@@ -60,51 +62,45 @@ export const headerTitle = (
 				issue.kind === "error" ? null : issue.kind,
 			]),
 			pageTitle(h, { title: headline }, [headline]),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					severityBadge(h, issue.severity),
-					signalStateChip(h, state, {
-						onOpenInvestigation: Message.ClickedInvestigation({
-							id: state.kind === "investigation" ? state.investigationId : "",
-						}),
+			hstack(h, { gap: "2", wrap: true }, [
+				severityBadge(h, issue.severity),
+				signalStateChip(h, state, {
+					onOpenInvestigation: Message.ClickedInvestigation({
+						id: state.kind === "investigation" ? state.investigationId : "",
 					}),
-					...(surge !== null && surge >= SURGE_THRESHOLD
-						? [
-								badge(
-									h,
-									{
-										variant: "outline",
-										className:
-											"border-severity-error-a3 bg-severity-error-a2 text-severity-error tabular-nums",
-									},
-									[
-										icon(h, "ArrowTrendUpIcon", { size: 12 }),
-										`Surging ${surge.toFixed(1)}x`,
-									],
-								),
-							]
-						: []),
-					...(issue.regressionCount > 0 && !RESOLVED_STATES.has(issue.workflowState)
-						? [
-								badge(
-									h,
-									{
-										variant: "outline",
-										className:
-											"border-severity-warn-a3 bg-severity-warn-a2 text-severity-warn",
-									},
-									[
-										issue.regressionCount === 1
-											? "1 regression"
-											: `${issue.regressionCount} regressions`,
-									],
-								),
-							]
-						: []),
-					...openAnomalyBadge(h, anomalies),
-				],
-			),
+				}),
+				...(surge !== null && surge >= SURGE_THRESHOLD
+					? [
+							badge(
+								h,
+								{
+									variant: "outline",
+									className:
+										"border-severity-error-a3 bg-severity-error-a2 text-severity-error tabular-nums",
+								},
+								[icon(h, "ArrowTrendUpIcon", { size: 12 }), `Surging ${surge.toFixed(1)}x`],
+							),
+						]
+					: []),
+				...(issue.regressionCount > 0 && !RESOLVED_STATES.has(issue.workflowState)
+					? [
+							badge(
+								h,
+								{
+									variant: "outline",
+									className:
+										"border-severity-warn-a3 bg-severity-warn-a2 text-severity-warn",
+								},
+								[
+									issue.regressionCount === 1
+										? "1 regression"
+										: `${issue.regressionCount} regressions`,
+								],
+							),
+						]
+					: []),
+				...openAnomalyBadge(h, anomalies),
+			]),
 		],
 	)
 }
@@ -165,10 +161,10 @@ const overflowMenu = (h: H, model: Model, issue: ErrorIssueDocument): Html =>
 
 /** The header's actions: the window and the overflow menu. Getting it fixed lives in the body. */
 export const headerActions = (h: H, model: Model, issue: ErrorIssueDocument | null): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2")],
-		[windowControls(h, model), ...(issue === null ? [] : [overflowMenu(h, model, issue)])],
-	)
+	hstack(h, { gap: "2" }, [
+		windowControls(h, model),
+		...(issue === null ? [] : [overflowMenu(h, model, issue)]),
+	])
 
 const TABS: ReadonlyArray<{ readonly value: Tab; readonly label: string }> = [
 	{ value: "overview", label: "Overview" },
@@ -219,7 +215,7 @@ export const issueTabs = (
 					tab.label,
 					...(count === undefined || count === 0
 						? []
-						: [h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(count)])]),
+						: [typography(h, { size: "xs", tone: "muted", numeric: true }, [String(count)])]),
 				],
 			)
 		}),

@@ -14,6 +14,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { emptyMessage } from "../../../ui/empty"
+import { typography, typographyClass } from "../../../ui/typography"
 
 // `McpToolsList`.
 
@@ -58,10 +59,10 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 			trigger: [
 				icon(h, "ChevronRightIcon", {
 					size: 14,
-					className: cn("shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-90"),
+					className: cn(typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }), isOpen && "rotate-90"),
 				}),
 				h.span([h.Class("font-medium")], [group.label]),
-				h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(group.tools.length)]),
+				typography(h, { size: "xs", tone: "muted", numeric: true }, [String(group.tools.length)]),
 			],
 		},
 		[

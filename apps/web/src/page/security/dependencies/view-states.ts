@@ -12,6 +12,7 @@ import { placeholder } from "../kit/parts"
 import { openSeverityCounts, planSummaryOf, scannedCount, upgradePlanOf } from "./derive"
 import type { Message, Model } from "./model"
 import { scanButton } from "./view-repositories"
+import { typography } from "../../../ui/typography"
 
 // The Dependencies tab's rail and its whole-tab states: loading, no GitHub, first scan pending.
 
@@ -43,10 +44,9 @@ export const notConnected = (h: H): Html =>
 					icon(h, "GithubIcon"),
 					"Connect GitHub",
 				]),
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
-					["npm, pnpm, Yarn, Bun, Go and Cargo lockfiles. Read-only, code is never executed."],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"npm, pnpm, Yarn, Bun, Go and Cargo lockfiles. Read-only, code is never executed.",
+				]),
 			]),
 		],
 		"rounded-md border border-dashed md:py-14",
@@ -138,20 +138,17 @@ export const severityRail = (
 }
 
 export const footnote = (h: H): Html =>
-	h.p(
-		[h.Class("text-xs text-muted-foreground")],
-		[
-			"Advisories from ",
-			textLink(
-				h,
-				{
-					tone: "muted",
-					className: "underline",
-					href: "https://osv.dev",
-					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
-				},
-				["OSV.dev"],
-			),
-			". Findings are kept per lockfile and package, and marked fixed when a scan no longer finds them.",
-		],
-	)
+	typography(h, { size: "xs", tone: "muted", as: "p" }, [
+		"Advisories from ",
+		textLink(
+			h,
+			{
+				tone: "muted",
+				className: "underline",
+				href: "https://osv.dev",
+				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+			},
+			["OSV.dev"],
+		),
+		". Findings are kept per lockfile and package, and marked fixed when a scan no longer finds them.",
+	])

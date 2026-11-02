@@ -25,6 +25,8 @@ import {
 	sectionTitle,
 	volumeSpark,
 } from "./view-kit"
+import { typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `/mcp`: every service that answers MCP requests, one row each.
 
@@ -47,8 +49,7 @@ const serverRow = <M>(
 		h,
 		{ onClick: options.onOpenServer(row.service) },
 		[
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
+			hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" },
 				[
 					serviceDot(h, { serviceName: row.service }),
 					h.span(
@@ -83,8 +84,7 @@ const serverRow = <M>(
 				],
 			),
 			lastSeenCell(h, row.lastCallMs, options.nowMs, options.timeZone),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
+			hstack(h, { justify: "end", as: "span", className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }) },
 				[icon(h, "ChevronRightIcon", { size: 14 })],
 			),
 		],

@@ -21,6 +21,8 @@ import { alertStatusBadge } from "../shared/badges"
 import { Message } from "./message"
 import type { CheckStatusFilter, ChecksResponse, Model } from "./model"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `ChecksPanel` and `CheckDelta`: the rule's recent checks.
 
@@ -158,8 +160,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 							h.div(
 								[h.Class("space-y-1")],
 								[
-									h.div(
-										[h.Class("flex flex-wrap items-center gap-2")],
+									hstack(h, { gap: "2", wrap: true },
 										[
 											heading(h, { level: 3, variant: "section" }, ["All checks"]),
 											...(bucket != null
@@ -172,7 +173,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 																	size: "icon-2xs",
 																	label: "Clear bucket filter",
 																	hasTooltip: false,
-																	className: "text-muted-foreground hover:text-foreground active:text-foreground",
+																	className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
 																	attributes: [h.OnClick(Message.ClickedClearBucket())],
 																},
 																[icon(h, "XmarkIcon")],
@@ -182,8 +183,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 												: []),
 										],
 									),
-									h.p(
-										[h.Class("text-muted-foreground text-xs")],
+									typography(h, { size: "xs", tone: "muted", as: "p" },
 										[
 											bucket != null
 												? model.isBucketLoading
@@ -244,11 +244,9 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 					]),
 					...(bucket == null && nextCursor !== null
 						? [
-								h.div(
-									[h.Class("flex items-center justify-between gap-4")],
+								hstack(h, { gap: "4", justify: "between" },
 									[
-										h.span(
-											[h.Class("text-2xs text-muted-foreground")],
+										typography(h, { size: "2xs", tone: "muted" },
 											[String(loadedChecks.length), " of ", String(totals.total), " loaded"],
 										),
 										button(
@@ -289,7 +287,7 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 			tableCell(
 				h,
 				[formatTimestampInTimezone(check.timestamp, { timeZone, withYear: true })],
-				"font-mono text-xs",
+				typographyClass({ size: "xs", mono: true }),
 				[h.Title(`Evaluated in ${check.evaluationDurationMs}ms`)],
 			),
 			tableCell(h, [alertStatusBadge(h, state, { label })]),
@@ -302,8 +300,7 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 						}, [check.errorMessage ?? "Evaluation failed"])
 					: check.observedValue == null
 						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
-						: h.div(
-								[h.Class("flex items-baseline gap-2")],
+						: hstack(h, { gap: "2", align: "baseline" },
 								[
 									h.span(
 										[
@@ -324,7 +321,7 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 			tableCell(
 				h,
 				[formatNumber(check.sampleCount)],
-				"tabular-nums text-muted-foreground",
+				typographyClass({ tone: "muted", numeric: true }),
 				[h.Title(check.sampleCount.toLocaleString("en-US"))],
 			),
 			...(isGrouped
@@ -337,7 +334,7 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 									[check.groupKey || "all"],
 								),
 							],
-							"font-mono text-muted-foreground",
+							typographyClass({ tone: "muted", mono: true }),
 						),
 					]
 				: []),

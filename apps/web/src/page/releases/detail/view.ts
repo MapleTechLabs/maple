@@ -21,6 +21,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { changesetState, overlaysOf, serviceBody, serviceButton } from "./view-service"
 import { type Clock, deploySummary, deployServices, issueList, releaseChangeset } from "./view-sections"
+import { typography } from "../../../ui/typography"
+import { hstack, hstackClass, vstack } from "../../../ui/stack"
 
 // The release detail page: the deploy overview, or with `?service=` the service body
 // (view-service.ts).
@@ -28,7 +30,7 @@ import { type Clock, deploySummary, deployServices, issueList, releaseChangeset 
 type H = HtmlBuilder<Message>
 
 const plainSha = (h: H, sha: string, label: string): Html =>
-	h.span([h.Class("truncate font-mono"), h.Title(sha)], [label])
+	typography(h, { mono: true, truncate: true, attributes: [h.Title(sha)] }, [label])
 
 /** `ReleaseTitle`: the commit message once the sha resolves, the short sha until then. */
 const releaseTitle = (h: H, model: Model): Html => {
@@ -37,8 +39,7 @@ const releaseTitle = (h: H, model: Model): Html => {
 		onNone: () => plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
 		onSome: (commit) => {
 			const subject = firstLine(commit.message)
-			return h.span(
-				[h.Class("flex min-w-0 items-center gap-2.5")],
+			return hstack(h, { gap: "2.5", shrink: true, as: "span" },
 				[
 					commitAvatar(
 						h,
@@ -123,8 +124,7 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 					]),
 				]),
 			onSome: (group) =>
-				h.div(
-					[h.Class("flex flex-col gap-3")],
+				vstack(h, { gap: "3" },
 					[
 						deploySummary(h, group, clock),
 						deployServices(h, group, model.search.environments, {
@@ -141,8 +141,7 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 }
 
 const loading = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
+	vstack(h, { gap: "3" },
 		[
 			skeleton(h, "h-4 w-80"),
 			skeleton(h, "h-48 w-full rounded-md"),
@@ -180,14 +179,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
-			titleContent: pageTitle(h, { className: "flex min-w-0 items-center gap-2.5" }, [
+			titleContent: pageTitle(h, { className: hstackClass({ gap: "2.5", shrink: true }) }, [
 				releaseTitle(h, model),
 			]),
 			actions:
 				service === undefined
 					? timeControlsOf(h, model)
-					: h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
+					: hstack(h, { gap: "2", wrap: true },
 							[serviceButton(h, model, service), timeControlsOf(h, model)],
 						),
 		},

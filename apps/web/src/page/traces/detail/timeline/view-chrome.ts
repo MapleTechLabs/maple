@@ -14,6 +14,7 @@ import { depthControls } from "../depth-controls"
 import { collectMinimapSpans } from "./layout"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "../../../../ui/typography"
 
 // The Timeline's chrome: `TraceTimelineSearch`, the toolbar with `TraceDepthControls`, the fit
 // button and `ColorByPicker`, `TraceTimelineMinimap` and `TraceTimelineTimeAxis`.
@@ -43,8 +44,7 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 			...(model.searchQuery === ""
 				? []
 				: [
-						h.span(
-							[h.Class("text-3xs font-mono text-muted-foreground shrink-0 tabular-nums")],
+						typography(h, { size: "3xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
 							[
 								model.matchCursor > 0
 									? `${model.matchCursor}/${matchCount}`
@@ -57,7 +57,7 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 								label: "Clear search",
 								size: "icon-2xs",
 								hasTooltip: false,
-								className: "shrink-0 text-muted-foreground hover:text-foreground active:text-foreground",
+								className: typographyClass({ tone: "muted", className: "shrink-0 hover:text-foreground active:text-foreground" }),
 								attributes: [h.OnClick(Message.ClickedClearSearch())],
 							},
 							[icon(h, "XmarkIcon", { size: 12 })],

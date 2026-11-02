@@ -9,6 +9,8 @@ import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { linkButton } from "../../../ui/button"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `ApiReference` and `OAuthPointer`.
 
@@ -81,11 +83,10 @@ const scopeRow = (h: H, family: (typeof SCOPE_FAMILY_ROWS)[number]): Html =>
 				[h.Class("min-w-0 flex-1 space-y-0.5")],
 				[
 					h.div([h.Class("text-sm")], [family.label]),
-					h.div([h.Class("text-muted-foreground text-xs")], [family.description]),
+					typography(h, { size: "xs", tone: "muted", as: "div" }, [family.description]),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-1.5")],
+			hstack(h, { gap: "1.5", className: "shrink-0" },
 				[
 					badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":read"]),
 					badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [
@@ -112,9 +113,8 @@ const scopes = (h: H, isOpen: boolean): Html =>
 					className:
 						"text-muted-foreground shrink-0 transition-transform group-data-[panel-open]/scopes:rotate-90",
 				}),
-				h.span([h.Class("text-sm font-medium")], ["Scopes"]),
-				h.span(
-					[h.Class("text-muted-foreground text-sm")],
+				typography(h, { size: "sm", weight: "medium" }, ["Scopes"]),
+				typography(h, { size: "sm", tone: "muted" },
 					[String(SCOPE_FAMILY_ROWS.length), " resource families"],
 				),
 				h.span([h.Class("flex-1")], []),

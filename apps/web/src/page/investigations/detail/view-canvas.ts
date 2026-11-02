@@ -39,6 +39,7 @@ import { MountNodeLinks } from "./command"
 import { CONTROL_GUTTER, fitScale, graphOf, HEADING_GUTTER } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstack, hstackClass } from "../../../ui/stack"
 
 // `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
 
@@ -107,8 +108,7 @@ const nodeLink = (h: H) => h.Attribute(NODE_LINK_ATTRIBUTE, "")
 const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): ReadonlyArray<Html> => {
 	const isCurrent = data.current === true
 	const body = [
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
+		hstack(h, { gap: "1.5" },
 			[
 				h.span(
 					[
@@ -255,8 +255,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-start gap-1.5")],
+			hstack(h, { gap: "1.5", align: "start" },
 				[
 					h.span(
 						[
@@ -351,7 +350,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 					[
 						h.p([h.Class("line-clamp-2 text-xs leading-[1.4] text-foreground")], [data.text]),
 						h.p(
-							[h.Class("flex items-center gap-1.5")],
+							[h.Class(hstackClass({ gap: "1.5" }))],
 							[
 								...(data.target === null
 									? []
@@ -590,8 +589,7 @@ const PROVENANCE_HINT = "what produced this investigation, and what it produced"
 const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 	const running =
 		graph.runningSince === null ? null : splitDuration(Math.max(0, nowMs - graph.runningSince))
-	return h.div(
-		[h.Class("flex items-center gap-2.5")],
+	return hstack(h, { gap: "2.5" },
 		[
 			eyebrow(h, {}, ["Provenance"]),
 			h.span([h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")], [PROVENANCE_HINT]),
@@ -832,15 +830,14 @@ export const provenanceLoading = (h: H): Html =>
 		h,
 		{ className: PANEL, attributes: [h.AriaBusy(true)] },
 		[
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
+			hstack(h, { gap: "2.5" },
 				[
 					eyebrow(h, {}, ["Provenance"]),
 					h.span(
 						[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
 						[PROVENANCE_HINT],
 					),
-					eyebrow(h, { variant: "mono", className: "flex shrink-0 items-center gap-1.5" }, [
+					eyebrow(h, { variant: "mono", className: hstackClass({ gap: "1.5", className: "shrink-0" }) }, [
 						h.span([], ["Mapping the chain"]),
 						h.span(
 							[h.Class("inline-flex"), h.AriaHidden(true)],

@@ -30,6 +30,8 @@ import { meter } from "../../../ui/meter"
 import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
 import { Message, type Model } from "./model"
 import { statusDot } from "../../../ui/status-dot"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The run's title block, its stop banner, the phase strip and the four totals.
 
@@ -49,13 +51,10 @@ export const runTitle = (
 	return detailTitle(h, {
 		kind: ["Audit run", RUN_KIND_LABEL[run.kind]],
 		title: [
-			h.span(
-				[h.Class("flex min-w-0 items-center gap-2.5")],
-				[
-					iconTile(h, "GithubIcon"),
-					h.span([h.Class("truncate")], [target?.repository ?? "Audit run"]),
-				],
-			),
+			hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+				iconTile(h, "GithubIcon"),
+				h.span([h.Class("truncate")], [target?.repository ?? "Audit run"]),
+			]),
 		],
 		titleText: target?.repository ?? "Audit run",
 		adornment: runStatusBadge(h, run),
@@ -96,51 +95,48 @@ export const runTitle = (
 }
 
 export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			...(run.reports === null
-				? []
+	hstack(h, { gap: "2" }, [
+		...(run.reports === null
+			? []
+			: [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							attributes: [h.OnClick(Message.ClickedReport({ report: "report" }))],
+						},
+						[icon(h, "FileIcon"), "Report"],
+					),
+				]),
+		...(!model.isAdmin
+			? []
+			: isLive(run)
+				? [
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "destructive-outline",
+								isDisabled: model.busy !== null,
+								attributes: [h.OnClick(Message.ClickedCancel())],
+							},
+							["Cancel run"],
+						),
+					]
 				: [
 						button(
 							h,
 							{
 								size: "sm",
-								variant: "outline",
-								attributes: [h.OnClick(Message.ClickedReport({ report: "report" }))],
+								isLoading: model.busy === "start",
+								isDisabled: model.busy !== null,
+								attributes: [h.OnClick(Message.ClickedStartRun())],
 							},
-							[icon(h, "FileIcon"), "Report"],
+							[icon(h, "MediaPlayIcon"), "Start run"],
 						),
 					]),
-			...(!model.isAdmin
-				? []
-				: isLive(run)
-					? [
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "destructive-outline",
-									isDisabled: model.busy !== null,
-									attributes: [h.OnClick(Message.ClickedCancel())],
-								},
-								["Cancel run"],
-							),
-						]
-					: [
-							button(
-								h,
-								{
-									size: "sm",
-									isLoading: model.busy === "start",
-									isDisabled: model.busy !== null,
-									attributes: [h.OnClick(Message.ClickedStartRun())],
-								},
-								[icon(h, "MediaPlayIcon"), "Start run"],
-							),
-						]),
-		],
-	)
+	])
 
 const startRunButton = (h: H, model: Model): Html =>
 	button(
@@ -289,7 +285,7 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 							]),
 						],
 					),
-					h.span([h.Class("text-xs text-muted-foreground")], [phase.detail]),
+					typography(h, { size: "xs", tone: "muted" }, [phase.detail]),
 				],
 			),
 		),
@@ -333,25 +329,22 @@ export const runStats = (
 					? live
 						? "mapping the code"
 						: "no units were planned"
-					: h.span(
-							[h.Class("flex flex-col gap-1.5")],
+					: vstack(h, { gap: "1.5", as: "span" }, [
+							meter(h, {
+								value: closed,
+								max: run.unitTotal,
+								tone: gaps > 0 && !live ? "warn" : undefined,
+								label: `${closed} of ${run.unitTotal} units closed`,
+							}),
 							[
-								meter(h, {
-									value: closed,
-									max: run.unitTotal,
-									tone: gaps > 0 && !live ? "warn" : undefined,
-									label: `${closed} of ${run.unitTotal} units closed`,
-								}),
-								[
-									...(areas === null || areas === 0
-										? []
-										: [`${areas} ${areas === 1 ? "area" : "areas"}`]),
-									gaps === 0
-										? "no gaps"
-										: `${gaps} ${live ? "still open" : gaps === 1 ? "gap" : "gaps"}`,
-								].join(" · "),
-							],
-						),
+								...(areas === null || areas === 0
+									? []
+									: [`${areas} ${areas === 1 ? "area" : "areas"}`]),
+								gaps === 0
+									? "no gaps"
+									: `${gaps} ${live ? "still open" : gaps === 1 ? "gap" : "gaps"}`,
+							].join(" · "),
+						]),
 		}),
 		statRailItem(h, {
 			eyebrow: live ? "Cost so far" : "Cost",

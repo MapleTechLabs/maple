@@ -18,6 +18,7 @@ import {
 	SCORED_BUCKETS,
 } from "./findings"
 import { securitySeverityBadge } from "./parts"
+import { typography, typographyClass } from "../../../ui/typography"
 
 // The findings list the run page and the Findings tab share, laid out like Linear's issue list:
 // severity tabs on top, collapsible groups, one dense line per finding.
@@ -258,11 +259,10 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 								className: "text-muted-foreground",
 							}),
 							bucketIcon(h, bucket),
-							h.span([h.Class("text-sm font-medium")], [BUCKET_LABEL[bucket]]),
-							h.span(
-								[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
-								[String(rows.length)],
-							),
+							typography(h, { size: "sm", weight: "medium" }, [BUCKET_LABEL[bucket]]),
+							typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+								String(rows.length),
+							]),
 							...unverifiedNote(h, rows),
 							...(hint === null
 								? []
@@ -293,4 +293,4 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 
 /** Muted text for a trailing slot. */
 export const trailingText = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
-	h.span([h.Class(cn("text-xs text-muted-foreground", className))], [text])
+	h.span([h.Class(cn(typographyClass({ size: "xs", tone: "muted" }), className))], [text])

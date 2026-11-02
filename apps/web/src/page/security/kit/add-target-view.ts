@@ -26,6 +26,8 @@ import {
 } from "./add-target"
 import { formatUsd } from "./format"
 import { modelPicker } from "./model-picker"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../../ui/stack"
 
 // The Add audit target form inside the shared FormDialog.
 
@@ -167,10 +169,9 @@ const profileField = (h: H, model: Model): Html => {
 			inputId: `${DIALOG_ID}-profile-${profile.value}-input`,
 		})),
 	}
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
+	return vstack(h, { gap: "2" },
 		[
-			h.span([h.Id(`${DIALOG_ID}-profile-label`), h.Class("text-sm font-medium")], ["Profile"]),
+			typography(h, { size: "sm", weight: "medium", attributes: [h.Id(`${DIALOG_ID}-profile-label`)] }, ["Profile"]),
 			RadioGroup.radioGroup(
 				h,
 				{ label: "Profile", className: "grid grid-cols-2 gap-2" },
@@ -193,11 +194,9 @@ const profileField = (h: H, model: Model): Html => {
 						},
 						[
 							...RadioGroup.radio(h, config, profile.value, "mt-0.5"),
-							h.span(
-								[h.Class("flex min-w-0 flex-col gap-1")],
+							vstack(h, { gap: "1", shrink: true, as: "span" },
 								[
-									h.span(
-										[h.Class("text-sm font-medium")],
+									typography(h, { size: "sm", weight: "medium" },
 										[
 											profile.label,
 											...(profile.hint === null
@@ -214,7 +213,7 @@ const profileField = (h: H, model: Model): Html => {
 													]),
 										],
 									),
-									h.span([h.Class("text-xs text-muted-foreground")], [profile.description]),
+									typography(h, { size: "xs", tone: "muted" }, [profile.description]),
 								],
 							),
 						],
@@ -267,8 +266,7 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 					...(model.scopePaths.length === 0
 						? []
 						: [
-								h.div(
-									[h.Class("flex flex-wrap gap-1.5")],
+								hstack(h, { gap: "1.5", align: "stretch", wrap: true },
 									model.scopePaths.map((path) => scopeChip(h, path)),
 								),
 							]),
@@ -302,15 +300,13 @@ const modelsField = (h: H, model: Model, error?: string): Html => {
 		settings !== null &&
 		model.discovery.value === settings.discoveryModel &&
 		model.validation.value === settings.validationModel
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
+	return vstack(h, { gap: "2" },
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-3")],
+			hstack(h, { gap: "3", align: "baseline", justify: "between" },
 				[
-					h.span([h.Class("text-sm font-medium")], ["Models"]),
+					typography(h, { size: "sm", weight: "medium" }, ["Models"]),
 					...(isOrgDefault
-						? [h.span([h.Class("text-xs text-muted-foreground")], ["Using the org's defaults"])]
+						? [typography(h, { size: "xs", tone: "muted" }, ["Using the org's defaults"])]
 						: []),
 				],
 			),
@@ -333,12 +329,11 @@ const modelsField = (h: H, model: Model, error?: string): Html => {
 			),
 			...(error === undefined
 				? []
-				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive-foreground")], [error])]),
+				: [typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [error])]),
 			...(settings === null
 				? []
 				: [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
 							[
 								`${formatUsd(Math.max(0, settings.monthlySpendLimitUsd - settings.spentUsd))} left of the org's ${formatUsd(settings.monthlySpendLimitUsd)} monthly limit. A run that reaches it stops and lists what it did not cover.`,
 							],
@@ -410,7 +405,7 @@ const addTargetDialog = (
 		isPending: model.isPending,
 		isSubmitDisabled: !hasRepositories,
 		footerStart: hasRepositories ? startNowToggle(h, model) : undefined,
-		panelClassName: "flex flex-col gap-5",
+		panelClassName: vstackClass({ gap: "5" }),
 		fields: hasRepositories
 			? [
 					...failureAlert(h, model),

@@ -22,6 +22,8 @@ import {
 	toggleModel,
 } from "./rules"
 import { MODE_LABELS, SIGNALS } from "./shared"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `RulesFields` and `AttributeRows`.
 
@@ -76,11 +78,10 @@ const signalCard = <P>(
 				inputId,
 				className: "mt-0.5",
 			}),
-			h.span(
-				[h.Class("flex flex-col gap-0.5")],
+			vstack(h, { gap: "0.5", as: "span" },
 				[
 					h.span([h.Class(cn("text-sm", !isChecked && "text-muted-foreground"))], [signal.label]),
-					h.span([h.Class("text-muted-foreground font-mono text-2xs")], [signal.hint]),
+					typography(h, { size: "2xs", tone: "muted", mono: true }, [signal.hint]),
 				],
 			),
 		],
@@ -130,7 +131,7 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 				h,
 				{
 					label: "Remove attribute",
-					className: "text-muted-foreground hover:text-foreground active:text-foreground shrink-0",
+					className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground shrink-0" }),
 					attributes: [h.OnClick(toParentMessage(Message.ClickedRemoveAttribute({ rowId })))],
 				},
 				[icon(h, "XmarkIcon")],
@@ -143,12 +144,10 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => {
 	const { attributeProblem } = rulesOutcome(config.model)
 	const isDisabled = config.model.attributes.length >= MAX_ATTRIBUTES
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
+	return vstack(h, { gap: "2" },
 		[
 			...config.model.attributes.map((attribute) => attributeRow(h, config, attribute)),
-			h.div(
-				[h.Class("flex items-center gap-3")],
+			hstack(h, { gap: "3" },
 				[
 					button(
 						h,
@@ -167,8 +166,7 @@ const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html =
 					...(attributeProblem === null
 						? []
 						: [
-								h.span(
-									[h.Class("text-destructive-foreground text-xs"), h.Role("alert")],
+								typography(h, { size: "xs", tone: "destructive", attributes: [h.Role("alert")] },
 									[attributeProblem],
 								),
 							]),
@@ -210,7 +208,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 				inputGroup(h, { className: "w-44" }, [
 					inputGroupInput(h, {
 						id: rateIds.control,
-						controlClassName: "font-mono tabular-nums",
+						controlClassName: typographyClass({ mono: true, numeric: true }),
 						attributes: [
 							h.Attribute("inputmode", "numeric"),
 							h.Placeholder("No limit"),

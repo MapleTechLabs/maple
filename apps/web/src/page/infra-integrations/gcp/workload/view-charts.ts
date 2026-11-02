@@ -27,6 +27,8 @@ import { seriesLegend } from "../../../kit/series-legend"
 import type { BucketPoint } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "../../../../ui/typography"
+import { hstackClass, vstack } from "../../../../ui/stack"
 
 // `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
@@ -56,7 +58,13 @@ const summaryView = (h: H, summary: GcpStripSummary): ReadonlyArray<Html> => [
 		[
 			h.Class(
 				cn(
-					"font-mono text-sm font-semibold tabular-nums text-foreground",
+					typographyClass({
+						size: "sm",
+						tone: "foreground",
+						weight: "semibold",
+						mono: true,
+						numeric: true,
+					}),
 					summary.alert === true && "text-severity-error",
 				),
 			),
@@ -65,7 +73,7 @@ const summaryView = (h: H, summary: GcpStripSummary): ReadonlyArray<Html> => [
 	),
 	...(summary.caption === undefined
 		? []
-		: [h.span([h.Class("font-mono text-3xs text-muted-foreground")], [summary.caption])]),
+		: [typography(h, { size: "3xs", tone: "muted", mono: true }, [summary.caption])]),
 ]
 
 /** The signals that explain each other, on one time axis under one cursor. */
@@ -96,19 +104,13 @@ export const correlationStrips = (
 				gradientPrefix: `gcp-strip-${strip.id}`,
 			})
 			return h.div(
-				[h.Class(cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t"))],
+				[h.Class(cn(hstackClass({ gap: "4", className: "px-4 py-3" }), index > 0 && "border-t"))],
 				[
-					h.div(
-						[h.Class("flex w-36 shrink-0 flex-col gap-0.5")],
-						[
-							h.span(
-								[h.Class("font-prose text-xs font-medium text-foreground")],
-								[strip.label],
-							),
-							h.span([h.Class("font-prose text-3xs text-muted-foreground")], [strip.source]),
-							h.div([h.Class("mt-2 flex flex-col gap-0.5")], summaryView(h, strip.summary)),
-						],
-					),
+					vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
+						h.span([h.Class("font-prose text-xs font-medium text-foreground")], [strip.label]),
+						h.span([h.Class("font-prose text-3xs text-muted-foreground")], [strip.source]),
+						h.div([h.Class("mt-2 flex flex-col gap-0.5")], summaryView(h, strip.summary)),
+					]),
 					h.div(
 						[h.Class("min-w-0 flex-1")],
 						[

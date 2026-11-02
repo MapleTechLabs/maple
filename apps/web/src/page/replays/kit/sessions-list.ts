@@ -10,6 +10,7 @@ import type { SessionListItem } from "./session-row"
 import { sessionListRow } from "./session-list-row"
 import { COLUMNS, columnHeader, type SessionsListOptions } from "./sessions-parts"
 import { KEYS_ATTRIBUTE, keysValue, type VirtualWindow } from "./virtualize"
+import { hstack } from "../../../ui/stack"
 
 // The sessions list. Rows render in flow: the virtualizer's
 // absolute rows stack to the same offsets once every row is in view.
@@ -43,7 +44,7 @@ const quietRunRow = <M>(
 			h.span(
 				[h.Class("flex min-w-0 items-center gap-3 overflow-hidden"), h.Title(item.summary)],
 				item.tiers.map(({ tag, count }) =>
-					h.span([h.Class("flex shrink-0 items-center gap-1.5")], [
+					hstack(h, { gap: "1.5", as: "span", className: "shrink-0" }, [
 						statusDot(h, { tone: "custom", className: SESSION_TAG_DOTS[tag] }),
 						h.span([h.Class("tabular-nums")], [String(count)]),
 						" ",

@@ -12,6 +12,8 @@ import * as Switch from "../../ui/switch"
 import type { ZoneChoice } from "./cloudflare"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typographyClass } from "../../ui/typography"
+import { hstack, vstack, vstackClass } from "../../ui/stack"
 
 // "Manage zones": which of each connected account's zones Maple collects.
 
@@ -58,59 +60,53 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 			},
 			[label],
 		)
-	return h.section(
-		[h.Key(account.accountId), h.Class("flex flex-col gap-2")],
-		[
-			...(isMulti
-				? [heading(h, { level: 3, variant: "section" }, [account.accountName ?? account.accountId])]
-				: []),
-			label(
-				h,
-				{
-					className: "flex justify-between gap-3 text-sm font-normal sm:text-sm",
-					attributes: [h.Id(Switch.labelId(switchInputId))],
-				},
-				[
-					h.span([], ["Collect new zones automatically"]),
-					...Switch.switchControl(h, {
-						id: `${switchInputId}-root`,
-						inputId: switchInputId,
-						isChecked: account.watchNewZones,
-						labelledBy: Switch.labelId(switchInputId),
-						onToggle: Message.ToggledWatchNewZones({ accountId: account.accountId }),
-					}),
-				],
+	return vstack(h, { gap: "2", as: "section", attributes: [h.Key(account.accountId)] }, [
+		...(isMulti
+			? [heading(h, { level: 3, variant: "section" }, [account.accountName ?? account.accountId])]
+			: []),
+		label(
+			h,
+			{
+				className: "flex justify-between gap-3 text-sm font-normal sm:text-sm",
+				attributes: [h.Id(Switch.labelId(switchInputId))],
+			},
+			[
+				h.span([], ["Collect new zones automatically"]),
+				...Switch.switchControl(h, {
+					id: `${switchInputId}-root`,
+					inputId: switchInputId,
+					isChecked: account.watchNewZones,
+					labelledBy: Switch.labelId(switchInputId),
+					onToggle: Message.ToggledWatchNewZones({ accountId: account.accountId }),
+				}),
+			],
+		),
+		hstack(h, { gap: "3", className: typographyClass({ size: "xs", tone: "muted" }) }, [
+			h.span(
+				[h.Class("mr-auto")],
+				[`${watched} of ${countLabel(account.zones.length, "zone")} collected`],
 			),
-			h.div(
-				[h.Class("flex items-center gap-3 text-xs text-muted-foreground")],
-				[
-					h.span(
-						[h.Class("mr-auto")],
-						[`${watched} of ${countLabel(account.zones.length, "zone")} collected`],
-					),
-					selectLink("Select all", true),
-					selectLink("Select none", false),
-				],
-			),
-			shown.length === 0
-				? h.p(
-						[
-							h.Class(
-								"rounded-md border border-border-subtle px-3 py-4 text-xs text-muted-foreground",
-							),
-						],
-						[account.zones.length === 0 ? "No zones found yet" : "No zones match these filters"],
-					)
-				: h.div(
-						[
-							h.Class(
-								"flex max-h-64 flex-col overflow-y-auto overscroll-contain rounded-md border border-border-subtle py-1",
-							),
-						],
-						shown.map((zone) => zoneRow(h, account.accountId, zone)),
-					),
-		],
-	)
+			selectLink("Select all", true),
+			selectLink("Select none", false),
+		]),
+		shown.length === 0
+			? h.p(
+					[
+						h.Class(
+							"rounded-md border border-border-subtle px-3 py-4 text-xs text-muted-foreground",
+						),
+					],
+					[account.zones.length === 0 ? "No zones found yet" : "No zones match these filters"],
+				)
+			: h.div(
+					[
+						h.Class(
+							"flex max-h-64 flex-col overflow-y-auto overscroll-contain rounded-md border border-border-subtle py-1",
+						),
+					],
+					shown.map((zone) => zoneRow(h, account.accountId, zone)),
+				),
+	])
 }
 
 export const zonesDialog = (h: H, model: Model): Html => {
@@ -128,7 +124,7 @@ export const zonesDialog = (h: H, model: Model): Html => {
 		onSubmit: Message.SubmittedZoneSettings(),
 		submitLabel: "Save zones",
 		isPending: card.isSavingZones,
-		panelClassName: "flex flex-col gap-5",
+		panelClassName: vstackClass({ gap: "5" }),
 		fields: [
 			...(zoneCount > 8
 				? [

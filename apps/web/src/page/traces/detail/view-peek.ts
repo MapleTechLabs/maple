@@ -18,6 +18,7 @@ import { loadedTrace, selectedSpanOf } from "./select"
 import * as SpanPanel from "./span-panel"
 import { anatomy, callout, traceViewTabs } from "./view"
 import { logsLink, replayLink } from "./view-header"
+import { vstackClass } from "../../../ui/stack"
 
 // The trace page in the list's peek sheet. The sheet, its footer and the keys are the list's.
 
@@ -116,7 +117,12 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 						return [
 							h.div(
 								[
-									h.Class(cn("flex min-h-0 flex-1 flex-col", refreshingClass(isWaiting))),
+									h.Class(
+										cn(
+											vstackClass({ grow: true, className: "min-h-0" }),
+											refreshingClass(isWaiting),
+										),
+									),
 									...(isWaiting ? [h.AriaBusy(true)] : []),
 								],
 								[

@@ -12,6 +12,7 @@ import { Message } from "./message"
 import type { FlowHost, Model } from "./model"
 import { flowFooter } from "./view-footer"
 import { howItWorksRail } from "./view-push-rail"
+import { typography } from "../../../ui/typography"
 
 // `CreateSourceForm`: the Name step. Create submits; the token shows on Send data.
 
@@ -86,12 +87,9 @@ export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatfor
 				h,
 				[
 					stepCard(h, { icon: "KeyIcon", title: "Name the source", note: "Write-only token" }, [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Your app sends data to Maple with this source's token. It can only write to this source, never read.",
-							],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Your app sends data to Maple with this source's token. It can only write to this source, never read.",
+						]),
 						nameField(h, model, platform),
 						advanced(h, model),
 					]),

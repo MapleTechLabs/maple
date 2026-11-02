@@ -43,6 +43,7 @@ import { resolveQueryPeek } from "./peek"
 import { workloadRail } from "./view-rail"
 import { appWaitCallout, figure, topQueries } from "./view-sql"
 import { queryPeekSheet } from "./view-sql-peek"
+import { hstack } from "../../../../ui/stack"
 
 // `GcpWorkloadPage`.
 
@@ -101,27 +102,24 @@ const header = (h: H, model: Model, data: PageData) => {
 				}),
 			]
 	return pageHeroParts(h, {
-		title: h.span(
-			[h.Class("flex items-center gap-3")],
-			[
-				h.span(
-					[h.Class("relative")],
-					[
-						gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
-						...(data.health === null
-							? []
-							: [
-									statusDot(h, {
-										tone: HEALTH_TONE[data.health],
-										className:
-											"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
-									}),
-								]),
-					],
-				),
-				h.span([], [gcpWorkloadName(service, keys)]),
-			],
-		),
+		title: hstack(h, { gap: "3", as: "span" }, [
+			h.span(
+				[h.Class("relative")],
+				[
+					gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
+					...(data.health === null
+						? []
+						: [
+								statusDot(h, {
+									tone: HEALTH_TONE[data.health],
+									className:
+										"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
+								}),
+							]),
+				],
+			),
+			h.span([], [gcpWorkloadName(service, keys)]),
+		]),
 		meta,
 	})
 }

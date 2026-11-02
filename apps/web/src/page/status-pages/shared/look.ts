@@ -8,6 +8,7 @@ import {
 } from "@maple/domain/status-page"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { cardButton } from "../../../ui/card-button"
+import { hstack } from "../../../ui/stack"
 
 // The theme presets as small cards, shared by the builder's Look and the Settings appearance.
 
@@ -37,19 +38,13 @@ const miniPage = <M>(h: HtmlBuilder<M>, scheme: Scheme, tokens: ResolvedStatusPa
 			h.Style({ backgroundColor: scheme.bg, color: scheme.fg, fontFamily: tokens.fontStack }),
 		],
 		[
-			h.span(
-				[h.Class("flex items-center gap-1")],
-				[
-					h.span(
-						[
-							h.Class("size-2.5"),
-							h.Style({ backgroundColor: scheme.primary, borderRadius: radius }),
-						],
-						[],
-					),
-					h.span([h.Class("text-xs/none font-semibold")], ["Aa"]),
-				],
-			),
+			hstack(h, { gap: "1", as: "span" }, [
+				h.span(
+					[h.Class("size-2.5"), h.Style({ backgroundColor: scheme.primary, borderRadius: radius })],
+					[],
+				),
+				h.span([h.Class("text-xs/none font-semibold")], ["Aa"]),
+			]),
 			h.span(
 				[
 					h.Class("flex gap-px p-1"),

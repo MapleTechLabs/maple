@@ -19,6 +19,7 @@ import { ciResultBadge, traceLink } from "../kit/parts"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
+import { typography } from "../../../ui/typography"
 
 // `CiRunsList`, `RunRows` and the paging footers.
 
@@ -107,8 +108,13 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 									),
 							...(job.reason
 								? [
-										h.span(
-											[h.Class("truncate text-muted-foreground"), h.Title(job.reason)],
+										typography(
+											h,
+											{
+												tone: "muted",
+												truncate: true,
+												attributes: [h.Title(job.reason)],
+											},
 											[job.reason],
 										),
 									]
@@ -138,7 +144,11 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			tableCell(
 				h,
 				[
-					h.div([h.Class("truncate font-medium"), h.Title(run.pipeline)], [run.pipeline]),
+					typography(
+						h,
+						{ weight: "medium", truncate: true, as: "div", attributes: [h.Title(run.pipeline)] },
+						[run.pipeline],
+					),
 					runMeta(h, run, prUrl),
 					...failedJobs(h, run),
 					...traceLink(h, run, time.nowMs, "mt-1 -ml-2 sm:hidden"),

@@ -22,6 +22,8 @@ import {
 	integrationErrorNotice,
 	integrationStatusCard,
 } from "./view-integration-card"
+import { typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // `RailwayIntegrationCard`.
 
@@ -41,36 +43,36 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 		status.environments.length === 0
 			? [dataTableEmpty(h, ["This token can't see any projects yet."])]
 			: status.environments.map((environment) =>
-					h.div(
+					hstack(
+						h,
+						{
+							gap: "4",
+							className: typographyClass({
+								size: "sm",
+								className: "border-b border-border-subtle px-4 py-2.5 last:border-0",
+							}),
+						},
 						[
-							h.Class(
-								"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
-							),
-						],
-						[
-							h.span(
-								[h.Class("flex w-0 min-w-48 flex-1 flex-col")],
-								[
-									h.span(
-										[h.Class("truncate")],
-										[
-											environment.projectName,
-											h.span(
-												[h.Class("text-muted-foreground")],
-												[" ", "/ ", environment.environmentName],
-											),
-										],
-									),
-									...(environment.lastError !== null
-										? [
-												truncatedText(h, {
-													text: environment.lastError,
-													className: "text-xs text-severity-error",
-												}),
-											]
-										: []),
-								],
-							),
+							vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
+								h.span(
+									[h.Class("truncate")],
+									[
+										environment.projectName,
+										h.span(
+											[h.Class("text-muted-foreground")],
+											[" ", "/ ", environment.environmentName],
+										),
+									],
+								),
+								...(environment.lastError !== null
+									? [
+											truncatedText(h, {
+												text: environment.lastError,
+												className: typographyClass({ size: "xs", tone: "error" }),
+											}),
+										]
+									: []),
+							]),
 							h.span(
 								[h.Class("w-20 shrink-0 text-right tabular-nums text-muted-foreground")],
 								[String(environment.serviceCount)],
@@ -87,10 +89,10 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 											})
 										: environment.lastError !== null
 											? "Failed"
-											: h.span(
-													[h.Class("inline-flex items-center gap-1")],
-													[spinner(h, undefined, 12), "Syncing"],
-												),
+											: hstack(h, { gap: "1", inline: true, as: "span" }, [
+													spinner(h, undefined, 12),
+													"Syncing",
+												]),
 								],
 							),
 						],

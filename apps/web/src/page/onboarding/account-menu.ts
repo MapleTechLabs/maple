@@ -9,6 +9,7 @@ import { avatarFallback } from "../../ui/display"
 import { icon } from "../../ui/icon"
 import type { MenuEntry } from "../../ui/menu-view"
 import type { Message } from "./index"
+import { typography } from "../../ui/typography"
 
 // `OnboardingOrgSwitcher` and `OnboardingUserMenu`: the account actions in the onboarding header.
 
@@ -70,15 +71,22 @@ export const userMenuEntries = (
 						h.div(
 							[h.Class("grid flex-1 text-left text-sm leading-tight")],
 							[
-								h.span([h.Class("truncate font-medium"), h.Title(name)], [name]),
+								typography(
+									h,
+									{ weight: "medium", truncate: true, attributes: [h.Title(name)] },
+									[name],
+								),
 								...(email === ""
 									? []
 									: [
-											h.span(
-												[
-													h.Class("truncate text-xs text-muted-foreground"),
-													h.Title(email),
-												],
+											typography(
+												h,
+												{
+													size: "xs",
+													tone: "muted",
+													truncate: true,
+													attributes: [h.Title(email)],
+												},
 												[email],
 											),
 										]),

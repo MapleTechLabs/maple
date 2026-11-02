@@ -22,6 +22,7 @@ import type { Widget } from "./lowering"
 import { leaveDialog } from "./view-dialog"
 import { queryEditor } from "./view-query"
 import { settingsRail } from "./view-rail"
+import { hstack, vstack } from "../../../ui/stack"
 
 // `WidgetConfigurePage` and `WidgetQueryBuilderPage`: the preview over the query editor, the
 // settings rail beside them.
@@ -34,34 +35,29 @@ const editorSkeleton = (h: H): Html =>
 		[h.Role("status"), h.AriaLabel("Loading widget")],
 		[
 			h.span([h.Class("sr-only")], ["Loading widget"]),
-			h.div(
-				[h.Class("flex flex-col gap-6"), h.AriaHidden(true)],
-				[
-					h.div(
-						[
-							h.Class(
-								"h-64 w-full overflow-hidden rounded-md ring-1 ring-border bg-card p-2 animate-tile-in motion-reduce:animate-none",
-							),
-							h.Style({ "animation-delay": "0ms" }),
-						],
-						[chartSkeleton(h, "line")],
-					),
-					h.div(
-						[h.Class("flex max-w-md flex-col gap-4")],
-						[1, 2, 3, 4].map((index) =>
-							h.div(
-								[
-									h.Class(
-										"flex flex-col gap-1.5 animate-tile-in motion-reduce:animate-none",
-									),
-									h.Style({ "animation-delay": `${index * 40}ms` }),
-								],
-								[skeleton(h, "h-3 w-20"), skeleton(h, "h-9 w-full")],
-							),
+			vstack(h, { gap: "6", attributes: [h.AriaHidden(true)] }, [
+				h.div(
+					[
+						h.Class(
+							"h-64 w-full overflow-hidden rounded-md ring-1 ring-border bg-card p-2 animate-tile-in motion-reduce:animate-none",
+						),
+						h.Style({ "animation-delay": "0ms" }),
+					],
+					[chartSkeleton(h, "line")],
+				),
+				h.div(
+					[h.Class("flex max-w-md flex-col gap-4")],
+					[1, 2, 3, 4].map((index) =>
+						h.div(
+							[
+								h.Class("flex flex-col gap-1.5 animate-tile-in motion-reduce:animate-none"),
+								h.Style({ "animation-delay": `${index * 40}ms` }),
+							],
+							[skeleton(h, "h-3 w-20"), skeleton(h, "h-9 w-full")],
 						),
 					),
-				],
-			),
+				),
+			]),
 		],
 	)
 
@@ -188,28 +184,25 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 export const topbarActions = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
 	model.status !== "Ready" || model.state === null
 		? null
-		: h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isDisabled: model.isSaving,
-							attributes: [h.OnClick(Message.ClickedCancel())],
-						},
-						["Cancel"],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							isLoading: model.isSaving,
-							attributes: [h.OnClick(Message.ClickedApply())],
-						},
-						["Apply"],
-					),
-				],
-			),
+		: hstack(h, { gap: "2" }, [
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isDisabled: model.isSaving,
+						attributes: [h.OnClick(Message.ClickedCancel())],
+					},
+					["Cancel"],
+				),
+				button(
+					h,
+					{
+						size: "sm",
+						isLoading: model.isSaving,
+						attributes: [h.OnClick(Message.ClickedApply())],
+					},
+					["Apply"],
+				),
+			]),
 )

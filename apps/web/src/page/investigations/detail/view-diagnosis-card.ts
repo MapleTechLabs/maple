@@ -17,6 +17,8 @@ import type { Model } from "./model"
 import { actionSheetContent } from "./view-action-sheet"
 import { ACTION_GLYPH } from "./view-canvas"
 import { evidenceChips, type TipTrigger } from "./view-sections"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `DiagnosisReportCard`: the report an investigation's
 // Chat and Transcript tabs lead with until the thread's own `submit_diagnosis` turn lands. Its
@@ -86,8 +88,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 			h.header(
 				[h.Class("space-y-1.5")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-1.5")],
+					hstack(h, { gap: "1.5" },
 						[
 							icon(h, "PulseIcon", { className: "size-3.5 text-muted-foreground" }),
 							eyebrow(h, { variant: "label" }, ["AI Diagnosis"]),
@@ -99,14 +100,13 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 						],
 					),
 					heading(h, { level: 3, variant: "title", className: "leading-snug" }, [report.suspectedCause]),
-					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], [report.summary]),
+					typography(h, { size: "sm", tone: "muted", as: "p", className: "leading-relaxed" }, [report.summary]),
 				],
 			),
 			...(report.affectedScope
 				? [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[h.span([h.Class("font-medium text-foreground")], ["Scope:"]), " ", report.affectedScope],
+						typography(h, { size: "xs", tone: "muted", as: "p" },
+							[typography(h, { tone: "foreground", weight: "medium" }, ["Scope:"]), " ", report.affectedScope],
 						),
 					]
 				: []),
@@ -120,7 +120,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 								...evidence.map((item, index) => {
 									const chips = evidenceChips(h, item, "card", trigger)
 									return h.keyed("div")(String(index), [h.Class("space-y-1.5 rounded-md bg-surface-sunken p-3")], [
-										...(item.note ? [h.p([h.Class("text-sm leading-relaxed text-foreground")], [item.note])] : []),
+										...(item.note ? [typography(h, { size: "sm", tone: "foreground", as: "p", className: "leading-relaxed" }, [item.note])] : []),
 										...(chips === null ? [] : [chips]),
 									])
 								}),

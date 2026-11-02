@@ -30,6 +30,8 @@ import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
 import { ruleMenuId } from "./update"
 import { searchInput } from "../../../ui/search-input"
+import { typography, typographyClass } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `RulesTab`: the hub's Rules tab.
 
@@ -129,8 +131,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 		[
 			listToolbar(h, {
 				className: "pb-0",
-				leading: h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				leading: hstack(h, { gap: "2", wrap: true },
 					[
 						rulesSearch(h, model.rulesQuery),
 						...BUCKETS.map((bucket) =>
@@ -184,7 +185,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 											h.Class(
 												cn(
 													ROW_GRID,
-													"border-b px-4 py-2 text-xs text-muted-foreground",
+													typographyClass({ size: "xs", tone: "muted", className: "border-b px-4 py-2" }),
 												),
 											),
 										],
@@ -320,8 +321,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 						},
 						[rule.name],
 					),
-					h.p(
-						[h.Class("truncate font-mono text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
 						[ruleConditionSummary(rule)],
 					),
 				],
@@ -333,7 +333,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 				[
 					h.Class(
 						cn(
-							"text-right font-mono text-xs tabular-nums",
+							typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" }),
 							row.fired === 0 && "text-muted-foreground",
 						),
 					),
@@ -364,10 +364,10 @@ const headroomMeter = (
 	derived: DerivedRuleStatus | undefined,
 	value: number | null,
 ): Html => {
-	if (!rule.enabled) return h.span([h.Class("text-xs text-muted-foreground")], ["Not evaluating"])
+	if (!rule.enabled) return typography(h, { size: "xs", tone: "muted" }, ["Not evaluating"])
 	if (derived?.status === "error")
-		return h.span([h.Class("text-xs text-severity-error")], ["Query fails to run"])
-	if (value === null) return h.span([h.Class("text-xs text-muted-foreground")], ["Waiting on data"])
+		return typography(h, { size: "xs", tone: "error" }, ["Query fails to run"])
+	if (value === null) return typography(h, { size: "xs", tone: "muted" }, ["Waiting on data"])
 	const meter = ruleHeadroom(rule, value)
 	const tone = meter.breached
 		? "bg-severity-error"
@@ -433,5 +433,5 @@ const routesTo = (h: H, destinations: ReadonlyArray<AlertDestinationDocument>, i
 			["Nobody"],
 		)
 	const names = destinations.map((d) => d.name).join(", ")
-	return h.span([h.Class("truncate text-xs"), h.Title(names)], [names])
+	return typography(h, { size: "xs", truncate: true, attributes: [h.Title(names)] }, [names])
 }

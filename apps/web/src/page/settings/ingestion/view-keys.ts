@@ -13,6 +13,7 @@ import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
 import { Message } from "./message"
 import type { IngestKeyKind, Model } from "./model"
+import { hstack } from "../../../ui/stack"
 
 // `CredentialRow`.
 
@@ -102,8 +103,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 						: []),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-1.5")],
+			hstack(h, { gap: "1.5", className: "shrink-0" },
 				// Nothing to copy, reveal or rotate while the key is unknown.
 				isUnknown
 					? []

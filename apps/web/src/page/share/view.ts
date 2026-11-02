@@ -23,6 +23,8 @@ import { Message } from "./message"
 import type { Model, ShareError, SharedDashboard, ShareWidget, WidgetState } from "./model"
 import { refreshSecondsOf } from "./update"
 import { sharedSection } from "./view-sections"
+import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 // `SharePage`: its own chrome outside the app shell.
 
@@ -250,12 +252,12 @@ const shareBody = (h: H, model: Model, share: SharedDashboard, isEmbed: boolean,
 	if (share.scope === "widget") return singleWidget(h, model, share, isEmbed, variables, timeZone)
 	if (share.dashboard.widgets.length === 0)
 		return centeredCard(h, "This dashboard has no charts yet", "Ask whoever shared it to add widgets, then reload.")
-	return h.div([h.Class("flex flex-col gap-3")], [
+	return vstack(h, { gap: "3" }, [
 		...(isEmbed
 			? []
 			: [
-					h.div([h.Class("flex items-center justify-between gap-2")], [
-						h.div([h.Class("text-muted-foreground text-xs"), h.DataAttribute("testid", "share-time-range")], [window.label]),
+					hstack(h, { gap: "2", justify: "between" }, [
+						typography(h, { size: "xs", tone: "muted", as: "div", attributes: [h.DataAttribute("testid", "share-time-range")] }, [window.label]),
 						refreshControls(h, {
 							seconds: refreshSecondsOf(model),
 							savedDefault: share.dashboard.refreshIntervalSeconds,

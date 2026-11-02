@@ -26,6 +26,7 @@ import {
 	renderPayload,
 } from "./activity-format"
 import { Message } from "./message"
+import { typography } from "../../../ui/typography"
 
 // The issue timeline and the comment composer.
 
@@ -106,7 +107,7 @@ const escalationRow = (h: H, escalation: IssueEscalationAttemptDocument, clock: 
 		escalation.createdAt,
 		TONE_FILL.warn,
 		[
-			h.span([h.Class("font-medium text-foreground")], ["Escalation"]),
+			typography(h, { tone: "foreground", weight: "medium" }, ["Escalation"]),
 			h.span(
 				[h.Class("font-mono text-2xs capitalize text-muted-foreground")],
 				[escalation.severity, " · ", escalation.status],
@@ -171,8 +172,7 @@ const messageRow = (
 								h.div(
 									[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-0.5")],
 									[
-										h.span(
-											[h.Class("text-sm font-medium text-foreground")],
+										typography(h, { size: "sm", tone: "foreground", weight: "medium" },
 											[identity?.name ?? "Unknown"],
 										),
 										...(isAgent
@@ -193,7 +193,7 @@ const messageRow = (
 												]
 											: []),
 										...(verb
-											? [h.span([h.Class("text-xs text-muted-foreground")], [verb])]
+											? [typography(h, { size: "xs", tone: "muted" }, [verb])]
 											: []),
 									],
 								),
@@ -228,11 +228,10 @@ const eventRow = (h: H, event: ErrorIssueEventDocument, previous: Item | undefin
 		event.createdAt,
 		DOT_CLASS[event.type],
 		[
-			h.span([h.Class("font-medium text-foreground")], [EVENT_LABEL[event.type]]),
+			typography(h, { tone: "foreground", weight: "medium" }, [EVENT_LABEL[event.type]]),
 			...(event.fromState && event.toState
 				? [
-						h.span(
-							[h.Class("font-mono text-2xs text-muted-foreground")],
+						typography(h, { size: "2xs", tone: "muted", mono: true },
 							[event.fromState, " → ", event.toState],
 						),
 					]
@@ -261,7 +260,7 @@ export const issueTimeline = (
 	].sort((a, b) => isoMs(a.createdAt) - isoMs(b.createdAt))
 	if (items.length === 0)
 		return emptyMessage(h, { dashed: true, className: "py-10" }, [
-			h.p([h.Class("text-sm font-medium text-foreground")], ["No activity yet"]),
+			typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, ["No activity yet"]),
 			h.p(
 				[h.Class("mt-1 text-xs")],
 				["Comments from your team and notes from agents working this issue land here."],

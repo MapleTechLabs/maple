@@ -3,6 +3,8 @@ import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import type * as Menu from "../../ui/menu"
 import { refreshControls } from "../kit/refresh-controls"
+import { typographyClass } from "../../ui/typography"
+import { hstack, hstackClass } from "../../ui/stack"
 
 // The live-tail controls, shared by /logs and /lab/logs.
 
@@ -23,43 +25,45 @@ export type LiveControlsInputs<M> = Readonly<{
 export const liveControls = <M>(h: HtmlBuilder<M>, model: LiveControlsInputs<M>): Html => {
 	const isOn = model.refreshInterval > 0
 	const isPaused = isOn && model.isInspecting
-	return h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			h.output(
-				[h.Class("flex items-center gap-2")],
-				[
-					...(isPaused
-						? [
-								h.span(
-									[h.Class("flex items-center gap-1.5 text-muted-foreground text-xs")],
-									[icon(h, "MediaPauseIcon", { size: 12 }), "Paused while you inspect"],
-								),
-							]
-						: []),
-					...(isPaused && model.isScrolledAway
-						? [
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "xs",
-										attributes: [h.OnClick(model.onJumpToLatest)],
-									},
-									[icon(h, "ArrowUpIcon", { size: 24 }), "Jump to latest"],
-								),
-							]
-						: []),
-				],
-			),
-			refreshControls(h, {
-				seconds: model.refreshInterval,
-				savedDefault: undefined,
-				isReloading: model.isReloading,
-				onReload: model.onReload,
-				menu: model.menu,
-				toMenuMessage: model.toMenuMessage,
-			}),
-		],
-	)
+	return hstack(h, { gap: "2" }, [
+		h.output(
+			[h.Class(hstackClass({ gap: "2" }))],
+			[
+				...(isPaused
+					? [
+							hstack(
+								h,
+								{
+									gap: "1.5",
+									as: "span",
+									className: typographyClass({ size: "xs", tone: "muted" }),
+								},
+								[icon(h, "MediaPauseIcon", { size: 12 }), "Paused while you inspect"],
+							),
+						]
+					: []),
+				...(isPaused && model.isScrolledAway
+					? [
+							button(
+								h,
+								{
+									variant: "ghost",
+									size: "xs",
+									attributes: [h.OnClick(model.onJumpToLatest)],
+								},
+								[icon(h, "ArrowUpIcon", { size: 24 }), "Jump to latest"],
+							),
+						]
+					: []),
+			],
+		),
+		refreshControls(h, {
+			seconds: model.refreshInterval,
+			savedDefault: undefined,
+			isReloading: model.isReloading,
+			onReload: model.onReload,
+			menu: model.menu,
+			toMenuMessage: model.toMenuMessage,
+		}),
+	])
 }

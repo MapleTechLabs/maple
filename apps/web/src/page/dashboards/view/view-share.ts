@@ -13,6 +13,8 @@ import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "../kit/share-su
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type Access, boardShareOf, ShareMessage, shareUrl } from "./share"
+import { typography } from "../../../ui/typography"
+import { hstack } from "../../../ui/stack"
 
 // `ShareDashboardDialog` and `ShareLinkRow`: the share dialog and one link's row.
 
@@ -65,32 +67,29 @@ export const shareLinkRow = (
 	url: string,
 	replaceWarning: string,
 ): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			h.div(
-				[h.Class("min-w-0 flex-1")],
-				[
-					copyableField(h, {
-						id: "dashboard-share-link",
-						value: url,
-						copyLabel: "Share link",
-						copy: model.sharing.linkCopy,
-						toCopyMessage: (message) => wrap(ShareMessage.GotLinkCopyMessage({ message })),
-					}),
-				],
-			),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					attributes: [h.OnClick(wrap(ShareMessage.ClickedReplace()))],
-				},
-				[icon(h, "ArrowRotateClockwiseIcon"), "Replace"],
-			),
-		],
-	),
+	hstack(h, { gap: "2" }, [
+		h.div(
+			[h.Class("min-w-0 flex-1")],
+			[
+				copyableField(h, {
+					id: "dashboard-share-link",
+					value: url,
+					copyLabel: "Share link",
+					copy: model.sharing.linkCopy,
+					toCopyMessage: (message) => wrap(ShareMessage.GotLinkCopyMessage({ message })),
+				}),
+			],
+		),
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				attributes: [h.OnClick(wrap(ShareMessage.ClickedReplace()))],
+			},
+			[icon(h, "ArrowRotateClockwiseIcon"), "Replace"],
+		),
+	]),
 	confirmDialog(h, {
 		slotId: "dashboard-share-replace",
 		model: model.sharing.replaceDialog,
@@ -125,7 +124,9 @@ const accessOption = (
 				[h.Class("min-w-0 flex-1 space-y-0.5")],
 				[
 					h.div([h.Class("font-medium text-sm leading-5")], [option.title]),
-					h.p([h.Class("text-muted-foreground text-xs leading-relaxed")], [option.body]),
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+						option.body,
+					]),
 				],
 			),
 			...RadioGroup.radio(h, config, option.value, "mt-0.5 shrink-0"),

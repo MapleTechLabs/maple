@@ -40,6 +40,8 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { typographyClass } from "../../../ui/typography"
+import { vstack } from "../../../ui/stack"
 
 // `CodeReviewTeamPage`: team KPIs, a few highlights, and the per-person scorecard against the team
 // median, ranked only on request.
@@ -337,7 +339,7 @@ const memberRow = (h: H, member: CodeReviewTeamMember, rank: number | null, rank
 				tableCell(
 					h,
 					[column.format(metricOf(member, column.metric))],
-					cn("px-3 text-right tabular-nums", column.className),
+					cn(typographyClass({ numeric: true, className: "px-3 text-right" }), column.className),
 					[h.Title(column.detail(member))],
 				),
 			),
@@ -465,8 +467,7 @@ const noTeamData = (h: H): Html =>
 
 const teamView = (h: H, model: Model, team: CodeReviewTeam): Html => {
 	const highlighted = highlights(h, team.members)
-	return h.div(
-		[h.Class("flex flex-col gap-6")],
+	return vstack(h, { gap: "6" },
 		[
 			headlineStrip(h, team.totals),
 			...(highlighted === null ? [] : [highlighted]),

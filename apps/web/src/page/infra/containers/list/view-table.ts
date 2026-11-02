@@ -12,6 +12,8 @@ import { listRelativeTime } from "../../../kit/relative-time"
 import { hostStatusBadge } from "../../kit/status"
 import { type ContainerSortKey, Message } from "./message"
 import type { ContainerRow } from "./model"
+import { typographyClass } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `ContainerTable` / `ContainerTableLoading`.
 
@@ -78,14 +80,13 @@ const containerRow = (h: H, container: ContainerRow, inputs: ContainerTableInput
 			h.div(
 				[h.Class("w-0 min-w-64 flex-1")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
+					hstack(h, { gap: "2" },
 						[
 							middleTruncate(h, {
 								text: container.containerName,
 								tail: 12,
 								mono: true,
-								className: "text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+								className: typographyClass({ size: "xs", tone: "foreground", weight: "medium", className: "transition-colors group-hover:text-primary" }),
 							}),
 							hostStatusBadge(h, { quiet: true, lastSeen: container.lastSeen, referenceMs: inputs.referenceTime }),
 						],
@@ -122,7 +123,7 @@ const containerRow = (h: H, container: ContainerRow, inputs: ContainerTableInput
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
 						mono: true,
-						className: "cursor-default text-2xs text-muted-foreground",
+						className: typographyClass({ size: "2xs", tone: "muted", className: "cursor-default" }),
 					}),
 				],
 			),

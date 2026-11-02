@@ -30,6 +30,8 @@ import {
 } from "./cloudflare-derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
 // TODO(tooltip): the "Details" trigger renders; its popup with the raw error is the overlay port's.
@@ -104,7 +106,7 @@ const resourceRow = (
 				truncatedText(h, {
 					text: name,
 					className: cn(
-						"text-xs font-medium text-foreground",
+						typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
 						zoneLink && "group-hover:text-primary",
 					),
 				}),
@@ -350,15 +352,14 @@ export const workersCard = (
 									),
 								],
 								[
-									h.span(
-										[h.Class("flex min-w-0 items-center gap-2.5")],
+									hstack(h, { gap: "2.5", shrink: true, as: "span" },
 										[
 											statusDot(h, {
 												tone: service.totalRequests > 0 ? "ok" : "neutral",
 											}),
 											truncatedText(h, {
 												text: service.displayName,
-												className: "text-xs font-medium text-foreground",
+												className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
 											}),
 										],
 									),

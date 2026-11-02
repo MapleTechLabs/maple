@@ -38,6 +38,8 @@ import {
 } from "./service"
 import { releaseComparison, releaseVersionsRail } from "./view-comparison"
 import { type ChangesetState, type Clock, issueList, releaseChangeset, sectionCard } from "./view-sections"
+import { typography } from "../../../ui/typography"
+import { hstack, vstack } from "../../../ui/stack"
 
 // The release body for one service (`?service=`) and its issues panel.
 
@@ -90,8 +92,7 @@ export const serviceButton = (h: H, model: Model, serviceName: string): Html =>
 	)
 
 const bodySkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
+	vstack(h, { gap: "3" },
 		[
 			skeleton(h, "h-4 w-80"),
 			h.div(
@@ -120,7 +121,7 @@ const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 		],
 		onSome: (commit) => [
 			h.span([h.Class("truncate")], [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
-			h.span([h.Class("truncate text-foreground-subtle")], [commit.repoFullName]),
+			typography(h, { tone: "subtle", truncate: true }, [commit.repoFullName]),
 			h.a(
 				[
 					h.Href(commit.htmlUrl),
@@ -297,8 +298,7 @@ const seriesBar = (h: H, model: Model, serviceName: string): Html => {
 			: baseline === undefined
 				? `Every other version of ${serviceName} in the window`
 				: `Only spans that carried ${shortReleaseLabel(baseline)}, the version it replaced`
-	return h.div(
-		[h.Class("flex items-center justify-between gap-3")],
+	return hstack(h, { gap: "3", justify: "between" },
 		[
 			segmentedSelect(h, {
 				size: "sm",
@@ -313,7 +313,7 @@ const seriesBar = (h: H, model: Model, serviceName: string): Html => {
 					},
 				],
 			}),
-			h.span([h.Class("text-2xs text-foreground-subtle")], [caption]),
+			typography(h, { size: "2xs", tone: "subtle" }, [caption]),
 		],
 	)
 }
@@ -331,8 +331,7 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 	})
 	const { impact } = derived
 	if (impact === undefined)
-		return h.div(
-			[h.Class("flex flex-col gap-3")],
+		return vstack(h, { gap: "3" },
 			[
 				panel(h, {}, [
 					emptyMessage(h, { className: "text-sm" }, [
@@ -345,8 +344,7 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 		)
 	const isChartReady =
 		model.themeColors !== null && model.chartRuntime !== null && isChartRuntimeReady(model.chartRuntime)
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
+	return vstack(h, { gap: "3" },
 		[
 			metaLine(h, model, impact, serviceName, clock),
 			h.div([h.Class("grid gap-3 lg:grid-cols-2")], [releaseComparison(h, impact, overlaysOf(model, clock)), rail]),
