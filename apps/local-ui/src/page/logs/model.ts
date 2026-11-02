@@ -1,4 +1,7 @@
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import { Density } from "@maple/views/ui/logs/viewer"
+import * as Popover from "@maple/views/ui/popover"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { Schema } from "effect"
@@ -35,25 +38,6 @@ export const LogPatterns = Schema.Struct({
 })
 export type LogPatterns = typeof LogPatterns.Type
 
-/** The virtualizer's viewport: what the stream's scroller shows, read by a Mount. */
-export const Viewport = Schema.Struct({ scrollTop: Schema.Number, height: Schema.Number })
-export type Viewport = typeof Viewport.Type
-
-/** A row's chip: the row's place in the list, its log and the attribute key. */
-export const ChipRef = Schema.Struct({ index: Schema.Number, logKey: Schema.String, key: Schema.String })
-export type ChipRef = typeof ChipRef.Type
-
-/** `LogAttributeChip`'s hover card: the one shown and the rest-to-reveal / grace timers. */
-export const ChipCard = Schema.Struct({
-	visible: Schema.Option(ChipRef),
-	pendingOpen: Schema.Option(Schema.Struct({ chip: ChipRef, generation: Schema.Number })),
-	pendingClose: Schema.Option(Schema.Number),
-	generation: Schema.Number,
-	/** `CollapsibleJsonValue` in the shown card; a card that opens again starts collapsed. */
-	isJsonExpanded: Schema.Boolean,
-})
-export type ChipCard = typeof ChipCard.Type
-
 export const Draft = Schema.Struct({ text: Schema.String, version: Schema.Number, sent: Schema.String })
 export type Draft = typeof Draft.Type
 
@@ -71,7 +55,16 @@ export const Model = Schema.TaggedStruct("LogsPage", {
 	patterns: SlotSchema(LogPatterns),
 	services: SlotSchema(Schema.Array(FacetOption)),
 	severities: SlotSchema(Schema.Array(FacetOption)),
-	viewport: Viewport,
+	/** The shared logs stream: rows derived from `logs` and the pinned columns. */
+	stream: LogsStream.Model,
+	/** The pinned columns the stream's rows were derived with. */
+	columns: Schema.Array(Schema.String),
+	/** The attribute keys of the loaded logs, offered as columns. */
+	columnOptions: Schema.Array(FacetOption),
+	wrap: Schema.Boolean,
+	density: Density,
+	toolbarTooltip: Tooltip.Model,
+	columnsPopover: Popover.Model,
 	search: Draft,
 	modeToggle: ToggleGroup.Model,
 	sections: FilterSections.Model,
@@ -79,12 +72,5 @@ export const Model = Schema.TaggedStruct("LogsPage", {
 	maybeDetail: Schema.Option(LogSheet.Model),
 	isRefreshing: Schema.Boolean,
 	copies: Copies,
-	chipCard: ChipCard,
-	/** The tooltip on the card JSON block copy button (`<CopyButton tooltip>`). */
-	chipJsonTooltip: Tooltip.Model,
 })
 export type Model = typeof Model.Type
-
-export const CHIP_JSON_TOOLTIP_ID = "local-chip-json-copy"
-export const CHIP_JSON_COPY_ID = "chip-json"
-export const initChipJsonTooltip = (): Tooltip.Model => Tooltip.init(CHIP_JSON_TOOLTIP_ID)

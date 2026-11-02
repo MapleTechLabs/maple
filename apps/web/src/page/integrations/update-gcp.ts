@@ -1,7 +1,7 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import type { GcpConnectorId } from "@maple/domain/primitives"
 import { gcpNothingSeen, gcpScopeLabel } from "../../components/integrations/gcp-connector-state"
-import { encodeLogAttributeFilter } from "../../lib/logs/log-attribute-filters"
+import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 import { Option } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../data/keyed"

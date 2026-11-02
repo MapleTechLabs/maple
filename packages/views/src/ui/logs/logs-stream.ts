@@ -283,7 +283,10 @@ const handle = (model: Model, rows: ReadonlyArray<LogRowView>, message: Message)
 		ClickedCopyLink: ({ index }) =>
 			copyLink(
 				model,
-				Option.map(Array.get(rows, index), (row) => row.logKey),
+				Option.filter(
+					Option.map(Array.get(rows, index), (row) => row.logHref),
+					(href) => href !== "",
+				),
 			),
 		PressedNavigationKey: ({ key }) => navigate(model, key, rows.length),
 		EnteredChip: ({ index, key }) => scheduleOpen(model, { index, key }),
@@ -392,10 +395,10 @@ const copy = (model: Model, text: Option.Option<string>): UpdateReturn =>
 		onSome: (value) => ({ model, commands: [CopyText({ text: value })] }),
 	})
 
-const copyLink = (model: Model, logKey: Option.Option<string>): UpdateReturn =>
-	Option.match(logKey, {
+const copyLink = (model: Model, logHref: Option.Option<string>): UpdateReturn =>
+	Option.match(logHref, {
 		onNone: () => ({ model }),
-		onSome: (key) => ({ model, commands: [CopyLogLink({ logKey: key })] }),
+		onSome: (href) => ({ model, commands: [CopyLogLink({ href })] }),
 	})
 
 // PARENT ENTRY POINTS

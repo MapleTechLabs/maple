@@ -10,16 +10,15 @@ import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
 import { listSkeleton } from "../kit/placeholders"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { activeFilterCount, filtersOf, type LogFilters, modeOf } from "./filters"
+import { activeFilterCount, filtersOf, isFiltered, type LogFilters, modeOf } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { rowsOf } from "./stream"
+import { rowsOf } from "./update-stream"
 import { patternsList } from "./view-patterns"
 import * as LogSheetView from "../kit/log-sheet/view"
 import { logsToolbar } from "./view-toolbar"
 import { sidebar } from "./view-sidebar"
-import { chipCard } from "./view-chip-card"
-import { logStream } from "./view-stream"
+import { attributeFilterChips, logStream } from "./view-stream"
 
 // The Logs page: the list or the patterns mode.
 
@@ -29,7 +28,7 @@ const toCopy = (id: string, message: Parameters<typeof Message.GotCopyMessage>[0
 const emptyState = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): Html =>
 	signalEmptyState(h, {
 		signal: "logs",
-		isFiltered: activeFilterCount(filters) > 0 || filters.search !== undefined,
+		isFiltered: isFiltered(filters),
 		onClearFilters: Message.ClickedClearFilters(),
 		range: rangeOf(inputs.context),
 		onWidenRange: Message.ClickedWidenRange(),
@@ -62,7 +61,7 @@ const listContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInpu
 			...sheet,
 		]
 	if (rowsOf(model).length === 0) return [emptyState(h, model, inputs, filters), ...sheet]
-	return [logStream(h, model, filters.search, inputs.context.timeFormat), ...chipCard(h, model), ...sheet]
+	return [logStream(h, model, filters.search, inputs.context.timeFormat), ...sheet]
 }
 
 const patternsContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): Html => {
@@ -95,6 +94,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			toolbar: logsToolbar(h, model, mode, { range: rangeOf(inputs.context), hasNewData: inputs.hasNewDataSince(since) }),
 			activeFilterCount: activeFilterCount(filters),
 		},
-		mode === "list" ? listContent(h, model, inputs, filters) : [patternsContent(h, model, inputs, filters)],
+		[
+			h.div(
+				[h.Class("flex h-full min-h-0 flex-col")],
+				[
+					...attributeFilterChips(h, filters),
+					h.div(
+						[h.Class("min-h-0 flex-1 overflow-auto")],
+						mode === "list" ? listContent(h, model, inputs, filters) : [patternsContent(h, model, inputs, filters)],
+					),
+				],
+			),
+		],
 	)
 })

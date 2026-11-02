@@ -13,7 +13,7 @@ import {
 import type { GcpCloudSqlSettings, GcpResource } from "@maple/domain/http"
 
 import { appendWhereFilter } from "../../metrics/where-filter"
-import { encodeLogAttributeFilter } from "../../../lib/logs/log-attribute-filters"
+import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 
 import { gcpWorkloadLocation, gcpWorkloadProject } from "./tabs"
 

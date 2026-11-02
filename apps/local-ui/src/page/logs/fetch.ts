@@ -4,6 +4,7 @@ import { CH } from "@maple/query-engine"
 import type { LogsListOutput } from "@maple/query-engine/ch"
 import { clusterLogPatterns } from "@maple/query-engine/observability"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
+import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import { Effect } from "effect"
 import { localParams, queryRows } from "../../data/local-query"
 import type { LogFilters } from "./filters"
@@ -17,6 +18,9 @@ export const PATTERN_SAMPLE_SIZE = 5_000
 const PATTERN_LIMIT = 100
 
 export type LogCursor = NonNullable<CH.LogsListOpts["cursorIdentity"]>
+
+/** The `attrs` entries as the query's log and resource attribute predicates. */
+const attributeOpts = (filters: LogFilters) => logAttributeQueryFilters(filters.attrs)
 
 /** `normalizeLog`: attribute maps parsed once, the exact timestamp kept as the cursor field. */
 const normalizeLog = (row: LogsListOutput): LocalLog => ({
@@ -43,6 +47,7 @@ export const fetchLogsPage = (filters: LogFilters, bounds: TimeBounds, cursor: L
 					serviceName: filters.service,
 					severity: filters.severity,
 					search: filters.search,
+					...attributeOpts(filters),
 				}),
 				localParams(bounds),
 			),
@@ -59,7 +64,13 @@ export const fetchSeverities = (filters: LogFilters, bounds: TimeBounds, apiBase
 	Effect.map(
 		queryRows(
 			CH.compile(
-				CH.logsBreakdownQuery({ groupBy: "severity", limit: 20, serviceName: filters.service, search: filters.search }),
+				CH.logsBreakdownQuery({
+					groupBy: "severity",
+					limit: 20,
+					serviceName: filters.service,
+					search: filters.search,
+					...attributeOpts(filters),
+				}),
 				localParams(bounds),
 			),
 			apiBase,
@@ -78,6 +89,7 @@ export const fetchServices = (filters: LogFilters, bounds: TimeBounds, apiBase: 
 					source: "raw",
 					severity: filters.severity,
 					search: filters.search,
+					...attributeOpts(filters),
 				}),
 				localParams({ startTime: bounds.startTime, endTime: bounds.endTime }),
 			),
@@ -96,6 +108,7 @@ export const fetchPatterns = (filters: LogFilters, bounds: TimeBounds, apiBase: 
 					serviceName: filters.service,
 					severity: filters.severity,
 					search: filters.search,
+					...attributeOpts(filters),
 				}),
 				localParams(bounds),
 			),

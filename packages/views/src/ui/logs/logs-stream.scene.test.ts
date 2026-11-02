@@ -1,4 +1,4 @@
-import { LOGS_TABLE_BENCH_ROWS } from "../../fixtures/logs-table-bench-fixture"
+import { FIXTURE_LOG_LINKS, LOGS_TABLE_BENCH_ROWS } from "../../fixtures/logs-table-bench-fixture"
 import type { HtmlBuilder } from "foldkit/html"
 import {
 	all,
@@ -17,7 +17,7 @@ import {
 	text,
 	within,
 } from "foldkit/scene"
-import { Duration } from "effect"
+import { Duration, Option } from "effect"
 import { Lazy } from "foldkit/test"
 import { describe, test } from "vitest"
 import { PlaceChipCard } from "./chip-card"
@@ -36,7 +36,9 @@ import { view, type ViewInputs } from "./logs-stream-view"
 import { ScrollStreamToIndex, VirtualizeLogStream } from "./virtualize"
 
 const STREAM_ID = "test-stream"
-const ROWS = LOGS_TABLE_BENCH_ROWS.slice(0, 60).map((log) => toLogRowView(log, [], logTimeFormat("UTC")))
+const ROWS = LOGS_TABLE_BENCH_ROWS.slice(0, 60).map((log) =>
+	toLogRowView(log, [], logTimeFormat("UTC"), FIXTURE_LOG_LINKS),
+)
 const INPUTS: ViewInputs = {
 	wrap: false,
 	density: "compact",
@@ -169,7 +171,7 @@ describe("logs stream: keyboard selection", () => {
 
 	test("a row links to its trace; a row without one offers no trace link", () => {
 		const untraced = LOGS_TABLE_BENCH_ROWS.slice(0, 2).map((log, i) =>
-			toLogRowView(i === 1 ? { ...log, traceId: undefined } : log, [], logTimeFormat("UTC")),
+			toLogRowView(i === 1 ? { ...log, traceId: undefined } : log, [], logTimeFormat("UTC"), FIXTURE_LOG_LINKS),
 		)
 		scene(
 			program,
@@ -177,10 +179,28 @@ describe("logs stream: keyboard selection", () => {
 			ackVirtualizer,
 			expect(within(rowOf(0), role("link", { name: "Open trace" }))).toHaveAttr(
 				"href",
-				`/traces/${untraced[0]?.traceId}`,
+				`/traces/${LOGS_TABLE_BENCH_ROWS[0]?.traceId}`,
 			),
 			expect(within(rowOf(1), role("link", { name: "Open trace" }))).toBeAbsent(),
 			expect(within(rowOf(1), role("button", { name: "Open details" }))).toExist(),
+		)
+	})
+
+	test("an app without a log page offers no copy link; its trace link is the app's own", () => {
+		const links = { trace: (traceId: string) => `#/traces/${traceId}`, log: Option.none() }
+		const local = LOGS_TABLE_BENCH_ROWS.slice(0, 1).map((log) =>
+			toLogRowView(log, [], logTimeFormat("UTC"), links),
+		)
+		scene(
+			program,
+			given(update(init(STREAM_ID, local), windowOf(0, 0)).model),
+			ackVirtualizer,
+			expect(within(rowOf(0), role("button", { name: "Copy link to log" }))).toBeAbsent(),
+			expect(within(rowOf(0), role("button", { name: "Copy message" }))).toExist(),
+			expect(within(rowOf(0), role("link", { name: "Open trace" }))).toHaveAttr(
+				"href",
+				`#/traces/${LOGS_TABLE_BENCH_ROWS[0]?.traceId}`,
+			),
 		)
 	})
 })

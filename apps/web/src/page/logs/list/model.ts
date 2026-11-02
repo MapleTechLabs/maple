@@ -18,6 +18,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 // The `/logs` stream.
 
 import { LogRecord } from "@maple/views/ui/logs/log-row-view"
+import { Density } from "@maple/views/ui/logs/viewer"
 
 /** `LogRow` (`@maple/query-engine` route-rows), shared with the stream (`ui/logs`). */
 export const LogRowSchema = LogRecord
@@ -49,8 +50,6 @@ export type VolumeBucket = typeof VolumeBucket.Type
 export const AttributeKey = Schema.Struct({ name: Schema.String, count: Schema.Number })
 export type AttributeKey = typeof AttributeKey.Type
 
-export const Density = Schema.Literals(["compact", "comfortable"])
-export type Density = typeof Density.Type
 
 /** `useInfiniteLogs`' later pages: owned by one first page (`generation`), reset with it. */
 export const Pagination = Schema.Struct({

@@ -1,4 +1,6 @@
 import type { LogRow } from "@maple/query-engine"
+import { Option } from "effect"
+import type { LogRowLinks } from "../ui/logs/log-row-view"
 
 /** `/lab/bench/logs`: 2,000 wide synthetic rows. */
 const ROW_COUNT = 2_000
@@ -27,3 +29,9 @@ export const LOGS_TABLE_BENCH_ROWS: LogRow[] = Array.from({ length: ROW_COUNT },
 		"cloud.region": "eu-central-1",
 	},
 }))
+
+/** The dashboard's trace and log pages, for rows built from the fixture. */
+export const FIXTURE_LOG_LINKS: LogRowLinks = {
+	trace: (traceId) => `/traces/${traceId}`,
+	log: Option.some((logKey: string) => `/logs/${logKey}`),
+}

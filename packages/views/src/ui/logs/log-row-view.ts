@@ -62,8 +62,10 @@ export const LogRowView = Schema.Struct({
 	/** `3 lines` (shown as `+3 lines`) when the body has more lines than the row shows, else empty. */
 	hiddenLinesLabel: Schema.String,
 	rawBody: Schema.String,
-	traceId: Schema.String,
-	logKey: Schema.String,
+	/** The row's trace page, empty when the log has no trace. */
+	traceHref: Schema.String,
+	/** The log's own page (its permalink), empty when the app has none. */
+	logHref: Schema.String,
 	pinned: Schema.Array(PinnedCell),
 	chips: Schema.Array(LogChip),
 	/** The log itself: the expanded body, its attributes and the JSON copy read it. */
@@ -129,11 +131,18 @@ const formatWith = (formatter: Intl.DateTimeFormat, timestamp: string): string =
 	return Number.isNaN(date.getTime()) ? EMPTY_VALUE : formatter.format(date)
 }
 
+/** Where a row links: the app's trace page, and its standalone log page if it has one. */
+export interface LogRowLinks {
+	readonly trace: (traceId: string) => string
+	readonly log: Option.Option<(logKey: string) => string>
+}
+
 /** One row's display values; `pinnedColumns` leave the chip lane and get their own cells. */
 export const toLogRowView = (
 	log: LogRow,
 	pinnedColumns: ReadonlyArray<string>,
 	time: LogTimeFormat,
+	links: LogRowLinks,
 ): LogRowView => {
 	const pinned = new Set(pinnedColumns)
 	const body = stripAnsi(log.body)
@@ -170,8 +179,8 @@ export const toLogRowView = (
 		firstLine: lines[0] ?? "",
 		hiddenLinesLabel: lines.length > 1 ? countLabel(lines.length - 1, "line") : "",
 		rawBody: log.body,
-		traceId: log.traceId ?? "",
-		logKey: encodeLogKey(log),
+		traceHref: log.traceId === undefined || log.traceId === "" ? "" : links.trace(log.traceId),
+		logHref: Option.match(links.log, { onNone: () => "", onSome: (href) => href(encodeLogKey(log)) }),
 		pinned: pinnedColumns.map((key) => {
 			const value = log.logAttributes[key] ?? log.resourceAttributes[key] ?? EMPTY_VALUE
 			const isEmpty = value === EMPTY_VALUE

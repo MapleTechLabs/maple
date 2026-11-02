@@ -1,7 +1,7 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { LogsViewPreferences, readLogsViewPreferences, saveLogsViewPreferences } from "@maple/views/ui/logs/viewer"
 import { recordCached, withCache } from "../../data/cached"
-import { writeClipboard } from "../../lib/clipboard"
 import type { LoadFailure } from "../../data/local-query"
 import { logsKey, optionsFromCached, pagesFromCached, pagesToCached, patternsFromCached, patternsKey, patternsToCached, servicesKey, severitiesKey } from "./cache"
 import { fetchLogsPage, fetchPatterns, fetchServices, fetchSeverities, type LogCursor, nextCursor } from "./fetch"
@@ -155,11 +155,16 @@ export const FetchSeverities = Command.define("FetchLocalLogSeverities", {
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSeverities({ key, failure })))),
 })
 
-/** The clipboard write of a chip's `key=value`; a refused clipboard is not an error the row shows. */
-export const CopyChip = Command.define("CopyLocalLogChip", {
-	args: { text: Schema.String },
-	messages: [Message.CompletedCopyChip],
-	execute: ({ text }) => writeClipboard(text).pipe(Effect.ignore, Effect.as(Message.CompletedCopyChip())),
+/** Wrap and density, kept per browser like the dashboard's. */
+export const ReadPreferences = Command.define("ReadLocalLogsPreferences", {
+	messages: [Message.CompletedReadPreferences],
+	execute: Effect.map(readLogsViewPreferences, (preferences) => Message.CompletedReadPreferences({ preferences })),
+})
+
+export const SavePreferences = Command.define("SaveLocalLogsPreferences", {
+	args: { preferences: LogsViewPreferences },
+	messages: [Message.CompletedSavePreferences],
+	execute: ({ preferences }) => Effect.as(saveLogsViewPreferences(preferences), Message.CompletedSavePreferences()),
 })
 
 /** `ToolbarSearch`'s 300 ms pause before a typed search commits. */

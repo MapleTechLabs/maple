@@ -5,7 +5,6 @@ import { fetchAfterCache } from "./load"
 import { type PageContext, PageOutMessage } from "../contract"
 import type { Message } from "./message"
 import type { Model } from "./model"
-import { loadMoreIfAtEnd } from "./stream"
 import { settleRefresh, type UpdateReturn } from "./update"
 
 type FetchMessage = Extract<
@@ -29,7 +28,7 @@ export const updateFound = (model: Model, message: FoundMessage, context: PageCo
 	if (message._tag === "FoundCachedLogs") {
 		if (model.logs.key !== key) return { model }
 		const logs = acceptCached(model.logs, key, message.cached, cached.isFresh)
-		const shown = loadMoreIfAtEndAfter(step({ ...model, logs, logsUpdatedAtMs: cached.updatedAtMs }, "logs"), context)
+		const shown = step({ ...model, logs, logsUpdatedAtMs: cached.updatedAtMs }, "logs")
 		return withPresence(shown, Option.exists(AsyncData.getData(logs.data), (data) => data.pages.every((page) => page.length === 0)))
 	}
 	if (message._tag === "FoundCachedPatterns") {
@@ -43,18 +42,12 @@ export const updateFound = (model: Model, message: FoundMessage, context: PageCo
 	return step({ ...model, severities: acceptCached(model.severities, key, message.cached, cached.isFresh) }, "severities")
 }
 
-/** A cached page fills the viewport like a fetched one would. */
-const loadMoreIfAtEndAfter = (step: UpdateReturn, context: PageContext): UpdateReturn => {
-	const more = loadMoreIfAtEnd(step.model, context)
-	return { model: more.model, commands: [...(step.commands ?? []), ...(more.commands ?? [])] }
-}
-
 /** An empty list renders `SignalEmptyState`, which reads the shared signal presence. */
 const withPresence = (step: UpdateReturn, isEmpty: boolean): UpdateReturn =>
 	isEmpty ? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() } : step
 
 /** The active mode's main query answered. */
-export const updateFetch = (model: Model, message: FetchMessage, context: PageContext): UpdateReturn => {
+export const updateFetch = (model: Model, message: FetchMessage): UpdateReturn => {
 	if (message._tag === "SucceededFetchLogs") {
 		const isCurrent = model.logs.key === message.key
 		const next = settleRefresh({
@@ -63,7 +56,7 @@ export const updateFetch = (model: Model, message: FetchMessage, context: PageCo
 			logsUpdatedAtMs: isCurrent ? message.fetchedAtMs : model.logsUpdatedAtMs,
 		})
 		const isEmpty = isCurrent && message.data.pages.every((page) => page.length === 0)
-		return withPresence(loadMoreIfAtEnd(next, context), isEmpty)
+		return withPresence({ model: next }, isEmpty)
 	}
 	if (message._tag === "FailedFetchLogs")
 		return { model: settleRefresh({ ...model, logs: accept(model.logs, message.key, Result.fail(message.failure)) }) }

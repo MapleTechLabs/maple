@@ -1,5 +1,5 @@
 import { shortId } from "@maple/ui/lib/ids"
-import { addLogAttributeFilter } from "../../../lib/logs/log-attribute-filters"
+import { addLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 import { parseLogSearch } from "../../../lib/logs/log-search-query"
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
 import { Option, Result } from "effect"
@@ -11,7 +11,7 @@ import { requestKey } from "../../../data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import { logTimeFormat, toLogRowView } from "@maple/views/ui/logs/log-row-view"
+import { type LogRowLinks, logTimeFormat, toLogRowView } from "@maple/views/ui/logs/log-row-view"
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as Menu from "@maple/views/ui/menu"
 import * as Popover from "@maple/views/ui/popover"
@@ -105,10 +105,18 @@ const footerOf = (model: Model, shown: number): string => {
 export const footerText = (model: Model): string =>
 	footerOf(model, allLogs(firstPageOf(model), model.pagination).length)
 
+/** The trace page and the standalone `/logs/$logId` page. */
+const LOG_LINKS: LogRowLinks = {
+	trace: (traceId) => `/traces/${traceId}`,
+	log: Option.some((logKey: string) => `/logs/${logKey}`),
+}
+
 const rowsOf = (model: Model, context: PageContext) => {
 	const time = logTimeFormat(context.timeZone)
 	const pinned = model.search.columns ?? []
-	return allLogs(firstPageOf(model), model.pagination).map((log) => toLogRowView(log, pinned, time))
+	return allLogs(firstPageOf(model), model.pagination).map((log) =>
+		toLogRowView(log, pinned, time, LOG_LINKS),
+	)
 }
 
 const streamSlot = {
