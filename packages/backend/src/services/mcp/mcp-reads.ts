@@ -591,6 +591,10 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 			errors: total?.errors ?? 0,
 		},
 		toolCalls: sumBy(calls, (row) => row.spans),
+		otherRequests: sumBy(
+			summary.filter((row) => row.method !== TOOLS_CALL),
+			(row) => row.spans,
+		),
 		withSession: sumBy(calls, (row) => row.withSession),
 		sessions: sessions.map((row) => ({
 			sessionId: row.sessionId,

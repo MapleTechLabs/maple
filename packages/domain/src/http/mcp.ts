@@ -244,6 +244,8 @@ export class McpSessionsResponse extends Schema.Class<McpSessionsResponse>("McpS
 	}),
 	/** The window's tool calls, and those carrying `mcp.session.id`: none means no sessions view. */
 	toolCalls: Schema.Number,
+	/** The window's other MCP requests (`initialize`, `tools/list`...): a server can answer those and call no tool. */
+	otherRequests: Schema.Number,
 	withSession: Schema.Number,
 	/** The latest sessions under the selection, at most the list's limit. */
 	sessions: Schema.Array(McpSessionItem),

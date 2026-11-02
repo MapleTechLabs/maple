@@ -393,7 +393,12 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 		onData: (response) => {
 			if (window === undefined) return sessionsLoading(h)
 			if (response.toolCalls === 0)
-				return quietWindow(h, { service, window: windowWords(window), widen: widenOf(model) })
+				return quietWindow(h, {
+					service,
+					window: windowWords(window),
+					hasOtherSpans: response.otherRequests > 0,
+					widen: widenOf(model),
+				})
 			if (response.withSession === 0)
 				return noSessionsState(h, { service, onInstrument: openInstrumentDocs })
 			return sessionsBody(h, response, {
