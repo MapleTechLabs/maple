@@ -38,7 +38,7 @@ import {
 import { gestureStep } from "./gesture"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { replan, slotOf, withCharts } from "./plan"
+import { awaitsRefresh, replan, slotOf, withCharts } from "./plan"
 import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
@@ -561,10 +561,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchWidget: ({ key, result }) => {
 			const slot = model.requests[key]
 			if (slot === undefined) return { model }
-			// Sparklines are planned with their stat, so an answer re-plans nothing.
-			return {
-				model: { ...model, requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) } },
+			const accepted = {
+				...model,
+				requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) },
 			}
+			// Sparklines are planned with their stat; only a refresh deferred on this answer re-plans.
+			return awaitsRefresh(model, key) ? withReplan(accepted, context, "Load") : { model: accepted }
 		},
 		GotShareMessage: ({ message: inner }) => shareStep(model, context, inner),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),

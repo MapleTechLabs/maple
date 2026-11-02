@@ -112,12 +112,20 @@ describe("dashboard refresh", () => {
 		expect(fetches(pageUpdate(away, Message.RevealedWidget({ widgetId: "errors" })).commands)).toBe(0)
 	})
 
-	test("a tick skips a tile whose previous request has not answered yet", () => {
+	test("a refresh waits for a tile's pending request, then fetches the new window once it answers", () => {
 		const revealed = run(ready([stat("errors", "errors_summary")]), [
 			Message.RevealedWidget({ widgetId: "errors" }),
 		])
-		expect(fetches(tick(revealed).commands)).toBe(0)
-		expect(fetches(tick(answered(revealed)).commands)).toBe(1)
+		const ticked = tick(revealed)
+		expect(fetches(ticked.commands)).toBe(0)
+		const key = requestKeyOf(ticked.model, "errors") ?? ""
+		const settled = pageUpdate(
+			ticked.model,
+			Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [{ value: 1 }] }) }),
+		)
+		expect(fetches(settled.commands)).toBe(1)
+		expect(requestKeyOf(settled.model, "errors")).not.toBe(key)
+		expect(fetches(tick(answered(settled.model)).commands)).toBe(1)
 	})
 
 	test("a resize that keeps the chart's bucket keeps its request; one that changes it refetches", () => {

@@ -46,6 +46,12 @@ export const shownDocumentOf = (model: Model): DashboardDocument | null =>
 
 const EMPTY_SLOT: WidgetSlot = { isRevealed: false, widthPx: null, gate: null }
 
+/** A visible tile holding a deferred refresh until `key` answers. */
+export const awaitsRefresh = (model: Model, key: string): boolean =>
+	Object.values(model.widgets).some(
+		(slot) => slot.isStale === true && slot.isOffscreen !== true && requestKeyOf(slot.gate) === key,
+	)
+
 export const slotOf = (model: Model, widgetId: string): WidgetSlot => model.widgets[widgetId] ?? EMPTY_SLOT
 
 /** A chart model per chart tile, kept across document updates. */
@@ -178,7 +184,7 @@ const sparklineGate = (
 	})
 }
 
-/** A tile whose last request has not answered yet: a refresh tick skips it rather than piling on. */
+/** A tile whose last request has not answered yet: a refresh defers it rather than piling on. */
 const isInFlight = (requests: Model["requests"], slot: WidgetSlot): boolean => {
 	const key = requestKeyOf(slot.gate)
 	const request = key === null ? undefined : requests[key]
@@ -213,7 +219,7 @@ export const replan = (
 			kept === state.widgets[widget.id]
 				? state
 				: { ...state, widgets: { ...state.widgets, [widget.id]: kept } }
-		if (!slot.isRevealed || (mode === "Refresh" && isInFlight(state.requests, slot))) return keep(slot)
+		if (!slot.isRevealed) return keep(slot)
 		const panelType = toPanelType(widget.visualization, widget.display.chartId)
 		const planned = planWidget({
 			orgId: context.orgId,
@@ -229,6 +235,9 @@ export const replan = (
 		const nextSparkGate = sparklineGate(context, widget, window, variables)
 		const sparkGate = nextSparkGate === null ? null : keptGate(nextSparkGate, previousSpark)
 		const isChanged = gate !== slot.gate || sparkGate !== previousSpark
+		// Still loading a window this refresh moved: wait for that answer, which re-plans the tile.
+		if (mode === "Refresh" && isInFlight(state.requests, slot))
+			return keep(!isChanged || slot.isStale === true ? slot : { ...slot, isStale: true })
 		// Off screen: keep what it shows, and fetch the new window once it scrolls back into view.
 		if (slot.isOffscreen === true)
 			return keep(
