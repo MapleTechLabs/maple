@@ -13,6 +13,7 @@ import type { AggregatedDuration, FlowNodeData } from "./flow-graph"
 import type { SpanDescription } from "./span-category"
 import { describeSpan } from "./span-category"
 import { typographyClass } from "../../ui/typography"
+import { toneBoxClass } from "../../ui/tone-box"
 import { hstack, vstack } from "../../ui/stack"
 
 // `FlowSpanNode` (packages/ui `traces/flow-node.tsx`).
@@ -92,10 +93,7 @@ const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string 
 }
 
 /** `outcomeBadgeStyle` (packages/ui `lib/cloud-platforms/types.ts`). */
-const outcomeBadgeStyle = (bad: boolean): string =>
-	bad
-		? typographyClass({ tone: "error", className: "bg-severity-error-a2 border-severity-error-a3" })
-		: "bg-severity-info-a2 text-severity-info border-severity-info-a3"
+const outcomeBadgeStyle = (bad: boolean): string => toneBoxClass(bad ? "error" : "info")
 
 const statusBadge = <M>(
 	h: HtmlBuilder<M>,

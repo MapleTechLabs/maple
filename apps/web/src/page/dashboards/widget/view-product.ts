@@ -31,6 +31,7 @@ import {
 import { pageSelect } from "./view-select"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { queryPanelBar } from "../../kit/query-panel-bar"
 
 // `QueryPanelShell` and `AddOnToggleBar`, and the rows the funnel and
 // paths panels share: the population filter, Count by, the window, the breakdown.
@@ -69,15 +70,14 @@ export const panelShell = (
 					className: "w-36 border-none bg-transparent shadow-none px-1",
 					ariaLabel: "Query source",
 					toView: (parts) =>
-						hstack(h, { gap: "2", className: "px-3 py-2 bg-surface-sunken" },
-							[
+						queryPanelBar(h, [
 								iconButton(
 									h,
 									{
 										size: "icon-xs",
 										label: isCollapsed ? "Expand query" : "Collapse query",
 										hasTooltip: false,
-										className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
+										className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 										attributes: [h.OnClick(Message.ToggledProductPanel())],
 									},
 									[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],

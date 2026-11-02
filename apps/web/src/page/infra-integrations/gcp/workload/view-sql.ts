@@ -25,6 +25,7 @@ import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
 import { Message } from "./model"
 import { typography, typographyClass } from "../../../../ui/typography"
+import { columnClass } from "../../../../ui/column"
 
 // `GcpCloudSqlTopQueries` and the workload page's `GcpAppWaitCallout`.
 
@@ -32,7 +33,7 @@ type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 const SHOWN = 5
-const STATEMENT = "w-0 min-w-64 flex-1"
+const STATEMENT = columnClass({ min: "64" })
 const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
 const SUB = typographyClass({ size: "3xs", tone: "muted", mono: true, truncate: true })
 const MANY_ROWS = 10_000
@@ -88,7 +89,16 @@ const statementRow = (
 			h.div(
 				[h.Class(cn(STATEMENT, "space-y-0.5"))],
 				[
-					typography(h, { size: "xs", tone: "foreground", mono: true, truncate: true, as: "div", attributes: [h.Title(row.querystring)] },
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							mono: true,
+							truncate: true,
+							as: "div",
+							attributes: [h.Title(row.querystring)],
+						},
 						[row.querystring],
 					),
 					callers(h, traced),
@@ -96,11 +106,7 @@ const statementRow = (
 			),
 			h.div([h.Class(cn("w-16 text-foreground-soft", NUMBER))], [formatNumber(row.calls)]),
 			h.div(
-				[
-					h.Class(
-						cn("w-20", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)),
-					),
-				],
+				[h.Class(cn("w-20", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)))],
 				[db === null ? EMPTY_VALUE : formatLatency(db)],
 			),
 			h.div(
@@ -230,7 +236,20 @@ export const figure = (h: H, value: string, caption: string, className?: string)
 		[h.Class("flex flex-col items-start @2xl:items-end")],
 		[
 			h.span(
-				[h.Class(cn(typographyClass({ size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true }), className))],
+				[
+					h.Class(
+						cn(
+							typographyClass({
+								size: "sm",
+								tone: "foreground",
+								weight: "semibold",
+								mono: true,
+								numeric: true,
+							}),
+							className,
+						),
+					),
+				],
 				[value],
 			),
 			typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
@@ -259,17 +278,24 @@ export const appWaitCallout = (
 					h.div(
 						[h.Class("min-w-0 flex-1 space-y-1 px-4 py-3")],
 						[
-							typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" },
-								[
-									wait.service,
-									" waits ",
-									formatLatency(wait.appP95Ms),
-									" for a query the database runs in",
-									" ",
-									formatLatency(wait.dbP95Ms),
-								],
-							),
-							typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true, as: "p", attributes: [h.Title(wait.statement)] },
+							typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [
+								wait.service,
+								" waits ",
+								formatLatency(wait.appP95Ms),
+								" for a query the database runs in",
+								" ",
+								formatLatency(wait.dbP95Ms),
+							]),
+							typography(
+								h,
+								{
+									size: "2xs",
+									tone: "muted",
+									mono: true,
+									truncate: true,
+									as: "p",
+									attributes: [h.Title(wait.statement)],
+								},
 								[wait.statement],
 							),
 							h.p(

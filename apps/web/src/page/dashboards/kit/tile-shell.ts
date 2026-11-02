@@ -11,6 +11,7 @@ import { isEmptyError, type WidgetDataState } from "./data-state"
 import { NARROW_RANGE_LABEL } from "./widget-data"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { swatch } from "../../../ui/swatch"
 
 /** `useId` of the grid's hidden rearranging instructions, which every grip describes itself by. */
 export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
@@ -54,19 +55,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 				h.span(
 					[h.Class("flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground")],
 					[
-						h.span([
-							h.Class(
-								cn(
-									"size-2 shrink-0 rounded-xs",
-									item.dashed === true && "border border-dashed",
-								),
-							),
-							h.Style(
-								item.dashed === true
-									? { "border-color": item.color }
-									: { "background-color": item.color },
-							),
-						]),
+						swatch(h, { color: item.color, dashed: item.dashed }),
 						h.span([h.Class("truncate")], [item.label]),
 					],
 				),

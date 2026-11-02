@@ -23,6 +23,7 @@ import { Message } from "./message"
 import type { AiCrawlers } from "./model"
 import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
+import { columnClass } from "../../ui/column"
 
 // The AI tab's building blocks: its sections and product icons.
 
@@ -271,7 +272,7 @@ export const rankingTable = (h: H, ranks: ReadonlyArray<AiReferralRank>, surface
 		{ ariaLabel: "AI referrers", maxHeight: surface.maxHeight, stickySurfaceClass: surface.surfaceClass },
 		[
 			columnHead(h, { label: "#", width: "w-5", align: "right" }),
-			columnHead(h, { label: "Assistant", width: "w-0 flex-1 min-w-0" }),
+			columnHead(h, { label: "Assistant", width: columnClass({ min: "0" }) }),
 			columnHead(h, { label: "Visits", width: "w-14", align: "right" }),
 			columnHead(h, { label: "Share", width: "w-14", align: "right" }),
 			columnHead(h, {
@@ -347,7 +348,7 @@ export const crawlerTable = (
 		h,
 		{ ariaLabel: "AI crawlers", maxHeight: surface.maxHeight, stickySurfaceClass: surface.surfaceClass },
 		[
-			columnHead(h, { label: "Crawler", width: "w-0 flex-1 min-w-0" }),
+			columnHead(h, { label: "Crawler", width: columnClass({ min: "0" }) }),
 			columnHead(h, { label: "Purpose", width: "w-20" }),
 			columnHead(h, { label: "Pages", width: "w-12", align: "right" }),
 			columnHead(h, {

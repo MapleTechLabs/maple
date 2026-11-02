@@ -15,6 +15,7 @@ import { panelOf } from "./update"
 import { analyticsRowIcon, dimensionHasIcons } from "./view-icons"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
+import { columnClass } from "../../ui/column"
 
 // `AnalyticsBreakdownPanel`: one breakdown card.
 
@@ -154,7 +155,7 @@ export const breakdownTable = (
 			: []),
 		columnHead(h, {
 			label: columnLabel(dimension.noun),
-			width: "w-0 flex-1 min-w-0",
+			width: columnClass({ min: "0" }),
 			sort: sortHead(cardId, view, "name"),
 		}),
 		...(hasViews

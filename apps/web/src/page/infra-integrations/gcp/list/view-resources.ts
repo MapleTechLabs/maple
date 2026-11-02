@@ -26,6 +26,8 @@ import type { H, TimeSearch } from "./view-rows"
 import { workloadHref } from "./view-rows"
 import { typography } from "../../../../ui/typography"
 import { hstack } from "../../../../ui/stack"
+import { stripClass } from "../../../../ui/rule"
+import { columnClass } from "../../../../ui/column"
 
 // `GcpResources`: the inventory filtered by type and project.
 // TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
@@ -34,7 +36,7 @@ const ALL = "all"
 const CELL = "truncate font-mono text-xs text-foreground-soft"
 
 const columns = (h: H): ReadonlyArray<Html> => [
-	columnHead(h, { label: "Resource", width: "w-0 flex-1 min-w-56" }),
+	columnHead(h, { label: "Resource", width: columnClass({ min: "56" }) }),
 	columnHead(h, { label: "Type", width: "w-44" }),
 	columnHead(h, { label: "Project", width: "w-52" }),
 	columnHead(h, { label: "Location", width: "w-32" }),
@@ -106,10 +108,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div([h.Class("w-44 truncate text-xs text-foreground-soft"), h.Title(type)], [type]),
 		h.div([h.Class(`w-52 ${CELL}`), h.Title(resource.projectId)], [resource.projectId]),
 		h.div(
-			[
-				h.Class(`w-32 ${CELL}`),
-				...(resource.location === null ? [] : [h.Title(resource.location)]),
-			],
+			[h.Class(`w-32 ${CELL}`), ...(resource.location === null ? [] : [h.Title(resource.location)])],
 			[resource.location ?? EMPTY_VALUE],
 		),
 		h.div(
@@ -120,10 +119,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 			[state ?? EMPTY_VALUE],
 		),
 		h.div(
-			[
-				h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"),
-				h.Title(labels.join("\n")),
-			],
+			[h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"), h.Title(labels.join("\n"))],
 			[
 				...(labels.length === 0
 					? []
@@ -133,7 +129,12 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		),
 	]
 	return workload === undefined
-		? hstack(h, { gap: "4", className: "border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken" },
+		? hstack(
+				h,
+				{
+					gap: "4",
+					className: stripClass("hoverRow"),
+				},
 				cells,
 			)
 		: h.a(
@@ -184,9 +185,7 @@ const resourcesList = (
 				(projectParts) =>
 					listToolbar(h, {
 						className: "pb-0",
-						leading: hstack(h, { gap: "2", wrap: true },
-							[...typeParts, ...projectParts],
-						),
+						leading: hstack(h, { gap: "2", wrap: true }, [...typeParts, ...projectParts]),
 						trailing: [
 							toolbarCount(h, [
 								summary,

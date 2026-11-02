@@ -7,7 +7,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMessage, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyMessage, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { panel, panelHeader } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
@@ -462,7 +462,7 @@ const noTeamData = (h: H): Html =>
 				["Open the GitHub integration"],
 			),
 		],
-		"rounded-md border border-dashed md:py-14",
+		emptyFrameClass("dashed"),
 	)
 
 const teamView = (h: H, model: Model, team: CodeReviewTeam): Html => {
@@ -490,7 +490,7 @@ const content = (h: H, model: Model): Html =>
 					noun: "team members",
 					description: "Widen the window or clear the filter.",
 					onClear: Message.ClickedClearFilters(),
-					className: "rounded-md border border-dashed md:py-14",
+					className: emptyFrameClass("dashed"),
 				})
 			return empty(
 				h,
@@ -500,7 +500,7 @@ const content = (h: H, model: Model): Html =>
 						emptyDescription(h, ["No pull request was reviewed and no CI run finished in this window. Widen the window."]),
 					]),
 				],
-				"rounded-md border border-dashed md:py-14",
+				emptyFrameClass("dashed"),
 			)
 		},
 	})

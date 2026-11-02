@@ -28,6 +28,7 @@ import {
 	tableTitle,
 } from "./view-table-cells"
 import { hstack, vstackClass } from "../../../ui/stack"
+import { stripClass } from "../../../ui/rule"
 
 // The Operations tab: one table, p50 and the activity sparkline hidden below `md`.
 // TODO(row-keyboard): Enter / Space on a focused row does not drill down yet; click does.
@@ -44,7 +45,7 @@ const loadingState = (h: H): Html =>
 			rows: 10,
 			className: "gap-0",
 			renderRow: () =>
-				hstack(h, { gap: "3", className: "h-11 border-b px-4 last:border-b-0" },
+				hstack(h, { gap: "3", className: stripClass("skeletonRow") },
 					[
 						skeleton(h, "h-3 flex-1"),
 						skeleton(h, "h-3 w-12"),

@@ -293,7 +293,7 @@ const repositoryRow = (
 											h.AriaLabel(`Open ${repository.fullName} on GitHub`),
 											h.Class(
 												cn(
-													typographyClass({ tone: "muted", className: "shrink-0 hover:text-foreground active:text-foreground" }),
+													typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
 													ROW_LINK_LIFT,
 												),
 											),

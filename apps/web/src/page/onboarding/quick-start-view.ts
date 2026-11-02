@@ -13,7 +13,7 @@ import {
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { choiceCard } from "../../ui/choice-card"
+import { choiceCard, choiceCheckClass } from "../../ui/choice-card"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
 import { heading } from "../../ui/heading"
@@ -37,6 +37,7 @@ import { eyebrow, eyebrowVariants } from "../../ui/eyebrow"
 import { statusDot } from "../../ui/status-dot"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack, hstackClass, vstack } from "../../ui/stack"
+import { layer } from "../../ui/layer"
 
 // `/quick-start`: each step's form on the left and, where it has one, a preview of what it sets up on
 // the right, over the dithered backdrop that spreads a little further every step.
@@ -153,13 +154,7 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 		[
 			...(options.aside === null
 				? [
-						h.div(
-							[
-								h.AriaHidden(true),
-								h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
-							],
-							[canvas],
-						),
+						layer(h, { clip: true, attributes: [h.AriaHidden(true)] }, [canvas]),
 					]
 				: []),
 			h.div(
@@ -210,13 +205,7 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 								),
 							],
 							[
-								h.div(
-									[
-										h.AriaHidden(true),
-										h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
-									],
-									[canvas],
-								),
+								layer(h, { clip: true, attributes: [h.AriaHidden(true)] }, [canvas]),
 								h.div(
 									[
 										h.Class(
@@ -266,14 +255,7 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 			h.span(
 				[
 					h.AriaHidden(true),
-					h.Class(
-						cn(
-							"flex size-4 shrink-0 items-center justify-center rounded-sm border",
-							isChecked
-								? "border-primary bg-primary text-primary-foreground"
-								: "border-input",
-						),
-					),
+					h.Class(choiceCheckClass(isChecked)),
 				],
 				isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
 			),

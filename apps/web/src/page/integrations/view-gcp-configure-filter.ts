@@ -14,6 +14,7 @@ import { filterModeSelect } from "./view-gcp-configure-filter-mode"
 import { runtimeFields } from "./view-gcp-configure-runtimes"
 import { typography, typographyClass } from "../../ui/typography"
 import { vstack } from "../../ui/stack"
+import { dividedList } from "../../ui/rule"
 
 // `LogFilter` and `GcpLogFilterField`: the filter the script gives the log sink.
 
@@ -122,8 +123,7 @@ export const filterField = (
 					"Log filter",
 				)
 	const newFilter = vstack(h, { gap: "2.5" }, [
-		h.dl(
-			[h.Class("divide-y rounded-md border")],
+		dividedList(h, { as: "dl" },
 			[
 				summaryRow(
 					h,

@@ -15,7 +15,7 @@ import { miniBars } from "../../../ui/mini-bars"
 import * as Menu from "../../../ui/menu"
 import type * as MenuView from "../../../ui/menu-view"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { skeleton, skeletonList, skeletonSwitch } from "../../../ui/skeleton"
 import { switchControl } from "../../../ui/switch"
 import { truncatedText } from "../../../ui/truncated-text"
 import { emptyActions } from "../../kit/signal-empty-state"
@@ -232,7 +232,7 @@ const rulesSkeleton = (h: H): Html =>
 						[h.Class("flex-1 space-y-2")],
 						[skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")],
 					),
-					skeleton(h, "h-5 w-9 rounded-full"),
+					skeletonSwitch(h),
 				],
 			),
 	})

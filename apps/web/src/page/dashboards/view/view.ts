@@ -35,6 +35,7 @@ import { embedDialog } from "./view-embed"
 import { errorState } from "../../../ui/error-state"
 import { typography } from "../../../ui/typography"
 import { hstack, vstack } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // The dashboard view page.
 
@@ -110,10 +111,7 @@ const viewSkeleton = (h: H): Html => {
 					[h.Class("grid grid-cols-2 gap-4 lg:grid-cols-4")],
 					[0, 1, 2, 3].map((index) => ghost(index, "h-28")),
 				),
-				h.div(
-					[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
-					[ghost(4, "h-64"), ghost(5, "h-64")],
-				),
+				grid(h, { cols: 1, lg: 2, gap: "4" }, [ghost(4, "h-64"), ghost(5, "h-64")]),
 				ghost(6, "h-64"),
 			]),
 		],

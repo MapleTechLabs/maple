@@ -13,7 +13,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { inlineCode, inlineCodeClassName } from "../../../ui/inline-code"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonBlock } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -220,7 +220,7 @@ const detailSkeleton = (h: H): Html =>
 					),
 					skeleton(h, "aspect-video w-full rounded-t-md"),
 					skeleton(h, "-mt-3.5 h-14 w-full rounded-b-md"),
-					skeleton(h, "h-48 w-full rounded-md"),
+					skeletonBlock(h, { height: "48" }),
 				],
 			),
 			skeleton(h, "h-72 w-full rounded-md lg:h-auto lg:w-84 lg:shrink-0"),

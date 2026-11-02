@@ -8,6 +8,9 @@ import { Message, type Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { funnelStages, type Stage } from "./funnel-stages"
 import { typography, typographyClass } from "../ui/typography"
+import { swatch } from "../ui/swatch"
+import { chartNoData } from "../ui/chart-frame"
+import { barFillClass } from "../ui/meter"
 
 // Port of `FunnelBarsChart` (packages/ui/src/components/charts/funnel/query-builder-funnel-chart.tsx).
 // The hovered stage is `activeKey` (its index), the hovered breakdown group `activeGroup`.
@@ -35,7 +38,7 @@ const LEGEND_H = 18
 
 const sep = (h: H, glyph: string): Html => h.span([h.Class("px-1 text-foreground-faint")], [glyph])
 
-const swatch = (h: H, className: string, color: string): Html =>
+const tooltipSwatch = (h: H, className: string, color: string): Html =>
 	h.span([h.Class(className), h.Style({ "background-color": color })])
 
 const legendRow = (
@@ -71,7 +74,7 @@ const legendRow = (
 							],
 						},
 						[
-							swatch(h, "size-2 shrink-0 rounded-xs", entry.color),
+							swatch(h, { color: entry.color }),
 							h.span([h.Class("truncate")], [entry.name]),
 						],
 					),
@@ -86,7 +89,7 @@ const stageNumbers = (h: H, stage: Stage, hoverGroup: string | null, flags: Flag
 	const hovered = hoverGroup === null ? undefined : stage.groups.find((group) => group.name === hoverGroup)
 	if (hovered !== undefined)
 		return [
-			swatch(h, "mr-1 inline-block size-2 rounded-xs align-middle", hovered.color),
+			tooltipSwatch(h, "mr-1 inline-block size-2 rounded-xs align-middle", hovered.color),
 			h.span([h.Class("text-foreground-soft")], [fmtValue(hovered.value, flags.unit)]),
 			...(flags.showShareOfFirst
 				? [sep(h, "·"), h.span([], [formatPercent(hovered.pctOfFirst, PERCENT_FLOOR)])]
@@ -122,7 +125,7 @@ const groupBars = (
 				],
 				[
 					h.div([
-						h.Class("absolute inset-y-0 left-0 rounded-xs"),
+						h.Class(barFillClass()),
 						h.Style({
 							width: `${group.widthPct * 100}%`,
 							"background-color": group.color,
@@ -140,10 +143,7 @@ const groupBars = (
 export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((model, inputs, h) => {
 	const { stages, legend } = funnelStages(inputs.data)
 	if (stages.length === 0)
-		return h.div(
-			[h.Class(cn("relative h-full w-full grid place-items-center", inputs.className))],
-			[typography(h, { size: "2xs", tone: "muted" }, ["No data"])],
-		)
+		return chartNoData(h, { className: inputs.className })
 	const isGrouped = legend.length > 0
 	const rowFullH = isGrouped ? ROW_MIN_H + legend.length * GROUP_BAR_H + ROW_GAP : ROW_FULL_H
 	const chromeH = MORE_ROW_H + (isGrouped ? LEGEND_H : 0)
@@ -231,7 +231,7 @@ const stageBar = (h: H, stage: Stage, fade: number): Html =>
 		[h.Class("relative h-2.5 w-full overflow-hidden rounded-xs bg-foreground/5")],
 		[
 			h.div([
-				h.Class("absolute inset-y-0 left-0 rounded-xs"),
+				h.Class(barFillClass()),
 				h.Style({
 					width: `${stage.widthPct * 100}%`,
 					"background-color": stage.color,

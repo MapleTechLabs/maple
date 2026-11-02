@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
-import { item, itemContent, itemMedia } from "../../ui/item"
+import { itemContent, mediaCard } from "../../ui/item"
 import { statusDot } from "../../ui/status-dot"
 import {
 	integrationEmpty,
@@ -75,95 +75,98 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 		])
 
 	const confirmWorkspace = workspaces.find((workspace) => workspace.id === model.chatCard.confirmId)
-	return vstack(h, { gap: "4" },
-		[
-			...workspaces.map((workspace) =>
-				item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-					itemMedia(h, {}, [integrationIconPlate(h, brand)]),
-					itemContent(
-						h,
-						[
-							hstack(h, { gap: "2" },
-								[
-									heading(
-										h,
-										{ level: 3, variant: "section", className: "min-w-0 [overflow-wrap:anywhere]" },
-										[workspace.name],
-									),
-									hstack(h, { gap: "1.5", as: "span", className: typographyClass({ size: "xs", tone: "muted" }) },
-										[statusDot(h, { tone: "ok", size: "lg" }), "Connected"],
-									),
-								],
+	return vstack(h, { gap: "4" }, [
+		...workspaces.map((workspace) =>
+			mediaCard(h, integrationIconPlate(h, brand), [
+				itemContent(
+					h,
+					[
+						hstack(h, { gap: "2" }, [
+							heading(
+								h,
+								{
+									level: 3,
+									variant: "section",
+									className: "min-w-0 [overflow-wrap:anywhere]",
+								},
+								[workspace.name],
 							),
-							typography(h, { size: "xs", tone: "muted", as: "p" },
-								[
-									status?.supports_identity === true
-										? `Linked to your organization. Maple answers only people who have linked their ${manifest.name} account, as their own Maple user.`
-										: `Linked to your organization, for everyone in this workspace. No ${manifest.name} account is tied to an individual Maple user.`,
-								],
+							hstack(
+								h,
+								{
+									gap: "1.5",
+									as: "span",
+									className: typographyClass({ size: "xs", tone: "muted" }),
+								},
+								[statusDot(h, { tone: "ok", size: "lg" }), "Connected"],
 							),
-							relativeTime(h, {
-								value: workspace.created_at,
-								nowMs: model.nowMs,
-								timeZone,
-								prefix: "Connected",
-								className: typographyClass({ size: "2xs", tone: "muted" }),
-							}),
-							h.div(
-								[],
-								[
-									button(
-										h,
-										{
-											size: "sm",
-											variant: "outline",
-											isDisabled: !IS_ADMIN || busy !== null,
-											attributes: [
-												h.OnClick(
-													Message.ClickedChatDisconnect({
-														workspaceId: workspace.id,
-													}),
-												),
-											],
-										},
-										["Disconnect"],
-									),
-								],
-							),
-						],
-						"gap-2",
-					),
-				]),
-			),
-			...(status?.supports_identity === true
-				? [identityRow(h, model, manifest.name, status.identity)]
-				: []),
-			h.div(
-				[],
-				[
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: connectDisabled,
-							isLoading: busy === "install",
-							attributes: [h.OnClick(Message.ClickedChatInstall())],
-						},
-						["Add another workspace"],
-					),
-				],
-			),
-			disconnectConfirm(h, {
-				provider: "chat",
-				slotId: "integration-disconnect",
-				model: model.disconnect.dialog,
-				toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
-				subject: confirmWorkspace?.name,
-				description: `${confirmWorkspace ? confirmWorkspace.name : "This workspace"} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`,
-				onConfirm: Message.ConfirmedDisconnect(),
-				isPending: busy !== null && busy === model.chatCard.confirmId,
-			}),
-		],
-	)
+						]),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							status?.supports_identity === true
+								? `Linked to your organization. Maple answers only people who have linked their ${manifest.name} account, as their own Maple user.`
+								: `Linked to your organization, for everyone in this workspace. No ${manifest.name} account is tied to an individual Maple user.`,
+						]),
+						relativeTime(h, {
+							value: workspace.created_at,
+							nowMs: model.nowMs,
+							timeZone,
+							prefix: "Connected",
+							className: typographyClass({ size: "2xs", tone: "muted" }),
+						}),
+						h.div(
+							[],
+							[
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "outline",
+										isDisabled: !IS_ADMIN || busy !== null,
+										attributes: [
+											h.OnClick(
+												Message.ClickedChatDisconnect({
+													workspaceId: workspace.id,
+												}),
+											),
+										],
+									},
+									["Disconnect"],
+								),
+							],
+						),
+					],
+					"gap-2",
+				),
+			]),
+		),
+		...(status?.supports_identity === true
+			? [identityRow(h, model, manifest.name, status.identity)]
+			: []),
+		h.div(
+			[],
+			[
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						isDisabled: connectDisabled,
+						isLoading: busy === "install",
+						attributes: [h.OnClick(Message.ClickedChatInstall())],
+					},
+					["Add another workspace"],
+				),
+			],
+		),
+		disconnectConfirm(h, {
+			provider: "chat",
+			slotId: "integration-disconnect",
+			model: model.disconnect.dialog,
+			toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
+			subject: confirmWorkspace?.name,
+			description: `${confirmWorkspace ? confirmWorkspace.name : "This workspace"} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`,
+			onConfirm: Message.ConfirmedDisconnect(),
+			isPending: busy !== null && busy === model.chatCard.confirmId,
+		}),
+	])
 }

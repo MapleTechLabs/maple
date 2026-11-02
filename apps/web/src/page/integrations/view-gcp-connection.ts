@@ -299,7 +299,7 @@ const signalText = (
 	}
 }
 
-const SIGNAL_LINK = hstackClass({ gap: "1", inline: true, className: typographyClass({ size: "xs", tone: "muted", className: "hover:text-foreground active:text-foreground" }) })
+const SIGNAL_LINK = hstackClass({ gap: "1", inline: true, className: typographyClass({ size: "xs", tone: "muted", hoverTone: "foreground" }) })
 
 const signalView = (h: H, name: string, signal: Signal, link: Html | undefined): Html =>
 	h.div(

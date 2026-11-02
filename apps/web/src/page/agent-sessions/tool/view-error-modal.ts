@@ -290,7 +290,7 @@ const errorModal = (h: H, model: Model, inputs: ModalInputs | undefined): Html =
 		},
 	})
 
-const NAV_BUTTON = typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" })
+const NAV_BUTTON = typographyClass({ tone: "muted", hoverTone: "foreground" })
 
 const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 	const { position } = inputs

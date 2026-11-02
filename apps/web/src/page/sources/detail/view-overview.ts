@@ -228,7 +228,7 @@ const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number):
 								className: typographyClass({
 									size: "xs",
 									tone: "muted",
-									className: "hover:text-foreground active:text-foreground",
+									hoverTone: "foreground",
 								}),
 							}),
 						),

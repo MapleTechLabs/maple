@@ -11,6 +11,7 @@ import type { Model } from "./model"
 import { linkButton } from "../../../ui/button"
 import { typography } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { spaced } from "../../../ui/spaced"
 
 // `ApiReference` and `OAuthPointer`.
 
@@ -79,22 +80,14 @@ const scopeRow = (h: H, family: (typeof SCOPE_FAMILY_ROWS)[number]): Html =>
 			h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-2.5"),
 		],
 		[
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-0.5")],
-				[
-					h.div([h.Class("text-sm")], [family.label]),
-					typography(h, { size: "xs", tone: "muted", as: "div" }, [family.description]),
-				],
-			),
-			hstack(h, { gap: "1.5", className: "shrink-0" },
-				[
-					badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":read"]),
-					badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [
-						family.id,
-						":write",
-					]),
-				],
-			),
+			spaced(h, { space: "0.5", fill: true }, [
+				h.div([h.Class("text-sm")], [family.label]),
+				typography(h, { size: "xs", tone: "muted", as: "div" }, [family.description]),
+			]),
+			hstack(h, { gap: "1.5", className: "shrink-0" }, [
+				badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":read"]),
+				badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":write"]),
+			]),
 		],
 	)
 
@@ -114,9 +107,10 @@ const scopes = (h: H, isOpen: boolean): Html =>
 						"text-muted-foreground shrink-0 transition-transform group-data-[panel-open]/scopes:rotate-90",
 				}),
 				typography(h, { size: "sm", weight: "medium" }, ["Scopes"]),
-				typography(h, { size: "sm", tone: "muted" },
-					[String(SCOPE_FAMILY_ROWS.length), " resource families"],
-				),
+				typography(h, { size: "sm", tone: "muted" }, [
+					String(SCOPE_FAMILY_ROWS.length),
+					" resource families",
+				]),
 				h.span([h.Class("flex-1")], []),
 				h.span(
 					[h.Class("text-muted-foreground hidden text-2xs md:block")],
@@ -186,11 +180,7 @@ export const apiReference = (h: H, model: Model): Html =>
 
 export const oauthPointer = (h: H): Html =>
 	h.p(
-		[
-			h.Class(
-				"w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground",
-			),
-		],
+		[h.Class("w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground")],
 		[
 			"Clients signed in with OAuth don't use keys. See and revoke them in the ",
 			h.a(

@@ -37,6 +37,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { columnClass } from "../../../ui/column"
 
 type H = HtmlBuilder<Message>
 
@@ -161,11 +162,7 @@ const errorRow = (
 					...(row.variants > 1
 						? [
 								h.span(
-									[
-										h.Class(
-											"shrink-0 pl-1.5 text-2xs leading-3.5 text-foreground-subtle",
-										),
-									],
+									[h.Class("shrink-0 pl-1.5 text-2xs leading-3.5 text-foreground-subtle")],
 									[String(row.variants), " variants"],
 								),
 							]
@@ -213,7 +210,13 @@ const errorRow = (
 				className:
 					"hidden w-24 shrink-0 text-right font-mono text-2xs tabular-nums text-foreground-subtle @min-[800px]/panel:block",
 			}),
-			hstack(h, { justify: "end", as: "span", className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }) },
+			hstack(
+				h,
+				{
+					justify: "end",
+					as: "span",
+					className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+				},
 				[icon(h, "ChevronRightIcon", { size: 14, attributes: [h.AriaHidden(true)] })],
 			),
 		],
@@ -226,12 +229,14 @@ const loadingRows = (h: H): ReadonlyArray<Html> =>
 		h.div(
 			[
 				h.Key(String(width)),
-				h.Class("flex h-[38px] items-center gap-3 border-b border-border-subtle px-2.5 last:border-0"),
+				h.Class(
+					"flex h-[38px] items-center gap-3 border-b border-border-subtle px-2.5 last:border-0",
+				),
 				h.Style({ opacity: String(1 - index * 0.2) }),
 			],
 			[
 				h.span(
-					[h.Class("w-0 min-w-0 flex-1")],
+					[h.Class(columnClass({ min: "0" }))],
 					[skeleton(h, "h-2.5", { width: `${width}px`, "max-width": "100%" })],
 				),
 				h.span(
@@ -282,7 +287,7 @@ const head = (h: H, inputs: ErrorsTableInputs, headHint: string): Html => {
 			width: "w-24 shrink-0",
 			hidden: "hidden @min-[720px]/panel:flex",
 		}),
-		th(h, { label: "Share", width: "w-36 shrink-0 pl-6" }),
+		th(h, { label: "Share", width: columnClass({ width: "36", shrink: false, inset: "6" }) }),
 		sortable("Count", "calls"),
 		sortable("Sessions", "sessions", "hidden @min-[640px]/panel:flex"),
 		th(h, {
@@ -396,7 +401,14 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Errors"]),
 							inputs.isLoading
 								? skeleton(h, "h-2.5 w-36 self-center")
-								: typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
+								: typography(
+										h,
+										{
+											size: "2xs",
+											tone: "subtle",
+											numeric: true,
+											className: "leading-3.5",
+										},
 										[
 											formatNumber(failures),
 											" failed ",
@@ -426,11 +438,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 			),
 			isEmpty
 				? h.div(
-						[
-							h.Class(
-								"flex flex-col gap-2 border-t border-border px-2.5 py-5 font-mono",
-							),
-						],
+						[h.Class("flex flex-col gap-2 border-t border-border px-2.5 py-5 font-mono")],
 						[
 							h.span(
 								[h.Class("flex items-center gap-2 text-xs text-foreground")],
@@ -493,7 +501,9 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 												],
 											),
 											...masks.map((label) =>
-												hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(label)] },
+												hstack(
+													h,
+													{ gap: "1.5", as: "span", attributes: [h.Key(label)] },
 													[
 														maskChip(h, label, "", "text-2xs leading-3.5"),
 														h.span([], [MASK_MEANINGS.get(label) ?? ""]),

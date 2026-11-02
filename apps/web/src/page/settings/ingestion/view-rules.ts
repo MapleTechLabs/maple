@@ -15,7 +15,7 @@ import { inlineCode } from "../../../ui/inline-code"
 import * as Menu from "../../../ui/menu"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { skeleton, skeletonList, skeletonSwitch } from "../../../ui/skeleton"
 import { switchControl } from "../../../ui/switch"
 import { truncatedText } from "../../../ui/truncated-text"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
@@ -24,6 +24,7 @@ import { Message } from "./message"
 import type { Model, RecommendationTab } from "./model"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { spaced } from "../../../ui/spaced"
 
 // `RecommendedMappingsSection` and `AttributeMappingsSection`.
 
@@ -109,7 +110,7 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 			{
 				variant: "ghost",
 				size: "sm",
-				className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
+				className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 				isLoading: isPending,
 				attributes: [h.OnClick(Message.ClickedDismissRecommendation({ id: issue.id }))],
 			},
@@ -121,35 +122,31 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html => {
 	const kind = KIND_TAG[issue.kind]
 	return h.div(
-		[h.Key(issue.id), h.Class("hover:bg-surface-sunken active:bg-surface-sunken flex items-start gap-3 px-4 py-3")],
+		[
+			h.Key(issue.id),
+			h.Class("hover:bg-surface-sunken active:bg-surface-sunken flex items-start gap-3 px-4 py-3"),
+		],
 		[
 			eyebrow(h, { variant: "mono", className: cn("w-20 shrink-0 pt-0.5", kind.className) }, [
 				kind.label,
 			]),
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-1")],
-				[
-					h.a(
-						[
-							h.Href(`/recommendations/${encodeURIComponent(issue.id)}`),
-							h.Class(
-								"block text-sm break-words underline-offset-4 decoration-muted-foreground/40 hover:underline active:underline",
-							),
-						],
-						sentence(h, issue),
-					),
-					typography(h, { size: "2xs", tone: "muted", as: "p" },
-						[
-							formatNumber(issue.usage_count),
-							" spans in 24h ·",
-							" ",
-							issue.kind === "rename"
-								? "fixed at ingest, no code change"
-								: "needs a code change",
-						],
-					),
-				],
-			),
+			spaced(h, { space: "1", fill: true }, [
+				h.a(
+					[
+						h.Href(`/recommendations/${encodeURIComponent(issue.id)}`),
+						h.Class(
+							"block text-sm break-words underline-offset-4 decoration-muted-foreground/40 hover:underline active:underline",
+						),
+					],
+					sentence(h, issue),
+				),
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					formatNumber(issue.usage_count),
+					" spans in 24h ·",
+					" ",
+					issue.kind === "rename" ? "fixed at ingest, no code change" : "needs a code change",
+				]),
+			]),
 			hstack(h, { gap: "1.5", className: "shrink-0" }, recommendationActions(h, model, issue)),
 		],
 	)
@@ -373,7 +370,7 @@ const mappingsSkeleton = (h: H): Html =>
 						[h.Class("flex-1 space-y-2")],
 						[skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")],
 					),
-					skeleton(h, "h-5 w-9 rounded-full"),
+					skeletonSwitch(h),
 				],
 			),
 	})

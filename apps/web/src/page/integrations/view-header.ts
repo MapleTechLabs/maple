@@ -95,7 +95,7 @@ export const integrationHeader = (
 											className: typographyClass({
 												size: "xs",
 												tone: "muted",
-												className: "hover:text-foreground active:text-foreground",
+												hoverTone: "foreground",
 											}),
 										}),
 									),

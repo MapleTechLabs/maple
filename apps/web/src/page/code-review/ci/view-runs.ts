@@ -20,6 +20,7 @@ import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 import { typography } from "../../../ui/typography"
+import { emptyFrameClass } from "../../../ui/empty"
 
 // `CiRunsList`, `RunRows` and the paging footers.
 
@@ -242,7 +243,7 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 				return filteredEmpty(h, {
 					noun: "runs",
 					description: "No run in this window has this result or branch.",
-					className: "rounded-md border border-dashed md:py-14",
+					className: emptyFrameClass("dashed"),
 					onClear: canClear ? Message.ClickedClearRunFilters() : undefined,
 				})
 			const rows = [...response.runs, ...model.cursors.flatMap((cursor) => runsOf(model, cursor))]

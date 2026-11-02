@@ -32,7 +32,10 @@ import { incidentHref, ruleHref } from "../shared/links"
 import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
 import { typography, typographyClass } from "../../../ui/typography"
+import { stripClass } from "../../../ui/rule"
 import { hstack } from "../../../ui/stack"
+import { barFillClass } from "../../../ui/meter"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // `InboxTab` and `HeadroomList`: the hub's Inbox tab.
 
@@ -129,14 +132,15 @@ const openIncidentsList = <M>(
 	incidents: ReadonlyArray<AlertIncidentDocument>,
 	now: number,
 ) =>
-	h.div(
-		[h.Class("overflow-x-auto rounded-md border")],
+	borderedBox(
+		h,
+		{ overflow: "x-auto" },
 		[
 			h.div(
 				[h.Class("min-w-[560px]")],
 				[
 					h.div(
-						[h.Class(cn(INCIDENT_GRID, typographyClass({ size: "xs", tone: "muted", className: "border-b px-4 py-2" })))],
+						[h.Class(cn(INCIDENT_GRID, typographyClass({ size: "xs", tone: "muted", className: stripClass("head") })))],
 						[
 							h.span([], ["Open · ", String(incidents.length)]),
 							h.span([], ["Now / threshold"]),
@@ -484,10 +488,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 						? [
 								h.span([
 									h.Class(
-										cn(
-											"absolute inset-y-0 left-0 rounded-xs",
-											isNear ? "bg-severity-warn" : "bg-foreground-faint",
-										),
+										barFillClass(isNear ? "bg-severity-warn" : "bg-foreground-faint"),
 									),
 									h.Style({ width: `${Math.max(closeness * 100, 1.5)}%` }),
 								]),

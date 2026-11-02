@@ -57,11 +57,21 @@ export type TypographyOptions<M> = Readonly<{
 	/** `tabular-nums`, for figures that line up. */
 	numeric?: boolean
 	truncate?: boolean
+	/** The tone on hover and press, for text that is a control (a quiet link, a ghost icon button). */
+	hoverTone?: TypographyHoverTone
+	/** Underlined on hover and press, for a link set in running text. */
+	hoverUnderline?: boolean
 	as?: "span" | "p" | "div"
 	/** Layout only (margins, `min-w-0`, `shrink-0`); type goes through the options. */
 	className?: string
 	attributes?: ReadonlyArray<Attribute<M> | ChildAttribute>
 }>
+
+export type TypographyHoverTone = "foreground"
+
+const HOVER_TONE = {
+	foreground: "hover:text-foreground active:text-foreground",
+} as const satisfies Record<TypographyHoverTone, string>
 
 export const typographyClass = (options: Omit<TypographyOptions<never>, "as" | "attributes">): string =>
 	cn(
@@ -71,6 +81,8 @@ export const typographyClass = (options: Omit<TypographyOptions<never>, "as" | "
 		(options.mono ?? false) && "font-mono",
 		(options.numeric ?? false) && "tabular-nums",
 		(options.truncate ?? false) && "truncate",
+		options.hoverTone === undefined ? undefined : HOVER_TONE[options.hoverTone],
+		(options.hoverUnderline ?? false) && "underline-offset-4 hover:underline active:underline",
 		options.className,
 	)
 

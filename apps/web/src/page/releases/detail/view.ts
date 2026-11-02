@@ -9,7 +9,7 @@ import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { pageTitle } from "../../../ui/page-layout"
 import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonBlock } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
@@ -23,6 +23,7 @@ import { changesetState, overlaysOf, serviceBody, serviceButton } from "./view-s
 import { type Clock, deploySummary, deployServices, issueList, releaseChangeset } from "./view-sections"
 import { typography } from "../../../ui/typography"
 import { hstack, hstackClass, vstack } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // The release detail page: the deploy overview, or with `?service=` the service body
 // (view-service.ts).
@@ -39,19 +40,17 @@ const releaseTitle = (h: H, model: Model): Html => {
 		onNone: () => plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
 		onSome: (commit) => {
 			const subject = firstLine(commit.message)
-			return hstack(h, { gap: "2.5", shrink: true, as: "span" },
-				[
-					commitAvatar(
-						h,
-						commit.authorAvatarUrl,
-						commit.authorLogin ?? commit.authorName ?? "Unknown author",
-						false,
-					),
-					subject
-						? h.span([h.Class("truncate"), h.Title(subject)], [subject])
-						: plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
-				],
-			)
+			return hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+				commitAvatar(
+					h,
+					commit.authorAvatarUrl,
+					commit.authorLogin ?? commit.authorName ?? "Unknown author",
+					false,
+				),
+				subject
+					? h.span([h.Class("truncate"), h.Title(subject)], [subject])
+					: plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
+			])
 		},
 	})
 }
@@ -62,10 +61,9 @@ const deployIssues = (h: H, model: Model, clock: Clock): Html => {
 	const data = AsyncData.getOrElse(model.releases.data, () => null)
 	const impacts = data === null ? [] : deriveOf(data).impacts
 	return AsyncData.match(model.issues.data, {
-		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
-		onFailure: (failure) =>
-			errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
+		onIdle: () => skeletonBlock(h, { height: "32" }),
+		onLoading: () => skeletonBlock(h, { height: "32" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
 		onStale: ({ error }) =>
 			errorState(h, { failure: error, title: "Couldn't load issues", variant: "row" }),
 		onSuccess: (issues) => lists(issues),
@@ -75,27 +73,24 @@ const deployIssues = (h: H, model: Model, clock: Clock): Html => {
 		const documents: Array<ErrorIssueDocument> = wire.map(errorIssueFromV2)
 		const split = attributeIssues(impacts, documents).get(model.commitSha) ?? { fresh: [], regressed: [] }
 		const isServiceShown = (group?.services.length ?? 0) > 1
-		return h.div(
-			[h.Class("grid gap-3 lg:grid-cols-2")],
-			[
-				issueList(h, {
-					title: "New with this release",
-					issues: split.fresh,
-					empty: "No issue first appeared while this release was live",
-					tone: "error",
-					isServiceShown,
-					clock,
-				}),
-				issueList(h, {
-					title: "Regressed with this release",
-					issues: split.regressed,
-					empty: "Nothing fixed before came back while this release was live",
-					tone: "warn",
-					isServiceShown,
-					clock,
-				}),
-			],
-		)
+		return grid(h, { lg: 2, gap: "3" }, [
+			issueList(h, {
+				title: "New with this release",
+				issues: split.fresh,
+				empty: "No issue first appeared while this release was live",
+				tone: "error",
+				isServiceShown,
+				clock,
+			}),
+			issueList(h, {
+				title: "Regressed with this release",
+				issues: split.regressed,
+				empty: "Nothing fixed before came back while this release was live",
+				tone: "warn",
+				isServiceShown,
+				clock,
+			}),
+		])
 	}
 }
 
@@ -124,30 +119,32 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 					]),
 				]),
 			onSome: (group) =>
-				vstack(h, { gap: "3" },
-					[
-						deploySummary(h, group, clock),
-						deployServices(h, group, model.search.environments, {
+				vstack(h, { gap: "3" }, [
+					deploySummary(h, group, clock),
+					deployServices(
+						h,
+						group,
+						model.search.environments,
+						{
 							startTime: model.search.startTime,
 							endTime: model.search.endTime,
 							timePreset: model.search.timePreset,
-						}, overlaysOf(model, clock)),
-						releaseChangeset(h, changesetState(model, previousSha(group)), clock),
-						deployIssues(h, model, clock),
-					],
-				),
+						},
+						overlaysOf(model, clock),
+					),
+					releaseChangeset(h, changesetState(model, previousSha(group)), clock),
+					deployIssues(h, model, clock),
+				]),
 		})
 	}
 }
 
 const loading = (h: H): Html =>
-	vstack(h, { gap: "3" },
-		[
-			skeleton(h, "h-4 w-80"),
-			skeleton(h, "h-48 w-full rounded-md"),
-			skeleton(h, "h-48 w-full rounded-md"),
-		],
-	)
+	vstack(h, { gap: "3" }, [
+		skeleton(h, "h-4 w-80"),
+		skeletonBlock(h, { height: "48" }),
+		skeletonBlock(h, { height: "48" }),
+	])
 
 const timeControlsOf = (h: H, model: Model): Html =>
 	timeControls(h, {
@@ -185,9 +182,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			actions:
 				service === undefined
 					? timeControlsOf(h, model)
-					: hstack(h, { gap: "2", wrap: true },
-							[serviceButton(h, model, service), timeControlsOf(h, model)],
-						),
+					: hstack(h, { gap: "2", wrap: true }, [
+							serviceButton(h, model, service),
+							timeControlsOf(h, model),
+						]),
 		},
 		[service === undefined ? overview(h, model, clock) : serviceBody(h, model, service, clock)],
 	)

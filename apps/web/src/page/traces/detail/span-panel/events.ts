@@ -8,6 +8,7 @@ import { copyButton, statusOf } from "./copy"
 import { Message } from "./message"
 import type { Model, SpanEventData } from "./model"
 import { hstack } from "../../../../ui/stack"
+import { dividedList } from "../../../../ui/rule"
 
 // The span's events section.
 
@@ -151,8 +152,7 @@ export const spanEventsSection = (h: H, model: Model, events: ReadonlyArray<Span
 				[h.Class("space-y-1")],
 				[
 					heading(h, { level: 4, variant: "label" }, ["Events (", String(events.length), ")"]),
-					h.ul(
-						[h.Class("divide-y rounded-md border")],
+					dividedList(h, { as: "ul" },
 						events.map((event, index) => eventRow(h, model, event, index)),
 					),
 				],

@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
-import { skeleton } from "../../ui/skeleton"
+import { skeletonBlock } from "../../ui/skeleton"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -29,8 +29,8 @@ const cloudflareReconnect = (h: H): Html =>
 
 export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.statuses.cloudflare.data, {
-		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "40" }),
+		onLoading: () => skeletonBlock(h, { height: "40" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

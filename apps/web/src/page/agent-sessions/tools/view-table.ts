@@ -33,6 +33,8 @@ import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { columnClass } from "../../../ui/column"
+import { swatch } from "../../../ui/swatch"
 
 type H = HtmlBuilder<Message>
 
@@ -64,13 +66,13 @@ const head = (h: H, sort: SortState): Html => {
 			hidden,
 		})
 	return toolTableHead(h, [
-		sortable("Tool", "w-0 flex-1 min-w-0", "key"),
+		sortable("Tool", columnClass({ min: "0" }), "key"),
 		th(h, { label: "Volume", width: "w-28 shrink-0", hidden: "hidden @min-[720px]/panel:flex" }),
 		sortable("Calls", "w-20 shrink-0", "calls", "right"),
 		sortable("P50", "w-20 shrink-0", "p50", "right", "hidden @min-[900px]/panel:flex"),
 		sortable("P90", "w-20 shrink-0", "p90", "right"),
 		sortable("P95", "w-20 shrink-0", "p95", "right", "hidden @min-[900px]/panel:flex"),
-		sortable("Error rate", "w-36 shrink-0 pl-6", "errorRate"),
+		sortable("Error rate", columnClass({ width: "36", shrink: false, inset: "6" }), "errorRate"),
 		sortable("Errors", "w-20 shrink-0", "errors", "right", "hidden @min-[640px]/panel:flex"),
 		sortable("Sessions", "w-20 shrink-0", "sessions", "right", "hidden @min-[640px]/panel:flex"),
 		sortable("Last call", "w-24 shrink-0", "lastSeen", "right", "hidden @min-[800px]/panel:flex"),
@@ -110,14 +112,11 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 	const color = inputs.colorFor(row.key)
 	return [
 		hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
-			h.span(
-				[
-					h.AriaHidden(true),
-					h.Class(cn("size-2 shrink-0 rounded-xs", color === undefined && "bg-foreground-subtle")),
-					...(color === undefined ? [] : [h.Style({ "background-color": color })]),
-				],
-				[],
-			),
+			swatch(h, {
+				ariaHidden: true,
+				color,
+				className: color === undefined ? "bg-foreground-subtle" : undefined,
+			}),
 			h.span(
 				[
 					h.Class(

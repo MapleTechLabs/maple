@@ -32,6 +32,7 @@ import {
 import { copyStatusOf } from "./update"
 import { hstack } from "../../../ui/stack"
 import { typographyClass } from "../../../ui/typography"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // The log's error banner, context panel and trace timeline.
 
@@ -271,8 +272,9 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 	const spanNames = new Map(
 		spans._tag === "Some" ? spans.value.spanNames.map((span) => [span.spanId, span.spanName]) : [],
 	)
-	return h.div(
-		[h.Class("rounded-md border overflow-hidden")],
+	return borderedBox(
+		h,
+		{ overflow: "hidden" },
 		logs.map((log, index) => {
 			const isCurrent = isCurrentLog(log, current)
 			const relativeMs = new Date(log.timestamp).getTime() - traceStart

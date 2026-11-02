@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import * as SelectView from "../../../ui/select-view"
@@ -44,6 +44,7 @@ import { Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
 
@@ -287,7 +288,7 @@ const noTargets = (h: H, model: Model): Html =>
 						"Open the overview",
 					]),
 		],
-		"rounded-md border border-dashed md:py-14",
+		emptyFrameClass("dashed"),
 	)
 
 export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
@@ -322,7 +323,7 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 												]),
 											]),
 										],
-										"rounded-md border border-dashed md:py-14",
+										emptyFrameClass("dashed"),
 									),
 						],
 					)
@@ -345,8 +346,9 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 					]),
 	})
 	return [
-		h.section(
-			[h.AriaLabel("Runs"), h.Class("overflow-hidden rounded-md border bg-card")],
+		borderedBox(
+			h,
+			{ as: "section", overflow: "hidden", card: true, attributes: [h.AriaLabel("Runs")] },
 			// Nothing to narrow until there is a target, as on the Findings tab.
 			[...(targets.length === 0 ? [] : [toolbar(h, model, targets, runs.length, isCapped)]), content],
 		),

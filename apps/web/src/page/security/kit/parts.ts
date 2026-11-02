@@ -3,7 +3,7 @@ import type { SecurityAuditRunStatus, SecurityAuditSeverity } from "@maple/domai
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon, type IconName } from "../../../ui/icon"
 import { severityBadge, severityIcon } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
@@ -107,7 +107,7 @@ export const gateState = <M>(h: HtmlBuilder<M>, gate: Gate, className?: string):
 				emptyDescription(h, [copy.description]),
 			]),
 		],
-		cn("rounded-md border border-dashed md:py-14", className),
+		emptyFrameClass("dashed", className),
 	)
 }
 

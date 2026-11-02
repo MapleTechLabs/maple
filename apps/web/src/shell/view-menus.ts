@@ -17,6 +17,7 @@ import { shellNavGroups, surfacesOf } from "./view-nav"
 import { pinnedNamespaceOf, userAvatar, userImageOf, userNameOf } from "./view-sidebar"
 import { typography } from "../ui/typography"
 import { hstack } from "../ui/stack"
+import { identityLabel } from "../ui/identity-label"
 
 // The open menu's content: GuestMenu, SupportMenu, the self-hosted org switcher's namespace list
 // and the collapsed rail's section menus.
@@ -271,31 +272,25 @@ const clerkUserMenu = (
 							url: userImageOf(clerk),
 							label: name,
 						}),
-						typography(
-							h,
-							{ size: "sm", as: "div", className: "grid text-left leading-tight flex-1" },
-							[
-								typography(
-									h,
-									{ weight: "medium", truncate: true, attributes: [h.Title(name)] },
-									[name],
-								),
-								...(email === ""
-									? []
-									: [
-											typography(
-												h,
-												{
-													size: "xs",
-													tone: "muted",
-													truncate: true,
-													attributes: [h.Title(email)],
-												},
-												[email],
-											),
-										]),
-							],
-						),
+						identityLabel(h, [
+							typography(h, { weight: "medium", truncate: true, attributes: [h.Title(name)] }, [
+								name,
+							]),
+							...(email === ""
+								? []
+								: [
+										typography(
+											h,
+											{
+												size: "xs",
+												tone: "muted",
+												truncate: true,
+												attributes: [h.Title(email)],
+											},
+											[email],
+										),
+									]),
+						]),
 					],
 				),
 			]),

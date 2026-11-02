@@ -11,7 +11,7 @@ import { item, itemActions, itemContent, itemDescription, itemMedia } from "../.
 import { panel } from "../../ui/panel"
 import { refreshButton } from "../../ui/refresh-button"
 import { settingRow } from "../../ui/setting-row"
-import { skeleton } from "../../ui/skeleton"
+import { skeleton, skeletonBlock } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
 import { switchControl } from "../../ui/switch"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
@@ -322,7 +322,7 @@ const loadingState = (h: H): Html =>
 	h.div(
 		[h.Class("space-y-4")],
 		[
-			skeleton(h, "h-16 w-full rounded-md"),
+			skeletonBlock(h, { height: "16" }),
 			panel(h, { className: "overflow-hidden" }, [
 				skeleton(h, "h-11 w-full rounded-none"),
 				h.div(

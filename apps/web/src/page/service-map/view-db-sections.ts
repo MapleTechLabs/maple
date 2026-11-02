@@ -28,7 +28,7 @@ import { emptyMessage } from "../../ui/empty"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { panel } from "../../ui/panel"
-import { skeleton } from "../../ui/skeleton"
+import { skeletonBlock } from "../../ui/skeleton"
 import { truncatedId } from "../../ui/truncated-id"
 import { errorRateValue } from "../../ui/values"
 import { docsLink } from "../kit/signal-empty-state"
@@ -38,6 +38,7 @@ import { metricTile, metricValue, sampled, tagBadge } from "./view-panel-kit"
 import { queryActivityCharts } from "./view-db-charts"
 import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
+import { grid } from "../../ui/grid"
 
 // The database panel's sections: Hyperdrive configs,
 // PlanetScale health and branches, query activity and the top query shapes.
@@ -142,49 +143,44 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 	)
 
 const planetscaleStats = (h: H, stats: NonNullable<PlanetScaleNodeMetrics["stats"]>): Html =>
-	h.div(
-		[h.Class("grid grid-cols-2 gap-x-6 gap-y-4")],
-		[
-			metricTile(h, "Connections", metricValue(h, undefined, [formatRate(stats.connectionsAvg)]), [
-				"peak ",
-				formatRate(stats.connectionsMax),
+	grid(h, { cols: 2, gapX: "6", gapY: "4" }, [
+		metricTile(h, "Connections", metricValue(h, undefined, [formatRate(stats.connectionsAvg)]), [
+			"peak ",
+			formatRate(stats.connectionsMax),
+		]),
+		metricTile(
+			h,
+			"CPU (max)",
+			metricValue(h, cn(utilizationClass(stats.cpuMaxPercent)), [
+				formatPercent(stats.cpuMaxPercent / 100),
 			]),
-			metricTile(
+		),
+		metricTile(
+			h,
+			"Memory (max)",
+			metricValue(h, cn(utilizationClass(stats.memMaxPercent)), [
+				formatPercent(stats.memMaxPercent / 100),
+			]),
+		),
+		metricTile(
+			h,
+			"Storage (max)",
+			metricValue(
 				h,
-				"CPU (max)",
-				metricValue(h, cn(utilizationClass(stats.cpuMaxPercent)), [
-					formatPercent(stats.cpuMaxPercent / 100),
-				]),
+				cn(stats.storageUsedPercent !== null && utilizationClass(stats.storageUsedPercent)),
+				[
+					stats.storageUsedPercent === null
+						? EMPTY_VALUE
+						: formatStoragePercent(stats.storageUsedPercent),
+				],
 			),
-			metricTile(
-				h,
-				"Memory (max)",
-				metricValue(h, cn(utilizationClass(stats.memMaxPercent)), [
-					formatPercent(stats.memMaxPercent / 100),
-				]),
-			),
-			metricTile(
-				h,
-				"Storage (max)",
-				metricValue(
-					h,
-					cn(stats.storageUsedPercent !== null && utilizationClass(stats.storageUsedPercent)),
-					[
-						stats.storageUsedPercent === null
-							? EMPTY_VALUE
-							: formatStoragePercent(stats.storageUsedPercent),
-					],
-				),
-			),
-			metricTile(
-				h,
-				"Replica lag (max)",
-				metricValue(h, cn(lagClass(stats.replicaLagMaxSeconds)), [
-					formatLag(stats.replicaLagMaxSeconds),
-				]),
-			),
-		],
-	)
+		),
+		metricTile(
+			h,
+			"Replica lag (max)",
+			metricValue(h, cn(lagClass(stats.replicaLagMaxSeconds)), [formatLag(stats.replicaLagMaxSeconds)]),
+		),
+	])
 
 const branchRows = (h: H, model: Model, planetscale: PlanetScaleNodeMetrics): ReadonlyArray<Html> => {
 	if (AsyncData.isFailure(model.branchStats.data)) return []
@@ -302,7 +298,7 @@ export const queryActivity = (
 	isWaiting: boolean,
 	timeZone: string,
 ): Html => {
-	if (response === null && isWaiting) return skeleton(h, "h-44 w-full rounded-md")
+	if (response === null && isWaiting) return skeletonBlock(h, { height: "44" })
 	if (response === null || response.timeseries.length === 0)
 		return emptyMessage(
 			h,

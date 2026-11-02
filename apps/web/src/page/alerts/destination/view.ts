@@ -32,6 +32,7 @@ import { spinner } from "../../../ui/spinner"
 import { type TextField, toFormState } from "./form"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, hstackClass } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // The destination dialog. The Email, Linear and chat fields live in `*-fields-view.ts`.
 
@@ -142,7 +143,9 @@ const providerTile = (
 				[h.Class("relative flex w-full items-center gap-2.5")],
 				[
 					logo(h, model, options.type, 32, options.chatConnector),
-					typography(h, { size: "sm", weight: "semibold", truncate: true }, [options.label ?? provider.label]),
+					typography(h, { size: "sm", weight: "semibold", truncate: true }, [
+						options.label ?? provider.label,
+					]),
 					...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
 				],
 			),
@@ -158,58 +161,54 @@ const providerTile = (
 const providerPicker = (h: H, model: Model): Html => {
 	const connectors = model.connectors ?? []
 	const isDiscordLinked = connectors.some((c) => c.id === "discord" && c.workspaces.length > 0)
-	return h.div(
-		[h.Class("grid grid-cols-2 gap-2")],
-		[
-			...connectors.flatMap((connector) => {
-				if (connector.workspaces.length > 0)
-					return connector.workspaces.map((workspace) =>
-						providerTile(h, model, {
-							key: workspace.id,
-							type: "chat",
-							chatConnector: connector.id,
-							label:
-								connector.workspaces.length > 1
-									? `${connector.name} · ${workspace.name}`
-									: connector.name,
-							description: `Post to a channel in ${workspace.name}.`,
-							isSelected:
-								model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,
-							onSelect: Message.ClickedChatWorkspace({
-								connector: connector.id,
-								workspaceId: workspace.id,
-							}),
-						}),
-					)
-				if (!connector.available || connector.id === "discord") return []
-				// Not linked yet: the tile links a workspace in a popup, the form stays as it is.
-				const isWaiting = waitingFor(model.chatConnect) === connector.id
-				return [
+	return grid(h, { cols: 2, gap: "2" }, [
+		...connectors.flatMap((connector) => {
+			if (connector.workspaces.length > 0)
+				return connector.workspaces.map((workspace) =>
 					providerTile(h, model, {
-						key: connector.id,
+						key: workspace.id,
 						type: "chat",
 						chatConnector: connector.id,
-						label: connector.name,
-						description: isWaiting
-							? `Finish in the ${connector.name} window. This form stays as it is.`
-							: `Connect a ${connector.name} workspace, then pick a channel.`,
-						isSelected: false,
-						isBusy: isWaiting,
-						onSelect: Message.ClickedConnectChat({ connector: connector.id }),
+						label:
+							connector.workspaces.length > 1
+								? `${connector.name} · ${workspace.name}`
+								: connector.name,
+						description: `Post to a channel in ${workspace.name}.`,
+						isSelected: model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,
+						onSelect: Message.ClickedChatWorkspace({
+							connector: connector.id,
+							workspaceId: workspace.id,
+						}),
 					}),
-				]
-			}),
-			...destinationTypesFor(isDiscordLinked).map((type) =>
+				)
+			if (!connector.available || connector.id === "discord") return []
+			// Not linked yet: the tile links a workspace in a popup, the form stays as it is.
+			const isWaiting = waitingFor(model.chatConnect) === connector.id
+			return [
 				providerTile(h, model, {
-					key: type,
-					type,
-					label: type === "discord" && isDiscordLinked ? "Discord webhook" : undefined,
-					isSelected: model.form.type === type,
-					onSelect: Message.ClickedProvider({ type }),
+					key: connector.id,
+					type: "chat",
+					chatConnector: connector.id,
+					label: connector.name,
+					description: isWaiting
+						? `Finish in the ${connector.name} window. This form stays as it is.`
+						: `Connect a ${connector.name} workspace, then pick a channel.`,
+					isSelected: false,
+					isBusy: isWaiting,
+					onSelect: Message.ClickedConnectChat({ connector: connector.id }),
 				}),
-			),
-		],
-	)
+			]
+		}),
+		...destinationTypesFor(isDiscordLinked).map((type) =>
+			providerTile(h, model, {
+				key: type,
+				type,
+				label: type === "discord" && isDiscordLinked ? "Discord webhook" : undefined,
+				isSelected: model.form.type === type,
+				onSelect: Message.ClickedProvider({ type }),
+			}),
+		),
+	])
 }
 
 const fieldBlock = (h: H, children: ReadonlyArray<Html>, state: FieldState = IDLE) =>
@@ -385,11 +384,9 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						}),
 					]
 				: [
-						typography(h, { size: "2xs", tone: "muted", as: "p" },
-							[
-								"Email destinations target workspace members and require Clerk authentication, which is not enabled in this deployment.",
-							],
-						),
+						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+							"Email destinations target workspace members and require Clerk authentication, which is not enabled in this deployment.",
+						]),
 					]
 		case "linear":
 			return [
@@ -449,32 +446,30 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 			[h.Class("space-y-1.5")],
 			[
 				field(h, { className: "items-stretch gap-2", state: IDLE }, [
-					hstack(h, { gap: "2", justify: "between" },
-						[
-							fieldLabel(h, { ids: chatIds, className: "text-xs", state: IDLE }, "Chat ID"),
-							button(
-								h,
-								{
-									variant: "ghost",
-									size: "xs",
-									className: "px-2 text-2xs",
-									isDisabled: !isTokenReady,
-									isLoading: model.isDetectingChats,
-									attributes: [
-										h.OnClick(Message.ClickedDetectChats()),
-										...(isTokenReady
-											? []
-											: [
-													h.Title(
-														"Enter the bot token first. Detection reads the bot's chats.",
-													),
-												]),
-									],
-								},
-								["Detect chats"],
-							),
-						],
-					),
+					hstack(h, { gap: "2", justify: "between" }, [
+						fieldLabel(h, { ids: chatIds, className: "text-xs", state: IDLE }, "Chat ID"),
+						button(
+							h,
+							{
+								variant: "ghost",
+								size: "xs",
+								className: "px-2 text-2xs",
+								isDisabled: !isTokenReady,
+								isLoading: model.isDetectingChats,
+								attributes: [
+									h.OnClick(Message.ClickedDetectChats()),
+									...(isTokenReady
+										? []
+										: [
+												h.Title(
+													"Enter the bot token first. Detection reads the bot's chats.",
+												),
+											]),
+								],
+							},
+							["Detect chats"],
+						),
+					]),
 					...(model.telegramError !== null
 						? [
 								fieldError(
@@ -486,11 +481,9 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 						: []),
 					...(model.telegramChats !== null && model.telegramChats.length === 0
 						? [
-								typography(h, { size: "2xs", tone: "muted", as: "p" },
-									[
-										"No recent chats. Add the bot to the group or channel (or send it a message), then detect again. Telegram only keeps the last 24 hours.",
-									],
-								),
+								typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+									"No recent chats. Add the bot to the group or channel (or send it a message), then detect again. Telegram only keeps the last 24 hours.",
+								]),
 							]
 						: []),
 					...(model.telegramChats !== null && model.telegramChats.length > 0
@@ -504,9 +497,9 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 												density: "compact",
 												className: "gap-2 rounded-sm px-2",
 												title: chat.title,
-												trailing: typography(h, { size: "3xs", tone: "muted" },
-													[TELEGRAM_CHAT_TYPE_LABELS.get(chat.type) ?? chat.type],
-												),
+												trailing: typography(h, { size: "3xs", tone: "muted" }, [
+													TELEGRAM_CHAT_TYPE_LABELS.get(chat.type) ?? chat.type,
+												]),
 												onClick: Message.ClickedTelegramChat({ chatId: chat.id }),
 											},
 											[h.Key(chat.id)],
@@ -522,13 +515,11 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 					placeholder: "-1001234567890 or @mychannel",
 					className: typographyClass({ size: "xs", mono: true }),
 				}),
-				typography(h, { size: "2xs", tone: "muted", as: "p" },
-					[
-						"Add the bot to the chat, then hit ",
-						h.strong([], ["Detect chats"]),
-						", or enter the id by hand. Maple checks the bot can reach it when you save.",
-					],
-				),
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					"Add the bot to the chat, then hit ",
+					h.strong([], ["Detect chats"]),
+					", or enter the id by hand. Maple checks the bot can reach it when you save.",
+				]),
 			],
 		),
 	]
@@ -585,29 +576,27 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 													"flex-row items-center justify-between gap-3 px-3 py-2",
 											},
 											[
-												hstack(h, { gap: "2.5", shrink: true, as: "span" },
-													[
-														logo(
-															h,
-															model,
-															model.form.type,
-															28,
-															model.form.chatConnector,
-														),
-														typography(h, { size: "sm", weight: "medium", truncate: true },
-															[provider.label],
-														),
-													],
-												),
+												hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+													logo(
+														h,
+														model,
+														model.form.type,
+														28,
+														model.form.chatConnector,
+													),
+													typography(
+														h,
+														{ size: "sm", weight: "medium", truncate: true },
+														[provider.label],
+													),
+												]),
 												button(
 													h,
 													{
 														variant: "ghost",
 														size: "xs",
 														attributes: [
-															h.OnClick(
-																Message.ClickedUnlockProvider(),
-															),
+															h.OnClick(Message.ClickedUnlockProvider()),
 														],
 													},
 													["Change"],
@@ -621,12 +610,10 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 			h.div(
 				[h.Class("space-y-2")],
 				[
-					hstack(h, { justify: "between" },
-						[
-							eyebrow(h, { variant: "label", as: "div" }, ["Connection"]),
-							...fieldHelper(h, model.form.type),
-						],
-					),
+					hstack(h, { justify: "between" }, [
+						eyebrow(h, { variant: "label", as: "div" }, ["Connection"]),
+						...fieldHelper(h, model.form.type),
+					]),
 					panel(h, { padded: true, className: "space-y-3" }, [
 						fieldBlock(h, [
 							fieldLabel(
@@ -640,19 +627,14 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 									"Name",
 									...(isEditing
 										? []
-										: [
-												typography(h, { tone: "muted", weight: "normal" },
-													["optional"],
-												),
-											]),
+										: [typography(h, { tone: "muted", weight: "normal" }, ["optional"])]),
 								],
 							),
 							textInput(h, model, {
 								name: "name",
 								field: "name",
 								placeholder:
-									suggestedDestinationName(toFormState(model.form)) ||
-									"Production paging",
+									suggestedDestinationName(toFormState(model.form)) || "Production paging",
 							}),
 						]),
 						...connectionFields(h, model, isEditing),

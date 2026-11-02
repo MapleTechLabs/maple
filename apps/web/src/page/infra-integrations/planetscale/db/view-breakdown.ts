@@ -19,6 +19,7 @@ import {
 import { formatWholePercent } from "../../../../components/infra/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
 import { typography, typographyClass } from "../../../../ui/typography"
+import { columnClass } from "../../../../ui/column"
 
 // `PlanetScaleBranchBreakdownPanel`.
 
@@ -214,7 +215,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 			[
 				columnHead(h, {
 					label: "Branch",
-					width: "w-0 flex-1 min-w-52",
+					width: columnClass({ min: "52" }),
 					sort: {
 						onSort: Message.ClickedBreakdownSort({ key: "branch" }),
 						isActive: inputs.sort.key === "branch",

@@ -11,7 +11,7 @@ import { sortedOccurrences } from "../../../charts/definitions/occurrences"
 import { plotFrame } from "../../../charts/plot-frame"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { emptyMessage } from "../../../ui/empty"
-import { panel, panelHeader } from "../../../ui/panel"
+import { panel, panelHeader, panelChartBody } from "../../../ui/panel"
 import { SEVERITY_TOKEN } from "../kit/severity"
 import type { ChartWindow } from "./derive"
 import { Message } from "./message"
@@ -92,24 +92,18 @@ export const occurrencePanel = (
 				`Peak ${formatNumber(peak)} / ${formatBucket(window.bucketMs)}`,
 			]),
 		}),
-		h.div(
-			[h.Class("px-4 pt-3 pb-4")],
-			[
-				h.submodel({
-					slotId: "issue-occurrence-chart",
-					model: chart,
-					view: chartView,
-					toParentMessage: (message) => Message.GotChartMessage({ message }),
-					viewInputs: {
-						points,
-						color: resolveColor(
-							theme,
-							severity === null ? "--primary" : SEVERITY_TOKEN[severity],
-						),
-						timeZone,
-					},
-				}),
-			],
-		),
+		panelChartBody(h, [
+			h.submodel({
+				slotId: "issue-occurrence-chart",
+				model: chart,
+				view: chartView,
+				toParentMessage: (message) => Message.GotChartMessage({ message }),
+				viewInputs: {
+					points,
+					color: resolveColor(theme, severity === null ? "--primary" : SEVERITY_TOKEN[severity]),
+					timeZone,
+				},
+			}),
+		]),
 	])
 }

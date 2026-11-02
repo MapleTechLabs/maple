@@ -4,7 +4,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { empty, emptyContent, emptyDescription, emptyFrameClass, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { textLink } from "../../../ui/text-link"
 import { statRail, statRailItem } from "../../kit/stat-rail"
@@ -49,7 +49,7 @@ export const notConnected = (h: H): Html =>
 				]),
 			]),
 		],
-		"rounded-md border border-dashed md:py-14",
+		emptyFrameClass("dashed"),
 	)
 
 /** Connected, never scanned: the first scan follows the connection or the next push. */

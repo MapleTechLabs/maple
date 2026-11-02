@@ -59,8 +59,9 @@ import { activitySection, eventTriggerId, insightTriggerId, topQueries } from ".
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
-import { typography, typographyClass } from "../../../../ui/typography"
-import { hstack, hstackClass } from "../../../../ui/stack"
+import { removableChip } from "../../../../ui/removable-chip"
+import { typography } from "../../../../ui/typography"
+import { hstack } from "../../../../ui/stack"
 
 // `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
@@ -256,33 +257,14 @@ const dataSections = (
 const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model))
 	if (chips.length === 0) return []
-	const chipClass =
-		hstackClass({ gap: "1", inline: true, className: typographyClass({ size: "3xs", tone: "muted", mono: true, className: "rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5" }) })
 	return [
 		hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] },
 			[
 				...chips.slice(0, 6).map((chip) =>
-					h.span(
-						[h.Class(chipClass)],
-						[
-							typography(h, { tone: "soft", truncate: true, className: "max-w-[22ch]" }, [chip.label]),
-							button(
-								h,
-								{
-									variant: "ghost",
-									size: "icon-2xs",
-									className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
-									attributes: [
-										h.AriaLabel(`Remove ${chip.label}`),
-										h.OnClick(
-											Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
-										),
-									],
-								},
-								[icon(h, "XmarkIcon")],
-							),
-						],
-					),
+					removableChip(h, {
+						label: chip.label,
+						onRemove: Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
+					}),
 				),
 				textLink(
 					h,

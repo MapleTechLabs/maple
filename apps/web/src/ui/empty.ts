@@ -73,3 +73,8 @@ export const emptyMessage = <M>(
 		],
 		children,
 	)
+
+/** The frame a page body's empty or filtered-empty state sits in: a dashed placeholder box, or a solid one
+ * for a first-run explainer. Pass it as `empty`'s or `filteredEmpty`'s className. */
+export const emptyFrameClass = (variant: "dashed" | "solid", className?: string): string =>
+	cn("rounded-md border", variant === "dashed" ? "border-dashed md:py-14" : "md:py-16", className)

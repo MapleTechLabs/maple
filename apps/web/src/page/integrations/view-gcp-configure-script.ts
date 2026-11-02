@@ -18,7 +18,7 @@ import { hstack } from "../../ui/stack"
 type H = HtmlBuilder<Message>
 
 const COPY_ID = "configure-file"
-const LINK = typographyClass({ size: "xs", tone: "muted", weight: "normal", className: "h-auto p-0 hover:text-foreground active:text-foreground" })
+const LINK = typographyClass({ size: "xs", tone: "muted", weight: "normal", hoverTone: "foreground", className: "h-auto p-0" })
 
 /** Why a file couldn't be loaded, and the way to load it again. */
 export const loadFailure = (h: H, failure: ScriptFailure): Html =>
@@ -101,10 +101,7 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 								idleLabel: secret ? "Copy script" : "Copy",
 								variant: children === undefined ? "default" : "outline",
 								size: "sm",
-								className: cn(
-									children === undefined &&
-										"text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
-								),
+								keepsFillInk: children === undefined,
 								attributes: copyable === null ? [h.Disabled(true)] : [],
 							}),
 							...(children ?? []),

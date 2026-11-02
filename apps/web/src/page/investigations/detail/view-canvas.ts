@@ -31,7 +31,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { pressable } from "../../../ui/pressable"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonMeter } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { relativeTime } from "../../kit/relative-time"
 import { NODE_LINK_ATTRIBUTE } from "../clicks"
@@ -276,7 +276,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 				: []),
 			h.div(
 				[h.AriaHidden(true), h.Class("flex flex-col gap-1 pt-0.5")],
-				[skeleton(h, "h-1.5 w-full rounded-full"), skeleton(h, "h-1.5 w-1/2 rounded-full")],
+				[skeletonMeter(h), skeletonMeter(h, "half")],
 			),
 			liveBar(h, true),
 		],

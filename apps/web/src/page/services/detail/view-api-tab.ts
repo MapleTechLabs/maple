@@ -56,6 +56,7 @@ import { markersOverlay } from "./view-markers"
 import { headLabel, rangeNote, sortColumnHead, tableSkeletonHead, tableTitle } from "./view-table-cells"
 import { typography } from "../../../ui/typography"
 import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { stripClass } from "../../../ui/rule"
 
 // `ServiceApiTab`: the KPI strip, the responses chart beside the non-2xx breakdown, and the
 // endpoint table with its filters. The endpoint drawer is the page's (`endpoint-peek`).
@@ -571,7 +572,7 @@ const loadingState = (h: H): Html =>
 				h.div(
 					[h.AriaBusy(true), h.Class("flex flex-col")],
 					Array.from({ length: 8 }, (_, index) =>
-						hstack(h, { gap: "3", className: "h-11 border-b px-4 last:border-b-0", attributes: [h.Key(String(index))] },
+						hstack(h, { gap: "3", className: stripClass("skeletonRow"), attributes: [h.Key(String(index))] },
 							[
 								skeleton(h, "h-2.5 w-9"),
 								skeleton(h, "h-2.5 w-40"),

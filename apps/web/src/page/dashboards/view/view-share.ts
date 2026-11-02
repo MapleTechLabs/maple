@@ -15,6 +15,7 @@ import type { Model } from "./model"
 import { type Access, boardShareOf, ShareMessage, shareUrl } from "./share"
 import { typography } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { spaced } from "../../../ui/spaced"
 
 // `ShareDashboardDialog` and `ShareLinkRow`: the share dialog and one link's row.
 
@@ -120,15 +121,12 @@ const accessOption = (
 				className:
 					"mt-0.5 shrink-0 text-muted-foreground transition-colors group-has-[[data-checked]]:text-primary",
 			}),
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-0.5")],
-				[
-					h.div([h.Class("font-medium text-sm leading-5")], [option.title]),
-					typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
-						option.body,
-					]),
-				],
-			),
+			spaced(h, { space: "0.5", fill: true }, [
+				h.div([h.Class("font-medium text-sm leading-5")], [option.title]),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+					option.body,
+				]),
+			]),
 			...RadioGroup.radio(h, config, option.value, "mt-0.5 shrink-0"),
 		],
 	)

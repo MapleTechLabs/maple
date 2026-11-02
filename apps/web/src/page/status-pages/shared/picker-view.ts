@@ -12,6 +12,7 @@ import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_OPTIONS } from "./derive"
 import { checkedRows, monitorTarget, type Picker, PickerMessage, type PickerRow, rowIssue } from "./picker"
 import { typography } from "../../../ui/typography"
 import { hstack, vstack } from "../../../ui/stack"
+import { dividedList } from "../../../ui/rule"
 
 // The checklist view: checked rows rename, group and move in place; the URL field and the
 // add-by-hand row sit under it.
@@ -370,8 +371,7 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 						),
 					]
 				: [
-						h.ul(
-							[h.AriaLabel("Components"), h.Class("divide-y rounded-md border")],
+						dividedList(h, { as: "ul", attributes: [h.AriaLabel("Components")] },
 							picker.rows.map((row) =>
 								row.monitorId === null
 									? manualRowView(h, options, row, positionOf(row))

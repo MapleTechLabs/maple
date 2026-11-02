@@ -13,7 +13,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
 import { panel } from "../../ui/panel"
-import { skeleton } from "../../ui/skeleton"
+import { skeletonBlock } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
 import { sectionHeading } from "../kit/section-heading"
 import { HEALTH_TONE } from "./derive"
@@ -148,8 +148,8 @@ const byStatus = (
 
 export const gcpCard = (h: H, model: Model, timeZone: string, focusId: string | null = null): Html =>
 	AsyncData.match(model.statuses.gcp.data, {
-		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "40" }),
+		onLoading: () => skeletonBlock(h, { height: "40" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

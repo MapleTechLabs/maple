@@ -9,6 +9,7 @@ import { Message } from "./message"
 import { clockOf, indentLanes, META, row } from "./transcript-shell"
 import { failedBadge } from "./view-kit"
 import { typography } from "../../../ui/typography"
+import { fillRule } from "../../../ui/rule"
 
 // The transcript's turn chapters (`TurnChapter`, `EmptyTurnRow`, `summariseTurn`).
 
@@ -121,7 +122,7 @@ export const emptyTurnRow = (h: H, chapter: Extract<TranscriptRow, { kind: "empt
 				typography(h, { size: "xs", truncate: true, className: "min-w-0" },
 					["no agent activity (HTTP/DB work only, see Traces)"],
 				),
-				h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], []),
+				fillRule(h),
 			],
 		),
 	])

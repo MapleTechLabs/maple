@@ -24,6 +24,8 @@ import {
 } from "./view-integration-card"
 import { typographyClass } from "../../ui/typography"
 import { hstack, vstack } from "../../ui/stack"
+import { stripClass } from "../../ui/rule"
+import { columnClass } from "../../ui/column"
 
 // `RailwayIntegrationCard`.
 
@@ -36,7 +38,7 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 		h,
 		{ ariaLabel: "Railway environments" },
 		[
-			columnHead(h, { label: "Environment", width: "w-0 min-w-48 flex-1" }),
+			columnHead(h, { label: "Environment", width: columnClass({ min: "48" }) }),
 			columnHead(h, { label: "Services", width: "w-20", align: "right" }),
 			columnHead(h, { label: "Last sync", width: "w-32", align: "right" }),
 		],
@@ -49,7 +51,7 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 							gap: "4",
 							className: typographyClass({
 								size: "sm",
-								className: "border-b border-border-subtle px-4 py-2.5 last:border-0",
+								className: stripClass("row"),
 							}),
 						},
 						[

@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { isExcluded } from "../../components/infra/planetscale/branch-selection"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { choiceCard } from "../../ui/choice-card"
+import { choiceCard, choiceCheckClass } from "../../ui/choice-card"
 import { button } from "../../ui/button"
 import * as DialogView from "../../ui/dialog-view"
 import * as Field from "../../ui/field"
@@ -23,15 +23,7 @@ const drawnCheck = (h: H, isChecked: boolean, className: string): Html =>
 	h.span(
 		[
 			h.AriaHidden(true),
-			h.Class(
-				cn(
-					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
-					isChecked
-						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-border-strong",
-					className,
-				),
-			),
+			h.Class(choiceCheckClass(isChecked, true, className)),
 		],
 		[
 			h.svg(

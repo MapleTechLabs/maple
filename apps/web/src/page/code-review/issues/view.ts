@@ -7,7 +7,7 @@ import {
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { listFooter } from "../../../ui/list-footer"
 import type * as Select from "../../../ui/select"
@@ -115,7 +115,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 					return filteredEmpty(h, {
 						noun: "issues",
 						onClear: Message.ClickedClearFilters(),
-						className: "rounded-md border border-dashed md:py-14",
+						className: emptyFrameClass("dashed"),
 					})
 				return empty(
 					h,
@@ -125,7 +125,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							emptyDescription(h, ["Issues the reviewer posts on pull requests are listed here."]),
 						]),
 					],
-					"rounded-md border border-dashed md:py-14",
+					emptyFrameClass("dashed"),
 				)
 			}
 			const footer =

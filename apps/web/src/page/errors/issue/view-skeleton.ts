@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { detailRailGroup, detailRailRow } from "../../../ui/detail-rail"
-import { panel, panelHeader } from "../../../ui/panel"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { panel, panelHeader, panelChartBody } from "../../../ui/panel"
+import { skeleton, skeletonBlock, skeletonList } from "../../../ui/skeleton"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { tabOf } from "./derive"
@@ -12,6 +12,7 @@ import { headerActions, issueTabs } from "./view-header"
 import { statRailLoading } from "../../kit/stat-rail"
 import { issueField } from "./view-overview"
 import { hstack, vstack } from "../../../ui/stack"
+import { strip } from "../../../ui/rule"
 
 // The issue detail skeleton and the not-found state.
 
@@ -53,11 +54,11 @@ const overviewSkeleton = (h: H): Html =>
 					]),
 				),
 			),
-			h.div([h.Class("border-t px-4 py-2.5")], [skeleton(h, "h-3 w-28")]),
+			strip(h, { kind: "foot" }, [skeleton(h, "h-3 w-28")]),
 		]),
 		panel(h, { className: "shrink-0 overflow-hidden" }, [
 			panelHeader(h, { title: "Occurrences", scope: skeleton(h, "h-3 w-28") }),
-			h.div([h.Class("px-4 pt-3 pb-4")], [skeleton(h, "h-44 w-full rounded-md")]),
+			panelChartBody(h, [skeletonBlock(h, { height: "44" })]),
 		]),
 	])
 

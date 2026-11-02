@@ -10,7 +10,7 @@ import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { panel, panelHeader } from "../../../ui/panel"
 import { pressable } from "../../../ui/pressable"
-import { laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { clickableRowClass, laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { ciResultBadge, traceKept } from "../kit/parts"
 import { listRelativeTime, relativeTime } from "../../kit/relative-time"
@@ -60,7 +60,7 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 			traceKept(red.since, time.nowMs)
 				? h.a(
 						[
-							h.Class(typographyClass({ tone: "foreground", className: "underline-offset-4 hover:underline active:underline" })),
+							h.Class(typographyClass({ tone: "foreground", hoverUnderline: true })),
 							h.Href(traceHref),
 							h.Title("Open the first failed run's trace"),
 							// `event.stopPropagation()` keeps the row's click off; the page follows the link itself.
@@ -179,7 +179,7 @@ const workflowRow = (
 				"hidden px-4 sm:table-cell",
 			),
 		],
-		cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", isActive && "bg-surface-strong"),
+		clickableRowClass(isActive),
 		[h.Key(`${row.owner}/${row.repository}/${row.pipeline}`), h.OnClick(select)],
 	)
 }

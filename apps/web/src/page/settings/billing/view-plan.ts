@@ -15,7 +15,7 @@ import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonBlock } from "../../../ui/skeleton"
 import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "../../../ui/typography"
@@ -386,13 +386,13 @@ const planOffer = (
 		onIdle: () => [
 			h.div(
 				[h.Class("space-y-3")],
-				[skeleton(h, "h-32 w-full rounded-md"), skeleton(h, "h-16 w-full rounded-md")],
+				[skeletonBlock(h, { height: "32" }), skeletonBlock(h, { height: "16" })],
 			),
 		],
 		onLoading: () => [
 			h.div(
 				[h.Class("space-y-3")],
-				[skeleton(h, "h-32 w-full rounded-md"), skeleton(h, "h-16 w-full rounded-md")],
+				[skeletonBlock(h, { height: "32" }), skeletonBlock(h, { height: "16" })],
 			),
 		],
 		onFailure: (failure) => [

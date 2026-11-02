@@ -13,7 +13,7 @@ import { icon, type IconName } from "../../../ui/icon"
 import { inlineCode, inlineCodeClassName } from "../../../ui/inline-code"
 import { panel } from "../../../ui/panel"
 import { refreshButton } from "../../../ui/refresh-button"
-import { skeleton } from "../../../ui/skeleton"
+import { skeletonBlock } from "../../../ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 import { settingsSection, settingsSections } from "../kit/section"
@@ -390,12 +390,12 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 	const top = AsyncData.match(model.audit, {
 		onIdle: () => [
 			vstack(h, { gap: "4" },
-				[skeleton(h, "h-24 w-full rounded-md"), skeleton(h, "h-48 w-full rounded-md")],
+				[skeletonBlock(h, { height: "24" }), skeletonBlock(h, { height: "48" })],
 			),
 		],
 		onLoading: () => [
 			vstack(h, { gap: "4" },
-				[skeleton(h, "h-24 w-full rounded-md"), skeleton(h, "h-48 w-full rounded-md")],
+				[skeletonBlock(h, { height: "24" }), skeletonBlock(h, { height: "48" })],
 			),
 		],
 		onFailure: (failure) => [

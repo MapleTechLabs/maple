@@ -21,6 +21,7 @@ import type { Model } from "./model"
 import { formSelect } from "./view-select"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { queryPanelBar } from "../../kit/query-panel-bar"
 
 // `RawSqlEditorPanel` without the bucket control, and the alert's reducer row under it
 // (`RawQueryEditor`).
@@ -46,15 +47,14 @@ const REDUCER_OPTIONS = Object.entries(RAW_QUERY_REDUCER_LABELS).map(([value, te
 
 const header = (h: H, model: SqlView, sql: string): Html => {
 	const issue = rawSqlIssue(sql)
-	return hstack(h, { gap: "2", className: "px-3 py-2 bg-surface-sunken" },
-		[
+	return queryPanelBar(h, [
 			iconButton(
 				h,
 				{
 					size: "icon-xs",
 					label: model.isSqlCollapsed ? "Expand SQL" : "Collapse SQL",
 					hasTooltip: false,
-					className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
+					className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
 				},
 				[icon(h, model.isSqlCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],

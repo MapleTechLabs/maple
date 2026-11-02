@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { searchInput } from "../../../ui/search-input"
 import { typography, typographyClass } from "../../../ui/typography"
+import { fillRule } from "../../../ui/rule"
 
 // Shared by the dashboards list and the template gallery.
 
@@ -26,7 +27,7 @@ export const listSectionHeader = <M>(
 				],
 				[String(options.count)],
 			),
-			h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], []),
+			fillRule(h),
 			...(options.note === undefined
 				? []
 				: [typography(h, { size: "2xs", tone: "muted" }, [options.note])]),

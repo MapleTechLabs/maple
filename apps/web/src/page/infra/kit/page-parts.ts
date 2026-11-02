@@ -10,6 +10,7 @@ import { searchInput } from "../../../ui/search-input"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 import { hstack } from "../../../ui/stack"
+import { spaced } from "../../../ui/spaced"
 
 // `PageHero`, `SearchToolbar` and the infra empty states.
 
@@ -78,8 +79,9 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 	return h.header(
 		[h.Class(cn("flex flex-wrap items-start gap-x-6 gap-y-3", options.className))],
 		[
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-2")],
+			spaced(
+				h,
+				{ space: "2", fill: true },
 				parts.body === null ? [parts.title] : [parts.title, parts.body],
 			),
 			...(options.actions === undefined || options.actions.length === 0

@@ -4,6 +4,7 @@ import { GCP_LOG_RUNTIMES } from "../../components/integrations/gcp-connector-st
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../ui/alert"
 import { button } from "../../ui/button"
+import { dividedList } from "../../ui/rule"
 import { field, fieldDescription, type FieldIds, fieldLabel, type FieldState } from "../../ui/field"
 import * as Checkbox from "../../ui/checkbox"
 import { labelIdOf } from "../../ui/choice"
@@ -74,7 +75,7 @@ export const runtimeFields = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								typographyClass({ size: "xs", tone: "muted", weight: "normal", className: "h-auto p-0 hover:text-foreground active:text-foreground" }),
+								typographyClass({ size: "xs", tone: "muted", weight: "normal", hoverTone: "foreground", className: "h-auto p-0" }),
 								GCP_LINK,
 							),
 							attributes: [h.OnClick(Message.ClickedGcpUseOpenTelemetry())],
@@ -83,8 +84,7 @@ export const runtimeFields = (
 					),
 				],
 			),
-			h.div(
-				[h.Class("divide-y rounded-md border")],
+			dividedList(h, { as: "div" },
 				GCP_LOG_RUNTIMES.map(({ value, label, hint }) =>
 					runtimeRow(h, forwardId, value, label, hint, runtimes.includes(value)),
 				),

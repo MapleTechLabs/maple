@@ -1,5 +1,4 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
-import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -8,8 +7,8 @@ import { type CategoricalBin, ChartSpec, ChartTooltip, type NumericBin } from ".
 import { formatBound } from "./histogram-format"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import { typography } from "../ui/typography"
 import { hstack } from "../ui/stack"
+import { chartNoData } from "../ui/chart-frame"
 
 // Port of `QueryBuilderHistogramChart` (packages/ui/src/components/charts/histogram/
 // query-builder-histogram-chart.tsx), view half. Definitions are in ./definitions/histogram.ts.
@@ -167,8 +166,5 @@ export const view = Submodel.defineView<Model, Message, HistogramChartInputs>((m
 		)
 	}
 
-	return h.div(
-		[h.Class(cn("relative grid h-full w-full place-items-center", inputs.className))],
-		[typography(h, { size: "2xs", tone: "muted" }, ["No data"])],
-	)
+	return chartNoData(h, { className: inputs.className })
 })

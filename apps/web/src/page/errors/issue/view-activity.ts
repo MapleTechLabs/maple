@@ -27,6 +27,7 @@ import {
 } from "./activity-format"
 import { Message } from "./message"
 import { typography } from "../../../ui/typography"
+import { spaced } from "../../../ui/spaced"
 
 // The issue timeline and the comment composer.
 
@@ -172,9 +173,9 @@ const messageRow = (
 								h.div(
 									[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-0.5")],
 									[
-										typography(h, { size: "sm", tone: "foreground", weight: "medium" },
-											[identity?.name ?? "Unknown"],
-										),
+										typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
+											identity?.name ?? "Unknown",
+										]),
 										...(isAgent
 											? [
 													badge(
@@ -231,9 +232,11 @@ const eventRow = (h: H, event: ErrorIssueEventDocument, previous: Item | undefin
 			typography(h, { tone: "foreground", weight: "medium" }, [EVENT_LABEL[event.type]]),
 			...(event.fromState && event.toState
 				? [
-						typography(h, { size: "2xs", tone: "muted", mono: true },
-							[event.fromState, " → ", event.toState],
-						),
+						typography(h, { size: "2xs", tone: "muted", mono: true }, [
+							event.fromState,
+							" → ",
+							event.toState,
+						]),
 					]
 				: []),
 			...authorLabel(h, event.actor),
@@ -278,7 +281,11 @@ export const issueTimeline = (
 							[
 								button(
 									h,
-									{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedShowEarlier())] },
+									{
+										variant: "ghost",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedShowEarlier())],
+									},
 									["Show ", countLabel(hiddenCount, "earlier event")],
 								),
 							],
@@ -349,53 +356,50 @@ export const commentComposer = (
 					),
 				},
 				[
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-2")],
-						[
-							textarea(h, {
-								id: "comment-input",
-								isUnstyled: true,
-								isDisabled: options.isPosting,
-								controlClassName:
-									"max-h-80 min-h-11 resize-none px-0 py-0 text-sm leading-relaxed placeholder:text-muted-foreground",
-								attributes: [
-									h.Value(options.draft),
-									h.Placeholder("Context, findings, links… markdown supported"),
-									h.OnInput((value) => Message.ChangedCommentDraft({ value })),
-									// Mod+Enter submits (`ClickedComment` guards empty and double sends).
-									h.OnKeyDownPreventDefault((key, modifiers) =>
-										key === "Enter" && (modifiers.metaKey || modifiers.ctrlKey)
-											? Option.some(Message.ClickedComment())
-											: Option.none(),
-									),
-								],
-							}),
-							h.div(
-								[
-									h.Class(
-										"flex items-center justify-between gap-3 text-xs text-muted-foreground",
-									),
-								],
-								[
-									kbdGroup(h, undefined, [
-										kbd(h, undefined, ["⌘"]),
-										kbd(h, undefined, ["↵"]),
-										h.span([h.Class("ml-1")], ["to comment"]),
-									]),
-									button(
-										h,
-										{
-											size: "sm",
-											isDisabled: !canSubmit,
-											isLoading: options.isPosting,
-											attributes: [h.OnClick(Message.ClickedComment())],
-										},
-										["Comment"],
-									),
-								],
-							),
-						],
-					),
+					spaced(h, { space: "2", fill: true }, [
+						textarea(h, {
+							id: "comment-input",
+							isUnstyled: true,
+							isDisabled: options.isPosting,
+							controlClassName:
+								"max-h-80 min-h-11 resize-none px-0 py-0 text-sm leading-relaxed placeholder:text-muted-foreground",
+							attributes: [
+								h.Value(options.draft),
+								h.Placeholder("Context, findings, links… markdown supported"),
+								h.OnInput((value) => Message.ChangedCommentDraft({ value })),
+								// Mod+Enter submits (`ClickedComment` guards empty and double sends).
+								h.OnKeyDownPreventDefault((key, modifiers) =>
+									key === "Enter" && (modifiers.metaKey || modifiers.ctrlKey)
+										? Option.some(Message.ClickedComment())
+										: Option.none(),
+								),
+							],
+						}),
+						h.div(
+							[
+								h.Class(
+									"flex items-center justify-between gap-3 text-xs text-muted-foreground",
+								),
+							],
+							[
+								kbdGroup(h, undefined, [
+									kbd(h, undefined, ["⌘"]),
+									kbd(h, undefined, ["↵"]),
+									h.span([h.Class("ml-1")], ["to comment"]),
+								]),
+								button(
+									h,
+									{
+										size: "sm",
+										isDisabled: !canSubmit,
+										isLoading: options.isPosting,
+										attributes: [h.OnClick(Message.ClickedComment())],
+									},
+									["Comment"],
+								),
+							],
+						),
+					]),
 				],
 			),
 		],

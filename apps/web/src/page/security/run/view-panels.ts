@@ -27,6 +27,7 @@ import { Message, type Model, type UnitFilter } from "./model"
 import { emptyMessage } from "../../../ui/empty"
 import { typography, typographyClass } from "../../../ui/typography"
 import { vstack } from "../../../ui/stack"
+import { strip } from "../../../ui/rule"
 
 // The run's coverage ledger, its gaps and the event log.
 
@@ -167,8 +168,7 @@ export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Ht
 	])
 
 const ledgerToggle = (h: H, label: string): Html =>
-	h.div(
-		[h.Class("border-t px-4 py-2.5")],
+	strip(h, { kind: "foot" },
 		[
 			textLink(h, { tone: "muted", className: "text-xs underline", onClick: Message.ToggledLedger() }, [
 				label,
@@ -317,8 +317,7 @@ export const eventsPanel = (
 		}),
 		...(AsyncData.hasData(model.events.data) && model.hasMoreOlder && events.length >= EVENTS_PAGE
 			? [
-					h.div(
-						[h.Class("border-t px-4 py-2.5")],
+					strip(h, { kind: "foot" },
 						[
 							textLink(
 								h,

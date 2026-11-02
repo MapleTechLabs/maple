@@ -9,6 +9,7 @@ import { input } from "../../../ui/input"
 import { label } from "../../../ui/label"
 import { typography } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { spaced } from "../../../ui/spaced"
 
 // `ImageDropzone` and `TypeToConfirmField`. The parent owns `isDragging` and checks the picked
 // file with `checkImage`.
@@ -135,15 +136,12 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 		...(options.title === undefined
 			? [h.div([h.Class("space-y-1.5")], [...(isReadOnly ? [] : [actions]), ...hintLine])]
 			: [
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-1")],
-						[
-							typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "div" }, [
-								options.title,
-							]),
-							...hintLine,
-						],
-					),
+					spaced(h, { space: "1", fill: true }, [
+						typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "div" }, [
+							options.title,
+						]),
+						...hintLine,
+					]),
 					...(isReadOnly ? [] : [actions]),
 				]),
 		fileInput(h, {

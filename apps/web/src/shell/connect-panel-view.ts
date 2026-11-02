@@ -23,6 +23,7 @@ import { panel } from "../ui/panel"
 import * as PopoverView from "../ui/popover"
 import { skeleton } from "../ui/skeleton"
 import { statusDot } from "../ui/status-dot"
+import { toneBoxClass } from "../ui/tone-box"
 import { type CopyField, Message, type Model, POPOVER_ID, realServices } from "./connect-panel"
 import { typography } from "../ui/typography"
 import { hstack } from "../ui/stack"
@@ -54,9 +55,7 @@ const statusPill = (h: H, model: Model): Html => {
 			pill: true,
 			className: cn(
 				"gap-1.5 text-2xs transition-colors sm:text-2xs",
-				isConnected
-					? "border-severity-info-a3 bg-severity-info-a2 text-severity-info"
-					: "border-primary-a3 bg-primary-a2 text-primary",
+				toneBoxClass(isConnected ? "info" : "primary"),
 			),
 		},
 		isConnected

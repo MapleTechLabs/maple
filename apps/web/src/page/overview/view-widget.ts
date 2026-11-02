@@ -6,6 +6,7 @@ import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
+import { swatch } from "../../ui/swatch"
 
 // A read-only widget shell in view
 // mode with no widget actions: title, hoisted legend chips, headline value, content and footer.
@@ -32,19 +33,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 							h.Class("flex min-w-0 shrink items-center gap-1.5 text-xs text-foreground"),
 						],
 						[
-							h.span([
-								h.Class(
-									cn(
-										"size-2 shrink-0 rounded-xs",
-										item.dashed === true && "border border-dashed",
-									),
-								),
-								h.Style(
-									item.dashed === true
-										? { "border-color": item.color }
-										: { "background-color": item.color },
-								),
-							]),
+							swatch(h, { color: item.color, dashed: item.dashed }),
 							h.span([h.Class("truncate")], [item.label]),
 						],
 					),

@@ -18,6 +18,7 @@ import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { queryPanelBar } from "../../kit/query-panel-bar"
 
 // `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
@@ -39,15 +40,14 @@ const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text
 
 const header = (h: H, rawSql: RawSqlState): Html => {
 	const issue = rawSqlIssue(rawSql.draft.sql)
-	return hstack(h, { gap: "2", className: "px-3 py-2 bg-surface-sunken" },
-		[
+	return queryPanelBar(h, [
 			iconButton(
 				h,
 				{
 					size: "icon-xs",
 					label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
 					hasTooltip: false,
-					className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
+					className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
 				},
 				[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],

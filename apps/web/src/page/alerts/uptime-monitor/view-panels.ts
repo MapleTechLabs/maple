@@ -47,6 +47,7 @@ import type { CheckPoint, CheckSample, CheckStats, Model, PhasePoint, UptimeWind
 import { CHECK_HEALTH_FILL, uptimePanelBody } from "../shared/uptime-view"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { chartFrameClass } from "../../../ui/chart-frame"
 
 // The monitor page's panels: response time, the checks list and the side panels.
 
@@ -341,7 +342,7 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 				gradientPrefix: "uptime-latency",
 				showTooltip: true,
 			}),
-			className: "h-full w-full aspect-auto",
+			className: chartFrameClass("fill"),
 			legend: fixedMetricLegend(
 				h,
 				series.map((entry) => ({
@@ -909,7 +910,7 @@ const PhaseChartView = Submodel.defineView<
 		chartId: "uptime-phases",
 		spec: inputs.spec,
 		ariaLabel: "Response time breakdown by phase",
-		className: "h-full w-full aspect-auto",
+		className: chartFrameClass("fill"),
 		legend: inputs.legend,
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) =>

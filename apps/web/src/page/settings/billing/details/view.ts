@@ -19,6 +19,7 @@ import { type AddressField, Message, type Model } from "./model"
 import { COUNTRY_NAMES, TYPE_OPTIONS } from "./update"
 import { typography } from "../../../../ui/typography"
 import { hstack } from "../../../../ui/stack"
+import { grid } from "../../../../ui/grid"
 
 type H = HtmlBuilder<Message>
 
@@ -29,19 +30,30 @@ const changed = (field: AddressField) => (value: string) => Message.ChangedField
 /** A tax ID as it prints: value, type and Stripe's verification badge. */
 export const taxIdValue = <M>(h: HtmlBuilder<M>, taxId: BillingTaxId): Html => {
 	const verification = verificationBadge(taxId.verificationStatus)
-	return hstack(h, { gap: "3", shrink: true, as: "span" },
-		[
-			typography(h, { mono: true, numeric: true }, [taxId.value]),
-			typography(h, { tone: "muted", truncate: true }, [taxIdLabel(taxId.type)]),
-			...(verification === null ? [] : [badge(h, { size: "sm", variant: verification.variant }, [verification.label])]),
-		],
-	)
+	return hstack(h, { gap: "3", shrink: true, as: "span" }, [
+		typography(h, { mono: true, numeric: true }, [taxId.value]),
+		typography(h, { tone: "muted", truncate: true }, [taxIdLabel(taxId.type)]),
+		...(verification === null
+			? []
+			: [badge(h, { size: "sm", variant: verification.variant }, [verification.label])]),
+	])
 }
 
 const countryField = (h: H, model: Model): Html => {
 	const state = stateFor(model.country ?? "")
 	return field(h, { state }, [
-		fieldLabel(h, { ids: { control: "billing-country-input", label: "billing-country-label", error: "billing-country-error" }, state }, "Country"),
+		fieldLabel(
+			h,
+			{
+				ids: {
+					control: "billing-country-input",
+					label: "billing-country-label",
+					error: "billing-country-error",
+				},
+				state,
+			},
+			"Country",
+		),
 		h.submodel({
 			slotId: "billing-country",
 			model: model.countryBox,
@@ -61,46 +73,44 @@ const countryField = (h: H, model: Model): Html => {
 const addTaxRow = (h: H, model: Model, profile: BillingProfile): Html => {
 	const state = stateFor(model.taxValue, model.isMissingTaxValue)
 	return field(h, { state, className: "gap-1.5" }, [
-		hstack(h, { gap: "2", wrap: true },
-			[
-				h.submodel({
-					slotId: "billing-tax-type",
-					model: model.taxType,
-					view: SelectView.view,
-					toParentMessage: (message) => Message.GotTaxTypeMessage({ message }),
-					viewInputs: {
-						entries: TYPE_OPTIONS.map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
-						ariaLabel: "Tax ID type",
-						size: "sm",
-						className: "w-48",
-						toView: (parts) => h.div([h.Class("contents")], parts),
-					},
-				}),
-				input(h, {
-					id: "billing-tax-value",
-					className: "min-w-0 flex-1 font-mono",
-					attributes: [
-						h.AriaLabel("Tax ID"),
-						h.Value(model.taxValue),
-						h.Placeholder(taxIdExampleFor(model.taxType.value, profile.address?.country)),
-						h.OnInput((value) => Message.ChangedTaxValue({ value })),
-						h.OnKeyDownPreventDefault((key) =>
-							key === "Enter" ? Option.some(Message.PressedTaxKey({ key })) : Option.none(),
-						),
-					],
-				}),
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "outline",
-						isLoading: model.isAddingTax,
-						attributes: [h.OnClick(Message.ClickedAddTax())],
-					},
-					["Add"],
-				),
-			],
-		),
+		hstack(h, { gap: "2", wrap: true }, [
+			h.submodel({
+				slotId: "billing-tax-type",
+				model: model.taxType,
+				view: SelectView.view,
+				toParentMessage: (message) => Message.GotTaxTypeMessage({ message }),
+				viewInputs: {
+					entries: TYPE_OPTIONS.map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+					ariaLabel: "Tax ID type",
+					size: "sm",
+					className: "w-48",
+					toView: (parts) => h.div([h.Class("contents")], parts),
+				},
+			}),
+			input(h, {
+				id: "billing-tax-value",
+				className: "min-w-0 flex-1 font-mono",
+				attributes: [
+					h.AriaLabel("Tax ID"),
+					h.Value(model.taxValue),
+					h.Placeholder(taxIdExampleFor(model.taxType.value, profile.address?.country)),
+					h.OnInput((value) => Message.ChangedTaxValue({ value })),
+					h.OnKeyDownPreventDefault((key) =>
+						key === "Enter" ? Option.some(Message.PressedTaxKey({ key })) : Option.none(),
+					),
+				],
+			}),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isLoading: model.isAddingTax,
+					attributes: [h.OnClick(Message.ClickedAddTax())],
+				},
+				["Add"],
+			),
+		]),
 		...(model.isMissingTaxValue
 			? [fieldError(h, { ids: fieldIds("billing-tax-value"), state }, "Enter the tax ID first.")]
 			: []),
@@ -112,7 +122,11 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 	field(h, { state: IDLE, className: "gap-2" }, [
 		fieldLabel(h, { ids: fieldIds("billing-tax-ids"), state: IDLE }, "Tax IDs"),
 		...(!profile.linked
-			? [typography(h, { size: "xs", tone: "muted", as: "p" }, ["Available once your organization has a plan."])]
+			? [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Available once your organization has a plan.",
+					]),
+				]
 			: [
 					...(profile.taxIds.length === 0
 						? []
@@ -131,7 +145,9 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 														label: `Remove ${taxIdLabel(taxId.type)} ${taxId.value}`,
 														className: "ml-auto text-muted-foreground",
 														isDisabled: model.removingTaxIds.includes(taxId.id),
-														attributes: [h.OnClick(Message.ClickedRemoveTax({ taxId }))],
+														attributes: [
+															h.OnClick(Message.ClickedRemoveTax({ taxId })),
+														],
 													},
 													[icon(h, "XmarkIcon")],
 												),
@@ -220,28 +236,27 @@ export const detailsDialog = (h: H, model: Model, profile: BillingProfile): Html
 					}),
 				],
 			),
-			h.div(
-				[h.Class("grid grid-cols-2 gap-2")],
-				[
-					textField(h, {
-						id: "billing-state",
-						label: "State / region",
-						value: model.state,
-						onInput: changed("state"),
-						placeholder: "Optional",
-						autoComplete: "address-level1",
-					}),
-					countryField(h, model),
-				],
-			),
+			grid(h, { cols: 2, gap: "2" }, [
+				textField(h, {
+					id: "billing-state",
+					label: "State / region",
+					value: model.state,
+					onInput: changed("state"),
+					placeholder: "Optional",
+					autoComplete: "address-level1",
+				}),
+				countryField(h, model),
+			]),
 			h.p(
 				[h.Class("text-2xs leading-4 text-muted-foreground")],
-				["Name and address are stored on your Stripe customer and printed on every invoice from the next one on."],
+				[
+					"Name and address are stored on your Stripe customer and printed on every invoice from the next one on.",
+				],
 			),
 			taxIdsEditor(h, model, profile),
 		],
 	})
 
-export const view = Submodel.defineView<Model, Message, Readonly<{ profile: BillingProfile }>>((model, inputs, h) =>
-	detailsDialog(h, model, inputs.profile),
+export const view = Submodel.defineView<Model, Message, Readonly<{ profile: BillingProfile }>>(
+	(model, inputs, h) => detailsDialog(h, model, inputs.profile),
 )

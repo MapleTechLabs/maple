@@ -34,6 +34,7 @@ import type { Model } from "./model"
 import { breakdownKeyOf } from "./update"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, hstackClass } from "../../../ui/stack"
+import { chartFrameClass } from "../../../ui/chart-frame"
 
 // `MetricChart`, `MetricBreakdown` and `MetricMetadataPanel` (components/metrics/).
 
@@ -66,7 +67,7 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 								unit: chartUnitFromOtel(unit),
 								timeZone,
 								nowMs: model.nowMs,
-								className: "h-full w-full aspect-auto",
+								className: chartFrameClass("fill"),
 								showTooltip: true,
 								legend: draft.groupBy.length > 0 ? "visible" : "hidden",
 							},

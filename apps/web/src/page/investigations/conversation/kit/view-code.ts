@@ -49,7 +49,7 @@ const action = <M>(
 			hasTooltip: false,
 			className: typographyClass({
 				tone: "muted",
-				className: "hover:text-foreground active:text-foreground",
+				hoverTone: "foreground",
 			}),
 			attributes: [
 				...(slot === null ? [] : [h.DataAttribute("streamdown", slot)]),

@@ -57,7 +57,7 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 							}),
 						),
 					),
-					h.Class("hover:text-foreground active:text-foreground"),
+					h.Class(typographyClass({ hoverTone: "foreground" })),
 				],
 				[workload.workloadKind, " ", workload.workloadName],
 			),

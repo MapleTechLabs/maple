@@ -24,6 +24,7 @@ import { DEFAULT_PRESET } from "./update"
 import { advisorsPanel, issuesPanel } from "./view-bottom"
 import { supabaseTable, supabaseTableLoading } from "./view-table"
 import { hstack } from "../../../../ui/stack"
+import { grid } from "../../../../ui/grid"
 
 // `/infra/supabase`: the organization's projects, their health and what needs a look.
 
@@ -110,13 +111,10 @@ const overview = (
 			...(status.revoked ? [revokedNotice(h)] : []),
 			summaryToolbar(h, views),
 			supabaseTable(h, views, isWaiting),
-			h.div(
-				[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
-				[
-					issuesPanel(h, model, { names, hasLogs: views.some((view) => view.logsEnabled) }),
-					advisorsPanel(h, model, { names, total: status.projects.length }),
-				],
-			),
+			grid(h, { cols: 1, lg: 2, gap: "4" }, [
+				issuesPanel(h, model, { names, hasLogs: views.some((view) => view.logsEnabled) }),
+				advisorsPanel(h, model, { names, total: status.projects.length }),
+			]),
 		],
 	)
 }

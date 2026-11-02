@@ -32,7 +32,6 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { pressable } from "../../../../ui/pressable"
 import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
-import { button } from "../../../../ui/button"
 import { textLink } from "../../../../ui/text-link"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
@@ -82,7 +81,8 @@ import {
 	servicesTable,
 	subscriptionsTable,
 } from "./view-tables"
-import { typography, typographyClass } from "../../../../ui/typography"
+import { removableChip } from "../../../../ui/removable-chip"
+import { typography } from "../../../../ui/typography"
 import { hstack } from "../../../../ui/stack"
 
 // `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPageParts` and `titleRow` are what the lab reuses.
@@ -209,36 +209,7 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 const regionChip = (h: H, region: string): Html => {
 	const label = `region ${region}`
 	return hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] }, [
-		hstack(
-			h,
-			{
-				gap: "1",
-				inline: true,
-				as: "span",
-				className: typographyClass({
-					size: "3xs",
-					tone: "muted",
-					mono: true,
-					className: "rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5",
-				}),
-			},
-			[
-				typography(h, { tone: "soft", truncate: true, className: "max-w-[22ch]" }, [label]),
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "icon-2xs",
-						className: typographyClass({
-							tone: "muted",
-							className: "hover:text-foreground active:text-foreground",
-						}),
-						attributes: [h.AriaLabel(`Remove ${label}`), h.OnClick(Message.ClickedClearRegion())],
-					},
-					[icon(h, "XmarkIcon")],
-				),
-			],
-		),
+		removableChip(h, { label, onRemove: Message.ClickedClearRegion() }),
 		textLink(
 			h,
 			{

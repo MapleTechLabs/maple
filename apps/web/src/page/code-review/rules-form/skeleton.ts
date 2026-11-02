@@ -9,6 +9,7 @@ import { ALL_CATEGORIES } from "./state"
 import { valueState } from "./view-fields"
 import { typography } from "../../../ui/typography"
 import { vstack } from "../../../ui/stack"
+import { skeletonSwitchClass } from "../../../ui/skeleton"
 
 // `RulesFormView` before its config loads: the real field labels and hints, bars for the values.
 
@@ -53,7 +54,7 @@ const toggleSkeleton = <M>(
 				ids: idsOf(mode, options.slug),
 				label: options.label,
 				description: options.description,
-				control: [bar(h, "h-5 w-9 rounded-full")],
+				control: [bar(h, skeletonSwitchClass())],
 			})
 		: fieldSkeleton(h, { mode, ...options, control: "h-8 sm:w-1/2" })
 

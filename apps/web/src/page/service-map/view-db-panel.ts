@@ -29,7 +29,9 @@ import {
 	topQueries,
 } from "./view-db-sections"
 import { typography } from "../../ui/typography"
-import { hstack, vstack } from "../../ui/stack"
+import { hstack } from "../../ui/stack"
+import { sidePanelFrame } from "../kit/side-panel"
+import { grid } from "../../ui/grid"
 
 // The database detail panel.
 // TODO(gcp): `GcpCloudSqlSection` renders only while a GCP connection collects metrics; not ported.
@@ -98,68 +100,59 @@ const metricsGrid = (h: H, metrics: PanelMetrics): Html => {
 		[h.Class("space-y-3")],
 		[
 			eyebrow(h, { as: "h4" }, ["Metrics"]),
-			h.div(
-				[h.Class("grid grid-cols-2 gap-x-6 gap-y-4")],
-				[
-					metricTile(
+			grid(h, { cols: 2, gapX: "6", gapY: "4" }, [
+				metricTile(
+					h,
+					"Queries",
+					metricValue(h, undefined, sampled(metrics.hasSampling, formatNumber(metrics.queryCount))),
+				),
+				metricTile(
+					h,
+					"Throughput",
+					metricValue(
 						h,
-						"Queries",
-						metricValue(
-							h,
-							undefined,
-							sampled(metrics.hasSampling, formatNumber(metrics.queryCount)),
+						undefined,
+						sampled(metrics.hasSampling, formatRate(metrics.callsPerSecond)),
+					),
+					["calls/s"],
+				),
+				metricTile(
+					h,
+					"Error rate",
+					metricValue(h, errorRateClass(metrics.errorRate), [formatErrorRate(metrics.errorRate)]),
+				),
+				metricTile(
+					h,
+					"P50 latency",
+					metricValue(
+						h,
+						cn(p50 === null ? "text-muted-foreground" : latencyToneClass(p50, "p50")),
+						[p50 === null ? EMPTY_VALUE : formatLatency(p50)],
+					),
+				),
+				metricTile(
+					h,
+					"P95 latency",
+					metricValue(
+						h,
+						cn(
+							p95 === null
+								? "text-muted-foreground"
+								: p50 !== null && p95 > p50 * 3
+									? "text-severity-warn"
+									: latencyToneClass(p95, "p95"),
 						),
+						[p95 === null ? EMPTY_VALUE : formatLatency(p95)],
 					),
-					metricTile(
-						h,
-						"Throughput",
-						metricValue(
-							h,
-							undefined,
-							sampled(metrics.hasSampling, formatRate(metrics.callsPerSecond)),
-						),
-						["calls/s"],
-					),
-					metricTile(
-						h,
-						"Error rate",
-						metricValue(h, errorRateClass(metrics.errorRate), [
-							formatErrorRate(metrics.errorRate),
-						]),
-					),
-					metricTile(
-						h,
-						"P50 latency",
-						metricValue(
-							h,
-							cn(p50 === null ? "text-muted-foreground" : latencyToneClass(p50, "p50")),
-							[p50 === null ? EMPTY_VALUE : formatLatency(p50)],
-						),
-					),
-					metricTile(
-						h,
-						"P95 latency",
-						metricValue(
-							h,
-							cn(
-								p95 === null
-									? "text-muted-foreground"
-									: p50 !== null && p95 > p50 * 3
-										? "text-severity-warn"
-										: latencyToneClass(p95, "p95"),
-							),
-							[p95 === null ? EMPTY_VALUE : formatLatency(p95)],
-						),
-					),
-					metricTile(
-						h,
-						"Avg latency",
-						metricValue(h, cn(latencyToneClass(metrics.avgLatencyMs, "avg")), [
-							formatLatency(metrics.avgLatencyMs),
-						]),
-					),
-				],
-			),
+				),
+				metricTile(
+					h,
+					"Avg latency",
+					metricValue(h, cn(latencyToneClass(metrics.avgLatencyMs, "avg")), [
+						formatLatency(metrics.avgLatencyMs),
+					]),
+				),
+			]),
 		],
 	)
 }
@@ -201,7 +194,7 @@ export const databasePanel = (h: H, model: Model, inputs: DatabasePanelInputs): 
 	const hyperdrive = hyperdriveOf(model, inputs.nodeId)
 	const isWaiting =
 		AsyncData.isLoading(model.dbSummary.data) || AsyncData.isRefreshing(model.dbSummary.data)
-	return vstack(h, { className: "h-full bg-background overflow-hidden" }, [
+	return sidePanelFrame(h, [
 		header(h, inputs),
 		scrollArea(h, { idPrefix: "service-map-db-scroll", className: "flex-1 min-h-0" }, [
 			h.div(

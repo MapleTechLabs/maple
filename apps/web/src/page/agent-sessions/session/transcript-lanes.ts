@@ -15,6 +15,7 @@ import { payloadSection } from "./transcript-blocks"
 import { avatar, CLOCK, clockOf, LABEL, META, row, SPEAKER } from "./transcript-shell"
 import { REST_LOAD_FAILURE } from "./view-load"
 import { typography, typographyClass } from "../../../ui/typography"
+import { fillRule } from "../../../ui/rule"
 import { hstack } from "../../../ui/stack"
 
 // The transcript's structure: agent lanes, parallel markers, capture notes and dividers.
@@ -196,7 +197,7 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 					", which records ",
 					CAPTURES_LABEL[note.captures],
 				]),
-				h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], []),
+				fillRule(h),
 			]),
 		])
 	const scope = note.scope === "session" ? `${note.anyCaptured ? "most of " : ""}this session` : "this turn"

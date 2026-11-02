@@ -15,6 +15,7 @@ import { collectMinimapSpans } from "./layout"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "../../../../ui/typography"
+import { layer } from "../../../../ui/layer"
 
 // The Timeline's chrome: `TraceTimelineSearch`, the toolbar with `TraceDepthControls`, the fit
 // button and `ColorByPicker`, `TraceTimelineMinimap` and `TraceTimelineTimeAxis`.
@@ -57,7 +58,7 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 								label: "Clear search",
 								size: "icon-2xs",
 								hasTooltip: false,
-								className: typographyClass({ tone: "muted", className: "shrink-0 hover:text-foreground active:text-foreground" }),
+								className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
 								attributes: [h.OnClick(Message.ClickedClearSearch())],
 							},
 							[icon(h, "XmarkIcon", { size: 12 })],
@@ -272,11 +273,9 @@ export const minimap = (h: H, model: Model): Html => {
 			h.OnDoubleClick(Message.ClickedFit()),
 		],
 		[
-			h.div(
-				[
-					h.Class("pointer-events-none absolute inset-0"),
-					h.Style({ "padding-top": "2px", "padding-bottom": "2px" }),
-				],
+			layer(
+				h,
+				{ attributes: [h.Style({ "padding-top": "2px", "padding-bottom": "2px" })] },
 				spans.map((span) =>
 					h.div(
 						[

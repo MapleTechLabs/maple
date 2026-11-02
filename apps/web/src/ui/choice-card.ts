@@ -12,6 +12,24 @@ const UNCHECKED = "border-border group-hover:border-border-strong group-hover:bg
 
 const CHECKED = "border-primary bg-primary-a1"
 
+const CHECK_BOX = "flex size-4 shrink-0 items-center justify-center rounded-sm border"
+
+/**
+ * The 16px square a choice card draws its tick in, filled primary while checked. `drawn` is for a
+ * tick drawn by stroke: the fill eases with it and the empty box firms on the card's hover.
+ */
+export const choiceCheckClass = (isChecked: boolean, drawn = false, className?: string | false): string =>
+	cn(
+		CHECK_BOX,
+		drawn && "transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
+		isChecked
+			? "border-primary bg-primary text-primary-foreground"
+			: drawn
+				? "border-input bg-background group-hover:border-border-strong"
+				: "border-input",
+		className,
+	)
+
 export type ChoiceCardOptions<M> = Readonly<{
 	type: "radio" | "checkbox"
 	/** The radio group's `name`. */

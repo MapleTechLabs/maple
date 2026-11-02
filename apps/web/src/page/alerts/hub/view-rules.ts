@@ -31,7 +31,9 @@ import type { Model } from "./model"
 import { ruleMenuId } from "./update"
 import { searchInput } from "../../../ui/search-input"
 import { typography, typographyClass } from "../../../ui/typography"
+import { stripClass } from "../../../ui/rule"
 import { hstack } from "../../../ui/stack"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // `RulesTab`: the hub's Rules tab.
 
@@ -174,8 +176,9 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 						onClear: Message.ClickedClearRuleFilters(),
 						className: "py-12",
 					})
-				: h.div(
-						[h.Class("overflow-x-auto rounded-md border")],
+				: borderedBox(
+						h,
+						{ overflow: "x-auto" },
 						[
 							h.div(
 								[h.Class("min-w-[900px]")],
@@ -185,7 +188,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 											h.Class(
 												cn(
 													ROW_GRID,
-													typographyClass({ size: "xs", tone: "muted", className: "border-b px-4 py-2" }),
+													typographyClass({ size: "xs", tone: "muted", className: stripClass("head") }),
 												),
 											),
 										],

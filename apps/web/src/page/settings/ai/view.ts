@@ -39,6 +39,7 @@ import { Message, type Model, type Provider } from "./model"
 import { isLimitsDirty, limitsDraftOf } from "./update"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { gridClass } from "../../../ui/grid"
 
 type H = HtmlBuilder<Message>
 
@@ -297,7 +298,7 @@ const providerChoice = (h: H, model: Model, current: OpenRouterKeyDocument): Rea
 	const isInUse = current.entitled && current.configured
 	const selected: Provider = model.picked ?? (isInUse ? "openrouter" : "managed")
 	return [
-		RadioGroup.radioGroup(h, { label: "Model provider", className: "grid gap-3 sm:grid-cols-2" }, [
+		RadioGroup.radioGroup(h, { label: "Model provider", className: gridClass({ sm: 2, gap: "3" }) }, [
 			providerCard(h, {
 				value: "managed",
 				selected,

@@ -28,6 +28,7 @@ import { sessionTab } from "./view-session"
 import { noLinkedTraces } from "./view-timeline"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, vstack } from "../../../ui/stack"
+import { scrollRegion } from "../../../ui/scroll-region"
 
 // The session rail: Events, Traces and Session tabs.
 // TODO(rail-virtualize): the event list renders every row; long sessions should virtualize.
@@ -160,7 +161,9 @@ const filterButton = (
 			label: `${FILTER_LABELS[config.filter]} (${config.count})`,
 			className: cn(
 				"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors",
-				config.isActive ? config.selected : cn(config.tone, "hover:bg-surface-sunken active:bg-surface-sunken"),
+				config.isActive
+					? config.selected
+					: cn(config.tone, "hover:bg-surface-sunken active:bg-surface-sunken"),
 				config.count === 0 && !config.isActive && "text-muted-foreground opacity-45",
 			),
 		},
@@ -345,9 +348,9 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 							),
 							...(visual.trail
 								? [
-										typography(h, { size: "3xs", tone: "muted", className: "shrink-0" },
-											[visual.trail],
-										),
+										typography(h, { size: "3xs", tone: "muted", className: "shrink-0" }, [
+											visual.trail,
+										]),
 									]
 								: []),
 						],
@@ -419,33 +422,26 @@ const eventsTab = (h: H, model: RailView): Html =>
 		onData: (events) => {
 			const filter = model.eventFilter
 			const rows = filter === "all" ? events : events.filter((ev) => ev.type === filter)
-			return vstack(h, { grow: true, className: "min-h-0" },
-				[
-					filterBar(h, model, events),
-					rows.length === 0
-						? h.div(
-								[
-									h.Class(
-										"grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground",
-									),
-								],
-								[
-									`No ${filter === "all" ? "events" : FILTER_LABELS[filter].toLowerCase()} in this session.`,
-								],
-							)
-						: h.div(
-								[h.Class("min-h-0 flex-1 overflow-y-auto")],
-								[
-									h.ul(
-										[h.Class("relative divide-y divide-border font-mono text-xs")],
-										rows.map((ev, index) =>
-											eventLine(h, model, ev, index, filter === "network"),
-										),
-									),
-								],
+			return vstack(h, { grow: true, className: "min-h-0" }, [
+				filterBar(h, model, events),
+				rows.length === 0
+					? h.div(
+							[
+								h.Class(
+									"grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground",
+								),
+							],
+							[
+								`No ${filter === "all" ? "events" : FILTER_LABELS[filter].toLowerCase()} in this session.`,
+							],
+						)
+					: scrollRegion(h, {}, [
+							h.ul(
+								[h.Class("relative divide-y divide-border font-mono text-xs")],
+								rows.map((ev, index) => eventLine(h, model, ev, index, filter === "network")),
 							),
-				],
-			)
+						]),
+			])
 		},
 	})
 
@@ -473,41 +469,39 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 						),
 					]
 				: []),
-			hstack(h, { gap: "2.5" },
-				[
-					textLink(
-						h,
-						{
-							tone: "muted",
-							isMono: true,
-							onClick: Message.RequestedSeekToTimestamp({ timestamp: summary.startTime }),
-							className: "w-10 shrink-0 text-left text-xs tabular-nums",
-						},
-						[clockAt(model, summary.startTime)],
+			hstack(h, { gap: "2.5" }, [
+				textLink(
+					h,
+					{
+						tone: "muted",
+						isMono: true,
+						onClick: Message.RequestedSeekToTimestamp({ timestamp: summary.startTime }),
+						className: "w-10 shrink-0 text-left text-xs tabular-nums",
+					},
+					[clockAt(model, summary.startTime)],
+				),
+				httpSpanLabel(h, {
+					spanName: summary.rootSpanName || "trace",
+					spanAttributes: parseAttributes(summary.rootSpanAttributes),
+					spanKind: summary.rootSpanKind,
+					className: "min-w-0 flex-1",
+					textClassName: cn(
+						typographyClass({ size: "xs", weight: "medium", truncate: true }),
+						isError ? "text-severity-error" : "text-foreground",
 					),
-					httpSpanLabel(h, {
-						spanName: summary.rootSpanName || "trace",
-						spanAttributes: parseAttributes(summary.rootSpanAttributes),
-						spanKind: summary.rootSpanKind,
-						className: "min-w-0 flex-1",
-						textClassName: cn(
-							typographyClass({ size: "xs", weight: "medium", truncate: true }),
-							isError ? "text-severity-error" : "text-foreground",
-						),
-					}),
-					h.span(
-						[
-							h.Class(
-								cn(
-									"shrink-0 font-mono text-2xs tabular-nums",
-									isError ? "font-semibold text-severity-error" : "text-muted-foreground",
-								),
+				}),
+				h.span(
+					[
+						h.Class(
+							cn(
+								"shrink-0 font-mono text-2xs tabular-nums",
+								isError ? "font-semibold text-severity-error" : "text-muted-foreground",
 							),
-						],
-						[formatNetDuration(Math.round(summary.durationMs))],
-					),
-				],
-			),
+						),
+					],
+					[formatNetDuration(Math.round(summary.durationMs))],
+				),
+			]),
 			h.div(
 				[h.Class("flex items-center gap-2 pl-[50px]")],
 				[

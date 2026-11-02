@@ -14,6 +14,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
+import { strip } from "../../ui/rule"
 
 // `PlanetScaleMetricsHealth`.
 
@@ -41,8 +42,7 @@ export const metricsHealth = (
 	const lastAt = metricsLastCollectedAt(status)
 	const excluded = status.scrape_target?.exclude_branches ?? []
 	const isOpen = model.planetscaleCard.isDetailsOpen
-	return h.div(
-		[h.Class("border-t border-border-subtle p-4")],
+	return strip(h, { kind: "block" },
 		[
 			hstack(h, { gap: "2", wrap: true, className: typographyClass({ size: "xs" }) }, [
 				statusDot(h, {

@@ -6,9 +6,9 @@ import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { badge } from "../../ui/display"
-import { item, itemActions, itemContent, itemMedia } from "../../ui/item"
+import { item, itemActions, itemContent, itemMedia, mediaCard } from "../../ui/item"
 import { panel } from "../../ui/panel"
-import { skeleton } from "../../ui/skeleton"
+import { skeletonBlock } from "../../ui/skeleton"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { liveChecklist } from "../kit/connect-flow"
 import { catalogEntry } from "./catalog"
@@ -22,6 +22,7 @@ import { metricsHealth } from "./view-planetscale-parts"
 import { pickerDialog } from "./view-planetscale-picker"
 import { typography } from "../../ui/typography"
 import { hstack, vstack } from "../../ui/stack"
+import { strip } from "../../ui/rule"
 
 // `PlanetScaleIntegrationCard` and `PlanetScaleWebhooks`: the source page's Connection tab.
 
@@ -196,8 +197,7 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 			),
 			isLive
 				? metricsHealth(h, model, status, timeZone)
-				: h.div(
-						[h.Class("border-t border-border-subtle p-4")],
+				: strip(h, { kind: "block" },
 						[
 							liveChecklist(h, { title: "Checking the connection", rows: setup.checks }),
 							...(isWatchExpired(model.planetscaleCard, model.nowMs) ? [watchExpired(h)] : []),
@@ -211,8 +211,8 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 
 export const planetscaleCard = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.statuses.planetscale.data, {
-		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "40" }),
+		onLoading: () => skeletonBlock(h, { height: "40" }),
 		onFailure: () => statusFailed(h),
 		onStale: () => statusFailed(h),
 		onRefreshing: (status) => byStatus(h, model, status, timeZone),
@@ -242,8 +242,7 @@ const planetscaleReconnect = (h: H, text: string): Html =>
 
 /** A failed status read is not "not connected": no connect offer over a maybe-authorized org. */
 const statusFailed = (h: H): Html =>
-	item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-		itemMedia(h, {}, [integrationIconPlate(h, BRAND)]),
+	mediaCard(h, integrationIconPlate(h, BRAND), [
 		itemContent(h, [
 			heading(h, { level: 3, variant: "section" }, ["PlanetScale"]),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [

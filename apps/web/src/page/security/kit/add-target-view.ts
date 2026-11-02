@@ -28,6 +28,7 @@ import { formatUsd } from "./format"
 import { modelPicker } from "./model-picker"
 import { typography } from "../../../ui/typography"
 import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { grid, gridClass } from "../../../ui/grid"
 
 // The Add audit target form inside the shared FormDialog.
 
@@ -169,59 +170,51 @@ const profileField = (h: H, model: Model): Html => {
 			inputId: `${DIALOG_ID}-profile-${profile.value}-input`,
 		})),
 	}
-	return vstack(h, { gap: "2" },
-		[
-			typography(h, { size: "sm", weight: "medium", attributes: [h.Id(`${DIALOG_ID}-profile-label`)] }, ["Profile"]),
-			RadioGroup.radioGroup(
-				h,
-				{ label: "Profile", className: "grid grid-cols-2 gap-2" },
-				PROFILES.map((profile) => {
-					const isChecked = Option.contains(model.profile.maybeValue, profile.value)
-					return label(
-						h,
-						{
-							// A card: the kit label's centring and medium weight stay off.
-							className: cn(
-								"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
-								isChecked
-									? "border-border-strong bg-surface-strong"
-									: "hover:bg-surface-sunken active:bg-surface-sunken",
-							),
-							attributes: [
-								h.Key(profile.value),
-								h.Id(RadioGroup.labelId(`${DIALOG_ID}-profile-${profile.value}-input`)),
-							],
-						},
-						[
-							...RadioGroup.radio(h, config, profile.value, "mt-0.5"),
-							vstack(h, { gap: "1", shrink: true, as: "span" },
-								[
-									typography(h, { size: "sm", weight: "medium" },
-										[
-											profile.label,
-											...(profile.hint === null
-												? []
-												: [
-														h.span(
-															[
-																h.Class(
-																	"ml-1.5 text-xs font-normal text-muted-foreground",
-																),
-															],
-															[profile.hint],
-														),
-													]),
-										],
-									),
-									typography(h, { size: "xs", tone: "muted" }, [profile.description]),
-								],
-							),
+	return vstack(h, { gap: "2" }, [
+		typography(h, { size: "sm", weight: "medium", attributes: [h.Id(`${DIALOG_ID}-profile-label`)] }, [
+			"Profile",
+		]),
+		RadioGroup.radioGroup(
+			h,
+			{ label: "Profile", className: gridClass({ cols: 2, gap: "2" }) },
+			PROFILES.map((profile) => {
+				const isChecked = Option.contains(model.profile.maybeValue, profile.value)
+				return label(
+					h,
+					{
+						// A card: the kit label's centring and medium weight stay off.
+						className: cn(
+							"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
+							isChecked
+								? "border-border-strong bg-surface-strong"
+								: "hover:bg-surface-sunken active:bg-surface-sunken",
+						),
+						attributes: [
+							h.Key(profile.value),
+							h.Id(RadioGroup.labelId(`${DIALOG_ID}-profile-${profile.value}-input`)),
 						],
-					)
-				}),
-			),
-		],
-	)
+					},
+					[
+						...RadioGroup.radio(h, config, profile.value, "mt-0.5"),
+						vstack(h, { gap: "1", shrink: true, as: "span" }, [
+							typography(h, { size: "sm", weight: "medium" }, [
+								profile.label,
+								...(profile.hint === null
+									? []
+									: [
+											h.span(
+												[h.Class("ml-1.5 text-xs font-normal text-muted-foreground")],
+												[profile.hint],
+											),
+										]),
+							]),
+							typography(h, { size: "xs", tone: "muted" }, [profile.description]),
+						]),
+					],
+				)
+			}),
+		),
+	])
 }
 
 const scopeChip = (h: H, path: string): Html =>
@@ -240,7 +233,8 @@ const scopeChip = (h: H, path: string): Html =>
 				{
 					label: `Remove ${path}`,
 					size: "icon-2xs",
-					className: "text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
+					className:
+						"text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 					attributes: [h.OnClick(Message.RemovedScopePath({ path }))],
 				},
 				[icon(h, "XmarkIcon", { size: 12 })],
@@ -266,7 +260,9 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 					...(model.scopePaths.length === 0
 						? []
 						: [
-								hstack(h, { gap: "1.5", align: "stretch", wrap: true },
+								hstack(
+									h,
+									{ gap: "1.5", align: "stretch", wrap: true },
 									model.scopePaths.map((path) => scopeChip(h, path)),
 								),
 							]),
@@ -300,54 +296,54 @@ const modelsField = (h: H, model: Model, error?: string): Html => {
 		settings !== null &&
 		model.discovery.value === settings.discoveryModel &&
 		model.validation.value === settings.validationModel
-	return vstack(h, { gap: "2" },
-		[
-			hstack(h, { gap: "3", align: "baseline", justify: "between" },
-				[
-					typography(h, { size: "sm", weight: "medium" }, ["Models"]),
-					...(isOrgDefault
-						? [typography(h, { size: "xs", tone: "muted" }, ["Using the org's defaults"])]
-						: []),
-				],
-			),
-			h.div(
-				[h.Class("grid grid-cols-2 gap-2")],
-				[
-					modelPicker(h, {
-						stage: "discovery",
-						model: model.discovery,
-						idPrefix: DIALOG_ID,
-						wrap: (message) => Message.GotDiscoveryMessage({ message }),
-					}),
-					modelPicker(h, {
-						stage: "validation",
-						model: model.validation,
-						idPrefix: DIALOG_ID,
-						wrap: (message) => Message.GotValidationMessage({ message }),
-					}),
-				],
-			),
-			...(error === undefined
-				? []
-				: [typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [error])]),
-			...(settings === null
-				? []
-				: [
-						typography(h, { size: "xs", tone: "muted", as: "p" },
-							[
-								`${formatUsd(Math.max(0, settings.monthlySpendLimitUsd - settings.spentUsd))} left of the org's ${formatUsd(settings.monthlySpendLimitUsd)} monthly limit. A run that reaches it stops and lists what it did not cover.`,
-							],
-						),
+	return vstack(h, { gap: "2" }, [
+		hstack(h, { gap: "3", align: "baseline", justify: "between" }, [
+			typography(h, { size: "sm", weight: "medium" }, ["Models"]),
+			...(isOrgDefault
+				? [typography(h, { size: "xs", tone: "muted" }, ["Using the org's defaults"])]
+				: []),
+		]),
+		grid(h, { cols: 2, gap: "2" }, [
+			modelPicker(h, {
+				stage: "discovery",
+				model: model.discovery,
+				idPrefix: DIALOG_ID,
+				wrap: (message) => Message.GotDiscoveryMessage({ message }),
+			}),
+			modelPicker(h, {
+				stage: "validation",
+				model: model.validation,
+				idPrefix: DIALOG_ID,
+				wrap: (message) => Message.GotValidationMessage({ message }),
+			}),
+		]),
+		...(error === undefined
+			? []
+			: [
+					typography(
+						h,
+						{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+						[error],
+					),
+				]),
+		...(settings === null
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`${formatUsd(Math.max(0, settings.monthlySpendLimitUsd - settings.spentUsd))} left of the org's ${formatUsd(settings.monthlySpendLimitUsd)} monthly limit. A run that reaches it stops and lists what it did not cover.`,
 					]),
-		],
-	)
+				]),
+	])
 }
 
 const startNowToggle = (h: H, model: Model): Html => {
 	const inputId = `${DIALOG_ID}-start-now`
 	return label(
 		h,
-		{ className: "flex items-center gap-2 text-sm font-normal", attributes: [h.Id(Checkbox.labelId(inputId))] },
+		{
+			className: "flex items-center gap-2 text-sm font-normal",
+			attributes: [h.Id(Checkbox.labelId(inputId))],
+		},
 		[
 			...Checkbox.view(h, {
 				model: { isChecked: model.startNow },

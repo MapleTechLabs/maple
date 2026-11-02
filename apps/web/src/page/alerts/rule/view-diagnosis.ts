@@ -26,6 +26,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { strip } from "../../../ui/rule"
 
 // `RuleDiagnosisPanel`: the rule's diagnosis.
 
@@ -112,8 +113,7 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 			),
 			...(isOpen
 				? [
-						h.div(
-							[h.Class("border-t px-4 py-2.5")],
+						strip(h, { kind: "foot" },
 							[
 								...(groupKeys.length > 0
 									? [

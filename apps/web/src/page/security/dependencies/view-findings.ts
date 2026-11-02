@@ -8,14 +8,14 @@ import { countLabel, formatRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
 import { pressable } from "../../../ui/pressable"
 import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
-import { laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { clickableRowClass, laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { textLink } from "../../../ui/text-link"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
@@ -32,6 +32,7 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "../../../ui/typography"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // The findings table: one row per advisory on a package in a lockfile, worst first as the server
 // sorts them, under a status and a repository filter.
@@ -301,10 +302,7 @@ const findingRow = (
 				cn("whitespace-nowrap text-right", WIDE_COLUMN),
 			),
 		],
-		cn(
-			"cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken",
-			isSelected && "bg-surface-strong",
-		),
+		clickableRowClass(isSelected),
 		[h.Key(finding.id), h.OnClick(open)],
 	)
 }
@@ -388,7 +386,7 @@ export const findingsSection = (
 						[
 							filteredEmpty(h, {
 								noun: "findings",
-								className: "rounded-md border border-dashed md:py-14",
+								className: emptyFrameClass("dashed"),
 								description:
 									status === "all"
 										? ""
@@ -396,8 +394,9 @@ export const findingsSection = (
 							}),
 						],
 					)
-	return h.section(
-		[h.AriaLabel("Vulnerable packages"), h.Class("overflow-hidden rounded-md border bg-card")],
+	return borderedBox(
+		h,
+		{ as: "section", overflow: "hidden", card: true, attributes: [h.AriaLabel("Vulnerable packages")] },
 		[toolbar(h, model, findings, repositories), ...productionHint(h, production), content],
 	)
 }

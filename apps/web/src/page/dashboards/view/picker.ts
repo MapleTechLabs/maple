@@ -22,6 +22,7 @@ import type { Model } from "./model"
 import { CHART_STYLES, PICKER_SECTIONS, PICKER_TABS, type PickerSection } from "./picker-catalog"
 import { typography } from "../../../ui/typography"
 import { vstack, vstackClass } from "../../../ui/stack"
+import { chartFrameClass } from "../../../ui/chart-frame"
 
 // The widget picker and the presets' thumbnails.
 
@@ -76,7 +77,7 @@ const chartPreview = (h: H, model: Model, chartId: string, key: string): Html =>
 					timeZone: "UTC",
 					chartId,
 					data: sampleDataOf(chartId),
-					className: "h-full w-full aspect-auto",
+					className: chartFrameClass("fill"),
 				})
 	return h.div([h.Class("aspect-[4/3] w-full overflow-hidden")], [content])
 }

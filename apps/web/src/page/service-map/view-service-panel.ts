@@ -25,6 +25,8 @@ import { pickTimeSearch } from "../infra/kit/view-tabs"
 import { infrastructureTab } from "./view-service-infra"
 import * as ServiceMap from "../../service-map/map/service-map"
 import { hstack, vstack, vstackClass } from "../../ui/stack"
+import { sidePanelFrame } from "../kit/side-panel"
+import { grid } from "../../ui/grid"
 
 type H = HtmlBuilder<Message>
 
@@ -57,14 +59,12 @@ const header = (
 		accentColor,
 		[
 			statusDot(h, { tone: healthTone(errorRate) }),
-			vstack(h, { shrink: true },
-				[
-					h.span([h.Class("text-sm font-semibold text-foreground truncate")], [inputs.serviceId]),
-					...(namespace
-						? [h.span([h.Class("text-3xs text-muted-foreground truncate")], [namespace])]
-						: []),
-				],
-			),
+			vstack(h, { shrink: true }, [
+				h.span([h.Class("text-sm font-semibold text-foreground truncate")], [inputs.serviceId]),
+				...(namespace
+					? [h.span([h.Class("text-3xs text-muted-foreground truncate")], [namespace])]
+					: []),
+			]),
 		],
 		[
 			iconButton(
@@ -103,56 +103,53 @@ const metrics = (h: H, overview: Overview): Html => {
 		[h.Class("space-y-3")],
 		[
 			eyebrow(h, { as: "h4" }, ["Metrics"]),
-			h.div(
-				[h.Class("grid grid-cols-2 gap-x-6 gap-y-4")],
-				[
-					metricTile(
+			grid(h, { cols: 2, gapX: "6", gapY: "4" }, [
+				metricTile(
+					h,
+					"Throughput",
+					metricValue(
 						h,
-						"Throughput",
-						metricValue(
-							h,
-							undefined,
-							overview === undefined
-								? [EMPTY_VALUE]
-								: sampled(overview.hasSampling, formatRate(overview.throughput)),
-						),
-						["req/s"],
+						undefined,
+						overview === undefined
+							? [EMPTY_VALUE]
+							: sampled(overview.hasSampling, formatRate(overview.throughput)),
 					),
-					metricTile(
-						h,
-						"Error rate",
-						metricValue(h, undefined, [
-							overview === undefined ? EMPTY_VALUE : errorRateValue(h, { rate: errorRate }),
-						]),
-					),
-					metricTile(
-						h,
-						"P50 latency",
-						metricValue(h, undefined, [
-							overview === undefined
-								? EMPTY_VALUE
-								: latencyValue(h, { ms: overview.p50LatencyMs, scale: "p50" }),
-						]),
-					),
-					metricTile(
-						h,
-						"P95 latency",
-						metricValue(h, undefined, [
-							overview === undefined
-								? EMPTY_VALUE
-								: latencyValue(h, {
-										ms: overview.p95LatencyMs ?? 0,
-										scale: "p95",
-										// A p95 three times its p50 is a long tail, whatever the absolute level.
-										className:
-											(overview.p95LatencyMs ?? 0) > overview.p50LatencyMs * 3
-												? "text-severity-warn"
-												: undefined,
-									}),
-						]),
-					),
-				],
-			),
+					["req/s"],
+				),
+				metricTile(
+					h,
+					"Error rate",
+					metricValue(h, undefined, [
+						overview === undefined ? EMPTY_VALUE : errorRateValue(h, { rate: errorRate }),
+					]),
+				),
+				metricTile(
+					h,
+					"P50 latency",
+					metricValue(h, undefined, [
+						overview === undefined
+							? EMPTY_VALUE
+							: latencyValue(h, { ms: overview.p50LatencyMs, scale: "p50" }),
+					]),
+				),
+				metricTile(
+					h,
+					"P95 latency",
+					metricValue(h, undefined, [
+						overview === undefined
+							? EMPTY_VALUE
+							: latencyValue(h, {
+									ms: overview.p95LatencyMs ?? 0,
+									scale: "p95",
+									// A p95 three times its p50 is a long tail, whatever the absolute level.
+									className:
+										(overview.p95LatencyMs ?? 0) > overview.p50LatencyMs * 3
+											? "text-severity-warn"
+											: undefined,
+								}),
+					]),
+				),
+			]),
 		],
 	)
 }
@@ -162,42 +159,36 @@ const cloudflareSection = (h: H, cloudflare: NonNullable<ReturnType<typeof cloud
 		[h.Class("space-y-3")],
 		[
 			separator(h, "horizontal", undefined),
-			hstack(h, { gap: "1.5" },
-				[
-					icon(h, "CloudflareIcon", { size: 12, style: { color: CLOUDFLARE_COLOR } }),
-					eyebrow(h, { as: "h4" }, ["Cloudflare edge"]),
-				],
-			),
-			h.div(
-				[h.Class("grid grid-cols-2 gap-x-6 gap-y-4")],
-				[
-					metricTile(
-						h,
-						"Requests",
-						metricValue(h, undefined, [formatNumber(cloudflare.requests)]),
-						["edge-reported (unsampled)"],
-					),
-					metricTile(
-						h,
-						"Error rate",
-						metricValue(h, undefined, [errorRateValue(h, { rate: cloudflare.errorRate })]),
-					),
-					metricTile(
-						h,
-						"CPU p99",
-						metricValue(h, undefined, [
-							cloudflare.cpuP99Ms === undefined
-								? EMPTY_VALUE
-								: latencyValue(h, { ms: cloudflare.cpuP99Ms, scale: "cpu" }),
-						]),
-					),
-					metricTile(
-						h,
-						"Duration p99",
-						metricValue(h, undefined, [latencyValue(h, { ms: cloudflare.latencyP99Ms, scale: "p99" })]),
-					),
-				],
-			),
+			hstack(h, { gap: "1.5" }, [
+				icon(h, "CloudflareIcon", { size: 12, style: { color: CLOUDFLARE_COLOR } }),
+				eyebrow(h, { as: "h4" }, ["Cloudflare edge"]),
+			]),
+			grid(h, { cols: 2, gapX: "6", gapY: "4" }, [
+				metricTile(h, "Requests", metricValue(h, undefined, [formatNumber(cloudflare.requests)]), [
+					"edge-reported (unsampled)",
+				]),
+				metricTile(
+					h,
+					"Error rate",
+					metricValue(h, undefined, [errorRateValue(h, { rate: cloudflare.errorRate })]),
+				),
+				metricTile(
+					h,
+					"CPU p99",
+					metricValue(h, undefined, [
+						cloudflare.cpuP99Ms === undefined
+							? EMPTY_VALUE
+							: latencyValue(h, { ms: cloudflare.cpuP99Ms, scale: "cpu" }),
+					]),
+				),
+				metricTile(
+					h,
+					"Duration p99",
+					metricValue(h, undefined, [
+						latencyValue(h, { ms: cloudflare.latencyP99Ms, scale: "p99" }),
+					]),
+				),
+			]),
 		],
 	)
 
@@ -280,45 +271,43 @@ export const servicePanel = (h: H, model: Model, inputs: ServicePanelInputs): Ht
 	const workloads = inputs.rows.workloads.filter((workload) => workload.serviceName === inputs.serviceId)
 	const runtimes = inputs.rows.runtimes.filter((runtime) => runtime.serviceName === inputs.serviceId)
 	const infraCount = workloads.length + runtimes.length
-	return vstack(h, { className: "h-full bg-background overflow-hidden" },
-		[
-			header(h, inputs, accentColor, errorRate, overview?.serviceNamespace ?? ""),
-			h.submodel({
-				slotId: "service-map-service-tabs",
-				model: model.serviceTabs,
-				view: TabsView.view,
-				toParentMessage: (message) => Message.GotServiceTabsMessage({ message }),
-				viewInputs: {
-					variant: "underline",
-					labels: ["Service", "Infrastructure"],
-					className: vstackClass({ grow: true, className: "min-h-0" }),
-					listClassName: "shrink-0 px-4 pt-2",
-					panelClassName: "flex-1 min-h-0 mt-0",
-					tabContent: (value, label) =>
-						value === "service"
-							? [icon(h, "NetworkNodesIcon", { size: 12 }), label]
-							: [
-									icon(h, "CubeIcon", { size: 12 }),
-									label,
-									...(infraCount > 0
-										? [
-												h.span(
-													[
-														h.Class(
-															"ml-1 text-4xs tabular-nums text-foreground-subtle",
-														),
-													],
-													[String(infraCount)],
-												),
-											]
-										: []),
-								],
-					panel: (value) =>
-						value === "service"
-							? serviceTab(h, model, inputs, overview)
-							: infrastructureTab(h, workloads, runtimes, pickTimeSearch(model.search)),
-				},
-			}),
-		],
-	)
+	return sidePanelFrame(h, [
+		header(h, inputs, accentColor, errorRate, overview?.serviceNamespace ?? ""),
+		h.submodel({
+			slotId: "service-map-service-tabs",
+			model: model.serviceTabs,
+			view: TabsView.view,
+			toParentMessage: (message) => Message.GotServiceTabsMessage({ message }),
+			viewInputs: {
+				variant: "underline",
+				labels: ["Service", "Infrastructure"],
+				className: vstackClass({ grow: true, className: "min-h-0" }),
+				listClassName: "shrink-0 px-4 pt-2",
+				panelClassName: "flex-1 min-h-0 mt-0",
+				tabContent: (value, label) =>
+					value === "service"
+						? [icon(h, "NetworkNodesIcon", { size: 12 }), label]
+						: [
+								icon(h, "CubeIcon", { size: 12 }),
+								label,
+								...(infraCount > 0
+									? [
+											h.span(
+												[
+													h.Class(
+														"ml-1 text-4xs tabular-nums text-foreground-subtle",
+													),
+												],
+												[String(infraCount)],
+											),
+										]
+									: []),
+							],
+				panel: (value) =>
+					value === "service"
+						? serviceTab(h, model, inputs, overview)
+						: infrastructureTab(h, workloads, runtimes, pickTimeSearch(model.search)),
+			},
+		}),
+	])
 }

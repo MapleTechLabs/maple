@@ -7,7 +7,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { icon, type IconName } from "../../../ui/icon"
 import { loadingMoreRow } from "../../../ui/list-footer"
-import { ariaSort, rowLink, sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { ariaSort, clickableRowClass, rowLink, sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { middleTruncate } from "../../../ui/middle-truncate"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { emptyValue, measure, NIL_VALUE } from "../../../ui/values"
@@ -439,7 +439,7 @@ const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): 
 		cellsOf(h, row, context).map((cell, column) =>
 			tableCell(h, [cell ?? emptyCell(h)], cn(CELL_CLASS, COLUMNS[column]?.responsive)),
 		),
-		cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", ROW_LIFT_TOOLTIPS),
+		cn(clickableRowClass(), ROW_LIFT_TOOLTIPS),
 		[
 			h.Key(row.sessionId),
 			h.DataAttribute("index", String(index)),

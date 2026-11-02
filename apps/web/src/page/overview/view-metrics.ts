@@ -28,6 +28,7 @@ import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
 import { widgetShell } from "./view-widget"
 import { typography } from "../../ui/typography"
+import { chartFrameClass } from "../../ui/chart-frame"
 
 type MetricsData = Pick<Model, "overviewSeries" | "logSeries" | "refinement" | "presence">
 type CardId = "throughput" | "error-rate" | "latency" | "log-volume"
@@ -355,7 +356,7 @@ const cardContent = (
 							chartId: item.id,
 							ariaLabel,
 							spec,
-							className: "h-full w-full aspect-auto",
+							className: chartFrameClass("fill"),
 						},
 						toParentMessage: (message: Chart.Message) =>
 							Message.GotChartMessage({ chartId: item.id, message }),

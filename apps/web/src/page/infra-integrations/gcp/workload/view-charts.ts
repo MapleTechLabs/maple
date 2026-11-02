@@ -29,6 +29,7 @@ import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "../../../../ui/typography"
 import { hstackClass, vstack } from "../../../../ui/stack"
+import { gridClass } from "../../../../ui/grid"
 
 // `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
@@ -159,7 +160,7 @@ export const workloadCharts = (
 	const xDomain = gcpBuckets(points, range.bucketSeconds).map(({ bucket }) => bucket)
 	return h.div(
 		[
-			h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2"),
+			h.Class(gridClass({ cols: 1, lg: 2, gap: "4" })),
 			h.Style(LINKED_CURSOR_STYLE),
 			h.OnMount(MountLinkedCursor()),
 		],

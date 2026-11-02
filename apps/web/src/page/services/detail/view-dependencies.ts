@@ -38,6 +38,7 @@ import {
 } from "./view-table-cells"
 import { typography } from "../../../ui/typography"
 import { hstack, vstackClass } from "../../../ui/stack"
+import { stripClass } from "../../../ui/rule"
 
 // `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge` (components/services/).
 // TODO(sampled-tooltip): an estimated rate's "Estimated ×N" tooltip is not ported (trigger only).
@@ -264,7 +265,7 @@ const loadingState = (h: H): Html =>
 					h,
 					{
 						gap: "3",
-						className: "h-11 border-b px-4 last:border-b-0",
+						className: stripClass("skeletonRow"),
 						attributes: [h.Key(String(index))],
 					},
 					[

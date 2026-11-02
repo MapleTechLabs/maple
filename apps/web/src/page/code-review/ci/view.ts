@@ -8,7 +8,7 @@ import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import type * as Select from "../../../ui/select"
@@ -61,7 +61,7 @@ const noCiRuns = (h: H): Html =>
 				["Open the GitHub integration"],
 			),
 		],
-		"rounded-md border border-dashed md:py-14",
+		emptyFrameClass("dashed"),
 	)
 
 const runsActions = (h: H, model: Model): Html =>
@@ -162,7 +162,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 					noun: "CI runs",
 					description: "Widen the window or clear the filters.",
 					onClear: Message.ClickedClearFilters(),
-					className: "rounded-md border border-dashed md:py-14",
+					className: emptyFrameClass("dashed"),
 				})
 			return empty(
 				h,
@@ -172,7 +172,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 						emptyDescription(h, ["No GitHub Actions run finished in this window. Widen the window."]),
 					]),
 				],
-				"rounded-md border border-dashed md:py-14",
+				emptyFrameClass("dashed"),
 			)
 		},
 	})

@@ -5,8 +5,8 @@ import type { Keyed } from "../../data/keyed"
 import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
-import { item, itemActions, itemContent, itemMedia } from "../../ui/item"
-import { skeleton } from "../../ui/skeleton"
+import { itemActions, itemContent, mediaCard } from "../../ui/item"
+import { skeletonBlock } from "../../ui/skeleton"
 import { type IntegrationBrand, integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { Message, type StatusName } from "./message"
 import type { Model } from "./model"
@@ -42,8 +42,7 @@ export const connectedIntegrationCard = (
 	options: ConnectedIntegrationCardOptions,
 ): Html =>
 	vstack(h, { gap: "4" }, [
-		item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-			itemMedia(h, {}, [integrationIconPlate(h, options.brand)]),
+		mediaCard(h, integrationIconPlate(h, options.brand), [
 			itemContent(
 				h,
 				[
@@ -97,8 +96,8 @@ export const integrationStatusCard = <S>(
 	options: Readonly<{ name: StatusName; failureTitle: string; render: (status: S) => Html }>,
 ): Html =>
 	AsyncData.match(status.data, {
-		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "32" }),
+		onLoading: () => skeletonBlock(h, { height: "32" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

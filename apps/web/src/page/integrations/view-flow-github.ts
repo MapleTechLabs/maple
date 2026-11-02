@@ -27,6 +27,8 @@ import { githubDeactivated, githubInstallationPicker, githubReconnectButton } fr
 import { SYNC_PRESENTATION } from "./view-github-repos"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack, vstack } from "../../ui/stack"
+import { stripClass } from "../../ui/rule"
+import { columnClass } from "../../ui/column"
 
 // GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
 
@@ -285,7 +287,7 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 		h,
 		{ ariaLabel: "GitHub repositories" },
 		[
-			columnHead(h, { label: "Repository", width: "w-0 min-w-48 flex-1" }),
+			columnHead(h, { label: "Repository", width: columnClass({ min: "48" }) }),
 			columnHead(h, { label: "Tracked branch", width: "w-36" }),
 			columnHead(h, { label: "Status", width: "w-28", align: "right" }),
 		],
@@ -299,7 +301,7 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 							gap: "4",
 							className: typographyClass({
 								size: "sm",
-								className: "border-b border-border-subtle px-4 py-2.5 last:border-0",
+								className: stripClass("row"),
 							}),
 						},
 						[

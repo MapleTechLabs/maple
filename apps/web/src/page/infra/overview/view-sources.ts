@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { segmentedBar } from "../../../ui/meter"
 import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonMeter } from "../../../ui/skeleton"
 import { sectionHeading } from "../../kit/section-heading"
 import type { TimeSearch } from "../kit/view-tabs"
 import { sourceHref } from "./links"
@@ -69,7 +69,7 @@ const healthBarUnavailable = <M>(h: HtmlBuilder<M>): Html =>
 /** `healthBar`'s shape while loading: the bar and an empty legend line, so the row keeps its height. */
 const healthBarLoading = <M>(h: HtmlBuilder<M>): Html =>
 	vstack(h, { gap: "1.5" }, [
-		skeleton(h, "h-1.5 w-full rounded-full"),
+		skeletonMeter(h),
 		h.span([h.Class("text-2xs")], ["\u00a0"]),
 	])
 

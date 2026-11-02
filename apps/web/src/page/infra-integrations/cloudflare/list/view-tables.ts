@@ -24,7 +24,7 @@ import * as Sparkline from "../../../../charts/sparkline"
 import { resolveColor, type ThemeColors } from "../../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
 import { segmentedBar } from "../../../../ui/meter"
-import { skeleton } from "../../../../ui/skeleton"
+import { skeleton, skeletonLine } from "../../../../ui/skeleton"
 import { statusDot } from "../../../../ui/status-dot"
 import {
 	columnHead,
@@ -39,6 +39,8 @@ import type { QueueRow, ZoneRow } from "../data"
 import { Message, type QueueSortKey, type ZoneSortKey } from "./model"
 import { typography, typographyClass } from "../../../../ui/typography"
 import { hstackClass } from "../../../../ui/stack"
+import { stripClass } from "../../../../ui/rule"
+import { columnClass } from "../../../../ui/column"
 
 // `CloudflareZoneTable`, `CloudflareWorkerTable`, `CloudflareQueueTable`.
 
@@ -118,7 +120,7 @@ export const zoneTableLoading = (h: H): Html =>
 			skeleton(h, "h-4 w-48"),
 			skeleton(h, "hidden h-1.5 w-52 md:block"),
 			skeleton(h, "h-3 w-20"),
-			skeleton(h, "hidden h-3 w-32 lg:block"),
+			skeletonLine(h, { width: "32", visibleFrom: "lg" }),
 			skeleton(h, "hidden h-3 w-24 md:block"),
 		]),
 	)
@@ -232,7 +234,18 @@ const zoneRow = (
 			h.div(
 				[h.Class(cn(NAME, "space-y-0.5"))],
 				[
-					typography(h, { size: "xs", tone: "foreground", weight: "medium", mono: true, truncate: true, as: "div", className: "transition-colors group-hover:text-primary", attributes: [h.Title(zone.zoneName)] },
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							weight: "medium",
+							mono: true,
+							truncate: true,
+							as: "div",
+							className: "transition-colors group-hover:text-primary",
+							attributes: [h.Title(zone.zoneName)],
+						},
 						[zone.zoneName],
 					),
 					...(meta === null ? [] : [meta]),
@@ -264,11 +277,7 @@ const zoneRow = (
 			h.div(
 				[
 					h.Class(
-						cn(
-							"w-20",
-							NUMBER,
-							rated ? errorRateClass(zone.errorRate) : "text-muted-foreground",
-						),
+						cn("w-20", NUMBER, rated ? errorRateClass(zone.errorRate) : "text-muted-foreground"),
 					),
 				],
 				[rated ? formatErrorRate(zone.errorRate) : EMPTY_VALUE],
@@ -276,16 +285,14 @@ const zoneRow = (
 			h.div(
 				[h.Class("hidden w-32 flex-col items-end gap-0.5 lg:flex")],
 				[
-					typography(h, { size: "xs", tone: "soft", mono: true, numeric: true },
-						[zone.cacheHitRate === null ? EMPTY_VALUE : formatPercentColumn(zone.cacheHitRate)],
-					),
-					typography(h, { size: "3xs", tone: "muted", mono: true },
-						[
-							zone.cacheHitRate === null
-								? "nothing cacheable"
-								: `of ${formatPercentColumn(zone.requests > 0 ? zone.cacheableRequests / zone.requests : 0)} cacheable`,
-						],
-					),
+					typography(h, { size: "xs", tone: "soft", mono: true, numeric: true }, [
+						zone.cacheHitRate === null ? EMPTY_VALUE : formatPercentColumn(zone.cacheHitRate),
+					]),
+					typography(h, { size: "3xs", tone: "muted", mono: true }, [
+						zone.cacheHitRate === null
+							? "nothing cacheable"
+							: `of ${formatPercentColumn(zone.requests > 0 ? zone.cacheableRequests / zone.requests : 0)} cacheable`,
+					]),
 				],
 			),
 			...(options.showLatency
@@ -380,7 +387,18 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 			h.div(
 				[h.Class("w-0 min-w-56 flex-1 space-y-0.5")],
 				[
-					typography(h, { size: "xs", tone: "foreground", weight: "medium", mono: true, truncate: true, as: "div", className: "transition-colors group-hover:text-primary", attributes: [h.Title(row.scriptName)] },
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							weight: "medium",
+							mono: true,
+							truncate: true,
+							as: "div",
+							className: "transition-colors group-hover:text-primary",
+							attributes: [h.Title(row.scriptName)],
+						},
 						[row.scriptName],
 					),
 					...(meta === null ? [] : [meta]),
@@ -456,7 +474,7 @@ export const workerTable = (
 		{ ariaLabel: "Cloudflare Workers" },
 		[
 			h.div([h.Class("w-2 shrink-0")]),
-			columnHead(h, { label: "Worker", width: "w-0 flex-1 min-w-56" }),
+			columnHead(h, { label: "Worker", width: columnClass({ min: "56" }) }),
 			...(options.accounts === undefined
 				? []
 				: [columnHead(h, { label: "Account", width: "w-28", hidden: "hidden lg:flex" })]),
@@ -472,8 +490,10 @@ export const workerTable = (
 
 // QUEUES
 
-const QUEUE_ROW =
-	hstackClass({ gap: "4", className: "border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken" })
+const QUEUE_ROW = hstackClass({
+	gap: "4",
+	className: stripClass("hoverRow"),
+})
 
 const numCell = (h: H, value: string, hidden?: boolean): Html =>
 	h.div(
@@ -511,7 +531,7 @@ export const queueTable = (
 		h,
 		{ ariaLabel: "Cloudflare queues", isWaiting: options.isWaiting },
 		[
-			queueHead(h, "Queue", "queueName", sort, "w-0 flex-1 min-w-56"),
+			queueHead(h, "Queue", "queueName", sort, columnClass({ min: "56" })),
 			queueHead(h, "Backlog avg", "backlogMessages", sort, "w-28", "right"),
 			queueHead(h, "Backlog peak", "backlogMessagesMax", sort, "w-28", "right"),
 			columnHead(h, {

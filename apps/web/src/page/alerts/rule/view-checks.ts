@@ -173,7 +173,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 																	size: "icon-2xs",
 																	label: "Clear bucket filter",
 																	hasTooltip: false,
-																	className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground" }),
+																	className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
 																	attributes: [h.OnClick(Message.ClickedClearBucket())],
 																},
 																[icon(h, "XmarkIcon")],

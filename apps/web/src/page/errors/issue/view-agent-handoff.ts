@@ -91,9 +91,7 @@ const agentLane = (h: H, model: Model, prompt: string): Html =>
 				copiedLabel: "Copied",
 				variant: "default",
 				size: "sm",
-				// The copy button's own muted ink is for ghost buttons; keep the fill's.
-				className:
-					"text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
+				keepsFillInk: true,
 				toParentMessage: (message) => Message.GotPromptCopyMessage({ message }),
 			}),
 			linkButton(

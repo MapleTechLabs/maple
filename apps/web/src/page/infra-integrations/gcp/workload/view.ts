@@ -44,6 +44,7 @@ import { workloadRail } from "./view-rail"
 import { appWaitCallout, figure, topQueries } from "./view-sql"
 import { queryPeekSheet } from "./view-sql-peek"
 import { hstack } from "../../../../ui/stack"
+import { grid } from "../../../../ui/grid"
 
 // `GcpWorkloadPage`.
 
@@ -233,8 +234,9 @@ const traceGapCallout = (
 }
 
 const loadingGrid = (h: H, service: GcpInfraServiceId): Html =>
-	h.div(
-		[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
+	grid(
+		h,
+		{ cols: 1, lg: 2, gap: "4" },
 		GCP_INFRA_CHARTS[service].map(() => chartLoading(h, { variant: "line", height: CHART_HEIGHT })),
 	)
 

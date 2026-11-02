@@ -23,6 +23,7 @@ import type { Model, ShellClerk } from "./model"
 import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
 import { typography } from "../ui/typography"
+import { identityLabel } from "../ui/identity-label"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -71,22 +72,15 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 						],
 						[icon(h, "ServerIcon", { size: 16 })],
 					),
-					typography(
-						h,
-						{ size: "sm", as: "div", className: "grid text-left leading-tight flex-1" },
-						[
-							typography(h, { weight: "medium", truncate: true }, ["Self Hosted"]),
-							...Option.match(pinnedNamespaceOf(model), {
-								onNone: () => [],
-								onSome: (namespace) => [
-									h.span(
-										[h.Class("truncate text-xs font-medium text-primary")],
-										[namespace],
-									),
-								],
-							}),
-						],
-					),
+					identityLabel(h, [
+						typography(h, { weight: "medium", truncate: true }, ["Self Hosted"]),
+						...Option.match(pinnedNamespaceOf(model), {
+							onNone: () => [],
+							onSome: (namespace) => [
+								h.span([h.Class("truncate text-xs font-medium text-primary")], [namespace]),
+							],
+						}),
+					]),
 					icon(h, "ChevronExpandYIcon", { size: 16, className: "ml-auto" }),
 				],
 			),
@@ -165,46 +159,38 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 											onSome: (org) => org.imageUrl,
 										}),
 									),
-									typography(
-										h,
-										{
-											size: "sm",
-											as: "div",
-											className: "grid text-left leading-tight flex-1",
-										},
-										[
-											typography(
-												h,
-												{
-													weight: "medium",
-													truncate: true,
-													attributes: [h.Title(orgName)],
-												},
-												[orgName],
-											),
-											Option.match(pinned, {
-												onNone: () =>
-													typography(
-														h,
-														{ size: "xs", tone: "muted", truncate: true },
-														regionSuffix === ""
-															? ["Organization"]
-															: ["Organization", regionSuffix],
+									identityLabel(h, [
+										typography(
+											h,
+											{
+												weight: "medium",
+												truncate: true,
+												attributes: [h.Title(orgName)],
+											},
+											[orgName],
+										),
+										Option.match(pinned, {
+											onNone: () =>
+												typography(
+													h,
+													{ size: "xs", tone: "muted", truncate: true },
+													regionSuffix === ""
+														? ["Organization"]
+														: ["Organization", regionSuffix],
+												),
+											onSome: (namespace) =>
+												typography(h, { size: "xs", truncate: true }, [
+													h.span(
+														[h.Class("font-medium text-primary")],
+														[namespace],
 													),
-												onSome: (namespace) =>
-													typography(h, { size: "xs", truncate: true }, [
-														h.span(
-															[h.Class("font-medium text-primary")],
-															[namespace],
-														),
-														h.span(
-															[h.Class("text-muted-foreground")],
-															[regionSuffix],
-														),
-													]),
-											}),
-										],
-									),
+													h.span(
+														[h.Class("text-muted-foreground")],
+														[regionSuffix],
+													),
+												]),
+										}),
+									]),
 									icon(h, "ChevronExpandYIcon", { size: 16, className: "ml-auto" }),
 								],
 							),

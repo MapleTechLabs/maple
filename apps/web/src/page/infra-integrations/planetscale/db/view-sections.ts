@@ -69,7 +69,7 @@ const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): H
 							[
 								h.AriaLabel("Open in PlanetScale"),
 								h.Class(
-									typographyClass({ tone: "muted", className: "shrink-0 hover:text-foreground active:text-foreground" }),
+									typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
 								),
 								h.Href(event.url),
 								h.Rel("noreferrer"),

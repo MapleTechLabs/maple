@@ -48,6 +48,7 @@ import {
 } from "./uptime-groups"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, vstack } from "../../../ui/stack"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // The hub's Uptime tab: the filters with the readout, and the monitor table.
 
@@ -298,8 +299,9 @@ const groupHeader = (h: H, [namespace, monitors]: MonitorGroup): Html =>
 	)
 
 const table = (h: H, model: Model, groups: ReadonlyArray<MonitorGroup>, nowMs: number): Html =>
-	h.div(
-		[h.Class("overflow-x-auto rounded-md border")],
+	borderedBox(
+		h,
+		{ overflow: "x-auto" },
 		[
 			h.div(
 				[h.Class("min-w-[860px]")],

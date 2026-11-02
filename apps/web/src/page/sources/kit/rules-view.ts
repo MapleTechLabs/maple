@@ -131,7 +131,7 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 				h,
 				{
 					label: "Remove attribute",
-					className: typographyClass({ tone: "muted", className: "hover:text-foreground active:text-foreground shrink-0" }),
+					className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
 					attributes: [h.OnClick(toParentMessage(Message.ClickedRemoveAttribute({ rowId })))],
 				},
 				[icon(h, "XmarkIcon")],

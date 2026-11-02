@@ -3,7 +3,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { filteredEmpty } from "../../kit/signal-empty-state"
@@ -20,6 +20,7 @@ import { issuesCard, SEVERITY_SERIES, volumeCard } from "./view-charts"
 import { authorsCard, categoriesCard, outcomesCard } from "./view-lists"
 import { headlineStrip, secondaryStats } from "./view-stats"
 import { vstack } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // `CodeReviewAnalyticsPage` and `CodeReviewAnalyticsView`.
 
@@ -46,46 +47,43 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 						noun: "reviews",
 						description: "Widen the window or clear the filters.",
 						onClear: Message.ClickedClearFilters(),
-						className: "rounded-md border border-dashed md:py-14",
+						className: emptyFrameClass("dashed"),
 					})
 				return empty(
 					h,
 					[
 						emptyHeader(h, [
 							emptyTitle(h, ["No reviews in this window"]),
-							emptyDescription(h, ["Turn on reviews for a repository in Settings, then open a pull request against it."]),
+							emptyDescription(h, [
+								"Turn on reviews for a repository in Settings, then open a pull request against it.",
+							]),
 						]),
 					],
-					"rounded-md border border-dashed md:py-14",
+					emptyFrameClass("dashed"),
 				)
 			}
 			const theme = model.themeColors
 			if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return analyticsSkeleton(h)
 			const windowLabel =
 				model.search.startTime !== undefined
-				? "period"
-				: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
-			return vstack(h, { gap: "6" },
-				[
-					headlineStrip(h, analytics.current, analytics.previous, windowLabel),
-					h.div(
-						[h.Class("grid gap-6 lg:grid-cols-2")],
-						[
-							volumeCard(h, model, analytics, theme, timeZone),
-							issuesCard(h, model, analytics, theme, timeZone),
-						],
-					),
-					h.div(
-						[h.Class("grid gap-6 lg:grid-cols-3")],
-						[
-							categoriesCard(h, analytics),
-							outcomesCard(h, analytics.current, analytics),
-							authorsCard(h, analytics),
-						],
-					),
-					secondaryStats(h, analytics.current),
-				],
-			)
+					? "period"
+					: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
+			return vstack(h, { gap: "6" }, [
+				headlineStrip(h, analytics.current, analytics.previous, windowLabel),
+				grid(h, { lg: 2, gap: "6" }, [
+					volumeCard(h, model, analytics, theme, timeZone),
+					issuesCard(h, model, analytics, theme, timeZone),
+				]),
+				h.div(
+					[h.Class("grid gap-6 lg:grid-cols-3")],
+					[
+						categoriesCard(h, analytics),
+						outcomesCard(h, analytics.current, analytics),
+						authorsCard(h, analytics),
+					],
+				),
+				secondaryStats(h, analytics.current),
+			])
 		},
 	})
 

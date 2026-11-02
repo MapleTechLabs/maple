@@ -100,6 +100,10 @@ export const tableRow = <M>(
 		children,
 	)
 
+/** A `tableRow` whose whole row opens something: the pointer and the sunken hover, strong while selected. */
+export const clickableRowClass = (isSelected = false): string =>
+	cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", isSelected && "bg-surface-strong")
+
 export const tableHead = <M>(
 	h: HtmlBuilder<M>,
 	children: Children,

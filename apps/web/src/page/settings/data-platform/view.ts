@@ -34,6 +34,7 @@ import { draftOf, isRunActive } from "./update"
 import { statusDot } from "../../../ui/status-dot"
 import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, vstack } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -151,25 +152,22 @@ const connectionPanel = (
 				description: "HTTP interface URL (port 8123 by default).",
 				onInput: onField("url"),
 			}),
-			h.div(
-				[h.Class("grid gap-3 sm:grid-cols-2")],
-				[
-					textField(h, {
-						name: "user",
-						label: "User",
-						value: draft.user,
-						isDisabled: isBusy,
-						onInput: onField("user"),
-					}),
-					textField(h, {
-						name: "database",
-						label: "Database",
-						value: draft.database,
-						isDisabled: isBusy,
-						onInput: onField("database"),
-					}),
-				],
-			),
+			grid(h, { sm: 2, gap: "3" }, [
+				textField(h, {
+					name: "user",
+					label: "User",
+					value: draft.user,
+					isDisabled: isBusy,
+					onInput: onField("user"),
+				}),
+				textField(h, {
+					name: "database",
+					label: "Database",
+					value: draft.database,
+					isDisabled: isBusy,
+					onInput: onField("database"),
+				}),
+			]),
 			textField(h, {
 				name: "password",
 				label: "Password",

@@ -73,6 +73,7 @@ import {
 } from "./view-rows"
 import { typography, typographyClass } from "../../../../ui/typography"
 import { hstackClass } from "../../../../ui/stack"
+import { columnClass } from "../../../../ui/column"
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 
@@ -99,12 +100,12 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 		return GCP_SERVICE_RULES.inScope(row, "idle")
 			? h.div(
 					[
-						h.Class(cn("hidden w-44 md:block", SUB)),
+						h.Class(cn(columnClass({ width: "44", from: "md" }), SUB)),
 						h.Title("No requests, instance time billed"),
 					],
 					["idle, still billed"],
 				)
-			: h.div([h.Class(cn("hidden w-44 md:block", SUB))], ["no traffic"])
+			: h.div([h.Class(cn(columnClass({ width: "44", from: "md" }), SUB))], ["no traffic"])
 	const failedShare = row.failed / row.requests
 	const clientShare = row.clientErrors / row.requests
 	const rated = GCP_SERVICE_RULES.inScope(row, "serving5xx")
@@ -314,7 +315,11 @@ export const subscriptionsTable = (
 											[
 												h.Class(
 													cn(
-														typographyClass({ size: "xs", mono: true, numeric: true }),
+														typographyClass({
+															size: "xs",
+															mono: true,
+															numeric: true,
+														}),
 														growing ? TONE_TEXT.crit : "text-foreground-soft",
 													),
 												),
@@ -608,7 +613,7 @@ export const databasesTable = (
 
 // The other services (GKE, Compute Engine, Load Balancing) ---------------------------------------
 
-const GENERIC_NAME = "w-0 flex-1 min-w-60"
+const GENERIC_NAME = columnClass({ min: "60" })
 const VALUE_WIDTH = "w-28"
 
 const genericHead = (h: H, service: GcpInfraServiceId): ReadonlyArray<Html> => [
@@ -679,7 +684,17 @@ export const serviceTable = (
 								h.div(
 									[h.Class("min-w-0 flex-1")],
 									[
-										typography(h, { size: "xs", tone: "foreground", weight: "medium", mono: true, truncate: true, as: "div", className: "transition-colors group-hover:text-primary" },
+										typography(
+											h,
+											{
+												size: "xs",
+												tone: "foreground",
+												weight: "medium",
+												mono: true,
+												truncate: true,
+												as: "div",
+												className: "transition-colors group-hover:text-primary",
+											},
 											[row.name],
 										),
 										...(line === null ? [] : [line]),
@@ -692,7 +707,12 @@ export const serviceTable = (
 								[
 									h.Class(
 										cn(
-											typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" }),
+											typographyClass({
+												size: "xs",
+												mono: true,
+												numeric: true,
+												className: "text-right",
+											}),
 											VALUE_WIDTH,
 											valueClass(column, row.workload.values[index]),
 										),

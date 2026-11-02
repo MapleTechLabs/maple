@@ -19,6 +19,7 @@ import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 import { typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
+import { scrollRegion } from "../../../ui/scroll-region"
 
 // The rail's Session tab.
 // TODO(tooltip): the identity links' and copy buttons' hover tooltips.
@@ -389,8 +390,9 @@ const context = (h: H, model: SessionView, session: ReplayDetail): Html => {
 
 /** The Session tab: the recording's numbers, then identity, visitor, acquisition, environment and context. */
 export const sessionTab = (h: H, model: SessionView, session: ReplayDetail): Html =>
-	h.div(
-		[h.Class("min-h-0 flex-1 overflow-y-auto")],
+	scrollRegion(
+		h,
+		{},
 		[
 			summary(h, session),
 			identity(h, model, session),

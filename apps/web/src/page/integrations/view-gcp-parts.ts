@@ -83,7 +83,7 @@ export const copyScriptButton = (
 		label,
 		idleLabel: `Copy ${label}`,
 		variant: "default",
-		className: "text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
+		keepsFillInk: true,
 		attributes: script === null ? [h.Disabled(true)] : [],
 	})
 
@@ -110,7 +110,7 @@ export const scriptBlock = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								typographyClass({ size: "xs", tone: "muted", weight: "normal", className: "h-auto p-0 hover:text-foreground active:text-foreground" }),
+								typographyClass({ size: "xs", tone: "muted", weight: "normal", hoverTone: "foreground", className: "h-auto p-0" }),
 								GCP_LINK,
 							),
 							attributes: [h.AriaExpanded(shown), h.OnClick(Message.ClickedGcpScriptToggle())],

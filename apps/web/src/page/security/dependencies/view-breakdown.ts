@@ -18,6 +18,7 @@ import type { Message } from "./model"
 import { notRunningLabel, productionScanStates } from "./view-findings"
 import { repositoryHref } from "./view-repositories"
 import { typography, typographyClass } from "../../../ui/typography"
+import { stripClass } from "../../../ui/rule"
 import { hstack } from "../../../ui/stack"
 
 // One repository's open findings as the package bumps that clear them, the first to make on top.
@@ -159,7 +160,7 @@ export const repositoryBreakdown = (
 		...(plan.length === 0
 			? [emptyMessage(h, {}, ["No open advisories in this repository's latest scan"])]
 			: [
-					typography(h, { size: "xs", tone: "muted", as: "p", className: "border-b px-4 py-2" }, [
+					typography(h, { size: "xs", tone: "muted", as: "p", className: stripClass("head") }, [
 						planLine(plan),
 					]),
 					table(h, { variant: "bare", ariaLabel: `Upgrade plan for ${repository.fullName}` }, [

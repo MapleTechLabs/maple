@@ -9,6 +9,7 @@ import { columnHead, dataTable } from "../kit/data-table"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
+import { columnClass } from "../../../ui/column"
 
 // `PodRestartsStat` and `PodContainerRestarts`.
 
@@ -88,7 +89,7 @@ export const podContainerRestarts = <M>(h: HtmlBuilder<M>, restarts: Restarts): 
 				h,
 				{ ariaLabel: "Container restarts" },
 				[
-					columnHead(h, { label: "Container", width: "w-0 flex-1 min-w-52" }),
+					columnHead(h, { label: "Container", width: columnClass({ min: "52" }) }),
 					columnHead(h, { label: "In window", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Total", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Last terminated", align: "right", width: "w-40" }),

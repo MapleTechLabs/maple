@@ -33,7 +33,9 @@ import { destinationMenuId } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "../../../ui/typography"
+import { stripClass } from "../../../ui/rule"
 import { hstack, hstackClass } from "../../../ui/stack"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
@@ -131,14 +133,15 @@ const destinationsSection = (
 			],
 			"py-12",
 		)
-	return h.div(
-		[h.Class("overflow-x-auto rounded-md border")],
+	return borderedBox(
+		h,
+		{ overflow: "x-auto" },
 		[
 			h.div(
 				[h.Class("min-w-[760px]")],
 				[
 					h.div(
-						[h.Class(cn(DESTINATION_ROW_GRID, typographyClass({ size: "xs", tone: "muted", className: "border-b px-4 py-2" })))],
+						[h.Class(cn(DESTINATION_ROW_GRID, typographyClass({ size: "xs", tone: "muted", className: stripClass("head") })))],
 						[
 							h.span([], ["Destination"]),
 							h.span([], ["Type"]),

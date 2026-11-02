@@ -5,7 +5,7 @@ import * as DialogView from "../../../ui/dialog-view"
 import { icon } from "../../../ui/icon"
 import { listRow } from "../../../ui/list-row"
 import { panel, panelHeader } from "../../../ui/panel"
-import { skeleton, skeletonSlowNote } from "../../../ui/skeleton"
+import { skeleton, skeletonMeterClass, skeletonSlowNote } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, type StatRailColumns } from "../../kit/stat-rail"
@@ -17,6 +17,7 @@ import { section } from "./parts"
 import { SHEET_STAT_LABELS } from "./review-sheet-sections"
 import { typography } from "../../../ui/typography"
 import { hstack, vstack, vstackClass } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // Loading states for code review, drawn in the real panels, headers and row geometry: labels and
 // titles that don't depend on the data render for real, so only the values swap in.
@@ -369,7 +370,7 @@ const barListCard = <M>(h: HtmlBuilder<M>, title: string): Html =>
 						[h.Class("flex h-5 items-center justify-between gap-2")],
 						[bar(h, cn("h-3", pick(META_WIDTHS, index))), bar(h, "h-3 w-6")],
 					),
-					bar(h, "h-1.5 w-full rounded-full"),
+					bar(h, skeletonMeterClass()),
 				]),
 			),
 		),
@@ -402,29 +403,22 @@ const authorsCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	busyPage(h, "Loading review analytics", [
 		headlineSkeleton(h, Object.values(HEADLINE_LABELS)),
-		h.div(
-			[h.Class("grid gap-6 lg:grid-cols-2")],
-			[
-				chartCard(h, "Pull requests reviewed", "bar", {
-					control: true,
-					footer: repositoryRows(h, "Top repositories by reviews"),
-				}),
-				chartCard(h, "Issues caught", "bar", {
-					control: true,
-					footer: vstack(h, { gap: "3" }, [
-						repositoryRows(h, "Repositories with the most issues"),
-						h.span(
-							[
-								h.Class(
-									"inline-flex items-center gap-1 self-center text-sm text-muted-foreground",
-								),
-							],
-							["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
-						),
-					]),
-				}),
-			],
-		),
+		grid(h, { lg: 2, gap: "6" }, [
+			chartCard(h, "Pull requests reviewed", "bar", {
+				control: true,
+				footer: repositoryRows(h, "Top repositories by reviews"),
+			}),
+			chartCard(h, "Issues caught", "bar", {
+				control: true,
+				footer: vstack(h, { gap: "3" }, [
+					repositoryRows(h, "Repositories with the most issues"),
+					h.span(
+						[h.Class("inline-flex items-center gap-1 self-center text-sm text-muted-foreground")],
+						["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
+					),
+				]),
+			}),
+		]),
 		h.div(
 			[h.Class("grid gap-6 lg:grid-cols-3")],
 			[barListCard(h, "Issues by category"), barListCard(h, "Review outcomes"), authorsCardSkeleton(h)],
@@ -443,10 +437,10 @@ const tablePanel = <M>(h: HtmlBuilder<M>, title: string, columns: ReadonlyArray<
 export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	busyPage(h, "Loading CI analytics", [
 		headlineSkeleton(h, Object.values(CI_HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
-		h.div(
-			[h.Class("grid gap-6 lg:grid-cols-2")],
-			[chartCard(h, "Runs by result", "bar"), chartCard(h, "Run time", "line")],
-		),
+		grid(h, { lg: 2, gap: "6" }, [
+			chartCard(h, "Runs by result", "bar"),
+			chartCard(h, "Run time", "line"),
+		]),
 		tablePanel(h, "Workflows", WORKFLOW_COLUMNS),
 		tablePanel(h, "Jobs by CI time", JOB_COLUMNS),
 		vstack(h, { gap: "3", as: "section" }, [

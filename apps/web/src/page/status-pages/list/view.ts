@@ -21,6 +21,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "../../../ui/typography"
 import { vstack } from "../../../ui/stack"
+import { borderedBox } from "../../../ui/bordered-box"
 
 // `/status-pages`: the page table, and the builder's on-ramp when there is none.
 
@@ -146,8 +147,9 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 }
 
 const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs): Html =>
-	h.div(
-		[h.Class("overflow-x-auto rounded-md border")],
+	borderedBox(
+		h,
+		{ overflow: "x-auto" },
 		[
 			h.div(
 				[h.Class("min-w-[720px]")],

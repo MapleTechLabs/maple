@@ -12,7 +12,7 @@ import { panel } from "../../../ui/panel"
 import { multiSegmentedSelect } from "../../../ui/segmented-select"
 import * as SelectView from "../../../ui/select-view"
 import { settingRow } from "../../../ui/setting-row"
-import { skeleton, skeletonList, skeletonSlowNote } from "../../../ui/skeleton"
+import { skeleton, skeletonBlock, skeletonList, skeletonSlowNote } from "../../../ui/skeleton"
 import { switchControl } from "../../../ui/switch"
 import { providerLogo, providerOf } from "../../alerts/shared/providers"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../errors/kit/severity"
@@ -108,7 +108,7 @@ const severityRule = (
 }
 
 const policySkeleton = (h: H): Html =>
-	h.div([h.Class("space-y-2")], [skeleton(h, "h-40 w-full rounded-md"), skeletonSlowNote(h)])
+	h.div([h.Class("space-y-2")], [skeletonBlock(h, { height: "40" }), skeletonSlowNote(h)])
 
 const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 	const destinations = model.destinations

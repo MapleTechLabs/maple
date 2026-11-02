@@ -14,6 +14,8 @@ import { fmtValue } from "./funnel-chart"
 import { fmtSpan, leaverRows, type Step, toSteps } from "./funnel-dropoff-steps"
 import { typography, typographyClass } from "../ui/typography"
 import { hstack, vstack } from "../ui/stack"
+import { swatch } from "../ui/swatch"
+import { chartNoData } from "../ui/chart-frame"
 
 // Port of `FunnelDropoffChart` (packages/ui/src/components/charts/funnel/funnel-dropoff-chart.tsx).
 // The hovered column is the chart Model's `activeKey` (its index).
@@ -321,10 +323,7 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 							h.span(
 								[h.Class("flex min-w-0 items-center gap-1"), h.Title(entry.name)],
 								[
-									h.span([
-										h.Class("size-2 shrink-0 rounded-xs"),
-										h.Style({ "background-color": entry.color }),
-									]),
+									swatch(h, { color: entry.color }),
 									h.span([h.Class("truncate")], [entry.name]),
 								],
 							),
@@ -359,10 +358,7 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((model, inputs, h) => {
 	const { steps, legend } = toSteps(inputs.data, pickValueField(inputs.data))
 	if (steps.length === 0 || (steps[0]?.value ?? 0) <= 0)
-		return h.div(
-			[h.Class(cn("relative grid h-full w-full place-items-center", inputs.className))],
-			[typography(h, { size: "2xs", tone: "muted" }, ["No data"])],
-		)
+		return chartNoData(h, { className: inputs.className })
 	const width = model.containerWidth
 	const isGrouped = legend.length > 0
 	const showPercent = inputs.showStepPercent !== false

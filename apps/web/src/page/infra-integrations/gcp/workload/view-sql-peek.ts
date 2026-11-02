@@ -17,7 +17,7 @@ import { errorState } from "../../../../ui/error-state"
 import { eyebrow } from "../../../../ui/eyebrow"
 import { icon } from "../../../../ui/icon"
 import { meter } from "../../../../ui/meter"
-import { skeleton } from "../../../../ui/skeleton"
+import { skeleton, skeletonBlock } from "../../../../ui/skeleton"
 import { serviceDot } from "../../../../ui/values"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
@@ -330,7 +330,7 @@ const notTraced = (h: H): Html =>
 /** A statement the traces did not match: still loading, failed, or not traced at all. */
 const untraced = (h: H, inputs: QueryPeekInputs): Html =>
 	AsyncData.matchData(inputs.traceSide, {
-		onEmpty: () => skeleton(h, "h-40 w-full rounded-md"),
+		onEmpty: () => skeletonBlock(h, { height: "40" }),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load what the traces saw", variant: "inline" }),
 		onData: () => notTraced(h),

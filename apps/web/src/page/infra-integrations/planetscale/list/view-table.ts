@@ -25,6 +25,7 @@ import {
 import { formatWholePercent } from "../../../../components/infra/format"
 import { Message, type SortKey } from "./model"
 import { typography } from "../../../../ui/typography"
+import { column, columnClass } from "../../../../ui/column"
 
 // `PlanetScaleDatabaseTable` and its loading state.
 
@@ -54,7 +55,7 @@ const COLUMNS: ReadonlyArray<{
 	hidden?: string
 	metric?: boolean
 }> = [
-	{ label: "Database", key: "name", width: "w-0 flex-1 min-w-56" },
+	{ label: "Database", key: "name", width: columnClass({ min: "56" }) },
 	{ label: "Branches", key: "branchCount", width: "w-20", align: "right", hidden: "hidden md:flex" },
 	{ label: "Connections", key: "connectionsAvg", width: "w-24", align: "right", metric: true },
 	{ label: "CPU (max)", key: "cpuMaxPercent", width: "w-24", align: "right", metric: true },
@@ -95,7 +96,7 @@ export const databaseTableLoading = (h: H): Html =>
 		{ ariaLabel: "Databases" },
 		headerCells(h, undefined, false),
 		skeletonRows(h, 3, () => [
-			h.div([h.Class("w-0 min-w-56 flex-1")], [skeleton(h, "h-4 w-44")]),
+			column(h, { min: "56" }, [skeleton(h, "h-4 w-44")]),
 			skeleton(h, "hidden h-3 w-20 md:block"),
 			skeleton(h, "h-3 w-24"),
 			skeleton(h, "h-3 w-24"),
@@ -139,11 +140,7 @@ const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 		[row.hasStats ? formatWholePercent(row.cpuMaxPercent / 100) : EMPTY_VALUE],
 	),
 	h.div(
-		[
-			h.Class(
-				cn("hidden w-28", CELL, "md:block", row.hasStats && utilizationClass(row.memMaxPercent)),
-			),
-		],
+		[h.Class(cn("hidden w-28", CELL, "md:block", row.hasStats && utilizationClass(row.memMaxPercent)))],
 		[row.hasStats ? formatWholePercent(row.memMaxPercent / 100) : EMPTY_VALUE],
 	),
 	h.div(

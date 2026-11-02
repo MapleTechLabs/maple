@@ -4,15 +4,16 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { segmentedBar } from "../../../ui/meter"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonMeter } from "../../../ui/skeleton"
 import { statFigure } from "../../../ui/stat-figure"
 import { statRailItem } from "../../kit/stat-rail"
 import { typography } from "../../../ui/typography"
+import { borderedBoxClass } from "../../../ui/bordered-box"
 
 // `FleetBand` and `FleetBandLoading`.
 
 /** A band standing alone on a page body rather than flush under a shell's header. */
-export const FLEET_BAND_BOXED = "overflow-hidden rounded-md border"
+export const FLEET_BAND_BOXED = borderedBoxClass({ overflow: "hidden" })
 
 export type FleetBandSegment = Readonly<{ key: string; count: number; className: string }>
 
@@ -105,7 +106,7 @@ export const fleetBandLoading = <M>(h: HtmlBuilder<M>, cells: number, className?
 				[
 					skeleton(h, "h-3 w-24"),
 					skeleton(h, "h-5 w-10"),
-					skeleton(h, "h-1.5 w-full rounded-full"),
+					skeletonMeter(h),
 					skeleton(h, "h-2.5 w-40"),
 				],
 			),

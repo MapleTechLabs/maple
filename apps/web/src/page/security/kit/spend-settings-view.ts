@@ -11,6 +11,7 @@ import { modelPicker } from "./model-picker"
 import { DIALOG_ID, draftLimitOf, errorsOf, Message, type Model, NO_ERRORS } from "./spend-settings"
 import { typography } from "../../../ui/typography"
 import { vstack, vstackClass } from "../../../ui/stack"
+import { grid } from "../../../ui/grid"
 
 // The Spend & models form inside the shared FormDialog.
 
@@ -98,23 +99,20 @@ const modelsField = (h: H, model: Model, error?: string): Html =>
 					"Verification runs on a different model than hunting, so it does not share the hunter's blind spots. A target can override both.",
 				]),
 			]),
-			h.div(
-				[h.Class("grid grid-cols-2 gap-2")],
-				[
-					modelPicker(h, {
-						stage: "discovery",
-						model: model.discovery,
-						idPrefix: DIALOG_ID,
-						wrap: (message) => Message.GotDiscoveryMessage({ message }),
-					}),
-					modelPicker(h, {
-						stage: "validation",
-						model: model.validation,
-						idPrefix: DIALOG_ID,
-						wrap: (message) => Message.GotValidationMessage({ message }),
-					}),
-				],
-			),
+			grid(h, { cols: 2, gap: "2" }, [
+				modelPicker(h, {
+					stage: "discovery",
+					model: model.discovery,
+					idPrefix: DIALOG_ID,
+					wrap: (message) => Message.GotDiscoveryMessage({ message }),
+				}),
+				modelPicker(h, {
+					stage: "validation",
+					model: model.validation,
+					idPrefix: DIALOG_ID,
+					wrap: (message) => Message.GotValidationMessage({ message }),
+				}),
+			]),
 			...(error === undefined
 				? []
 				: [

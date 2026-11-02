@@ -31,8 +31,8 @@ import { attachDialog } from "./attach"
 import { verificationCard } from "./view-verification"
 import { incidentsTable, occurrencesTable } from "./view-tables"
 import { commentComposer, issueTimeline } from "./view-activity"
-import { skeleton } from "../../../ui/skeleton"
-import { panel, panelHeader } from "../../../ui/panel"
+import { skeleton, skeletonBlock } from "../../../ui/skeleton"
+import { panel, panelHeader, panelChartBody } from "../../../ui/panel"
 import { textLinkClass } from "../../../ui/text-link"
 import { AppRoute, hrefOf } from "../../../route"
 import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
@@ -121,7 +121,7 @@ const chartSlot = (h: H, model: Model, detail: ErrorIssueDetailResponse, timeZon
 	return chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
 		? panel(h, { className: "shrink-0 overflow-hidden" }, [
 				panelHeader(h, { title: "Occurrences" }),
-				h.div([h.Class("px-4 pt-3 pb-4")], [skeleton(h, "h-44 w-full rounded-md")]),
+				panelChartBody(h, [skeletonBlock(h, { height: "44" })]),
 			])
 		: occurrencePanel(
 				h,

@@ -2,7 +2,7 @@ import { formatLoad } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { middleTruncate } from "../../../../ui/middle-truncate"
-import { skeleton } from "../../../../ui/skeleton"
+import { skeleton, skeletonLine } from "../../../../ui/skeleton"
 import {
 	columnHead,
 	dataTable,
@@ -20,6 +20,7 @@ import type { HostSortKey } from "./message"
 import type { HostRow } from "./model"
 import { typographyClass } from "../../../../ui/typography"
 import { hstack } from "../../../../ui/stack"
+import { column, columnClass } from "../../../../ui/column"
 
 // `HostTable` / `HostTableLoading`, generic over the host's Message: /infra/hosts sorts through its Model,
 // `/lab/worst-case` through its own.
@@ -32,7 +33,7 @@ const INERT_SORT = { isActive: false, dir: "desc" } satisfies Readonly<{ isActiv
 const columns = <M>(h: HtmlBuilder<M>, sort: SortState | null, onSort?: OnSort<M>): ReadonlyArray<Html> => {
 	const sortOf = (key: HostSortKey) => (onSort === undefined ? INERT_SORT : headSort(sort, key, onSort))
 	return [
-		columnHead(h, { label: "Host", sort: sortOf("hostName"), width: "w-0 flex-1 min-w-64" }),
+		columnHead(h, { label: "Host", sort: sortOf("hostName"), width: columnClass({ min: "64" }) }),
 		columnHead(h, { label: "Usage", width: "w-52" }),
 		columnHead(h, {
 			label: "Load 15m",
@@ -51,10 +52,10 @@ export const hostTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 		{ ariaLabel: "Hosts" },
 		columns<M>(h, null),
 		skeletonRows(h, 6, () => [
-			h.div(
-				[h.Class("w-0 min-w-64 flex-1")],
-				[skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-32")],
-			),
+			column(h, { min: "64" }, [
+				skeleton(h, "h-4 w-40"),
+				skeletonLine(h, { width: "32", className: "mt-1.5" }),
+			]),
 			skeleton(h, "h-9 w-52"),
 			skeleton(h, "ml-auto hidden h-3 w-20 lg:block"),
 			skeleton(h, "h-3 w-24"),
@@ -77,34 +78,31 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 			h.Class(ROW_LINK_CLASS),
 		],
 		[
-			h.div(
-				[h.Class("w-0 min-w-64 flex-1")],
-				[
-					hstack(h, { gap: "2" }, [
-						middleTruncate(h, {
-							text: host.hostName,
-							tail: 12,
-							mono: true,
-							className: typographyClass({
-								size: "xs",
-								tone: "foreground",
-								weight: "medium",
-								className: "transition-colors group-hover:text-primary",
-							}),
+			column(h, { min: "64" }, [
+				hstack(h, { gap: "2" }, [
+					middleTruncate(h, {
+						text: host.hostName,
+						tail: 12,
+						mono: true,
+						className: typographyClass({
+							size: "xs",
+							tone: "foreground",
+							weight: "medium",
+							className: "transition-colors group-hover:text-primary",
 						}),
-						hostStatusBadge(h, {
-							quiet: true,
-							lastSeen: host.lastSeen,
-							referenceMs: inputs.nowMs,
-						}),
-					]),
-					metaLine(h, [
-						host.osType && platformLabel(h, "os", host.osType),
-						host.hostArch && platformLabel(h, "arch", host.hostArch),
-						host.cloudProvider && platformLabel(h, "cloud", host.cloudProvider),
-					]),
-				],
-			),
+					}),
+					hostStatusBadge(h, {
+						quiet: true,
+						lastSeen: host.lastSeen,
+						referenceMs: inputs.nowMs,
+					}),
+				]),
+				metaLine(h, [
+					host.osType && platformLabel(h, "os", host.osType),
+					host.hostArch && platformLabel(h, "arch", host.hostArch),
+					host.cloudProvider && platformLabel(h, "cloud", host.cloudProvider),
+				]),
+			]),
 			h.div(
 				[h.Class("w-52")],
 				[

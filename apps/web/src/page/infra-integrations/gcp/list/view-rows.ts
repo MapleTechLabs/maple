@@ -15,6 +15,8 @@ import { Message } from "./model"
 import { type GcpBandSpec, healthDot } from "./view-band"
 import { typography, typographyClass } from "../../../../ui/typography"
 import { hstackClass } from "../../../../ui/stack"
+import { columnClass } from "../../../../ui/column"
+import { spaced } from "../../../../ui/spaced"
 
 // The shared parts of the Google Cloud list rows.
 
@@ -32,7 +34,7 @@ export type RowsContext = Readonly<{
 	locale: string
 }>
 
-export const NAME = "w-0 min-w-56 flex-1"
+export const NAME = columnClass({ min: "56" })
 export const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
 export const SUB = typographyClass({ size: "3xs", tone: "muted", mono: true })
 
@@ -79,26 +81,23 @@ export const workloadRow = <R extends RowBase, S extends string>(
 				[h.Class(cn(NAME, hstackClass({ gap: "3" })))],
 				[
 					gcpServiceIcon(h, { service: row.service, databaseVersion: row.engine }),
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-0.5")],
-						[
-							typography(
-								h,
-								{
-									size: "xs",
-									tone: "foreground",
-									weight: "medium",
-									mono: true,
-									truncate: true,
-									as: "div",
-									className: "transition-colors group-hover:text-primary",
-									attributes: [h.Title(row.name)],
-								},
-								[row.name],
-							),
-							...(line === null ? [] : [line]),
-						],
-					),
+					spaced(h, { space: "0.5", fill: true }, [
+						typography(
+							h,
+							{
+								size: "xs",
+								tone: "foreground",
+								weight: "medium",
+								mono: true,
+								truncate: true,
+								as: "div",
+								className: "transition-colors group-hover:text-primary",
+								attributes: [h.Title(row.name)],
+							},
+							[row.name],
+						),
+						...(line === null ? [] : [line]),
+					]),
 				],
 			),
 			...cells,

@@ -9,7 +9,7 @@ import * as DialogView from "../../../ui/dialog-view"
 import { errorState } from "../../../ui/error-state"
 import { httpSpanLabel } from "../../../ui/http-span-label"
 import * as Resizable from "../../../ui/resizable"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { skeleton, skeletonList, skeletonMeter } from "../../../ui/skeleton"
 import { traceIdBadge } from "../../../ui/trace-badges"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
 import { Message } from "./message"
@@ -42,7 +42,7 @@ const loading = (h: H, model: Model, inputs: PeekViewInputs): ReadonlyArray<Html
 	h.div(
 		[h.Class("flex-1 space-y-3 overflow-hidden p-4")],
 		[
-			skeleton(h, "h-1.5 w-full rounded-full"),
+			skeletonMeter(h),
 			skeletonList(h, {
 				rows: 6,
 				className: "gap-0 rounded-md border",

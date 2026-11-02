@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { choiceCard } from "../../ui/choice-card"
+import { choiceCard, choiceCheckClass } from "../../ui/choice-card"
 import { PIXEL_GLYPHS } from "../../ui/icons.generated"
 import { typography } from "../../ui/typography"
 
@@ -40,15 +40,7 @@ const drawnCheck = <M>(h: HtmlBuilder<M>, isChecked: boolean, className: string 
 	h.span(
 		[
 			h.AriaHidden(true),
-			h.Class(
-				cn(
-					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
-					isChecked
-						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-border-strong",
-					className,
-				),
-			),
+			h.Class(choiceCheckClass(isChecked, true, className)),
 		],
 		[
 			h.svg(

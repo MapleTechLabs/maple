@@ -63,7 +63,8 @@ const whereClausePanel = (h: HtmlBuilder<Message>, whereClause: string): Html =>
 				size: "icon-xs",
 				className: typographyClass({
 					tone: "muted",
-					className: "shrink-0 hover:text-foreground active:text-foreground",
+					hoverTone: "foreground",
+					className: "shrink-0",
 				}),
 				attributes: [h.OnClick(Message.ClickedClearWhereClause())],
 			},
