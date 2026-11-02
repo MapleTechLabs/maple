@@ -118,6 +118,11 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 	]
 }
 
+/** What the clientInfo counts are: handshakes while every one came on `initialize`, else requests. */
+export const clientInfoUnit = (
+	entries: ReadonlyArray<Readonly<{ count: number; connects: number }>>,
+): "connect" | "request" => (entries.every((entry) => entry.count === entry.connects) ? "connect" : "request")
+
 export const overviewOf = (response: Overview, nowMs: number): McpServerOverview => ({
 	service: response.service,
 	protocolVersion: response.protocolVersion,
@@ -130,6 +135,7 @@ export const overviewOf = (response: Overview, nowMs: number): McpServerOverview
 	tools: response.tools,
 	clients: response.clients,
 	clientInfo: response.clientInfo,
+	clientInfoUnit: clientInfoUnit(response.clientInfo),
 	failures: failureKinds(response.failures),
 	methods: response.methods,
 	coverage: coverageRows(response.coverage),

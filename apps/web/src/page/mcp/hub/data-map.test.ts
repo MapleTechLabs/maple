@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { coverageRows, failureKinds, sessionsScreen } from "./data-map"
+import { clientInfoUnit, coverageRows, failureKinds, sessionsScreen } from "./data-map"
 
 const coverage = {
 	toolCalls: 100,
@@ -60,6 +60,21 @@ describe("failureKinds", () => {
 		])
 		expect(tool?.count).toBe(7)
 		expect(rpc).toMatchObject({ codes: ["-32603"], count: 2 })
+	})
+})
+
+describe("clientInfoUnit", () => {
+	it("counts handshakes only while every clientInfo came on initialize", () => {
+		expect(clientInfoUnit([{ count: 3, connects: 3 }])).toBe("connect")
+	})
+
+	it("counts requests once any clientInfo came on a later request", () => {
+		expect(
+			clientInfoUnit([
+				{ count: 3, connects: 3 },
+				{ count: 6, connects: 1 },
+			]),
+		).toBe("request")
 	})
 })
 

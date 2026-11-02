@@ -2955,10 +2955,11 @@ SELECT
           AND traces.SpanAttributes['error.type'] != ''
         FORMAT JSON
 
--- builder:mcp:mcpClientInfoQuery:default  [8fc0a402]
+-- builder:mcp:mcpClientInfoQuery:default  [68df61ce]
 SELECT
           traces.SpanAttributes['maple.mcp.client.name'] AS name,
-          count() AS count
+          count() AS count,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'initialize') AS connects
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'

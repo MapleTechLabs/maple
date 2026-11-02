@@ -256,7 +256,11 @@ export function mcpSpanSummaryQuery() {
 /** Requests per `clientInfo.name`: `initialize` sends it, a stateless request sends it in `_meta`. */
 export function mcpClientInfoQuery() {
 	return from(Traces)
-		.select(($) => ({ name: $.SpanAttributes.get("maple.mcp.client.name"), count: CH.count() }))
+		.select(($) => ({
+			name: $.SpanAttributes.get("maple.mcp.client.name"),
+			count: CH.count(),
+			connects: CH.countIf(method($).eq("initialize")),
+		}))
 		.where(($) => [...serverSpans($), $.SpanAttributes.get("maple.mcp.client.name").neq("")])
 		.groupBy("name")
 		.orderBy(["count", "desc"])

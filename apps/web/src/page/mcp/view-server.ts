@@ -603,6 +603,7 @@ const handshakesOf = (data: McpServerOverview): number =>
 const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
 	const handshakes = handshakesOf(data)
 	const hasConnects = handshakes > 0
+	const isPerConnect = data.clientInfoUnit === "connect"
 	// Without any `clientInfo` there is nothing to switch to.
 	const toggle = data.clientInfo.length === 0 ? undefined : options.clientToggle
 	if (options.clientIdentity === "info" && toggle !== undefined) {
@@ -611,12 +612,12 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			...data.clientInfo.map((entry) => clientInfoRow(h, entry, max)),
 			note(
 				h,
-				hasConnects
+				isPerConnect
 					? [
 							attr(h, "clientInfo"),
 							" arrives on initialize, so these count handshakes; a stateless request sends it with each call.",
 						]
-					: [attr(h, "clientInfo"), " arrives with each request, so these count requests."],
+					: [attr(h, "clientInfo"), " came with these requests, handshakes included."],
 			),
 		])
 	}
@@ -659,7 +660,7 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 				: [
 						" ",
 						attr(h, "clientInfo"),
-						` ${hasConnects ? "per connect" : "per request"}: ${named}${rest > 0 ? ` · ${rest} more` : ""}.`,
+						` ${isPerConnect ? "per connect" : "per request"}: ${named}${rest > 0 ? ` · ${rest} more` : ""}.`,
 					]),
 		]),
 	])

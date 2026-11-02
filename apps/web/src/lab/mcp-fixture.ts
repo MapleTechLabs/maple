@@ -319,13 +319,14 @@ export const MCP_OVERVIEW: McpServerOverview = {
 		},
 	],
 	clientInfo: [
-		{ name: "Claude Code", count: 75 },
-		{ name: "estate-console", count: 10 },
-		{ name: "executor-mcp", count: 5 },
-		{ name: "factory-cli", count: 1 },
-		{ name: "preview-verifier", count: 1 },
-		{ name: "pi", count: 1 },
+		{ name: "Claude Code", count: 75, connects: 75 },
+		{ name: "estate-console", count: 10, connects: 10 },
+		{ name: "executor-mcp", count: 5, connects: 5 },
+		{ name: "factory-cli", count: 1, connects: 1 },
+		{ name: "preview-verifier", count: 1, connects: 1 },
+		{ name: "pi", count: 1, connects: 1 },
 	],
+	clientInfoUnit: "connect",
 	failures: [
 		{
 			label: "Tool errors",
