@@ -4,8 +4,10 @@ import { Submodel } from "foldkit"
 import { button } from "@maple/views/ui/button"
 import { menuPopup } from "@maple/views/ui/dropdown-menu"
 import { pageLayoutRoot } from "@maple/views/ui/page-layout"
+import { hstack } from "@maple/views/ui/stack"
 import { sidebarContent, sidebarDesktop, sidebarInset, sidebarMobile, sidebarWrapper } from "@maple/views/ui/sidebar"
 import * as Tooltip from "@maple/views/ui/tooltip"
+import { typography } from "@maple/views/ui/typography"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { billingBanners } from "./billing-banners"
 import * as SupportChannelView from "./support-channel-view"
@@ -119,17 +121,18 @@ const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: Shel
 
 /** `AppUpdatePill`: not dismissible, a stale bundle may not read what the new build writes. */
 const appUpdatePill = (h: HtmlBuilder<Message>): Html =>
-	h.div(
+	hstack(
+		h,
+		{
+			gap: "3",
+			attributes: [h.Role("status")],
+			// Dark popover barely clears the page, so it lifts a step and takes the control highlight.
+			// z-30 keeps page action bars (errors bulk bar, z-40) clickable above it.
+			className:
+				"fixed right-4 bottom-4 z-30 rounded-full border border-input bg-popover py-1 pr-1 pl-3.5 shadow-popup before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:shadow-control dark:bg-secondary sm:right-8 sm:bottom-8",
+		},
 		[
-			h.Role("status"),
-			h.Class(
-				// Dark popover barely clears the page, so it lifts a step and takes the control highlight.
-				// z-30 keeps page action bars (errors bulk bar, z-40) clickable above it.
-				"fixed right-4 bottom-4 z-30 flex items-center gap-3 rounded-full border border-input bg-popover py-1 pr-1 pl-3.5 text-sm shadow-popup before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:shadow-control dark:bg-secondary sm:right-8 sm:bottom-8",
-			),
-		],
-		[
-			h.span([h.Class("text-foreground-soft")], ["Maple was updated"]),
+			typography(h, { size: "sm", tone: "soft" }, ["Maple was updated"]),
 			button(
 				h,
 				{
