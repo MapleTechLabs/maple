@@ -28,7 +28,7 @@ const url = Option.getOrThrow(fromString("http://localhost/#/traces"))
 const settled = (): Model => ({
 	...init(flags, url).model,
 	probe: { isInFlight: false, version: 1 },
-	presence: AsyncData.Success({ data: { rows: [], nowMs: 1_000 } }),
+	presence: AsyncData.Success({ data: { signals: {}, nowMs: 1_000 } }),
 })
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 const argsOf = (commands: ReadonlyArray<{ readonly args?: unknown }> | undefined) => (commands ?? []).map(({ args }) => args)

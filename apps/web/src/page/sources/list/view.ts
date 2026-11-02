@@ -12,7 +12,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
-import { filteredEmpty } from "../../kit/signal-empty-state"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { platformMeta, platformTile } from "../kit/platforms"
 import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/domain/primitives"
 import { AppRoute, hrefOf } from "../../../route"

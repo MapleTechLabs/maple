@@ -27,7 +27,7 @@ const contextAt = (search: string): PageContext => ({
 const context = contextAt("")
 const inputs: PageViewInputs = {
 	context,
-	presenceOf: () => Option.none(),
+	presenceOf: () => ({ status: "unknown", lastSeenMs: null }),
 	presenceNowMs: NOW,
 	clockMs: 0,
 	hasNewDataSince: () => false,

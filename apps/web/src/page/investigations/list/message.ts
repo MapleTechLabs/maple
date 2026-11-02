@@ -3,7 +3,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
-import { SignalPresences } from "../../kit/signal-presence"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import { InvestigationPage, TriageBudget } from "./model"
 
 const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })

@@ -4,9 +4,9 @@ import { formatErrorRate, formatRate } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "@maple/views/ui/display"
-import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { badge } from "../../ui/display"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack } from "../../ui/stack"
 
 // The small pieces both detail panels share.
 
@@ -74,6 +74,11 @@ export const edgeRow = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
 		service: string
+		/** The row's name and bar color when it is not a service (a database). */
+		label?: string
+		color?: string
+		/** Where the name links: the peer's own page. */
+		href?: string
 		edge: EdgeLike
 		durationSeconds: number
 		unit: string
@@ -89,8 +94,16 @@ export const edgeRow = <M>(
 		options.explainSampling === true && edge.hasSampling
 			? `Estimated ×${edge.samplingWeight.toFixed(0)} from ${formatRate(edge.callCount / safeDuration)} traced req/s`
 			: undefined
+	const name = hstack(h, { gap: "1.5", shrink: true }, [
+		h.div([
+			h.Class("w-[3px] h-3.5 rounded-sm shrink-0"),
+			h.Style({ "background-color": options.color ?? getServiceColor(options.service) }),
+		]),
+		typography(h, { tone: "foreground", truncate: true }, [options.label ?? options.service]),
+	])
 	return h.div(
 		[
+			h.Key(options.service),
 			h.Class(
 				cn(
 					"flex items-center justify-between px-2.5 py-2 rounded-md border text-xs",
@@ -102,13 +115,7 @@ export const edgeRow = <M>(
 			...(title === undefined ? [] : [h.Title(title)]),
 		],
 		[
-			hstack(h, { gap: "1.5", shrink: true }, [
-				h.div([
-					h.Class("w-[3px] h-3.5 rounded-sm shrink-0"),
-					h.Style({ "background-color": getServiceColor(options.service) }),
-				]),
-				typography(h, { tone: "foreground", truncate: true }, [options.service]),
-			]),
+			options.href === undefined ? name : h.a([h.Href(options.href), h.Class("min-w-0 hover:underline active:underline")], [name]),
 			h.div(
 				[h.Class("flex items-center gap-2 shrink-0 text-3xs")],
 				[

@@ -6,7 +6,7 @@ import { FixedMetricRow } from "@maple/views/charts/chart-spec"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
-import { SignalPresences } from "../kit/signal-presence"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
 import {

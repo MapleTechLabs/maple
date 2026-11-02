@@ -8,7 +8,7 @@ import { TimeWindow } from "../../data/time-range"
 import { AnalyticsSearch } from "../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import { SignalPresenceData } from "../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 
 // `/analytics`.

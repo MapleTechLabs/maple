@@ -33,7 +33,7 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { textLink } from "@maple/views/ui/text-link"
-import { filteredEmpty } from "../../kit/signal-empty-state"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
 import { relativeTime } from "../../kit/relative-time"
 import { ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"

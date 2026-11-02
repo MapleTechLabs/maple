@@ -21,7 +21,7 @@ import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { type FilterKey, Message } from "./message"
 import type { Breakdowns, Model } from "./model"
 import { filtersOf, tabOf } from "./requests"
-import { presenceOf } from "../kit/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { favicon, isHostLike } from "./view-icons"
 
 // `AnalyticsFilterSidebar`: the page's filter rail.

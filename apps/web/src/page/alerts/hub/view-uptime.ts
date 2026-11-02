@@ -18,7 +18,7 @@ import { searchInput } from "@maple/views/ui/search-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
-import { emptyActions, filteredEmpty } from "../../kit/signal-empty-state"
+import { emptyActions, filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
 import { monitorHref, newMonitorHref } from "../shared/uptime-commands"
 import {

@@ -49,7 +49,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onClearFilters: Message.ClickedClearAllFilters(),
 				range,
 				onWidenRange: Message.ClickedWidenRange(),
-				maybePresence: inputs.presenceOf("sessions"),
+				presence: inputs.presenceOf("sessions"),
 				nowMs: inputs.presenceNowMs,
 				guide: { id: "sessions-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 			})

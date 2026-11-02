@@ -21,7 +21,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model, ReadinessFilter } from "./model"
-import { filteredEmpty as filteredEmptyState } from "../../kit/signal-empty-state"
+import { filteredEmpty as filteredEmptyState } from "@maple/views/ui/signal-empty-state"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `TemplateList`: the templates as rows.

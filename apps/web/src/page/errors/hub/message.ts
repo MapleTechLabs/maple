@@ -9,7 +9,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as QuickPick from "../kit/quick-pick"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
-import { SignalPresences } from "../../kit/signal-presence"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import { HubWrite, WriteOutcome } from "./writes"
 import { ErrorsSummary, IssuePage, SparkSeries, VolumeRow } from "./model"
 

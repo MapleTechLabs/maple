@@ -17,7 +17,7 @@ import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
-import { SignalPresenceData } from "../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
 

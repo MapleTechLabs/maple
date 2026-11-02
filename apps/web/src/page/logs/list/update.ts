@@ -25,7 +25,7 @@ import { getActiveInfraCorrelations } from "../../../components/infra/infra-corr
 import * as InfraCorrelation from "../../kit/infra-correlation"
 import { LOG_PAGE_PATH, logPageHref } from "../log-links"
 import { copyToast } from "../../kit/clipboard"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {

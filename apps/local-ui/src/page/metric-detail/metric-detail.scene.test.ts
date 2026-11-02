@@ -1,4 +1,4 @@
-import { DateTime, Option } from "effect"
+import { DateTime } from "effect"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -72,7 +72,7 @@ describe("local metric detail", () => {
 	test("last seen reads the root's newer clock, as legacy reads the time at each render", () => {
 		const step = entered()
 		const found = pageUpdate(step.model, Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW })).model
-		const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, clockMs: NOW + 20 * 60_000, hasNewDataSince: () => false }
+		const inputs: PageViewInputs = { context, presenceOf: () => ({ status: "unknown", lastSeenMs: null }), presenceNowMs: NOW, clockMs: NOW + 20 * 60_000, hasNewDataSince: () => false }
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, inputs)() },
 			given(found),

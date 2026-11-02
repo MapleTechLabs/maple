@@ -6,7 +6,7 @@ import { TracesSearch } from "../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as Dialog from "@maple/views/ui/dialog"
 import { AdvancedFilter } from "./advanced-model"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { Model as TraceDetailModel } from "../detail/model"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 

@@ -56,7 +56,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onClearFilters: Message.ClickedClearFilters(),
 				range,
 				onWidenRange: Message.ClickedWidenRange(),
-				maybePresence: inputs.presenceOf("traces"),
+				presence: inputs.presenceOf("traces"),
 				nowMs: inputs.presenceNowMs,
 				guide: { id: "traces-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 			})
