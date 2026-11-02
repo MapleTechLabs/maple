@@ -34,9 +34,9 @@ export const footer = (h: H, model: Model): Html =>
 							tone: "muted",
 							onClick: Message.ClickedShortcuts(),
 							className:
-								"gap-0 text-foreground-faint hover:text-foreground-soft active:text-foreground-soft hover:no-underline active:no-underline",
+								"gap-1.5 text-foreground-faint hover:text-foreground-soft active:text-foreground-soft hover:no-underline active:no-underline",
 						},
-						[kbd(h, HINT_KBD, ["?"]), " all shortcuts"],
+						[kbd(h, HINT_KBD, ["?"]), "all shortcuts"],
 					),
 				],
 			),
