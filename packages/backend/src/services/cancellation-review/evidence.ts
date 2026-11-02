@@ -1,15 +1,18 @@
 /**
  * What the model reads besides the snapshot, cut down from its sources: the
  * Stripe cancellation survey, the org's browser sessions in Maple's own app,
- * and its audit log. Pure, so what the model is shown is asserted in a test.
+ * its audit log and the members' other orgs. Pure, so what the model is shown is asserted in a test.
  */
 import type {
 	CancellationAuditEntry,
+	CancellationOtherOrgs,
 	CancellationSessionDigest,
 	CancellationStripeFeedback,
 } from "@maple/domain/http"
 import { DateTime, Effect, Schema } from "effect"
 import { reviewedSubscriptionOf } from "./evidence-billing"
+import { holdsName, memberNameWords } from "./evidence-company"
+import { OTHER_ORGS_SHOWN } from "./slack-message"
 import { daysBeforeCancel, redactText } from "./evidence-input"
 
 const PROBLEM_CHARS = 200
@@ -151,3 +154,41 @@ export const auditEntryOf = (atMs: number, row: AuditRow): CancellationAuditEntr
 	actor: row.actorType,
 	outcome: row.outcome,
 })
+
+export interface OtherOrgRow {
+	readonly name: string
+	readonly createdAtMs: number
+	readonly membersCount: number | null
+	readonly sharedMembers: ReadonlyArray<string>
+	readonly billing: { readonly plan: string | null } | null
+}
+
+/**
+ * The members' other orgs without the people: shared members as a count, and
+ * a name holding a member's name left out. `orgs` is newest first; the model
+ * sees the same few the report lists.
+ */
+export const otherOrgsOf = (
+	atMs: number,
+	orgs: ReadonlyArray<OtherOrgRow>,
+	members: ReadonlyArray<{ readonly email: string; readonly name?: string | null }>,
+): CancellationOtherOrgs => {
+	const nameWords = memberNameWords(
+		members.map((member) => member.email),
+		members.map((member) => member.name ?? null),
+	)
+	return {
+		total: orgs.length,
+		orgs: orgs.slice(0, OTHER_ORGS_SHOWN).map((org) => {
+			const nameIsPersonal = holdsName(org.name, nameWords)
+			return {
+				name: nameIsPersonal ? null : org.name,
+				nameIsPersonal,
+				createdDaysBeforeCancel: daysBeforeCancel(atMs, org.createdAtMs),
+				members: org.membersCount,
+				sharedMembers: org.sharedMembers.length,
+				billing: org.billing,
+			}
+		}),
+	}
+}

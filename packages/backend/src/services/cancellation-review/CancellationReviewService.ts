@@ -64,11 +64,12 @@ import {
 	TRANSCRIPT_PROBLEMS,
 	auditEntryOf,
 	digestSession,
+	otherOrgsOf,
 	stripeFeedbackOf,
 } from "./evidence"
 import { CancellationAppEvidenceReader } from "./evidence-app"
 import { CancellationBillingEvidenceReader } from "./evidence-billing"
-import { CancellationCompanyEvidenceReader } from "./evidence-company"
+import { CancellationCompanyEvidenceReader, isMapleStaff } from "./evidence-company"
 import { type CancellationEvidenceInput, EVIDENCE_GRACE_MS, knownAtCancel } from "./evidence-input"
 import { CancellationTelemetryEvidenceReader } from "./evidence-telemetry"
 import { deriveSignals, ruleReason } from "./signals"
@@ -255,7 +256,12 @@ export class CancellationReviewService extends Context.Service<
 					info: organizations.retrieve(orgId),
 					// Clerk-less deployments have no member directory; the count is then unknown.
 					members: members.listMembers(orgId).pipe(
-						Effect.map((list): ReadonlyArray<{ userId: string; email: string }> | null => list),
+						Effect.map(
+							(
+								list,
+							): ReadonlyArray<{ userId: string; email: string; name: string | null }> | null =>
+								list,
+						),
 						Effect.orElseSucceed(() => null),
 					),
 					state: onboarding.findState(orgId).pipe(Effect.map(Option.getOrNull)),
@@ -472,10 +478,13 @@ export class CancellationReviewService extends Context.Service<
 			read: Effect.Effect<S["Type"]>,
 		) => optional(name, read.pipe(Effect.flatMap((value) => Schema.decodeUnknownEffect(schema)(value))))
 
-		/** Orgs the members also belong to: a customer moving to another org is not leaving. */
+		/**
+		 * Orgs the members also belong to: a customer moving to another org is not
+		 * leaving. Maple staff are skipped: their other orgs are the customers they help.
+		 */
 		const readOtherOrgs = (orgId: OrgId, people: ReadonlyArray<{ userId: string; email: string }>) =>
 			Effect.forEach(
-				people.slice(0, OTHER_ORGS_MEMBER_LIMIT),
+				people.filter((person) => !isMapleStaff(person.email)).slice(0, OTHER_ORGS_MEMBER_LIMIT),
 				(person) =>
 					members
 						.listOrganizationsOf(person.userId)
@@ -712,6 +721,7 @@ export class CancellationReviewService extends Context.Service<
 					adoption,
 					billing,
 					integrations,
+					otherOrgs,
 				] = yield* Effect.all(
 					[
 						// First: the slowest, and the ones the model leans on most.
@@ -743,6 +753,9 @@ export class CancellationReviewService extends Context.Service<
 							"integrations",
 							inventory.list(orgId).pipe(Effect.map((listed) => listed.integrations)),
 						),
+						org?.members == null
+							? Effect.succeed(null)
+							: optional("otherOrgs", readOtherOrgs(orgId, org.members)),
 					],
 					// A Worker keeps six connections open at once, and the sections fan out.
 					{ concurrency: 4 },
@@ -786,28 +799,23 @@ export class CancellationReviewService extends Context.Service<
 
 				const reason = ruleReason(snapshot)
 				const signals = deriveSignals(snapshot)
-				// The model does not read the other orgs, so neither waits on the other.
-				const [otherOrgs, modelRead] = yield* Effect.all(
-					[
-						org?.members == null
-							? Effect.succeed(null)
-							: optional("otherOrgs", readOtherOrgs(orgId, org.members)),
-						reader.read(
-							new CancellationModelRequest({
-								snapshot,
-								ruleReason: reason,
-								signals: signals.map((signal) => signal.text),
-								stripeFeedback,
-								sessions,
-								auditLog: audit,
-								company,
-								billing: billingHistory,
-								app,
-								telemetry,
-							}),
-						),
-					],
-					{ concurrency: 2 },
+				const modelRead = yield* reader.read(
+					new CancellationModelRequest({
+						snapshot,
+						ruleReason: reason,
+						signals: signals.map((signal) => signal.text),
+						stripeFeedback,
+						sessions,
+						auditLog: audit,
+						company,
+						billing: billingHistory,
+						app,
+						telemetry,
+						otherOrgs:
+							otherOrgs === null || org?.members == null
+								? null
+								: otherOrgsOf(atMs, otherOrgs, org.members),
+					}),
 				)
 				const message = buildCancellationMessage({
 					subject: {
@@ -919,6 +927,7 @@ export class CancellationReviewService extends Context.Service<
 						billingHistory,
 						app,
 						telemetry,
+						otherOrgs,
 					})
 						.filter(([, section]) => section === null)
 						.map(([name]) => name)

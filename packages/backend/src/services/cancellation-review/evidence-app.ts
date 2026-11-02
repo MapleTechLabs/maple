@@ -40,7 +40,11 @@ import type {
 	CancellationPriorReview,
 	CancellationScrapeEvidence,
 } from "@maple/domain/http"
-import { INTEGRATION_PROVIDERS, type IntegrationInventory } from "@maple/domain/integration-inventory"
+import {
+	INTEGRATION_PROVIDERS,
+	type IntegrationEntry,
+	type IntegrationInventory,
+} from "@maple/domain/integration-inventory"
 import {
 	SOURCE_HEALTH_STATUSES,
 	type SourceHealthStatus,
@@ -136,6 +140,16 @@ const SDK_PLATFORMS: ReadonlySet<string> = new Set([
 	"browser",
 ])
 
+/** An integration's resources counted by kind; a chat workspace counts under its connector. */
+const resourceCountsOf = (entry: IntegrationEntry): CancellationIntegrationHealth["resources"] => {
+	const counts = new Map<string, number>()
+	for (const resource of entry.resources) {
+		const kind = entry.provider === "chat" ? (resource.note ?? resource.kind) : resource.kind
+		counts.set(kind, (counts.get(kind) ?? 0) + 1)
+	}
+	return [...counts].map(([kind, count]) => ({ kind, count }))
+}
+
 /**
  * The inventory's integrations, plus the ingest sources it leaves out (SDK
  * tokens with a problem, GCP, Claude Code, ...) one entry per platform. A GCP connector's errors clear on
@@ -154,6 +168,7 @@ export const integrationHealthOf = (
 		lastSuccessDaysBeforeCancel: days(atMs, newest(entry.resources.map((r) => r.lastSuccessAt))),
 		lastErrorDaysBeforeCancel: null,
 		errorClass: isBroken(entry.status) ? errorClassOf(entry.problem ?? "") : null,
+		resources: resourceCountsOf(entry),
 	}))
 	const byPlatform = new Map<string, Array<SourceHealthRow>>()
 	for (const source of sources) {
@@ -193,6 +208,7 @@ export const integrationHealthOf = (
 				: connectorError === undefined
 					? null
 					: errorClassOf(connectorError),
+			resources: [],
 		}
 	})
 	const shown = platforms.filter(

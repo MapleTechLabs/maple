@@ -579,6 +579,20 @@ describe("CancellationReviewService", () => {
 				actor: "user",
 				outcome: "allowed",
 			})
+			// The members' other org, as the report lists it, without the member.
+			assert.deepStrictEqual(request?.otherOrgs, {
+				total: 1,
+				orgs: [
+					{
+						name: "Acme New",
+						nameIsPersonal: false,
+						createdDaysBeforeCancel: 1,
+						members: 1,
+						sharedMembers: 1,
+						billing: { plan: "pro" },
+					},
+				],
+			})
 			// No person's email reaches the model.
 			assert.notInclude(JSON.stringify(request), "@acme.test")
 			assert.strictEqual(request?.ruleReason, "stopped_sending")
