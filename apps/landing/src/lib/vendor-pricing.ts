@@ -12,16 +12,19 @@
  * Maple branch converts with a per-item estimate documented at that branch.
  */
 
-export type Vendor =
-	| "datadog"
-	| "grafana"
-	| "new-relic"
-	| "dash0"
-	| "openobserve"
-	| "signoz"
-	| "axiom"
-	| "better-stack"
-	| "honeycomb"
+export const VENDORS = [
+	"datadog",
+	"grafana",
+	"new-relic",
+	"dash0",
+	"openobserve",
+	"signoz",
+	"axiom",
+	"better-stack",
+	"honeycomb",
+] as const
+
+export type Vendor = (typeof VENDORS)[number]
 
 /** Month the list prices were last checked against the vendors' pages. */
 export const PRICES_VERIFIED = "2026-09"

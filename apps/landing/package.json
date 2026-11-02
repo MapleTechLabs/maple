@@ -42,6 +42,7 @@
 		"autumn-js": "^1.5.24",
 		"d3-scale": "^4.0.2",
 		"effect": "catalog:effect",
+		"foldkit": "0.170.0",
 		"fuse.js": "^7.5.0",
 		"react": "catalog:react",
 		"react-dom": "catalog:react",
@@ -50,8 +51,10 @@
 	},
 	"devDependencies": {
 		"@effect/platform-node": "catalog:effect",
+		"@foldkit/vite-plugin": "0.29.0",
 		"@inlang/paraglide-js": "^2.29.2",
 		"@types/d3-scale": "^4.0.9",
+		"happy-dom": "^21.0.4",
 		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
