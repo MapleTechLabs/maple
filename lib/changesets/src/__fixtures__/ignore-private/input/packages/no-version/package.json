@@ -1,0 +1,7 @@
+{
+	"name": "@x/no-version",
+	"private": true,
+	"dependencies": {
+		"@x/sdk": "workspace:*"
+	}
+}

@@ -1,0 +1,10 @@
+{
+	"name": "@x/cli",
+	"version": "1.2.0",
+	"private": true,
+	"dependencies": {
+		"@x/sdk": "workspace:*",
+		"@x/internal": "workspace:*",
+		"@x/no-version": "workspace:*"
+	}
+}

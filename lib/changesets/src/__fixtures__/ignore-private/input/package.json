@@ -1,0 +1,8 @@
+{
+	"name": "ignore-root",
+	"private": true,
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	]
+}

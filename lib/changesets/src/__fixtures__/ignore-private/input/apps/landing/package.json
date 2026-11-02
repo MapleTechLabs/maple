@@ -1,0 +1,8 @@
+{
+	"name": "@x/landing",
+	"version": "0.0.1",
+	"private": true,
+	"dependencies": {
+		"@x/sdk": "workspace:*"
+	}
+}

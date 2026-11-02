@@ -1,0 +1,7 @@
+{
+	"name": "file-dep",
+	"version": "1.0.0",
+	"devDependencies": {
+		"core": "file:../core"
+	}
+}

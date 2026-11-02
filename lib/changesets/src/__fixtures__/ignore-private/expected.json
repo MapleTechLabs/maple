@@ -1,0 +1,21 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"apps/cli/CHANGELOG.md": "# @x/cli\n\n## 1.2.1\n\n### Patch Changes\n\n- 244bb1b: CLI fix.\n- Updated dependencies [244bb1b]\n  - @x/sdk@0.5.0\n  - @x/internal@0.0.1\n\n## 1.2.0\n\n### Minor Changes\n\n- 1111111: Earlier.\n",
+			"apps/cli/package.json": "{\n\t\"name\": \"@x/cli\",\n\t\"version\": \"1.2.1\",\n\t\"private\": true,\n\t\"dependencies\": {\n\t\t\"@x/sdk\": \"workspace:*\",\n\t\t\"@x/internal\": \"workspace:*\",\n\t\t\"@x/no-version\": \"workspace:*\"\n\t}\n}\n",
+			"packages/internal/CHANGELOG.md": "# @x/internal\n\n## 0.0.1\n\n### Patch Changes\n\n- Updated dependencies [244bb1b]\n  - @x/sdk@0.5.0\n",
+			"packages/internal/package.json": "{\n\t\"name\": \"@x/internal\",\n\t\"version\": \"0.0.1\",\n\t\"private\": true,\n\t\"dependencies\": {\n\t\t\"@x/sdk\": \"workspace:*\"\n\t}\n}\n",
+			"packages/sdk/CHANGELOG.md": "# @x/sdk\n\n## 0.5.0\n\n### Minor Changes\n\n- 244bb1b: SDK feature.\n",
+			"packages/sdk/package.json": "{\n\t\"name\": \"@x/sdk\",\n\t\"version\": \"0.5.0\",\n\t\"publishConfig\": {\n\t\t\"access\": \"public\"\n\t}\n}\n"
+		},
+		"deleted": [
+			".changeset/cli-patch.md",
+			".changeset/sdk-minor.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"@x/cli\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"CLI fix.\",\n      \"id\": \"cli-patch\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"@x/landing\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"Only the ignored landing page.\",\n      \"id\": \"landing-only\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"@x/sdk\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"SDK feature.\",\n      \"id\": \"sdk-minor\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"@x/tool-a\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Only an ignored tool.\",\n      \"id\": \"tool-only\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"@x/cli\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.2.0\",\n      \"changesets\": [\n        \"cli-patch\"\n      ],\n      \"newVersion\": \"1.2.1\"\n    },\n    {\n      \"name\": \"@x/sdk\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"0.4.0\",\n      \"changesets\": [\n        \"sdk-minor\"\n      ],\n      \"newVersion\": \"0.5.0\"\n    },\n    {\n      \"name\": \"@x/landing\",\n      \"type\": \"none\",\n      \"oldVersion\": \"0.0.1\",\n      \"changesets\": [],\n      \"newVersion\": \"0.0.1\"\n    },\n    {\n      \"name\": \"@x/tool-a\",\n      \"type\": \"none\",\n      \"oldVersion\": \"0.1.0\",\n      \"changesets\": [],\n      \"newVersion\": \"0.1.0\"\n    },\n    {\n      \"name\": \"@x/internal\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"0.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"0.0.1\"\n    },\n    {\n      \"name\": \"@x/no-version\",\n      \"type\": \"none\",\n      \"changesets\": []\n    }\n  ]\n}"
+	}
+}

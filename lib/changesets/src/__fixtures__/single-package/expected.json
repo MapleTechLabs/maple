@@ -1,0 +1,16 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"CHANGELOG.md": "# solo\n\n## 0.10.0\n\n### Minor Changes\n\n- eef9467: A minor for a single-package repo.\n\n## 0.9.0\n\n- Before.\n",
+			"package.json": "{\n\t\"name\": \"solo\",\n\t\"version\": \"0.10.0\",\n\t\"dependencies\": {\n\t\t\"left-pad\": \"^1.3.0\"\n\t}\n}\n"
+		},
+		"deleted": [
+			".changeset/solo-minor.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"solo\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"A minor for a single-package repo.\",\n      \"id\": \"solo-minor\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"solo\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"0.9.0\",\n      \"changesets\": [\n        \"solo-minor\"\n      ],\n      \"newVersion\": \"0.10.0\"\n    }\n  ]\n}"
+	}
+}

@@ -1,0 +1,8 @@
+{
+	"name": "@fx/b",
+	"version": "1.0.0",
+	"dependencies": {
+		"@fx/a": "workspace:*",
+		"express": "4.17.1"
+	}
+}

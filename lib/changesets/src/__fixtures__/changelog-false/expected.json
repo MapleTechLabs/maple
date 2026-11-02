@@ -1,0 +1,16 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"packages/a/package.json": "{\n\t\"name\": \"a\",\n\t\"version\": \"2.0.0\"\n}\n",
+			"packages/b/package.json": "{\n\t\"name\": \"b\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"a\": \"workspace:^2.0.0\"\n\t}\n}\n"
+		},
+		"deleted": [
+			".changeset/a-major.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"a\",\n          \"type\": \"major\"\n        }\n      ],\n      \"summary\": \"No changelog written.\",\n      \"id\": \"a-major\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"a\",\n      \"type\": \"major\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"a-major\"\n      ],\n      \"newVersion\": \"2.0.0\"\n    },\n    {\n      \"name\": \"b\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    }\n  ]\n}"
+	}
+}

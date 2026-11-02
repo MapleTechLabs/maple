@@ -1,0 +1,7 @@
+{
+	"name": "tool-skip",
+	"version": "1.0.0",
+	"dependencies": {
+		"lib-a": "1.0.0"
+	}
+}

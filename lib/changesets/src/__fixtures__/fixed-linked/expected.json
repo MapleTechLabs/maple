@@ -1,0 +1,25 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"packages/fa/CHANGELOG.md": "# fa\n\n## 1.2.1\n\n### Patch Changes\n\n- c149e57: Fixed group patch.\n",
+			"packages/fa/package.json": "{\n\t\"name\": \"fa\",\n\t\"version\": \"1.2.1\"\n}\n",
+			"packages/fb/CHANGELOG.md": "# fb\n\n## 1.2.1\n\nNo changes in this release.\n",
+			"packages/fb/package.json": "{\n\t\"name\": \"fb\",\n\t\"version\": \"1.2.1\"\n}\n",
+			"packages/la/CHANGELOG.md": "# la\n\n## 0.10.0\n\n### Minor Changes\n\n- c149e57: Linked group.\n",
+			"packages/la/package.json": "{\n\t\"name\": \"la\",\n\t\"version\": \"0.10.0\"\n}\n",
+			"packages/lb/CHANGELOG.md": "# lb\n\n## 0.10.0\n\n### Patch Changes\n\n- c149e57: Linked group.\n",
+			"packages/lb/package.json": "{\n\t\"name\": \"lb\",\n\t\"version\": \"0.10.0\"\n}\n",
+			"packages/user/CHANGELOG.md": "# user\n\n## 1.0.1\n\n### Patch Changes\n\n- Updated dependencies [c149e57]\n  - lb@0.10.0\n  - fb@1.2.1\n",
+			"packages/user/package.json": "{\n\t\"name\": \"user\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"fb\": \"^1.2.1\",\n\t\t\"lb\": \"^0.10.0\"\n\t}\n}\n"
+		},
+		"deleted": [
+			".changeset/fa-patch.md",
+			".changeset/linked.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"fa\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Fixed group patch.\",\n      \"id\": \"fa-patch\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"la\",\n          \"type\": \"minor\"\n        },\n        {\n          \"name\": \"lb\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Linked group.\",\n      \"id\": \"linked\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"fa\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.2.0\",\n      \"changesets\": [\n        \"fa-patch\"\n      ],\n      \"newVersion\": \"1.2.1\"\n    },\n    {\n      \"name\": \"la\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"0.9.0\",\n      \"changesets\": [\n        \"linked\"\n      ],\n      \"newVersion\": \"0.10.0\"\n    },\n    {\n      \"name\": \"lb\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"0.9.0\",\n      \"changesets\": [\n        \"linked\"\n      ],\n      \"newVersion\": \"0.10.0\"\n    },\n    {\n      \"name\": \"fb\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.2.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.2.1\"\n    },\n    {\n      \"name\": \"user\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    }\n  ]\n}"
+	}
+}

@@ -1,0 +1,17 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"packages/priv/package.json": "{\n\t\"name\": \"priv\",\n\t\"version\": \"1.0.0\",\n\t\"private\": true,\n\t\"dependencies\": {\n\t\t\"pub\": \"^3.0.0\"\n\t}\n}\n",
+			"packages/pub/CHANGELOG.md": "# pub\n\n## 3.0.0\n\n### Major Changes\n\n- aa1df5e: Pub major.\n",
+			"packages/pub/package.json": "{\n\t\"name\": \"pub\",\n\t\"version\": \"3.0.0\"\n}\n"
+		},
+		"deleted": [
+			".changeset/pub-major.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"priv\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"A private-only changeset stays behind.\",\n      \"id\": \"priv-only\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"pub\",\n          \"type\": \"major\"\n        }\n      ],\n      \"summary\": \"Pub major.\",\n      \"id\": \"pub-major\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"pub\",\n      \"type\": \"major\",\n      \"oldVersion\": \"2.0.0\",\n      \"changesets\": [\n        \"pub-major\"\n      ],\n      \"newVersion\": \"3.0.0\"\n    },\n    {\n      \"name\": \"priv\",\n      \"type\": \"none\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.0\"\n    }\n  ]\n}"
+	}
+}

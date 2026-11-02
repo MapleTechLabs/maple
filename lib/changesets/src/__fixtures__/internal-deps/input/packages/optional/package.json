@@ -1,0 +1,7 @@
+{
+	"name": "optional",
+	"version": "1.0.0",
+	"optionalDependencies": {
+		"core": "1.0.0"
+	}
+}

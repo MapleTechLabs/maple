@@ -1,0 +1,11 @@
+{
+	"name": "deps-root",
+	"private": true,
+	"workspaces": [
+		"packages/*"
+	],
+	"devDependencies": {
+		"core": "^1.0.0",
+		"unrelated": "1.0.0"
+	}
+}

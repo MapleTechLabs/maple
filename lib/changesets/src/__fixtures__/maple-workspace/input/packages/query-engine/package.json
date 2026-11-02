@@ -1,0 +1,43 @@
+{
+	"name": "@maple/query-engine",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./datetime": "./src/datetime.ts",
+		"./formula-results": "./src/formula-results.ts",
+		"./traces-shared": "./src/traces-shared.ts",
+		"./query-builder": "./src/query-builder/model.ts",
+		"./query-set": "./src/query-set/index.ts",
+		"./ch": "./src/ch/index.ts",
+		"./profiles": "./src/profiles/index.ts",
+		"./caching": "./src/caching/index.ts",
+		"./execution": "./src/execution/index.ts",
+		"./runtime": "./src/runtime/index.ts",
+		"./registry": "./src/registry/index.ts",
+		"./observability": "./src/observability/index.ts",
+		"./local": "./src/local.ts",
+		"./benchmark": "./src/benchmark/index.ts",
+		"./ch/tables": "./src/ch/tables.ts",
+		"./ch/schema": "./src/ch/schema.ts",
+		"./ch/format": "./src/ch/queries/format.ts",
+		"./ch/query-helpers": "./src/ch/queries/query-helpers.ts"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsrs --noEmit"
+	},
+	"dependencies": {
+		"@maple-dev/effect-orm": "0.8.0",
+		"@maple/cache": "workspace:*",
+		"@maple/domain": "workspace:*",
+		"@maple/query-model": "workspace:*",
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
+		"@effect/vitest": "catalog:effect",
+		"@types/node": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}

@@ -1,0 +1,302 @@
+[
+	{
+		"input": "---\n\"@maple/cli\": patch\n---\n\nHello\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "@maple/cli",
+					"type": "patch"
+				}
+			],
+			"summary": "Hello"
+		}
+	},
+	{
+		"input": "---\n'a': minor # c\nb: major\n\"c\":   \"patch\"\n---\n\nx",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "minor"
+				},
+				{
+					"name": "b",
+					"type": "major"
+				},
+				{
+					"name": "c",
+					"type": "patch"
+				}
+			],
+			"summary": "x"
+		}
+	},
+	{
+		"input": "---\n---\n\nempty",
+		"changeset": {
+			"releases": [],
+			"summary": "empty"
+		}
+	},
+	{
+		"input": "---\n---\n",
+		"changeset": {
+			"releases": [],
+			"summary": ""
+		}
+	},
+	{
+		"input": "---\r\n\"a\": patch\r\n---\r\n\r\nwin\r\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				}
+			],
+			"summary": "win"
+		}
+	},
+	{
+		"input": "---\n{ \"a\": patch, b: minor }\n---\nflow",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				},
+				{
+					"name": "b",
+					"type": "minor"
+				}
+			],
+			"summary": "flow"
+		}
+	},
+	{
+		"input": "---\n{}\n---\nempty flow",
+		"changeset": {
+			"releases": [],
+			"summary": "empty flow"
+		}
+	},
+	{
+		"input": "---\n\"a\": patcH\n---\n",
+		"error": "could not parse changeset - invalid version type \"patcH\" for package \"a\"."
+	},
+	{
+		"input": "---\n\"a\": 1\n---\n",
+		"error": "could not parse changeset - invalid release type for package \"a\"."
+	},
+	{
+		"input": "---\n\"a\": true\n---\n",
+		"error": "could not parse changeset - invalid release type for package \"a\"."
+	},
+	{
+		"input": "---\n\"a\": ~\n---\n",
+		"error": "could not parse changeset - invalid release type for package \"a\"."
+	},
+	{
+		"input": "---\n\"a\":\n---\n",
+		"error": "could not parse changeset - invalid release type for package \"a\"."
+	},
+	{
+		"input": "---\n@a/b: patch\n---\n",
+		"error": "could not parse changeset - invalid YAML in frontmatter."
+	},
+	{
+		"input": "---\n\"a\": patch\n\"a\": minor\n---\n",
+		"error": "could not parse changeset - invalid YAML in frontmatter."
+	},
+	{
+		"input": "---\n- a\n---\n",
+		"error": "could not parse changeset - frontmatter must be an object mapping package names to version types."
+	},
+	{
+		"input": "---\nhello\n---\n",
+		"error": "could not parse changeset - frontmatter must be an object mapping package names to version types."
+	},
+	{
+		"input": "---\n\"a\":\n  patch\n---\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				}
+			],
+			"summary": ""
+		}
+	},
+	{
+		"input": "---\n\"a\":\n  b: c\n---\n",
+		"error": "could not parse changeset - invalid release type for package \"a\"."
+	},
+	{
+		"input": "",
+		"error": "could not parse changeset - file is empty."
+	},
+	{
+		"input": "   \n\n",
+		"error": "could not parse changeset - file is empty."
+	},
+	{
+		"input": "no frontmatter",
+		"error": "could not parse changeset - missing or invalid frontmatter."
+	},
+	{
+		"input": "---\n\"a\": none\n---\n\n# heading\n\n---\n\nmore",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "none"
+				}
+			],
+			"summary": "# heading\n\n---\n\nmore"
+		}
+	},
+	{
+		"input": "---\n# only comment\n---\nx",
+		"changeset": {
+			"releases": [],
+			"summary": "x"
+		}
+	},
+	{
+		"input": "---\n\"a\\\"b\": patch\n---\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a\"b",
+					"type": "patch"
+				}
+			],
+			"summary": ""
+		}
+	},
+	{
+		"input": "---\n'it''s': patch\n---\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "it's",
+					"type": "patch"
+				}
+			],
+			"summary": ""
+		}
+	},
+	{
+		"input": "---\n\"\\u0061\": patch\n---\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				}
+			],
+			"summary": ""
+		}
+	},
+	{
+		"input": "  ---\n\"a\": patch\n  ---\nindented",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				}
+			],
+			"summary": "indented"
+		}
+	},
+	{
+		"input": "---\n\"a\": patch\n---",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				}
+			],
+			"summary": ""
+		}
+	},
+	{
+		"input": "---\n\"a\": [patch]\n---\n",
+		"error": "could not parse changeset - invalid release type for package \"a\"."
+	},
+	{
+		"input": "---\n\"a\": \"patch\" # quoted then comment\n---\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				}
+			],
+			"summary": ""
+		}
+	},
+	{
+		"input": "---\n\"\": patch\n---\n",
+		"error": "could not parse changeset - invalid package name in frontmatter."
+	},
+	{
+		"input": "---\nplain-name: minor\nother_name: major\n---\n\nPlain keys.\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "plain-name",
+					"type": "minor"
+				},
+				{
+					"name": "other_name",
+					"type": "major"
+				}
+			],
+			"summary": "Plain keys."
+		}
+	},
+	{
+		"input": "---\n\"a\": patch\n  \"b\": minor\n---\n",
+		"error": "could not parse changeset - invalid YAML in frontmatter."
+	},
+	{
+		"input": "---\n\"a\" : patch\n---\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				}
+			],
+			"summary": ""
+		}
+	},
+	{
+		"input": "---\n\"a\": 'none'\n---\n",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "none"
+				}
+			],
+			"summary": ""
+		}
+	},
+	{
+		"input": "preamble\n---\n\"a\": patch\n---\n\nbody",
+		"changeset": {
+			"releases": [
+				{
+					"name": "a",
+					"type": "patch"
+				}
+			],
+			"summary": "body"
+		}
+	}
+]

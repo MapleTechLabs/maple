@@ -1,0 +1,29 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"packages/five/CHANGELOG.md": "# five\n\n## 1.0.1\n\n### Patch Changes\n\n- c3ca69f: Flow mapping.\n- c3ca69f: No blank line before the summary.\n",
+			"packages/five/package.json": "{\n\t\"name\": \"five\",\n\t\"version\": \"1.0.1\"\n}\n",
+			"packages/four/CHANGELOG.md": "# @scope/four\n\n## 1.1.0\n\n### Minor Changes\n\n- c3ca69f: Flow mapping.\n",
+			"packages/four/package.json": "{\n\t\"name\": \"@scope/four\",\n\t\"version\": \"1.1.0\"\n}\n",
+			"packages/one/CHANGELOG.md": "# one\n\n## 2.0.0\n\n### Major Changes\n\n- c3ca69f: Value on the next line.\n\n### Patch Changes\n\n- c3ca69f: Single quotes, plain keys and comments.\n",
+			"packages/one/package.json": "{\n\t\"name\": \"one\",\n\t\"version\": \"2.0.0\"\n}\n",
+			"packages/three/CHANGELOG.md": "# three\n\n## 1.0.1\n\n### Patch Changes\n\n- c3ca69f: Windows line endings.\n  Second line.\n",
+			"packages/three/package.json": "{\n\t\"name\": \"three\",\n\t\"version\": \"1.0.1\"\n}\n",
+			"packages/two/CHANGELOG.md": "# two\n\n## 1.1.0\n\n### Minor Changes\n\n- c3ca69f: Single quotes, plain keys and comments.\n\n### Patch Changes\n\n- c3ca69f: # A heading in the summary\n  \n  ---\n  \n  A rule above, and `code`.\n",
+			"packages/two/package.json": "{\n\t\"name\": \"two\",\n\t\"version\": \"1.1.0\"\n}\n"
+		},
+		"deleted": [
+			".changeset/crlf.md",
+			".changeset/flow.md",
+			".changeset/folded.md",
+			".changeset/heading-summary.md",
+			".changeset/leading-space.md",
+			".changeset/single-quoted.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"three\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Windows line endings.\\r\\nSecond line.\",\n      \"id\": \"crlf\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"@scope/four\",\n          \"type\": \"minor\"\n        },\n        {\n          \"name\": \"five\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Flow mapping.\",\n      \"id\": \"flow\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"one\",\n          \"type\": \"major\"\n        }\n      ],\n      \"summary\": \"Value on the next line.\",\n      \"id\": \"folded\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"two\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"# A heading in the summary\\n\\n---\\n\\nA rule above, and `code`.\",\n      \"id\": \"heading-summary\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"five\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"No blank line before the summary.\",\n      \"id\": \"leading-space\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"one\",\n          \"type\": \"patch\"\n        },\n        {\n          \"name\": \"two\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"Single quotes, plain keys and comments.\",\n      \"id\": \"single-quoted\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"three\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"crlf\"\n      ],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"@scope/four\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"flow\"\n      ],\n      \"newVersion\": \"1.1.0\"\n    },\n    {\n      \"name\": \"five\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"flow\",\n        \"leading-space\"\n      ],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"one\",\n      \"type\": \"major\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"folded\",\n        \"single-quoted\"\n      ],\n      \"newVersion\": \"2.0.0\"\n    },\n    {\n      \"name\": \"two\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"heading-summary\",\n        \"single-quoted\"\n      ],\n      \"newVersion\": \"1.1.0\"\n    }\n  ]\n}"
+	}
+}

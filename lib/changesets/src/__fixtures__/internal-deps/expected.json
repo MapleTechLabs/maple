@@ -1,0 +1,45 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"package.json": "{\n\t\"name\": \"deps-root\",\n\t\"private\": true,\n\t\"workspaces\": [\n\t\t\"packages/*\"\n\t],\n\t\"devDependencies\": {\n\t\t\"core\": \"^1.0.1\",\n\t\t\"unrelated\": \"1.1.0\"\n\t}\n}\n",
+			"packages/bounded/CHANGELOG.md": "# bounded\n\n## 1.0.1\n\n### Patch Changes\n\n- Updated dependencies [e571e66]\n- Updated dependencies [e571e66]\n  - core@1.0.1\n",
+			"packages/bounded/package.json": "{\n\t\"name\": \"bounded\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"core\": \">=1.0.1 <1.0.2\"\n\t}\n}\n",
+			"packages/caret/CHANGELOG.md": "# caret\n\n## 1.0.1\n\n### Patch Changes\n\n- e571e66: Caret also changes itself.\n- Updated dependencies [e571e66]\n- Updated dependencies [e571e66]\n  - core@1.0.1\n\n## 1.0.0\n\n- Initial.\n",
+			"packages/caret/package.json": "{\n\t\"name\": \"caret\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"core\": \"^1.0.1\"\n\t}\n}\n",
+			"packages/chain-a/CHANGELOG.md": "# chain-a\n\n## 3.0.1\n\n### Patch Changes\n\n- exact@1.0.1\n",
+			"packages/chain-a/package.json": "{\n\t\"name\": \"chain-a\",\n\t\"version\": \"3.0.1\",\n\t\"dependencies\": {\n\t\t\"exact\": \"1.0.1\"\n\t}\n}\n",
+			"packages/chain-b/CHANGELOG.md": "# chain-b\n\n## 0.0.4\n\n### Patch Changes\n\n- chain-a@3.0.1\n",
+			"packages/chain-b/package.json": "{\n\t\"name\": \"chain-b\",\n\t\"version\": \"0.0.4\",\n\t\"dependencies\": {\n\t\t\"chain-a\": \"workspace:3.0.1\"\n\t}\n}\n",
+			"packages/core/CHANGELOG.md": "# core\n\n## 1.0.1\n\n### Patch Changes\n\n- e571e66: A second core change.\n- e571e66: Core fix.\n",
+			"packages/core/package.json": "{\n\t\"name\": \"core\",\n\t\"version\": \"1.0.1\"\n}\n",
+			"packages/dev-only/package.json": "{\n\t\"name\": \"dev-only\",\n\t\"version\": \"1.0.0\",\n\t\"devDependencies\": {\n\t\t\"core\": \"1.0.1\"\n\t}\n}\n",
+			"packages/exact/CHANGELOG.md": "# exact\n\n## 1.0.1\n\n### Patch Changes\n\n- Updated dependencies [e571e66]\n- Updated dependencies [e571e66]\n  - core@1.0.1\n",
+			"packages/exact/package.json": "{\n\t\"name\": \"exact\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"core\": \"1.0.1\"\n\t}\n}\n",
+			"packages/lib/CHANGELOG.md": "# lib\n\n## 0.2.0\n\n### Minor Changes\n\n- e571e66: Lib feature, breaking for ^0.1.0 consumers.\n\n### Patch Changes\n\n- Updated dependencies [e571e66]\n- Updated dependencies [e571e66]\n  - core@1.0.1\n",
+			"packages/lib/package.json": "{\n\t\"name\": \"lib\",\n\t\"version\": \"0.2.0\",\n\t\"dependencies\": {\n\t\t\"core\": \"^1.0.1\"\n\t}\n}\n",
+			"packages/optional/CHANGELOG.md": "# optional\n\n## 1.0.1\n\nNo changes in this release.\n",
+			"packages/optional/package.json": "{\n\t\"name\": \"optional\",\n\t\"version\": \"1.0.1\",\n\t\"optionalDependencies\": {\n\t\t\"core\": \"1.0.1\"\n\t}\n}\n",
+			"packages/peer/CHANGELOG.md": "# peer\n\n## 1.0.1\n\n### Patch Changes\n\n- Updated dependencies [e571e66]\n  - lib@0.2.0\n",
+			"packages/peer/package.json": "{\n\t\"name\": \"peer\",\n\t\"version\": \"1.0.1\",\n\t\"peerDependencies\": {\n\t\t\"lib\": \"^0.2.0\"\n\t},\n\t\"devDependencies\": {\n\t\t\"lib\": \"workspace:*\"\n\t}\n}\n",
+			"packages/unrelated/CHANGELOG.md": "# unrelated\n\n## 1.1.0\n\n### Minor Changes\n\n- e571e66: A second core change.\n",
+			"packages/unrelated/package.json": "{\n\t\"name\": \"unrelated\",\n\t\"version\": \"1.1.0\"\n}\n",
+			"packages/ws-exact/CHANGELOG.md": "# ws-exact\n\n## 1.0.1\n\n### Patch Changes\n\n- Updated dependencies [e571e66]\n- Updated dependencies [e571e66]\n  - core@1.0.1\n",
+			"packages/ws-exact/package.json": "{\n\t\"name\": \"ws-exact\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"core\": \"workspace:1.0.1\"\n\t}\n}\n",
+			"packages/ws-path/CHANGELOG.md": "# ws-path\n\n## 1.0.1\n\n### Patch Changes\n\n- Updated dependencies [e571e66]\n- Updated dependencies [e571e66]\n  - core@1.0.1\n",
+			"packages/ws-path/package.json": "{\n\t\"name\": \"ws-path\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"core\": \"workspace:packages/core\"\n\t}\n}\n",
+			"packages/ws-star/CHANGELOG.md": "# ws-star\n\n## 1.0.1\n\n### Patch Changes\n\n- Updated dependencies [e571e66]\n- Updated dependencies [e571e66]\n  - core@1.0.1\n",
+			"packages/ws-star/package.json": "{\n\t\"name\": \"ws-star\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"core\": \"workspace:*\"\n\t}\n}\n"
+		},
+		"deleted": [
+			".changeset/caret-patch.md",
+			".changeset/core-again.md",
+			".changeset/core-patch.md",
+			".changeset/lib-minor.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"caret\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Caret also changes itself.\",\n      \"id\": \"caret-patch\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"core\",\n          \"type\": \"patch\"\n        },\n        {\n          \"name\": \"unrelated\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"A second core change.\",\n      \"id\": \"core-again\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"core\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Core fix.\",\n      \"id\": \"core-patch\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"lib\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"Lib feature, breaking for ^0.1.0 consumers.\",\n      \"id\": \"lib-minor\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"caret\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"caret-patch\"\n      ],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"core\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"core-again\",\n        \"core-patch\"\n      ],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"unrelated\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"core-again\"\n      ],\n      \"newVersion\": \"1.1.0\"\n    },\n    {\n      \"name\": \"lib\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"0.1.0\",\n      \"changesets\": [\n        \"lib-minor\"\n      ],\n      \"newVersion\": \"0.2.0\"\n    },\n    {\n      \"name\": \"bounded\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"dev-only\",\n      \"type\": \"none\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.0\"\n    },\n    {\n      \"name\": \"exact\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"optional\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"ws-exact\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"ws-path\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"ws-star\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"peer\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"chain-a\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"3.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"3.0.1\"\n    },\n    {\n      \"name\": \"chain-b\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"0.0.3\",\n      \"changesets\": [],\n      \"newVersion\": \"0.0.4\"\n    }\n  ]\n}"
+	}
+}

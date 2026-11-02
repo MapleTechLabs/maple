@@ -1,0 +1,28 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"packages/alpha/CHANGELOG.md": "# alpha\n\n## 1.1.0\n\n### Minor Changes\n\n- 2e79eb5: Add a feature.\n  \n  With a second paragraph\n  and a trailing-space line.\n  \n  - a nested list\n  - of items\n\n### Patch Changes\n\n- 2e79eb5: Fix the thing.\n\n## 1.0.0\n\n### Major Changes\n\n- abc1234: First stable release.\n",
+			"packages/alpha/package.json": "{\n\t\"name\": \"alpha\",\n\t\"version\": \"1.1.0\"\n}\n",
+			"packages/beta/CHANGELOG.md": "# beta\n\n## 1.0.0\n\n### Major Changes\n\n- 2e79eb5: Breaking: rename `foo` to `bar`.\n",
+			"packages/beta/package.json": "{\n\t\"name\": \"beta\",\n\t\"version\": \"1.0.0\"\n}\n",
+			"packages/epsilon/CHANGELOG.md": "# epsilon\n\n## 0.1.0\n\n### Minor Changes\n\n- 94db7f6: Committed on a feature branch.\n\n### Patch Changes\n\n- 2e79eb5: Delta is not released, epsilon is.\n",
+			"packages/epsilon/package.json": "{\n\t\"name\": \"epsilon\",\n\t\"version\": \"0.1.0\"\n}\n",
+			"packages/gamma/CHANGELOG.md": "# gamma\n\n## 2.3.5\n\n### Patch Changes\n\n- 2e79eb5: Add a feature.\n  \n  With a second paragraph\n  and a trailing-space line.\n  \n  - a nested list\n  - of items\n- Not committed yet, so no hash.\n\nSome intro text without any version heading.\n",
+			"packages/gamma/package.json": "{\n\t\"name\": \"gamma\",\n\t\"version\": \"2.3.5\"\n}\n"
+		},
+		"deleted": [
+			".changeset/alpha-minor.md",
+			".changeset/alpha-patch.md",
+			".changeset/beta-major.md",
+			".changeset/delta-none.md",
+			".changeset/empty-one.md",
+			".changeset/late-epsilon.md",
+			".changeset/uncommitted-gamma.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"alpha\",\n          \"type\": \"minor\"\n        },\n        {\n          \"name\": \"gamma\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Add a feature.\\n\\nWith a second paragraph   \\nand a trailing-space line.\\n\\n- a nested list\\n- of items\",\n      \"id\": \"alpha-minor\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"alpha\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Fix the thing.\",\n      \"id\": \"alpha-patch\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"beta\",\n          \"type\": \"major\"\n        }\n      ],\n      \"summary\": \"Breaking: rename `foo` to `bar`.\",\n      \"id\": \"beta-major\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"delta\",\n          \"type\": \"none\"\n        },\n        {\n          \"name\": \"epsilon\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Delta is not released, epsilon is.\",\n      \"id\": \"delta-none\"\n    },\n    {\n      \"releases\": [],\n      \"summary\": \"\",\n      \"id\": \"empty-one\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"epsilon\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"Committed on a feature branch.\",\n      \"id\": \"late-epsilon\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"gamma\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Not committed yet, so no hash.\",\n      \"id\": \"uncommitted-gamma\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"alpha\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"alpha-minor\",\n        \"alpha-patch\"\n      ],\n      \"newVersion\": \"1.1.0\"\n    },\n    {\n      \"name\": \"gamma\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"2.3.4\",\n      \"changesets\": [\n        \"alpha-minor\",\n        \"uncommitted-gamma\"\n      ],\n      \"newVersion\": \"2.3.5\"\n    },\n    {\n      \"name\": \"beta\",\n      \"type\": \"major\",\n      \"oldVersion\": \"0.1.0\",\n      \"changesets\": [\n        \"beta-major\"\n      ],\n      \"newVersion\": \"1.0.0\"\n    },\n    {\n      \"name\": \"delta\",\n      \"type\": \"none\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"delta-none\"\n      ],\n      \"newVersion\": \"1.0.0\"\n    },\n    {\n      \"name\": \"epsilon\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"0.0.1\",\n      \"changesets\": [\n        \"delta-none\",\n        \"late-epsilon\"\n      ],\n      \"newVersion\": \"0.1.0\"\n    }\n  ]\n}"
+	}
+}

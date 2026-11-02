@@ -1,0 +1,10 @@
+{
+	"name": "peer",
+	"version": "1.0.0",
+	"peerDependencies": {
+		"lib": "^0.1.0"
+	},
+	"devDependencies": {
+		"lib": "workspace:*"
+	}
+}

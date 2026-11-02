@@ -1,0 +1,24 @@
+{
+	"name": "@maple/alerting",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsrs --noEmit"
+	},
+	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
+		"@maple/backend": "workspace:*",
+		"@maple/chat-platform": "workspace:*",
+		"@maple/infra": "workspace:*",
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:alchemy",
+		"@effect/vitest": "catalog:effect",
+		"@maple-dev/effect-sdk": "workspace:*",
+		"@types/node": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}

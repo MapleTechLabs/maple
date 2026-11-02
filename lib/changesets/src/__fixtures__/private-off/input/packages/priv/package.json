@@ -1,0 +1,8 @@
+{
+	"name": "priv",
+	"version": "1.0.0",
+	"private": true,
+	"dependencies": {
+		"pub": "^2.0.0"
+	}
+}

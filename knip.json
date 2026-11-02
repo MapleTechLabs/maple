@@ -1,7 +1,7 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
-	"ignore": ["**/*.type-test.ts"],
+	"ignore": ["**/*.type-test.ts", "lib/changesets/src/__fixtures__/**"],
 	"ignoreExportsUsedInFile": true,
 	// The tsconfig plugin name @effect/tsgo reads its options from; no package is loaded.
 	"ignoreDependencies": ["@effect/language-service"],

@@ -1,0 +1,7 @@
+{
+	"name": "ws-tilde",
+	"version": "1.0.0",
+	"dependencies": {
+		"core": "workspace:~"
+	}
+}

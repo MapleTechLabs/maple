@@ -1,0 +1,61 @@
+{
+	"name": "@maple/backend",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./services/*": "./src/services/*.ts",
+		"./platform/*": "./src/platform/*.ts",
+		"./http/*": "./src/http/*.ts",
+		"./queries/*": "./src/queries/*.ts",
+		"./observability/*": "./src/observability/*.ts",
+		"./sandbox/*": "./src/sandbox/*.ts",
+		"./testing/*": "./src/testing/*.ts",
+		"./dashboard-templates": "./src/dashboard-templates/index.ts",
+		"./dashboard-templates/*": "./src/dashboard-templates/*.ts"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsrs --noEmit",
+		"typecheck:test": "tsrs --noEmit -p tsconfig.test.json",
+		"osv:capture-fixtures": "bun scripts/capture-osv-fixtures.ts",
+		"osv:compare": "bun scripts/depscan-vs-osv-scanner.ts"
+	},
+	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
+		"@clerk/backend": "^3.26.4",
+		"@distilled.cloud/aws": "1.0.0-rc.17",
+		"@distilled.cloud/cloudflare": "1.0.0-rc.17",
+		"@distilled.cloud/core": "1.0.0-rc.17",
+		"@distilled.cloud/planetscale": "1.0.0-rc.17",
+		"@distilled.cloud/railway": "1.0.0-rc.17",
+		"@maple-dev/effect-clickhouse-http": "workspace:*",
+		"@maple-dev/effect-orm": "0.8.0",
+		"@maple/alerting-core": "workspace:*",
+		"@maple/auth": "workspace:*",
+		"@maple/cache": "workspace:*",
+		"@maple/chat-platform": "workspace:*",
+		"@maple/db": "workspace:*",
+		"@maple/domain": "workspace:*",
+		"@maple/email": "workspace:*",
+		"@maple/eventing-core": "workspace:*",
+		"@maple/infra": "workspace:*",
+		"@maple/lockfiles": "workspace:*",
+		"@maple/prometheus-otlp": "workspace:*",
+		"@maple/query-engine": "workspace:*",
+		"@maple/query-engine-integrations": "workspace:*",
+		"@maple/query-model": "workspace:*",
+		"@maple/safe-fetch": "workspace:*",
+		"@maple/security-audit": "workspace:*",
+		"@maple/widgets": "workspace:*",
+		"alchemy": "catalog:alchemy",
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:alchemy",
+		"@effect/vitest": "catalog:effect",
+		"@electric-sql/pglite": "^0.5.12",
+		"@types/node": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}

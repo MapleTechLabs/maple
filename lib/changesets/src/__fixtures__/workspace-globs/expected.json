@@ -1,0 +1,20 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"libs/a/CHANGELOG.md": "# lib-a\n\n## 2.0.0\n\n### Major Changes\n\n- 7330f25: Major in a nested workspace.\n",
+			"libs/a/package.json": "{\n\t\"name\": \"lib-a\",\n\t\"version\": \"2.0.0\"\n}\n",
+			"libs/group/b/CHANGELOG.md": "# lib-b\n\n## 1.0.1\n\n### Patch Changes\n\n- Updated dependencies [7330f25]\n  - lib-a@2.0.0\n",
+			"libs/group/b/package.json": "{\n\t\"name\": \"lib-b\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"lib-a\": \"^2.0.0\"\n\t}\n}\n",
+			"tools/t/CHANGELOG.md": "# tool-t\n\n## 1.0.1\n\n### Patch Changes\n\n- lib-b@1.0.1\n",
+			"tools/t/package.json": "{\n\t\"name\": \"tool-t\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"lib-b\": \"1.0.1\"\n\t}\n}\n"
+		},
+		"deleted": [
+			".changeset/lib-a-major.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"lib-a\",\n          \"type\": \"major\"\n        }\n      ],\n      \"summary\": \"Major in a nested workspace.\",\n      \"id\": \"lib-a-major\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"lib-a\",\n      \"type\": \"major\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"lib-a-major\"\n      ],\n      \"newVersion\": \"2.0.0\"\n    },\n    {\n      \"name\": \"lib-b\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"tool-t\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [],\n      \"newVersion\": \"1.0.1\"\n    }\n  ]\n}"
+	}
+}

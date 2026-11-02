@@ -1,0 +1,15 @@
+{
+	"name": "@maple/ingest",
+	"private": true,
+	"scripts": {
+		"dev": "set -a && source ../../${MAPLE_DEV_ENV_FILE:-.env.local} && set +a && cargo build && AUTUMN_SECRET_KEY= INGEST_PORT=${PORT:-3473} exec ./target/debug/maple-ingest",
+		"start": "cargo run --release",
+		"build": "cargo build --release",
+		"test": "cargo test",
+		"typecheck": "cargo check"
+	},
+	"dependencies": {
+		"@alchemy.run/aws": "catalog:alchemy",
+		"@alchemy.run/cloudflare": "catalog:alchemy"
+	}
+}

@@ -1,0 +1,21 @@
+{
+	"version": {
+		"exitCode": 0,
+		"changed": {
+			"packages/app/CHANGELOG.md": "# app\n\n## 1.0.1\n\n### Patch Changes\n\n- de0fa87: Base patch: app keeps ^1.1.0.\n- Updated dependencies [de0fa87]\n  - other@1.2.0\n",
+			"packages/app/package.json": "{\n\t\"name\": \"app\",\n\t\"version\": \"1.0.1\",\n\t\"dependencies\": {\n\t\t\"base\": \"^1.1.0\",\n\t\t\"other\": \"^1.2.0\"\n\t}\n}\n",
+			"packages/base/CHANGELOG.md": "# base\n\n## 1.1.1\n\n### Patch Changes\n\n- de0fa87: Base patch: app keeps ^1.1.0.\n",
+			"packages/base/package.json": "{\n\t\"name\": \"base\",\n\t\"version\": \"1.1.1\"\n}\n",
+			"packages/other/CHANGELOG.md": "# other\n\n## 1.2.0\n\n### Minor Changes\n\n- de0fa87: Other minor: app moves to ^1.2.0.\n",
+			"packages/other/package.json": "{\n\t\"name\": \"other\",\n\t\"version\": \"1.2.0\"\n}\n"
+		},
+		"deleted": [
+			".changeset/base-patch.md",
+			".changeset/other-minor.md"
+		]
+	},
+	"status": {
+		"exitCode": 0,
+		"output": "{\n  \"changesets\": [\n    {\n      \"releases\": [\n        {\n          \"name\": \"base\",\n          \"type\": \"patch\"\n        },\n        {\n          \"name\": \"app\",\n          \"type\": \"patch\"\n        }\n      ],\n      \"summary\": \"Base patch: app keeps ^1.1.0.\",\n      \"id\": \"base-patch\"\n    },\n    {\n      \"releases\": [\n        {\n          \"name\": \"other\",\n          \"type\": \"minor\"\n        }\n      ],\n      \"summary\": \"Other minor: app moves to ^1.2.0.\",\n      \"id\": \"other-minor\"\n    }\n  ],\n  \"releases\": [\n    {\n      \"name\": \"base\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.1.0\",\n      \"changesets\": [\n        \"base-patch\"\n      ],\n      \"newVersion\": \"1.1.1\"\n    },\n    {\n      \"name\": \"app\",\n      \"type\": \"patch\",\n      \"oldVersion\": \"1.0.0\",\n      \"changesets\": [\n        \"base-patch\"\n      ],\n      \"newVersion\": \"1.0.1\"\n    },\n    {\n      \"name\": \"other\",\n      \"type\": \"minor\",\n      \"oldVersion\": \"1.1.0\",\n      \"changesets\": [\n        \"other-minor\"\n      ],\n      \"newVersion\": \"1.2.0\"\n    }\n  ]\n}"
+	}
+}

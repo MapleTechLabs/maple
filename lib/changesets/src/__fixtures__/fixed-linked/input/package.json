@@ -1,0 +1,7 @@
+{
+	"name": "groups-root",
+	"private": true,
+	"workspaces": [
+		"packages/*"
+	]
+}

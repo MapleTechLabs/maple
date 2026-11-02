@@ -1,0 +1,7 @@
+{
+	"name": "chain-b",
+	"version": "0.0.3",
+	"dependencies": {
+		"chain-a": "workspace:3.0.0"
+	}
+}

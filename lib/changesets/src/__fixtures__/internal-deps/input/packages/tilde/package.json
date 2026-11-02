@@ -1,0 +1,7 @@
+{
+	"name": "tilde",
+	"version": "1.0.0",
+	"dependencies": {
+		"core": "~1.0.0"
+	}
+}

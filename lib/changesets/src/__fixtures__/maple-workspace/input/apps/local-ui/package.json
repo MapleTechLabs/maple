@@ -1,0 +1,36 @@
+{
+	"name": "@maple/local-ui",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev --port ${PORT:-4319} --host ${HOST:-127.0.0.1}",
+		"build": "vite build",
+		"test": "vitest run --passWithNoTests",
+		"typecheck": "tsrs --noEmit"
+	},
+	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
+		"@floating-ui/dom": "1.8.0",
+		"@fontsource-variable/geist": "^5.3.0",
+		"@fontsource-variable/geist-mono": "^5.3.0",
+		"@maple/domain": "workspace:*",
+		"@maple/infra": "workspace:*",
+		"@maple/query-engine": "workspace:*",
+		"@maple/ui": "workspace:*",
+		"@maple/web": "workspace:*",
+		"@tanstack/charts": "catalog:charts",
+		"@tanstack/charts-scales": "catalog:charts",
+		"effect": "catalog:effect",
+		"foldkit": "0.170.0"
+	},
+	"devDependencies": {
+		"@foldkit/vite-plugin": "0.29.0",
+		"@tailwindcss/vite": "catalog:tailwind",
+		"@types/node": "catalog:tooling",
+		"tailwindcss": "catalog:tailwind",
+		"tw-animate-css": "catalog:tailwind",
+		"typescript": "catalog:tooling",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	}
+}
