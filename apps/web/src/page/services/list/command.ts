@@ -115,12 +115,14 @@ export const FetchFacets = Command.define("FetchServicesFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { refresh, key }).pipe(
-			Effect.map(({ data }) => ({
-				environments: data.environments,
-				namespaces: data.namespaces.filter((facet) => facet.name !== MAPLE_SERVICES_NAMESPACE),
-				commitShas: data.commitShas,
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: ({ data }) => ({
+					environments: data.environments,
+					namespaces: data.namespaces.filter((facet) => facet.name !== MAPLE_SERVICES_NAMESPACE),
+					commitShas: data.commitShas,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -145,8 +147,7 @@ export const FetchBaseline = Command.define("FetchServiceHealthBaseline", {
 				namespaces: mutable(input.namespaces),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchBaseline({ key, result })),
 		),
@@ -211,7 +212,8 @@ export const tableLinkClick = (
 ): "Row" | "Browser" | "Navigate" =>
 	click.href === null ? "Row" : click.button !== 0 || click.hasModifier ? "Browser" : "Navigate"
 
-type TableMessage = typeof Message.PaintedTable.Type | typeof Message.ClickedServiceLink.Type
+const TableMessage = Schema.Union([Message.PaintedTable, Message.ClickedServiceLink])
+type TableMessage = typeof TableMessage.Type
 
 /** The loaded table is on screen; its service links navigate once, never through the row too. */
 export const MountTable = Mount.defineStream("MountServicesTable", {

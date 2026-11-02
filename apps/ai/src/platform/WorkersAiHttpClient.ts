@@ -117,16 +117,17 @@ const readJsonBody = (request: HttpClientRequest.HttpClientRequest) => {
 		)
 	}
 	return Schema.decodeUnknownEffect(JsonObjectFromString)(text).pipe(
-		Effect.map((parsed): Record<string, unknown> => ({ ...parsed })),
-		Effect.mapError((cause) =>
-			encodeError(
-				request,
-				new WorkersAiShimRequestError({
-					message: "Workers AI request body is not a JSON object",
-					cause,
-				}),
-			),
-		),
+		Effect.mapBoth({
+			onSuccess: (parsed): Record<string, unknown> => ({ ...parsed }),
+			onFailure: (cause) =>
+				encodeError(
+					request,
+					new WorkersAiShimRequestError({
+						message: "Workers AI request body is not a JSON object",
+						cause,
+					}),
+				),
+		}),
 	)
 }
 

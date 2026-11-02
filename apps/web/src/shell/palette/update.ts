@@ -59,7 +59,7 @@ const rankedIds = (entries: ReadonlyArray<PaletteEntry>, query: string): Readonl
 }
 
 /** Browse mode for an empty query; otherwise fuse's top matches, ranked in render as cmdk does. */
-export const shownEntries = (
+const computeShownEntries = (
 	model: Model,
 	context: Context,
 	visibleFlagged: ReadonlyArray<string>,
@@ -77,6 +77,41 @@ export const shownEntries = (
 		.flatMap((id) => byId.get(id) ?? [])
 		.slice(0, MAX_RESULTS)
 	return { entries: ranked, isSearch: true }
+}
+
+const sameItems = <A>(a: ReadonlyArray<A>, b: ReadonlyArray<A>) =>
+	a === b || (a.length === b.length && a.every((item, index) => item === b[index]))
+
+type ShownInputs = Readonly<{ query: string; serviceNames: ReadonlyArray<string> }> &
+	Context &
+	Readonly<{ visibleFlagged: ReadonlyArray<string> }>
+
+const sameInputs = (a: ShownInputs, b: ShownInputs) =>
+	a.query === b.query &&
+	a.theme === b.theme &&
+	sameItems(a.serviceNames, b.serviceNames) &&
+	sameItems(a.dashboards, b.dashboards) &&
+	sameItems(a.favorites, b.favorites) &&
+	sameItems(a.visibleFlagged, b.visibleFlagged)
+
+/** Every render rebuilds the context, so the last answer is kept by its inputs, not by reference. */
+let lastShown: { inputs: ShownInputs; shown: Shown } | null = null
+
+export const shownEntries = (
+	model: Model,
+	context: Context,
+	visibleFlagged: ReadonlyArray<string>,
+): Shown => {
+	const inputs: ShownInputs = {
+		...context,
+		query: model.list.inputValue,
+		serviceNames: model.serviceNames,
+		visibleFlagged,
+	}
+	if (lastShown !== null && sameInputs(lastShown.inputs, inputs)) return lastShown.shown
+	const shown = computeShownEntries(model, context, visibleFlagged)
+	lastShown = { inputs, shown }
+	return shown
 }
 
 /** The entries in list order (grouped), what the highlight indexes. */
@@ -114,7 +149,7 @@ const listStep = (model: Model, child: Combobox.Message, context: Context): Upda
 	const out = next.outMessage
 	if (out !== undefined && out._tag === "ChangedValue")
 		return picked(model, findEntry(model, context, out.value))
-	const stepped: Model = { ...model, list: next.model }
+	const stepped: Model = next.model === model.list ? model : { ...model, list: next.model }
 	const commands = (next.commands ?? []).map(toList)
 	const highlighted = stepped.list.highlighted
 	const isMove =

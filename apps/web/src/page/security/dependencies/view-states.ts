@@ -1,6 +1,4 @@
-import { SEVERITY_TEXT } from "../../errors/kit/severity"
-import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
-import { countLabel } from "@maple/ui/lib/format"
+import type { DependencyScanRepository } from "@maple/domain/http"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "@maple/views/ui/button"
@@ -15,24 +13,22 @@ import {
 } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { textLink } from "@maple/views/ui/text-link"
-import { statRail, statRailItem } from "../../kit/stat-rail"
 import { placeholder } from "../kit/parts"
-import { openSeverityCounts, planSummaryOf, scannedCount, upgradePlanOf } from "./derive"
 import type { Message, Model } from "./model"
 import { scanButton } from "./view-repositories"
 import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
-// The Dependencies tab's rail and its whole-tab states: loading, no GitHub, first scan pending.
+// The Dependencies tab's whole-tab states: loading, no GitHub, first scan pending.
 
 type H = HtmlBuilder<Message>
 
 export const dependenciesLoading = (h: H): ReadonlyArray<Html> => [
-	h.div(
-		[h.AriaBusy(true), h.AriaLabel("Loading"), h.Class("grid grid-cols-2 gap-px md:grid-cols-5")],
-		Array.from({ length: 5 }, () => placeholder(h, "h-24")),
-	),
-	placeholder(h, "h-32 w-full"),
-	placeholder(h, "h-64 w-full"),
+	vstack(h, { gap: "4", attributes: [h.AriaBusy(true), h.AriaLabel("Loading")] }, [
+		placeholder(h, "h-8 w-72"),
+		placeholder(h, "h-9 w-full"),
+		placeholder(h, "h-80 w-full"),
+	]),
 ]
 
 /** No connected repository: the GitHub on-ramp the code audits use. */
@@ -81,68 +77,6 @@ export const firstScan = (
 		],
 		"rounded-md border border-dashed md:py-14",
 	)
-}
-
-/** The fifth tile: how many repositories were scanned, or the focused one's upgrade count. */
-const scopeTile = (
-	h: H,
-	findings: ReadonlyArray<DependencyFindingView>,
-	repositories: ReadonlyArray<DependencyScanRepository>,
-	focused: DependencyScanRepository | null,
-): Html => {
-	if (focused === null)
-		return statRailItem(h, {
-			eyebrow: "Repositories",
-			value: `${scannedCount(repositories)} / ${repositories.length}`,
-			compact: true,
-			subline: "scanned / connected",
-		})
-	const plan = planSummaryOf(upgradePlanOf(findings))
-	return statRailItem(h, {
-		eyebrow: "Upgrades",
-		value: String(plan.upgrades),
-		compact: true,
-		subline:
-			plan.open === 0
-				? "nothing open"
-				: `clear ${plan.fixable} of ${countLabel(plan.open, "advisory", "advisories")}`,
-	})
-}
-
-/** Open findings by severity, the whole org's or the focused repository's alone. */
-export const severityRail = (
-	h: H,
-	allFindings: ReadonlyArray<DependencyFindingView>,
-	repositories: ReadonlyArray<DependencyScanRepository>,
-	focused: DependencyScanRepository | null,
-): Html => {
-	const findings =
-		focused === null ? allFindings : allFindings.filter((finding) => finding.repositoryId === focused.id)
-	const counts = openSeverityCounts(findings)
-	return statRail(h, { columns: 5 }, [
-		statRailItem(h, {
-			eyebrow: "Critical",
-			value: String(counts.critical),
-			valueClassName: counts.critical > 0 ? SEVERITY_TEXT.critical : undefined,
-			compact: true,
-			subline: "open, fix first",
-		}),
-		statRailItem(h, {
-			eyebrow: "High",
-			value: String(counts.high),
-			valueClassName: counts.high > 0 ? SEVERITY_TEXT.high : undefined,
-			compact: true,
-			subline: "open",
-		}),
-		statRailItem(h, { eyebrow: "Medium", value: String(counts.medium), compact: true, subline: "open" }),
-		statRailItem(h, {
-			eyebrow: "Low",
-			value: String(counts.low),
-			compact: true,
-			subline: counts.unknown > 0 ? `open, and ${counts.unknown} unrated` : "open",
-		}),
-		scopeTile(h, findings, repositories, focused),
-	])
 }
 
 export const footnote = (h: H): Html =>

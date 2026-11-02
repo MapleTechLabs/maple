@@ -124,7 +124,8 @@ const printReport = (report: TableReport) =>
 
 const check = (url: string) =>
 	Effect.gen(function* () {
-		const orm = Orm.fromSqlClient(yield* SqlClient.SqlClient, { dialect: PG.postgresDialect })
+		const sql = yield* SqlClient.SqlClient
+		const orm = Orm.fromSqlClient(sql, { dialect: PG.postgresDialect })
 		const reports = yield* Effect.forEach(allTables, (table) => checkTable(orm, table))
 		yield* Effect.forEach(reports, printReport)
 		return reports.reduce((sum, report) => sum + report.failures, 0)

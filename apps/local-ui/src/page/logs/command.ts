@@ -1,6 +1,7 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { recordCached, withCache } from "../../data/cached"
+import { writeClipboard } from "../../lib/clipboard"
 import type { LoadFailure } from "../../data/local-query"
 import { logsKey, optionsFromCached, pagesFromCached, pagesToCached, patternsFromCached, patternsKey, patternsToCached, servicesKey, severitiesKey } from "./cache"
 import { fetchLogsPage, fetchPatterns, fetchServices, fetchSeverities, type LogCursor, nextCursor } from "./fetch"
@@ -158,11 +159,7 @@ export const FetchSeverities = Command.define("FetchLocalLogSeverities", {
 export const CopyChip = Command.define("CopyLocalLogChip", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedCopyChip],
-	execute: ({ text }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
-			Effect.ignore,
-			Effect.as(Message.CompletedCopyChip()),
-		),
+	execute: ({ text }) => writeClipboard(text).pipe(Effect.ignore, Effect.as(Message.CompletedCopyChip())),
 })
 
 /** `ToolbarSearch`'s 300 ms pause before a typed search commits. */

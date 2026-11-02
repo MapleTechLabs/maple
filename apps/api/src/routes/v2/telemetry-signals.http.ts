@@ -31,7 +31,8 @@ export const HttpV2TelemetrySignalsLive = HttpApiBuilder.group(MapleApiV2, "tele
 		return handlers.handle("retrieve", () =>
 			Effect.gen(function* () {
 				const tenant = yield* CurrentTenant.Context
-				return toV2(yield* signals.read(tenant))
+				const presence = yield* signals.read(tenant)
+				return toV2(presence)
 			}),
 		)
 	}),

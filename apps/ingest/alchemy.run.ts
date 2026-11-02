@@ -372,20 +372,19 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 
 		const secret = ecsSecrets(name("ingest"), tags)
 
-		const tinybirdToken = yield* secret("tinybird-token", yield* requiredPlain("TINYBIRD_TOKEN"))
+		const tinybirdTokenValue = yield* requiredPlain("TINYBIRD_TOKEN")
+		const tinybirdToken = yield* secret("tinybird-token", tinybirdTokenValue)
 		// NOT `MAPLE_PG_URL`: that is the migration admin's URL. The gateway reads
 		// ingest keys through the pooler as its own role.
 		const pgUrl = dbLogin
 			? yield* secret("maple-pg-url", pgUrlRequireSsl(dbLogin.url))
-			: yield* secret("maple-pg-url", yield* requiredPlain("MAPLE_INGEST_PG_URL"))
-		const keyEncryptionKey = yield* secret(
-			"ingest-key-encryption-key",
-			yield* requiredPlain("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
-		)
-		const keyLookupHmacKey = yield* secret(
-			"ingest-key-lookup-hmac-key",
-			yield* requiredPlain("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
-		)
+			: yield* requiredPlain("MAPLE_INGEST_PG_URL").pipe(
+					Effect.flatMap((url) => secret("maple-pg-url", url)),
+				)
+		const keyEncryptionKeyValue = yield* requiredPlain("MAPLE_INGEST_KEY_ENCRYPTION_KEY")
+		const keyEncryptionKey = yield* secret("ingest-key-encryption-key", keyEncryptionKeyValue)
+		const keyLookupHmacKeyValue = yield* requiredPlain("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY")
+		const keyLookupHmacKey = yield* secret("ingest-key-lookup-hmac-key", keyLookupHmacKeyValue)
 
 		// Autumn absent means billing enforcement is dark.
 		const { AUTUMN_SECRET_KEY: autumnKey } = yield* optionalPlain("AUTUMN_SECRET_KEY")
@@ -694,7 +693,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(yield* optionalPlain("INGEST_MAX_DECODED_BODY_BYTES")),
 				// The edge rule matches exact header values only; the gateway refuses these
 				// keys again after normalizing the header, so a respelled one is still blocked.
-				...blockedIngestKeysEnv(yield* blockedIngestKeys),
+				...(yield* Config.map(blockedIngestKeys, blockedIngestKeysEnv)),
 				...(yield* optionalPlain("INGEST_EXPORT_MAX_ATTEMPTS")),
 				...(yield* optionalPlain("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD")),
 				...(yield* optionalPlain("INGEST_REPLAY_MAX_SESSION_BYTES")),

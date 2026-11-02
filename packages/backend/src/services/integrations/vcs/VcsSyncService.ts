@@ -100,13 +100,21 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const registry = yield* VcsProviderRegistry
 			const queue = yield* VcsSyncQueue
 			const sink = yield* PullRequestEventSink
-			const commentSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestCommentSink))
-			const checklistSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestChecklistSink))
-			const ciApprovalSink = Option.getOrUndefined(
-				yield* Effect.serviceOption(PullRequestCiApprovalSink),
+			const commentSink = yield* Effect.serviceOption(PullRequestCommentSink).pipe(
+				Effect.map(Option.getOrUndefined),
 			)
-			const workflowSink = Option.getOrUndefined(yield* Effect.serviceOption(WorkflowEventSink))
-			const scanSink = Option.getOrUndefined(yield* Effect.serviceOption(DependencyScanSink))
+			const checklistSink = yield* Effect.serviceOption(PullRequestChecklistSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			const ciApprovalSink = yield* Effect.serviceOption(PullRequestCiApprovalSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			const workflowSink = yield* Effect.serviceOption(WorkflowEventSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			const scanSink = yield* Effect.serviceOption(DependencyScanSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
 
 			/** A scan of each repository's tracked branch head; none in a root without the scanner. */
 			const enqueueScans = (

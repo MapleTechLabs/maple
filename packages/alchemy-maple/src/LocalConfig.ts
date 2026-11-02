@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
+import { Schema } from "effect"
 import type { LocalProps } from "./Local"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export interface LocalConfig {
 	readonly dataDir: string
@@ -19,7 +22,7 @@ export const localConfig = (
 	},
 ): LocalConfig => {
 	const key = createHash("sha256")
-		.update(JSON.stringify([identity.stack, identity.stage, identity.fqn]))
+		.update(encodeJson([identity.stack, identity.stage, identity.fqn]))
 		.digest("hex")
 	return {
 		dataDir:

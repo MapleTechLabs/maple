@@ -40,8 +40,10 @@ export const FetchFirstPage = Command.define("FetchAgentSessionFirstPage", {
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, sessionId, window }) =>
 		getAiSessionSpans({ data: sessionInput(sessionId, window) }).pipe(
-			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (page) => ({ data: page.data, nextCursor: page.nextCursor ?? null }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
 		),
@@ -61,8 +63,10 @@ export const FetchMorePage = Command.define("FetchAgentSessionMorePage", {
 	messages: [Message.CompletedFetchMorePage],
 	execute: ({ key, sessionId, window, scope, after, limit, index }) =>
 		getAiSessionSpans({ data: { ...sessionInput(sessionId, window), scope, after, limit } }).pipe(
-			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (page) => ({ data: page.data, nextCursor: page.nextCursor ?? null }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) =>
 				Message.CompletedFetchMorePage({

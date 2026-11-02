@@ -256,7 +256,8 @@ export class OrgOpenRouterKeyService extends Context.Service<
 						.onConflictDoUpdate({ target: ["orgId"], set: next }),
 				),
 			)
-			return toDocument(yield* loadRow(orgId), entitled)
+			const row = yield* loadRow(orgId)
+			return toDocument(row, entitled)
 		})
 
 		const remove = Effect.fn("OrgOpenRouterKeyService.remove")(function* (orgId: OrgId) {
@@ -264,7 +265,8 @@ export class OrgOpenRouterKeyService extends Context.Service<
 			yield* dbExecute((db) =>
 				db.run(PG.deleteFrom(OrgOpenRouterKeys).where(($) => [$.orgId.eq(orgId)])),
 			)
-			return toDocument(Option.none(), yield* entitlement(orgId))
+			const entitled = yield* entitlement(orgId)
+			return toDocument(Option.none(), entitled)
 		})
 
 		const resolveForRun = Effect.fn("OrgOpenRouterKeyService.resolveForRun")(

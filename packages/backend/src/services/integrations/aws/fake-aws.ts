@@ -80,7 +80,7 @@ export const deployTemplate = (
 	templateJson: string,
 	createsProvider = true,
 ): { readonly role: FakeRole; readonly provider: FakeProvider | undefined } => {
-	const template = Schema.decodeUnknownSync(Template)(JSON.parse(templateJson))
+	const template = Schema.decodeUnknownSync(Schema.fromJsonString(Template))(templateJson)
 	const resources = template.Resources
 	const role = Object.values(resources).find((resource) => resource.Type === "AWS::IAM::Role")
 	if (role === undefined) throw new Error("template has no role")
@@ -123,12 +123,14 @@ export const deployTemplate = (
 	}
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const xml = (status: number, body: string) =>
 	new Response(body, { status, headers: { "content-type": "text/xml" } })
 
 // Maple asks STS for JSON.
 const json = (status: number, body: unknown) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+	new Response(encodeJson(body), { status, headers: { "content-type": "application/json" } })
 
 const stsError = (status: number, code: string, message: string) =>
 	json(status, { Error: { Type: "Sender", Code: code, Message: message }, RequestId: "req" })
@@ -156,7 +158,9 @@ const verifiedClaims = async (key: CryptoKey, token: string) => {
 		new TextEncoder().encode(`${header}.${body}`),
 	)
 	return valid
-		? Schema.decodeUnknownSync(TokenClaims)(JSON.parse(Buffer.from(body, "base64url").toString("utf8")))
+		? Schema.decodeUnknownSync(Schema.fromJsonString(TokenClaims))(
+				Buffer.from(body, "base64url").toString("utf8"),
+			)
 		: undefined
 }
 

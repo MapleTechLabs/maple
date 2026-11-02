@@ -1,5 +1,5 @@
 import type { CodeReviewCiRunsResponse } from "@maple/domain/http"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -9,6 +9,8 @@ import type { PageContext, PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { cachedStep, mergeSteps } from "../kit/page-steps"
 import { FetchCiAnalytics, FetchCiRuns, type Message, type Model } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The CI tab's reads: analytics and the workflow list, then the runs once the analytics show.
 
@@ -57,7 +59,7 @@ export const runsPageStep = (
 export const followRuns = (model: Model, context: PageContext): Return => {
 	const window = model.frame.window
 	if (window === null || isEmpty(model)) return { model }
-	const filterKey = JSON.stringify(runsFilterOf(model, window))
+	const filterKey = encodeJson(runsFilterOf(model, window))
 	const base: Model =
 		filterKey === model.runsFilterKey
 			? model

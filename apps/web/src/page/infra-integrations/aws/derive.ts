@@ -1,9 +1,11 @@
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import type { Tone } from "@maple/ui/lib/tone"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Array as Arr } from "effect"
+import { Array as Arr, Schema } from "effect"
 import type { TracedService } from "../kit/traced"
 import type { FleetRead, SparkRead } from "./data"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // What the AWS pages read off the metric rows: one view per resource, its health, and the summary.
 
@@ -130,7 +132,7 @@ export const resourceViews = (read: FleetRead): ReadonlyArray<ResourceView> => {
 	const definition = AWS_INFRA_KINDS[read.kind]
 	const byName = new Map(definition.metrics.map((metric) => [metric.name, metric]))
 	const identity = definition.identity.length
-	const grouped = Arr.groupBy(read.points, (point) => JSON.stringify(point.keys))
+	const grouped = Arr.groupBy(read.points, (point) => encodeJson(point.keys))
 	return Object.values(grouped)
 		.flatMap((points) => {
 			const first = points[0]
@@ -229,7 +231,7 @@ export const regionsOf = (views: ReadonlyArray<ResourceView>) =>
 /** A row's sparkline: its metric's mean per bucket for a gauge, its sum for a counter. */
 type SparkPoint = { readonly bucket: string; readonly value: number | null }
 
-const sparkId = (kind: AwsInfraKindId, keys: ReadonlyArray<string>) => `${kind}:${JSON.stringify(keys)}`
+const sparkId = (kind: AwsInfraKindId, keys: ReadonlyArray<string>) => `${kind}:${encodeJson(keys)}`
 
 /** Every row's sparkline points, read once per render and looked up by `sparkPoints`. */
 export type SparkIndex = ReadonlyMap<string, ReadonlyArray<SparkPoint>>

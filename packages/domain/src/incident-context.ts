@@ -17,7 +17,10 @@
  * and every hypothesis lane — because a lane that saw a different framing of the
  * same incident than the planner did is a very expensive way to disagree.
  */
+import { Schema } from "effect"
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "./http"
+
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 /**
  * The instruction on a single-pass investigation's opening turn.
@@ -99,11 +102,7 @@ export const buildIncidentContextMessage = (
 		identifierSection(snapshot),
 		// Last, and labelled as the fallback it is. Everything above is a projection
 		// of this; nothing above is a substitute for it.
-		`## Raw subject\n\nComplete record, for anything the sections above omit.\n\n\`\`\`json\n${JSON.stringify(
-			{ subject, snapshot },
-			null,
-			2,
-		)}\n\`\`\``,
+		`## Raw subject\n\nComplete record, for anything the sections above omit.\n\n\`\`\`json\n${encodeJsonPretty({ subject, snapshot })}\n\`\`\``,
 	]
 		.filter((section) => section !== null)
 		.join("\n\n")

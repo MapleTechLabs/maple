@@ -1,4 +1,3 @@
-import { trySync } from "@maple/ui/lib/try-sync"
 import { Option, Schema } from "effect"
 
 // Log bodies and attribute values can be megabytes, and views rerun on every message. These keep
@@ -64,6 +63,7 @@ export const textWindow = (text: string, query: string | undefined, limit: numbe
 export const headLines = (text: string, count: number): string => text.split("\n", count).join("\n")
 
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 /** An object or array body, else `None`. */
 export const tryParseJson = (value: string): Option.Option<unknown> => {
@@ -74,5 +74,5 @@ export const tryParseJson = (value: string): Option.Option<unknown> => {
 /** A JSON object or array re-indented with two spaces; none for anything else. */
 export const prettyJson: (value: string) => Option.Option<string> = memoizeByText((value) =>
 	// A pathologically deep value parses but overflows the stack re-indenting; it then shows as text.
-	Option.flatMap(tryParseJson(value), (parsed) => trySync(() => JSON.stringify(parsed, null, 2))),
+	Option.flatMap(tryParseJson(value), encodePrettyJson),
 )

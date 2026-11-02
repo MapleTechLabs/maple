@@ -39,6 +39,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { auditAttribution, originMetadata } from "@maple/backend/services/audit/audit-access"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { stringifyJsonPretty } from "../lib/json"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -141,9 +142,11 @@ const tenantInRollout = Effect.fnUntraced(function* (tool: string) {
 /** The same resource entries the REST routes write, so MCP edits show up per incident. */
 const auditIncidentCreated = Effect.fnUntraced(function* (incident: StatusPageIncidentRecord) {
 	const tenant = yield* CurrentMcpTenant
-	yield* (yield* AuditLogService).record({
+	const audit = yield* AuditLogService
+	const actor = yield* CurrentAuditActor
+	yield* audit.record({
 		orgId: tenant.orgId,
-		...auditAttribution(tenant, yield* CurrentAuditActor),
+		...auditAttribution(tenant, actor),
 		action: "status_page_incident.created",
 		resourceId: incident.id,
 		metadata: {
@@ -158,9 +161,11 @@ const auditIncidentCreated = Effect.fnUntraced(function* (incident: StatusPageIn
 
 const auditUpdatePosted = Effect.fnUntraced(function* (incident: StatusPageIncidentRecord) {
 	const tenant = yield* CurrentMcpTenant
-	yield* (yield* AuditLogService).record({
+	const audit = yield* AuditLogService
+	const actor = yield* CurrentAuditActor
+	yield* audit.record({
 		orgId: tenant.orgId,
-		...auditAttribution(tenant, yield* CurrentAuditActor),
+		...auditAttribution(tenant, actor),
 		action: "status_page_incident.update_posted",
 		resourceId: incident.id,
 		metadata: {
@@ -556,12 +561,12 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			const current = yield* service
 				.getIncident(tenant.orgId, incidentId)
 				.pipe(Effect.mapError(toMcpError(tool)))
+			const requested = params.components
 			const componentIds =
-				params.components === undefined
+				requested === undefined
 					? undefined
-					: yield* resolveComponents(
-							yield* pageComponents(tool, tenant.orgId, current.pageId),
-							params.components,
+					: yield* pageComponents(tool, tenant.orgId, current.pageId).pipe(
+							Effect.flatMap((components) => resolveComponents(components, requested)),
 						)
 			const posted = yield* service
 				.postUpdate(tenant.orgId, incidentId, {
@@ -698,7 +703,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			notices: [
 				"apply_status_page_config replaces the page with an edited copy: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order. Keep the `version` key: the apply is refused if the config changed since this read.",
 			],
-			blocks: [doc.code("json", JSON.stringify(encodeConfig(output.config), null, 2))],
+			blocks: [doc.code("json", stringifyJsonPretty(encodeConfig(output.config)) ?? "")],
 		}),
 	})
 
@@ -741,10 +746,11 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toMcpError(tool)))
 			const audit = yield* AuditLogService
 			// Nothing written, nothing to audit.
-			if (hasStatusPageConfigChanges(changes))
+			if (hasStatusPageConfigChanges(changes)) {
+				const actor = yield* CurrentAuditActor
 				yield* audit.record({
 					orgId: tenant.orgId,
-					...auditAttribution(tenant, yield* CurrentAuditActor),
+					...auditAttribution(tenant, actor),
 					action: "status_page.config_applied",
 					resourceId: page.id,
 					metadata: {
@@ -757,6 +763,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 						...originMetadata(tenant.turnOrigin),
 					},
 				})
+			}
 			const applied = yield* service.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
 			return { page: toPageRow(applied), config, changes }
 		}),

@@ -24,6 +24,14 @@ describe("intent preload", () => {
 		expect(Preload.elapsed(left, "/traces/a", hovered.version)).toEqual(Option.none())
 	})
 
+	test("leaving a link never hovered, or a step asking for no new keys, keeps the preload model", () => {
+		const hovered = Option.getOrThrow(Preload.intended(Preload.init(), "/traces/a"))
+		expect(Preload.ended(hovered.model, "/logs")).toBe(hovered.model)
+		const entered = Preload.held(Preload.init(), holder, preloaded())
+		expect(Preload.held(entered.model, holder, []).model).toBe(entered.model)
+		expect(Preload.held(entered.model, holder, preloaded()).model).toBe(entered.model)
+	})
+
 	test("the trace page preloads its span hierarchy only", () => {
 		expect(preloaded().map((command) => command.name)).toEqual(["FetchSpanHierarchy"])
 	})
@@ -43,7 +51,9 @@ describe("intent preload", () => {
 		const nextWindow = preloadRoute(AppRoute.Trace({ traceId: "a".repeat(32), search: {} }), context, 0)
 		const nextKey = Option.getOrThrow(Preload.keyOfCommand(nextWindow[0]!))
 		const entered = Preload.held(Preload.init(), holder, preloaded(), () => [keyOf()])
-		const moved = Preload.held(entered.model, holder, nextWindow, () => Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }))
+		const moved = Preload.held(entered.model, holder, nextWindow, () =>
+			Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }),
+		)
 		expect(moved.released).toEqual([keyOf()])
 		expect(moved.model.heldKeys).toEqual([nextKey])
 		const stillShown = Preload.held(entered.model, holder, nextWindow, () => [keyOf(), nextKey])

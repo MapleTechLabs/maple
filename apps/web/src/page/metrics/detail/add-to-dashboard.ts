@@ -81,7 +81,9 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 	messages: [Message.CompletedAddWidget],
 	execute: ({ orgId, dashboardId, draft }) =>
 		Effect.gen(function* () {
-			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
+			const nowMs = yield* Clock.currentTimeMillis
+			const random = yield* Random.next
+			const id = generateWidgetId(nowMs, random)
 			const widget = widgetOf(draft, crypto.randomUUID())
 			// `addWidget` throws when the board is not readable; the write itself is not awaited:
 			// it navigates on the optimistic update and lets the store report a failed persist.

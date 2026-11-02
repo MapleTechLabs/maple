@@ -43,8 +43,10 @@ export const FetchServers = Command.define("FetchMcpServers", {
 	messages: [Message.CompletedFetchServers],
 	execute: ({ key, ...data }) =>
 		getMcpServers({ data }).pipe(
-			Effect.map((response) => ({ servers: response.servers })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({ servers: response.servers }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchServers({ key, result })),
 		),
@@ -62,8 +64,7 @@ export const FetchOverview = Command.define("FetchMcpOverview", {
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, ...data }) =>
 		getMcpOverview({ data }).pipe(
-			Effect.map((response) => ({ ...response })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
 		),
@@ -81,8 +82,7 @@ export const FetchTool = Command.define("FetchMcpTool", {
 	messages: [Message.CompletedFetchTool],
 	execute: ({ key, ...data }) =>
 		getMcpTool({ data }).pipe(
-			Effect.map((response) => ({ ...response })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTool({ key, result })),
 		),
@@ -100,8 +100,7 @@ export const FetchSessions = Command.define("FetchMcpSessions", {
 	messages: [Message.CompletedFetchSessions],
 	execute: ({ key, ...data }) =>
 		getMcpSessions({ data }).pipe(
-			Effect.map((response) => ({ ...response })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSessions({ key, result })),
 		),
@@ -112,8 +111,7 @@ export const FetchSession = Command.define("FetchMcpSession", {
 	messages: [Message.CompletedFetchSession],
 	execute: ({ key, ...data }) =>
 		getMcpSession({ data }).pipe(
-			Effect.map((response) => ({ ...response })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSession({ key, result })),
 		),

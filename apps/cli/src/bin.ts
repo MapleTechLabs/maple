@@ -25,6 +25,7 @@ import { makeHelpCapture, usageHint } from "./lib/help"
 import { archiveErrorMessage } from "@maple/local-server/archives/errors"
 import { CHECKPOINT_REOPEN_PROBE_ENV, validateCheckpointDataDir } from "@maple/local-server/checkpoints"
 import { MAPLE_VERSION } from "@maple/local-server/version"
+import { encodeJson } from "@maple/local-server/json"
 
 // WarehouseExecutorFromMode needs Mode (which needs MapleConfig). provideMerge
 // keeps Mode + MapleConfig in the output context too, so the login/logout/whoami
@@ -64,7 +65,7 @@ if (checkpointProbeDataDir !== undefined) {
 	// this new process loaded the persisted restored representation and queried
 	// its core tables before closing chDB cleanly.
 	try {
-		process.stdout.write(`${JSON.stringify(validateCheckpointDataDir(checkpointProbeDataDir))}\n`)
+		process.stdout.write(`${encodeJson(validateCheckpointDataDir(checkpointProbeDataDir))}\n`)
 	} catch (error) {
 		process.stderr.write(
 			`checkpoint reopen probe failed: ${error instanceof Error ? error.message : String(error)}\n`,

@@ -13,9 +13,11 @@ import {
 } from "@maple/infra/cloudflare"
 import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { API_PROXY_PREFIX } from "./api-proxy.ts"
 import { WORKER_FIRST_PATHS } from "./worker-first.ts"
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 // `memo.include` also hashes the `@maple/*` sources; `lockfile` is restated because `include` drops it.
 const MEMO_INCLUDE = ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"]
@@ -67,7 +69,7 @@ const props = Effect.gen(function* () {
 			VITE_STATUS_PAGE_BASE_URL: urls.status,
 			// Orgs living in another region are redirected to that region's app.
 			VITE_MAPLE_REGION: region,
-			VITE_MAPLE_REGION_APP_URLS: JSON.stringify(resolveRegionAppUrls(stage)),
+			VITE_MAPLE_REGION_APP_URLS: yield* encodeJson(resolveRegionAppUrls(stage)),
 			VITE_MAPLE_AUTH_MODE: yield* plainFrom(
 				["VITE_MAPLE_AUTH_MODE", "MAPLE_AUTH_MODE"],
 				"self_hosted",

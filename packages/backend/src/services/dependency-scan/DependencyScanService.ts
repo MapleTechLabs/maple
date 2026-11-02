@@ -103,14 +103,14 @@ export class RunningCommits extends Context.Service<
 							),
 						)
 						.pipe(
-							Effect.map((result) => result.value),
-							Effect.mapError(
-								(cause) =>
+							Effect.mapBoth({
+								onSuccess: (result) => result.value,
+								onFailure: (cause) =>
 									new RunningCommitsReadError({
 										message: "Could not read running commits",
 										cause,
 									}),
-							),
+							}),
 						),
 			}
 		}),

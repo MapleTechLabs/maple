@@ -158,8 +158,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 				"maple.security.area": params.area ?? "all",
 				"result.rowCount": matched.flat().length,
 			})
+			const now = yield* Clock.currentTimeMillis
 			return {
-				generatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
+				generatedAt: new Date(now).toISOString(),
 				window,
 				...(params.area === undefined ? undefined : { areaFilter: params.area }),
 				filters: {

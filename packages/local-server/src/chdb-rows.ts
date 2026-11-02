@@ -6,6 +6,7 @@
 // external process hands us bytes. The shape is declared once here and the
 // rows are decoded, not asserted.
 import { Schema } from "effect"
+import { decodeJsonSync } from "./json"
 
 /**
  * Decode chDB JSONEachRow output.
@@ -23,7 +24,7 @@ export const decodeJsonEachRow = <S extends Schema.Codec<unknown, unknown, never
 			.split("\n")
 			.map((line) => line.trim())
 			.filter((line) => line.length > 0)
-			.map((line) => decodeRow(JSON.parse(line)))
+			.map((line) => decodeRow(decodeJsonSync(line)))
 }
 
 /**

@@ -39,7 +39,8 @@ export const clampQueueDelaySeconds = (seconds: number): number =>
 
 // Serialized byte size of a message body (UTF-8) — the basis for Cloudflare's per-batch byte cap.
 const textEncoder = new TextEncoder()
-const jsonByteLength = (body: unknown): number => textEncoder.encode(JSON.stringify(body)).length
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const jsonByteLength = (body: unknown): number => textEncoder.encode(encodeJson(body)).length
 
 /** Greedy packing into `sendBatch` calls under both the message-count and byte caps. */
 const packMessages = (

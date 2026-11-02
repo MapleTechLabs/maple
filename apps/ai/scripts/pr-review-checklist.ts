@@ -43,7 +43,7 @@ const CORPUS_DIR = fileURLToPath(
 		import.meta.url,
 	),
 )
-const encodeCase = Schema.encodeSync(MergeChecklistCase)
+const encodeCase = Schema.encodeSync(Schema.fromJsonString(MergeChecklistCase))
 const LABELS = join(CORPUS_DIR, "labels.json")
 const decodeLabels = Schema.decodeUnknownOption(Schema.fromJsonString(MergeChecklistLabelFile))
 
@@ -181,7 +181,7 @@ const snapshot = (
 	}
 	if (!existsSync(CORPUS_DIR)) mkdirSync(CORPUS_DIR, { recursive: true })
 	// Generated, so compact: the labels are the file people read and edit.
-	writeFileSync(path, `${JSON.stringify(encodeCase(item))}\n`)
+	writeFileSync(path, `${encodeCase(item)}\n`)
 	console.log(`${path}\n${pr.html_url} · ${pr.title}`)
 	for (const [name, verdict] of Object.entries(verdicts)) console.log(`  ${verdict.padEnd(10)} ${name}`)
 	console.log(`Detectors list: ${full.length === 0 ? "nothing" : full.join(", ")}`)

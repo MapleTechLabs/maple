@@ -277,6 +277,7 @@ const toEncryptionError = (message: string) => new ScrapeTargetEncryptionError({
 const decodeTargetIdSync = Schema.decodeUnknownSync(ScrapeTargetId)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 const decodeScrapeIntervalSecondsSync = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const ScrapeLabelsSchema = Schema.Record(Schema.String, Schema.String)
 
 /** Cap pattern lists so a target config stays small and bounded. */
@@ -452,7 +453,7 @@ const rowToResponse = Effect.fn("ScrapeTargetsService.rowToResponse")(function* 
 		includeBranches: discoveryConfig?.includeBranches ?? [],
 		excludeBranches: discoveryConfig?.excludeBranches ?? [],
 		scrapeIntervalSeconds,
-		labelsJson: row.labelsJson == null ? null : JSON.stringify(row.labelsJson),
+		labelsJson: row.labelsJson == null ? null : encodeJsonSync(row.labelsJson),
 		authType,
 		hasCredentials: row.authCredentialsCiphertext !== null,
 		managedBy: row.managedBy ?? null,
@@ -607,7 +608,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const psOAuth = yield* PlanetScaleOAuthService
 			const supabaseOAuth = yield* SupabaseOAuthService
 			// Scoped per hop, so an unread body (non-2xx, PlanetScale) is cancelled on exit.
-			const probeClient = guard(HttpClient.withScope(yield* HttpClient.HttpClient))
+			const httpClient = yield* HttpClient.HttpClient
+			const probeClient = guard(HttpClient.withScope(httpClient))
 			const encryptionKey = yield* parseEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 			)
@@ -856,7 +858,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					includeBranches: discoveryConfigJson?.includeBranches ?? [],
 					excludeBranches: discoveryConfigJson?.excludeBranches ?? [],
 					scrapeIntervalSeconds,
-					labelsJson: labels == null ? null : JSON.stringify(labels),
+					labelsJson: labels == null ? null : encodeJsonSync(labels),
 					authType,
 					hasCredentials: credentialFields.authCredentialsCiphertext !== null,
 					managedBy: null,
@@ -1137,7 +1139,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				options?: ScrapeTargetMutationOptions,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
-				yield* rejectManaged(yield* requireTarget(orgId, targetId), options, "remove")
+				const target = yield* requireTarget(orgId, targetId)
+				yield* rejectManaged(target, options, "remove")
 				return yield* removeRow(orgId, targetId)
 			})
 
@@ -1430,16 +1433,15 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							// must parse the way the scraper will, so an HTML 200 doesn't pass.
 							if (row.targetType === "planetscale") return Effect.void
 							return readTextPrefix(response, PROBE_MAX_BODY_BYTES).pipe(
-								Effect.mapError(
-									() =>
+								Effect.mapBoth({
+									onFailure: () =>
 										new ScrapeTargetUpstreamError({
 											message: "Failed to read response body",
 										}),
-								),
-								// A cut body ends mid-line; judge the complete lines before it.
-								Effect.map(({ text, truncated }) =>
-									truncated ? text.slice(0, text.lastIndexOf("\n") + 1) : text,
-								),
+									// A cut body ends mid-line; judge the complete lines before it.
+									onSuccess: ({ text, truncated }) =>
+										truncated ? text.slice(0, text.lastIndexOf("\n") + 1) : text,
+								}),
 								Effect.flatMap((body) =>
 									countSamples(parsePrometheusText(body).families) > 0
 										? Effect.void

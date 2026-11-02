@@ -10,6 +10,12 @@ import {
 } from "@maple/ingest-rules"
 import { Schema } from "effect"
 
+const encodeAttrJson = Schema.encodeSync(
+	Schema.fromJsonString(Schema.Unknown, {
+		replacer: (_key, inner) => (typeof inner === "bigint" ? String(inner) : inner),
+	}),
+)
+
 // Recent rows the preview runs the draft over, and what the draft would do to them.
 
 const StringMap = Schema.Record(Schema.String, Schema.String)
@@ -72,11 +78,7 @@ export interface PreviewResult {
 }
 
 const show = (value: AttrValue | undefined): string =>
-	value === undefined
-		? ""
-		: typeof value === "string"
-			? value
-			: JSON.stringify(value, (_key, inner) => (typeof inner === "bigint" ? String(inner) : inner))
+	value === undefined ? "" : typeof value === "string" ? value : encodeAttrJson(value)
 
 const mapChanges = (where: string, before: AttrMap, after: AttrMap): ReadonlyArray<ValueChange> =>
 	Object.keys(before).flatMap((key) => {

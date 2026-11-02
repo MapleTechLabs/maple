@@ -457,11 +457,10 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						),
 					)
 				}
-				const complete = readToEnd(
-					yield* pages(MAX_RESOURCE_PAGES, (pageToken) =>
-						searchResourcesPage(tick.httpClient, reader, scope, pageToken),
-					).pipe(Stream.tap(upsertPage), Stream.runLast),
-				)
+				const lastPage = yield* pages(MAX_RESOURCE_PAGES, (pageToken) =>
+					searchResourcesPage(tick.httpClient, reader, scope, pageToken),
+				).pipe(Stream.tap(upsertPage), Stream.runLast)
+				const complete = readToEnd(lastPage)
 				if (complete) {
 					yield* dbExecute((db) =>
 						db.run(
@@ -535,10 +534,8 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						connector.resourcesSyncedAt === null ||
 						tick.now - connector.resourcesSyncedAt >= RESOURCE_SYNC_INTERVAL_MS
 					) {
-						yield* updateConnector(
-							connector.id,
-							yield* resourceSyncOutcome(connector, tick, scope, reader),
-						)
+						const syncOutcome = yield* resourceSyncOutcome(connector, tick, scope, reader)
+						yield* updateConnector(connector.id, syncOutcome)
 					}
 					const ingestKey = (yield* ingestKeys.getOrCreate(connector.orgId, SYSTEM_USER_ID))
 						.publicKey
@@ -686,7 +683,8 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					if ((yield* Ref.get(rowsIngested)) === 0 && complete + partial === 0) {
 						return firstFailure === undefined ? NOTHING : yield* firstFailure.error
 					}
-					yield* ship(yield* Ref.getAndSet(buffer, emptyRows))
+					const remaining = yield* Ref.getAndSet(buffer, emptyRows)
+					yield* ship(remaining)
 					const rowsIngestedTotal = yield* Ref.get(rowsIngested)
 
 					const incomplete = partial + skipped

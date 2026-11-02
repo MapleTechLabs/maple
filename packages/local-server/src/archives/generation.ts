@@ -78,6 +78,11 @@ import {
 	type ReconciliationInspection,
 	type ReconciliationSnapshot,
 } from "./reconcile"
+import { encodeJson, decodeJsonSync } from "../json"
+
+const decodeJsonRecord = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
 
 // Archive generation write, validation, promotion, and reconciliation.
 //
@@ -683,7 +688,7 @@ const readPreviousPointerGenerationId = (
 	expectedSignal: string,
 	expectedRange: string,
 ): string | null => {
-	const parsed = JSON.parse(readFileSync(pointerPath, "utf8")) as unknown
+	const parsed = decodeJsonSync(readFileSync(pointerPath, "utf8"))
 	const pointer = parseArchiveActivePointer(parsed)
 	if (pointer.signal !== expectedSignal) {
 		throw new Error(
@@ -706,7 +711,7 @@ const parseCount = (text: string): number => {
 		.split("\n")
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0)
-		.map((line) => JSON.parse(line) as Record<string, unknown>)
+		.map((line) => decodeJsonRecord(line))
 	const row = rows[0]
 	if (!row) return 0
 	const value = row["count()"] ?? row.count
@@ -822,7 +827,7 @@ export const selectActiveGeneration = async (
 	await faults.beforeActivePointerUpdated?.()
 	await durableWrite(
 		pointerPath,
-		`${JSON.stringify({
+		`${encodeJson({
 			formatVersion: 1,
 			generationId,
 			signal,
@@ -1015,7 +1020,7 @@ const validateOwnedPinState = async (dataDir: string, intent: CreateOperationInt
 	}
 	await assertFilesystemPathNoSymlinks(expectedPinPath, "archive operation pin")
 	await assertRealFile(expectedPinPath, "archive operation pin")
-	const raw = JSON.parse(readFileSync(expectedPinPath, "utf8")) as Record<string, unknown>
+	const raw = decodeJsonRecord(readFileSync(expectedPinPath, "utf8"))
 	if (
 		raw.formatVersion !== 1 ||
 		raw.pinId !== intent.pinId ||

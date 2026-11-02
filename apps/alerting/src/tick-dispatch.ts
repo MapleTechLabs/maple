@@ -160,7 +160,8 @@ export const authorizeTickRequest = Effect.fnUntraced(function* (
 	if (request.method !== "POST" || url.pathname !== TICK_PATH) {
 		return yield* new TickRequestRefused({ message: "Not the tick route", status: 404 })
 	}
-	const authorized = Option.match(yield* internalTokenFor(env), {
+	const internalToken = yield* internalTokenFor(env)
+	const authorized = Option.match(internalToken, {
 		onNone: () => false,
 		onSome: (expected) =>
 			isValidInternalBearer(request.headers.get("authorization") ?? undefined, expected),
