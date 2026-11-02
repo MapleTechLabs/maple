@@ -2,7 +2,15 @@
 // Each icon is [tag, attributes, children]; "7777" marks `size`, "__icon_class__" the className
 // and "__icon_id__" an icon's own `useId`.
 
-import { ChevronExpandYIcon, LoaderIcon, MagnifierIcon, XmarkIcon } from "./control-icons"
+import {
+	ChevronDownIcon,
+	ChevronExpandYIcon,
+	ChevronRightIcon,
+	LoaderIcon,
+	MagnifierIcon,
+	MapleMark,
+	XmarkIcon,
+} from "./control-icons"
 
 export const ICON_SIZE_MARK = "7777"
 export const ICON_CLASS_MARK = "__icon_class__"
@@ -3271,110 +3279,7 @@ export const ICON_TREES = {
 			],
 		],
 	],
-	ChevronDownIcon: [
-		"svg",
-		[
-			["xmlns", "http://www.w3.org/2000/svg"],
-			["viewBox", "0 0 24 24"],
-			["width", "7777"],
-			["height", "7777"],
-			["class", "__icon_class__"],
-			["fill", "none"],
-			["aria-hidden", "true"],
-		],
-		[
-			[
-				"path",
-				[
-					["d", "M12 16.99L12 17"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M10 14.99L10 15"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M14 14.99L14 15"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M16 12.99L16 13"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M8 12.99L8 13"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M6 10.99L6 11"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M18 10.99L18 11"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M20 8.98999L20 8.99999"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M4 8.98999L4 8.99999"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-		],
-	],
+	ChevronDownIcon,
 	ChevronExpandYIcon,
 	ChevronLeftIcon: [
 		"svg",
@@ -3480,110 +3385,7 @@ export const ICON_TREES = {
 			],
 		],
 	],
-	ChevronRightIcon: [
-		"svg",
-		[
-			["xmlns", "http://www.w3.org/2000/svg"],
-			["viewBox", "0 0 24 24"],
-			["width", "7777"],
-			["height", "7777"],
-			["class", "__icon_class__"],
-			["fill", "none"],
-			["aria-hidden", "true"],
-		],
-		[
-			[
-				"path",
-				[
-					["d", "M16.99 12H17"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M14.99 10H15"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M14.99 14H15"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M12.99 16H13"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M12.99 8H13"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M10.99 6H11"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M10.99 18H11"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M8.99 20H9"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M8.99 4H9"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-		],
-	],
+	ChevronRightIcon,
 	ChevronUpIcon: [
 		"svg",
 		[
@@ -12847,33 +12649,7 @@ export const ICON_TREES = {
 		],
 	],
 	MagnifierIcon,
-	MapleMark: [
-		"svg",
-		[
-			["xmlns", "http://www.w3.org/2000/svg"],
-			["viewBox", "0 0 739 739"],
-			["width", "7777"],
-			["height", "7777"],
-			["class", "__icon_class__"],
-			["role", "img"],
-			["aria-label", "Maple"],
-		],
-		[
-			[
-				"path",
-				[
-					["fill-rule", "evenodd"],
-					["clip-rule", "evenodd"],
-					["fill", "currentColor"],
-					[
-						"d",
-						"M369.38 0C480.324 2.908e-08 572.686 76.542 592.669 177.775C681.438 222.749 738.763 293.878 738.765 373.942C738.763 482.538 633.316 574.71 486.96 607.449C499.978 645.591 508.455 690.397 510.789 738.765L227.967 738.764C229.399 709.074 233.146 680.725 238.834 654.436C269.538 661.732 306.949 666.785 347.396 664.859L345.194 618.741C208.102 625.268 0.005 528.243 0 373.948C2.099e-08 293.883 57.322 222.751 146.093 177.775C166.076 76.543 258.436 0.001 369.38 0ZM202.322 258.434C174.48 255.016 149.271 273.738 146.015 300.254L133.046 405.874C129.791 432.389 149.721 456.662 177.563 460.08C205.404 463.499 230.614 444.769 233.87 418.254L246.839 312.633C250.095 286.118 230.163 261.853 202.322 258.434ZM367.3 278.691C339.459 275.273 314.117 295.071 310.699 322.913L298.319 423.736C294.902 451.576 314.7 476.918 342.541 480.337C370.382 483.755 395.724 463.955 399.143 436.115L411.523 335.292C414.941 307.451 395.142 282.109 367.3 278.691Z",
-					],
-				],
-				[],
-			],
-		],
-	],
+	MapleMark,
 	MaximizeIcon: [
 		"svg",
 		[

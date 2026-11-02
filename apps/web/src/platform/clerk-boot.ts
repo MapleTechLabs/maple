@@ -4,7 +4,7 @@ import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
 import { purgeForeignClerkCookies } from "../lib/services/common/clerk-cookie-guard"
 import type { ClerkGlobal } from "./clerk"
-import { clerkJsUrl } from "./clerk-js-url"
+import { clerkJsUrl } from "@maple/domain/clerk-js-url"
 
 export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()("@maple/web/ClerkLoadError", {
 	message: Schema.String,

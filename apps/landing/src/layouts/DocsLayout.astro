@@ -8,7 +8,7 @@ import DocsMobileNav from "../components/docs/DocsMobileNav.astro";
 import DocsSectionNav from "../components/docs/DocsSectionNav.astro";
 import { DocsSearch } from "../components/docs/DocsSearch";
 import { getGitHubStars } from "../lib/github-stars";
-import { GithubStarButton } from "../components/GithubStarButton";
+import GithubStarButton from "../components/GithubStarButton.astro";
 import Icon from "../components/Icon.astro";
 
 interface Props {
@@ -95,7 +95,7 @@ const metaDescription = description.replaceAll("`", "");
                 <a href="/docs" class="text-[14px] text-fg-muted transition-colors hover:text-fg">Docs</a>
                 <div class="ml-auto flex items-center gap-2.5">
                     <DocsSearch client:idle />
-                    <GithubStarButton stars={stars} className="hidden sm:inline-flex" />
+                    <GithubStarButton stars={stars} class="hidden sm:inline-flex" />
                     <a
                         href="https://app.maple.dev"
                         class="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-xs font-medium text-fg-muted transition-colors hover:border-fg-muted/40 hover:text-fg"
