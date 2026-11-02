@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { type GcpDraftEffect, gcpCollectLock } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { label } from "../../ui/label"
 import { labelIdOf } from "../../ui/choice"
 import { icon } from "../../ui/icon"
 import * as Switch from "../../ui/switch"
@@ -49,12 +50,12 @@ export const collectFields = (
 									h.div(
 										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
 										[
-											h.label(
-												[
-													h.For(inputId),
-													h.Id(labelIdOf(inputId)),
-													h.Class("text-sm font-medium"),
-												],
+											label(
+												h,
+												{
+													className: "text-sm sm:text-sm",
+													attributes: [h.For(inputId), h.Id(labelIdOf(inputId))],
+												},
 												[title],
 											),
 											h.p(

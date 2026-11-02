@@ -8,7 +8,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { card } from "../../../ui/card"
 import * as DialogView from "../../../ui/dialog-view"
 import { eyebrow } from "../../../ui/eyebrow"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { CONFIDENCE_TONE } from "../kit"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -96,10 +98,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 							),
 						],
 					),
-					h.h3(
-						[h.Class("font-display text-lg font-semibold leading-snug tracking-tight text-foreground")],
-						[report.suspectedCause],
-					),
+					heading(h, { level: 3, variant: "title", className: "leading-snug" }, [report.suspectedCause]),
 					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], [report.summary]),
 				],
 			),
@@ -151,14 +150,13 @@ const actionRow = (h: H, action: ActionNodeData): Html => {
 		action.text,
 		[],
 		[
-			h.button(
-				[
-					h.Class(
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedReportAction({ index: action.index }),
+					className:
 						"-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-					),
-					h.Type("button"),
-					h.OnClick(Message.ClickedReportAction({ index: action.index })),
-				],
+				},
 				[
 					h.span(
 						[

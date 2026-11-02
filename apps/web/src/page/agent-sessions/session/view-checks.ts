@@ -11,6 +11,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
+import { inlineCode } from "../../../ui/inline-code"
+import { pressable } from "../../../ui/pressable"
 import { statusDot } from "../../../ui/status-dot"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -39,7 +41,7 @@ const withCode = (h: H, text: string): ReadonlyArray<Html | string> => {
 	const parts = text.split(/`([^`]+)`/)
 	if (parts.length === 1 || (text.match(/`/g)?.length ?? 0) % 2 === 1) return [text]
 	return parts.map((part, index) =>
-		index % 2 === 1 ? h.code([h.Class("font-mono text-[0.92em]")], [part]) : part,
+		index % 2 === 1 ? inlineCode(h, { variant: "plain", className: "text-inherit" }, [part]) : part,
 	)
 }
 
@@ -102,15 +104,14 @@ const checkDot = (h: H, status: SessionCheckStatus): Html =>
 	})
 
 const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: SessionCheckStatus): Html =>
-	h.button(
-		[
-			h.AriaHasPopup("dialog"),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: openSpan(model, finding.spanId),
+			className:
 				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-			h.Type("button"),
-			h.OnClick(openSpan(model, finding.spanId)),
-		],
+			attributes: [h.AriaHasPopup("dialog")],
+		},
 		[
 			h.span(
 				[h.Class(cn("shrink-0", STATUS_TEXT[status]))],
@@ -265,13 +266,13 @@ const disclosure = (
 	return h.div(
 		[h.Class("flex flex-col")],
 		[
-			h.button(
-				[
-					h.AriaExpanded(isExpanded),
-					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken")),
-					h.Type("button"),
-					h.OnClick(Message.ToggledChecks({ which: options.which, isOpen: !isExpanded })),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledChecks({ which: options.which, isOpen: !isExpanded }),
+					className: cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken"),
+					attributes: [h.AriaExpanded(isExpanded)],
+				},
 				head,
 			),
 			...(isExpanded

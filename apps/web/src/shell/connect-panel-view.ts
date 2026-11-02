@@ -219,7 +219,7 @@ const mcpCard = (h: H, model: Model): Html =>
 					[
 						clientRow(
 							h,
-							{ name: "ClaudeIcon", className: "text-[#D97757]" },
+							{ name: "ClaudeIcon", className: "text-brand-claude" },
 							"Claude Code",
 							copyAction(h, model, MCP_COMMAND, "mcpCommand", "Claude Code command"),
 						),
@@ -231,7 +231,7 @@ const mcpCard = (h: H, model: Model): Html =>
 						),
 						clientRow(
 							h,
-							{ name: "VsCodeIcon", className: "text-[#2B9FEF]" },
+							{ name: "VsCodeIcon", className: "text-brand-vscode" },
 							"VS Code",
 							installAction(h, vscodeInstallUrl(MCP_ENDPOINT), "Add to VS Code"),
 						),
@@ -287,7 +287,8 @@ const commandBlock = (h: H, model: Model): Html =>
 	)
 
 /** The footer's two links share one style. */
-const LINK_CLASS = "font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground active:text-foreground"
+const LINK_CLASS =
+	"font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground active:text-foreground"
 
 /** `ConnectPanel`. */
 const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [

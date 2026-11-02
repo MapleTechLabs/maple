@@ -1,5 +1,7 @@
 import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { label } from "../../ui/label"
+import { heading } from "../../ui/heading"
 import { alert, alertDescription } from "../../ui/alert"
 import { button } from "../../ui/button"
 import * as Checkbox from "../../ui/checkbox"
@@ -17,12 +19,13 @@ type H = HtmlBuilder<Message>
 
 const zoneRow = (h: H, accountId: string, zone: ZoneChoice["zones"][number]): Html => {
 	const inputId = `cf-zone-${accountId}-${zone.id}`
-	return h.label(
-		[
-			h.Key(inputId),
-			h.Id(Checkbox.labelId(inputId)),
-			h.Class("flex min-w-0 items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-surface-sunken active:bg-surface-sunken"),
-		],
+	return label(
+		h,
+		{
+			className:
+				"flex min-w-0 gap-2.5 px-3 py-1.5 text-sm font-normal sm:text-sm hover:bg-surface-sunken active:bg-surface-sunken",
+			attributes: [h.Key(inputId), h.Id(Checkbox.labelId(inputId))],
+		},
 		[
 			...Checkbox.view(h, {
 				model: { isChecked: zone.watched },
@@ -59,13 +62,14 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 		[h.Key(account.accountId), h.Class("flex flex-col gap-2")],
 		[
 			...(isMulti
-				? [h.h3([h.Class("text-sm font-semibold")], [account.accountName ?? account.accountId])]
+				? [heading(h, { level: 3, variant: "section" }, [account.accountName ?? account.accountId])]
 				: []),
-			h.label(
-				[
-					h.Id(Switch.labelId(switchInputId)),
-					h.Class("flex items-center justify-between gap-3 text-sm"),
-				],
+			label(
+				h,
+				{
+					className: "flex justify-between gap-3 text-sm font-normal sm:text-sm",
+					attributes: [h.Id(Switch.labelId(switchInputId))],
+				},
 				[
 					h.span([], ["Collect new zones automatically"]),
 					...Switch.switchControl(h, {

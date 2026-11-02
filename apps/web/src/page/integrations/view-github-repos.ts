@@ -1,6 +1,8 @@
 import type { GithubIntegrationStatus, GithubRepoSummary, VcsRepoSyncStatus } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { listRow } from "../../ui/list-row"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { confirmDialog } from "../../ui/confirm-dialog"
 import { badge } from "../../ui/display"
@@ -99,31 +101,19 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 			filtered.length === 0
 				? [h.p([h.Class("px-2 py-1.5 text-xs text-muted-foreground")], ["No matches."])]
 				: filtered.map((branch) =>
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(Message.ClickedBranch({ repoId: repo.id, branch: branch.name })),
-								h.Class(
-									"flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-								),
-							],
-							[
-								icon(h, "CheckIcon", {
-									size: 14,
-									className: `shrink-0 ${branch.name === tracked ? "text-foreground" : "text-transparent"}`,
-								}),
-								h.span([h.Class("truncate")], [branch.name]),
-								...(branch.isDefault
-									? [
-											badge(
-												h,
-												{ variant: "outline", size: "sm", className: "ml-auto" },
-												["default"],
-											),
-										]
-									: []),
-							],
-						),
+						listRow(h, {
+							onClick: Message.ClickedBranch({ repoId: repo.id, branch: branch.name }),
+							density: "compact",
+							className: "cursor-pointer gap-2 rounded-md px-2",
+							leading: icon(h, "CheckIcon", {
+								size: 14,
+								className: branch.name === tracked ? "text-foreground" : "text-transparent",
+							}),
+							title: branch.name,
+							trailing: branch.isDefault
+								? badge(h, { variant: "outline", size: "sm" }, ["default"])
+								: undefined,
+						}),
 					),
 		),
 	]
@@ -297,8 +287,9 @@ export const repositoriesPanels = (
 		panel(h, {}, [
 			panelHeader(h, {
 				children: [
-					h.h3(
-						[h.Class("text-sm font-medium")],
+					heading(
+						h,
+						{ level: 3, variant: "subsection" },
 						[
 							"Repositories",
 							h.span([h.Class("ml-1.5 text-muted-foreground")], [String(active.length)]),
@@ -326,8 +317,9 @@ export const repositoriesPanels = (
 					panel(h, {}, [
 						panelHeader(h, {
 							children: [
-								h.h3(
-									[h.Class("flex items-center gap-1.5 text-sm font-medium")],
+								heading(
+									h,
+									{ level: 3, variant: "subsection", className: "flex items-center gap-1.5" },
 									[
 										icon(h, "CircleWarningIcon", {
 											size: 16,

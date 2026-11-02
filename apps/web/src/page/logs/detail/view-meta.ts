@@ -1,9 +1,8 @@
 import { shortId } from "@maple/ui/lib/ids"
-import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { encodeLogKey } from "../../../lib/log-key"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { linkButton } from "../../../ui/button"
 import { copyButton } from "../../../ui/copy-button"
 import { icon } from "../../../ui/icon"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
@@ -90,23 +89,20 @@ export const metaStrip = (
 				[
 					...(showOpenFullPage
 						? [
-								h.a(
-									[
-										h.AriaLabel("Open in full page"),
-										h.Class(
-											cn(
-												buttonVariants({
-													size: "icon-xs",
-													variant: "ghost",
-													className: "text-muted-foreground",
-												}),
-											),
-										),
-										h.DataAttribute("base-ui-tooltip-trigger", ""),
-										h.DataAttribute("slot", "icon-button"),
-										h.Href(`/logs/${encodeLogKey(log)}`),
-										h.Id("log-detail-open-full-page"),
-									],
+								linkButton(
+									h,
+									{
+										size: "icon-xs",
+										variant: "ghost",
+										className: "text-muted-foreground",
+										slot: "icon-button",
+										href: `/logs/${encodeLogKey(log)}`,
+										attributes: [
+											h.AriaLabel("Open in full page"),
+											h.DataAttribute("base-ui-tooltip-trigger", ""),
+											h.Id("log-detail-open-full-page"),
+										],
+									},
 									[icon(h, "ExternalLinkIcon")],
 								),
 							]

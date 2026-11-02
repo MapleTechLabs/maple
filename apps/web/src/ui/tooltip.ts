@@ -1,4 +1,5 @@
 import * as Animation from "@foldkit/ui/animation"
+import { iconButtonTooltipStyles } from "@maple/ui/styles/ui/icon-button"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	tooltipPopupStyles,
@@ -209,6 +210,8 @@ export type ViewInputs = Readonly<{
 	toContent: (triggerId: string) => ReadonlyArray<Html | string>
 	/** Every trigger id `trigger(id)` is asked for; the default trigger alone without it. */
 	triggerIds?: ReadonlyArray<string>
+	/** `"icon-button"`: `IconButton`'s popup layout (its label beside a shortcut). */
+	layout?: "icon-button"
 	className?: string
 }>
 
@@ -242,7 +245,13 @@ const portalView = (h: H, model: Model, inputs: ViewInputs, placement: ReadonlyA
 				[
 					h.div(
 						[
-							h.Class(cn(tooltipPopupStyles, inputs.className)),
+							h.Class(
+								cn(
+									tooltipPopupStyles,
+									inputs.layout === "icon-button" && iconButtonTooltipStyles,
+									inputs.className,
+								),
+							),
 							...placement,
 							h.DataAttribute("base-ui-focusable", ""),
 							h.DataAttribute("slot", "tooltip-popup"),

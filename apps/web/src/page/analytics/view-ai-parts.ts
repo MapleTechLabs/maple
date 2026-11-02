@@ -15,6 +15,7 @@ import { emptyMessage } from "../../ui/empty"
 import { icon, type IconName } from "../../ui/icon"
 import { miniBars } from "../../ui/mini-bars"
 import { panel, panelHeader, panelTitle } from "../../ui/panel"
+import { pressable } from "../../ui/pressable"
 import { statFigure } from "../../ui/stat-figure"
 import { columnHead, dataTable } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
@@ -116,14 +117,13 @@ export const aiPanel = (
 			? []
 			: [
 					options.expand.table,
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(Message.ClickedExpandPanel({ panel: options.expand.id })),
-							h.Class(
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedExpandPanel({ panel: options.expand.id }),
+							className:
 								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border-subtle px-4 py-2 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
-							),
-						],
+						},
 						[
 							h.span(
 								[h.Class("flex items-center gap-1.5")],

@@ -5,6 +5,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
+import { heading } from "../../../ui/heading"
 import { icon, type IconName } from "../../../ui/icon"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { panel, panelHeader } from "../../../ui/panel"
@@ -57,7 +58,7 @@ const kindPicker = (h: H, model: Model): Html =>
 	h.section(
 		[h.AriaLabel("Type"), h.Class("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]")],
 		[
-			h.h3([h.Class("text-sm font-medium sm:pt-1.5")], ["Type"]),
+			heading(h, { level: 3, variant: "subsection", className: "sm:pt-1.5" }, ["Type"]),
 			h.div(
 				[h.Class("flex min-w-0 flex-col gap-2")],
 				[

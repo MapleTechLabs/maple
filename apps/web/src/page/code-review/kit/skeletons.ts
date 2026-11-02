@@ -1,12 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
-import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
 import * as DialogView from "../../../ui/dialog-view"
 import { icon } from "../../../ui/icon"
 import { listRow } from "../../../ui/list-row"
 import { panel, panelHeader } from "../../../ui/panel"
-import { skeletonSlowNote } from "../../../ui/skeleton"
+import { skeleton, skeletonSlowNote } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, type StatRailColumns } from "../../kit/stat-rail"
@@ -32,7 +31,7 @@ const rows = <T>(count: number, row: (index: number) => T): ReadonlyArray<T> =>
 	Array.from({ length: count }, (_, index) => row(index))
 
 export const bar = <M>(h: HtmlBuilder<M>, className: string): Html =>
-	h.span([h.Class(cn(skeletonStyles, "block", className)), h.DataAttribute("slot", "skeleton")])
+	skeleton(h, cn("block", className), undefined, "span")
 
 /** A bar centred in a line box as tall as the text it stands in for (`leading-normal` rows are 21px and 18px). */
 export const line = <M>(h: HtmlBuilder<M>, lineClass: string, barClass: string, className?: string): Html =>

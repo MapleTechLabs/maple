@@ -7,6 +7,7 @@ import { reportHeadline, splitDuration } from "@maple/web-data/investigations/di
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
+import { heading as kitHeading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { statFigure } from "../../../ui/stat-figure"
@@ -18,8 +19,8 @@ import { elapsedBetween } from "./derive"
 
 type Children = ReadonlyArray<Html | string>
 
-const HEADING =
-	"font-display text-xl font-semibold leading-7 tracking-tight text-foreground [overflow-wrap:anywhere]"
+const verdictHeading = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	kitHeading(h, { level: 2, variant: "title", className: "leading-7 [overflow-wrap:anywhere]" }, [text])
 
 const SEVERITY_LABEL = { critical: "Critical", high: "High", medium: "Medium", low: "Low" } as const
 const SEVERITY_TEXT_TONE = {
@@ -201,7 +202,7 @@ const diagnosed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Html =
 		"bg-primary",
 		[
 			eyebrow(h, { as: "div", className: "text-primary" }, ["Suspected cause"]),
-			h.h2([h.Class(HEADING)], [heading ?? ""]),
+			verdictHeading(h, heading ?? ""),
 			body(h, heading, report.summary),
 			mechanism(h, heading, report.suspectedCause),
 			nextActions(h, report.suggestedActions),
@@ -330,7 +331,7 @@ const investigating = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, now
 					[statusDot(h, { tone: "live" }), "Investigating"],
 				),
 			]),
-			h.h2([h.Class(HEADING)], ["Maple is gathering evidence."]),
+			verdictHeading(h, "Maple is gathering evidence."),
 			h.p(
 				[h.Class("text-sm leading-6 text-muted-foreground")],
 				[
@@ -357,7 +358,7 @@ const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: num
 		"bg-severity-error",
 		[
 			eyebrow(h, { as: "div", className: "text-severity-error" }, ["No diagnosis"]),
-			h.h2([h.Class(HEADING)], ["The pass ended without a diagnosis"]),
+			verdictHeading(h, "The pass ended without a diagnosis"),
 			h.p(
 				[h.Class("text-sm leading-6 text-muted-foreground")],
 				["No report was recorded. Retry to run the pass again."],
@@ -452,7 +453,7 @@ const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Htm
 				h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"]),
 				h.span([], ["No cause established"]),
 			]),
-			h.h2([h.Class(HEADING)], [headline]),
+			verdictHeading(h, headline),
 			report === null ? null : body(h, headline, report.summary),
 			lists.length === 0 ? null : h.div([h.Class("mt-1 grid gap-x-8 gap-y-5 lg:grid-cols-2")], lists),
 		],

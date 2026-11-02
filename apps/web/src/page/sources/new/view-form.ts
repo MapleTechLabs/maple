@@ -1,7 +1,7 @@
 import type { PushSourcePlatform } from "@maple/domain/primitives"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { collapsible } from "../../../ui/collapsible"
 import { flowColumns, stepCard } from "../../kit/connect-flow"
 import { type FieldIds, type FieldState, field, fieldLabel, input } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
@@ -45,67 +45,37 @@ const nameField = (h: H, model: Model, platform: PushSourcePlatform): Html => {
 }
 
 /** `<Collapsible>` with the "Advanced" trigger; closed, Base UI renders no panel. */
-const advanced = (h: H, model: Model): Html => {
-	const isOpen = model.isAdvancedOpen
-	return h.div(
-		[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+const advanced = (h: H, model: Model): Html =>
+	collapsible(
+		h,
+		{
+			isOpen: model.isAdvancedOpen,
+			onToggle: Message.ToggledAdvanced(),
+			panelId: ADVANCED_PANEL_ID,
+			triggerClassName:
+				"text-muted-foreground hover:text-foreground active:text-foreground group flex items-center gap-1.5 text-sm",
+			trigger: [
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className: "transition-transform group-data-[panel-open]:rotate-90",
+				}),
+				"Advanced",
+			],
+		},
 		[
-			h.button(
+			h.div(
+				[h.Class("mt-4 border-t border-border pt-4")],
 				[
-					...(isOpen ? [h.AriaControls(ADVANCED_PANEL_ID)] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class(
-						"text-muted-foreground hover:text-foreground active:text-foreground group flex items-center gap-1.5 text-sm",
-					),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ToggledAdvanced()),
-				],
-				[
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className: "transition-transform group-data-[panel-open]:rotate-90",
+					RulesView.view(h, {
+						model: model.rules,
+						toParentMessage: (message) => Message.GotRulesMessage({ message }),
+						idPrefix: "source",
+						nowMs: 0,
 					}),
-					"Advanced",
 				],
 			),
-			...(isOpen
-				? [
-						h.div(
-							[
-								h.Class(collapsiblePanelStyles),
-								h.DataAttribute("open", ""),
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id(ADVANCED_PANEL_ID),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-									"animation-name": "none",
-								}),
-							],
-							[
-								h.div(
-									[h.Class("mt-4 border-t border-border pt-4")],
-									[
-										RulesView.view(h, {
-											model: model.rules,
-											toParentMessage: (message) =>
-												Message.GotRulesMessage({ message }),
-											idPrefix: "source",
-											nowMs: 0,
-										}),
-									],
-								),
-							],
-						),
-					]
-				: []),
 		],
 	)
-}
 
 export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatform, host: FlowHost): Html => {
 	const isValid = model.name.trim().length > 0 && rulesOutcome(model.rules).valid

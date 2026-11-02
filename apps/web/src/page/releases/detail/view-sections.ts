@@ -10,7 +10,6 @@ import {
 } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import {
 	ROLLOUT_COMPLETE_SHARE,
 	shortReleaseLabel,
@@ -241,7 +240,6 @@ export const deployServices = <M>(
 							tableHead(h, ["p95"]),
 							tableHead(h, ["Live share"], "pr-4 text-right"),
 						],
-						eyebrowVariants(),
 					),
 				]),
 				tableBody(

@@ -1,5 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../../ui/button"
@@ -11,7 +9,7 @@ import * as Menu from "../../../../ui/menu"
 import type { MenuEntry } from "../../../../ui/menu-view"
 import * as OtpField from "../../../../ui/otp-field"
 import { rowActionsMenu } from "../../../../ui/row-actions-menu"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../../ui/table"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "../../../../ui/table"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
@@ -65,10 +63,10 @@ const emailRow = (h: H, model: Model, user: AccountUser, address: AccountEmail):
 	return tableRow(
 		h,
 		[
-			tableCell(
+			truncatedTableCell(
 				h,
 				[truncatedText(h, { text: address.email })],
-				cn(truncatedCellStyles, "font-medium text-xs"),
+				"font-medium text-xs",
 			),
 			tableCell(h, [
 				h.div(

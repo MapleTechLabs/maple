@@ -1,5 +1,4 @@
 import { Submodel } from "foldkit"
-import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
@@ -60,7 +59,7 @@ export const titleContent = (h: H, model: Model, titleId?: string): Html => {
 					// In the drawer the title is the dialog's name, under the onboarding page's own h1.
 					titleId === undefined
 						? pageTitle(h, { title: titleOf(model) }, [titleOf(model)])
-						: h.h2([h.Class(pageTitleStyles), h.Id(titleId)], [titleOf(model)]),
+						: pageTitle(h, { level: 2, attributes: [h.Id(titleId)] }, [titleOf(model)]),
 					trail(h, model),
 				],
 			),

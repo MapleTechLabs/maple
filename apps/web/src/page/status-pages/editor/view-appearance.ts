@@ -12,6 +12,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton } from "../../../ui/skeleton"
+import { heading } from "../../../ui/heading"
 import { settingsSection } from "../../settings/kit/section"
 import { selectField, textField } from "../shared/fields"
 import {
@@ -269,10 +270,9 @@ export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: Setti
 			h.div(
 				[h.Class("flex min-h-7 items-center justify-between gap-3")],
 				[
-					h.h2(
-						[h.Id("status-page-preview-title"), h.Class("text-sm font-medium text-foreground")],
-						["Preview"],
-					),
+					heading(h, { level: 2, variant: "subsection", id: "status-page-preview-title" }, [
+						"Preview",
+					]),
 					...(form.theme.appearance === "auto"
 						? [
 								segmentedSelect(h, {

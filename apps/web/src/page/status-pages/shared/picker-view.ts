@@ -7,6 +7,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
 import { nativeOption, nativeSelect } from "../../../ui/native-select"
+import { label } from "../../../ui/label"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_OPTIONS } from "./derive"
 import { checkedRows, monitorTarget, type Picker, PickerMessage, type PickerRow, rowIssue } from "./picker"
 
@@ -181,7 +182,7 @@ const monitorRowView = <M>(
 	monitor: V2UptimeMonitor | undefined,
 	position: Readonly<{ isFirst: boolean; isLast: boolean }>,
 ): Html => {
-	const label = monitor?.name ?? row.name
+	const name = monitor?.name ?? row.name
 	const inputId = rowId(options.idPrefix, row, "check")
 	const target = monitor === undefined ? "" : monitorTarget(monitor)
 	return h.li(
@@ -190,8 +191,9 @@ const monitorRowView = <M>(
 			h.Class(cn("flex items-start gap-3 px-3 py-2.5", row.isChecked ? "" : "text-muted-foreground")),
 		],
 		[
-			h.label(
-				[h.Id(Checkbox.labelId(inputId)), h.Class("mt-1.5 flex shrink-0 items-center")],
+			label(
+				h,
+				{ className: "mt-1.5 flex shrink-0", attributes: [h.Id(Checkbox.labelId(inputId))] },
 				[
 					...Checkbox.view(h, {
 						model: { isChecked: row.isChecked },
@@ -199,7 +201,7 @@ const monitorRowView = <M>(
 						id: `${inputId}-root`,
 						inputId,
 						isDisabled: options.isDisabled,
-						ariaLabel: `Show ${label} on the page`,
+						ariaLabel: `Show ${name} on the page`,
 					}),
 				],
 			),
@@ -207,14 +209,14 @@ const monitorRowView = <M>(
 				? h.div(
 						[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
 						[
-							editFields(h, options, row, label),
+							editFields(h, options, row, name),
 							h.p([h.Class("truncate font-mono text-xs text-muted-foreground")], [target]),
 						],
 					)
 				: h.div(
 						[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 pt-1")],
 						[
-							h.span([h.Class("truncate text-sm")], [label]),
+							h.span([h.Class("truncate text-sm")], [name]),
 							h.span([h.Class("truncate font-mono text-xs")], [target]),
 						],
 					),

@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { choiceCard } from "../../ui/choice-card"
 import { PIXEL_GLYPHS } from "../../ui/icons.generated"
 
 // `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
@@ -125,33 +126,18 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 						: [h.div([h.Class("mt-auto flex")], [options.footer])]),
 				]
 
-	return h.label(
-		[h.Class("group relative cursor-pointer")],
-		[
-			h.input([
-				h.Type(options.type),
-				...(options.name === undefined ? [] : [h.Name(options.name)]),
-				h.Class("peer sr-only"),
-				h.Checked(options.isChecked),
-				...(options.isDisabled === true ? [h.Disabled(true)] : []),
-				h.AriaLabel(options.label),
-				h.OnChange(() => options.onChange),
-			]),
-			h.div(
-				[
-					h.Class(
-						cn(
-							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-							layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
-							!options.isChecked
-								? "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
-								: "border-primary bg-primary-a1",
-						),
-					),
-				],
-				body,
-			),
-		],
+	return choiceCard(
+		h,
+		{
+			type: options.type,
+			name: options.name,
+			isChecked: options.isChecked,
+			isDisabled: options.isDisabled,
+			label: options.label,
+			onChange: options.onChange,
+			className: layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
+		},
+		body,
 	)
 }
 

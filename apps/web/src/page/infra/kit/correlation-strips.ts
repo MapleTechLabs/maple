@@ -1,6 +1,5 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ChartEventMarker } from "../../../charts/event-marker-spec"
 import * as InfraMetricChart from "../../../charts/infra-metric-chart"
@@ -13,6 +12,7 @@ import {
 } from "../../../charts/infra-metric-series"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { LINKED_CURSOR_STYLE } from "../../../charts/linked-cursor"
+import { panel } from "../../../ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
 
 // `CorrelationStrips`: signals stacked on one time axis under one linked cursor, each with its label, source
@@ -75,14 +75,16 @@ const lastValue = <M>(
 
 export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStripsOptions<M>): Html => {
 	const isWaiting = options.isWaiting === true
-	return h.section(
-		[
-			h.Class(cn(panelStyles, panelToneStyles.default, "block", refreshingClass(isWaiting))),
-			h.DataAttribute("slot", "panel"),
-			...(isWaiting ? [h.AriaBusy(true)] : []),
-			h.Style(LINKED_CURSOR_STYLE),
-			options.mountCursor,
-		],
+	return panel(
+		h,
+		{
+			className: cn("block", refreshingClass(isWaiting)),
+			attributes: [
+				...(isWaiting ? [h.AriaBusy(true)] : []),
+				h.Style(LINKED_CURSOR_STYLE),
+				options.mountCursor,
+			],
+		},
 		options.strips.map((strip, index) => {
 			const spec = InfraMetricChart.infraMetricSpec({
 				rows: strip.rows,

@@ -1,14 +1,13 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { sheetDescriptionStyles } from "@maple/ui/styles/ui/sheet"
-import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../../../ui/alert"
 import * as Dialog from "../../../../ui/dialog"
 import * as DialogView from "../../../../ui/dialog-view"
 import { icon } from "../../../../ui/icon"
 import { trace, traceDescription, traceIcon, traceLine } from "../../../../ui/trace"
-import { detailEyebrow } from "../../../kit/detail-header"
+import { pressable } from "../../../../ui/pressable"
+import { sheetDetailHeader } from "../../../kit/sheet-detail-header"
 import { sectionHeading } from "../../../kit/section-heading"
 import { dotLoader } from "./dot-loader"
 import type { TaskPart, ToolPart } from "./ui-message"
@@ -123,29 +122,13 @@ const sheetContent = <M>(
 		],
 	)
 	return [
-		DialogView.dialogHeader(
-			h,
-			"sheet",
-			[
-				...Option.toArray(Option.fromNullishOr(detailEyebrow(h, [kind]))),
-				DialogView.dialogTitle(
-					h,
-					"sheet",
-					id,
-					[h.span([h.Class("min-w-0 break-words")], [part.prompt])],
-					"flex flex-wrap items-center gap-2 text-title leading-tight",
-				),
-				h.p(
-					[
-						h.Class(cn(sheetDescriptionStyles, "sr-only")),
-						h.DataAttribute("slot", "sheet-description"),
-						h.Id(Dialog.descriptionId(id)),
-					],
-					["What this sub-agent was asked, and what it came back with."],
-				),
-			],
-			"gap-1.5 pr-14",
-		),
+		sheetDetailHeader(h, {
+			dialogId: id,
+			kind: [kind],
+			title: [part.prompt],
+			description: "What this sub-agent was asked, and what it came back with.",
+			mono: false,
+		}),
 		DialogView.dialogPanel(
 			h,
 			"sheet",
@@ -192,7 +175,7 @@ export const taskCard = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart
 			className: "sm:max-w-xl",
 			hasDescription: true,
 			toView: ({ trigger, portal }) =>
-				trace(h, [h.button([...trigger, h.Type("button")], [taskLine(h, host, part)]), portal]),
+				trace(h, [pressable(h, { attributes: trigger }, [taskLine(h, host, part)]), portal]),
 			toContent: () => sheetContent(h, host, part, id),
 		},
 	})

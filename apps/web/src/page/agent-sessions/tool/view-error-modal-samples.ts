@@ -12,7 +12,9 @@ import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
+import { textLink } from "../../../ui/text-link"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
 import { currentOf, occurrencesOf, pagingOf } from "./error-modal-update"
 import { sampleBody } from "./view-error-modal-payload"
@@ -39,12 +41,13 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 			),
 			...(paging === "more"
 				? [
-						h.button(
-							[
-								h.Class("text-foreground hover:text-primary active:text-primary"),
-								h.Type("button"),
-								h.OnClick(Message.ClickedLoadMore()),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								onClick: Message.ClickedLoadMore(),
+								className: "text-foreground hover:text-primary active:text-primary",
+							},
 							["Load ", String(Math.min(SAMPLES_PAGE, Math.max(total - shown, 1))), " more"],
 						),
 					]
@@ -197,16 +200,15 @@ const sampleRow = (
 					),
 				],
 				[
-					h.button(
-						[
-							h.AriaExpanded(options.isOpen),
-							h.AriaLabel(`Sample at ${time}`),
-							h.Class(
-								"absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-							),
-							h.Type("button"),
-							h.OnClick(Message.ClickedSample({ index: options.index })),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedSample({ index: options.index }),
+							label: `Sample at ${time}`,
+							className:
+								"absolute inset-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+							attributes: [h.AriaExpanded(options.isOpen)],
+						},
 						[],
 					),
 					icon(h, options.isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {

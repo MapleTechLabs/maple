@@ -1,9 +1,9 @@
 import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
-import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
-import * as MenuView from "../../../ui/menu-view"
+import type * as MenuView from "../../../ui/menu-view"
+import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { refreshControls as sharedRefreshControls } from "../../kit/refresh-controls"
 import { presetLabel } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -80,34 +80,11 @@ const moreEntries = (isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 
 /** `RowActionsMenu label="More dashboard actions"`. */
 const moreMenu = (h: H, model: Model): Html =>
-	h.submodel({
+	rowActionsMenu(h, {
 		slotId: model.moreMenu.id,
 		model: model.moreMenu,
-		view: MenuView.view,
-		viewInputs: {
-			entries: moreEntries(isEditing(model)),
-			align: "end",
-			className: rowActionsMenuContentStyles,
-			toView: ({ trigger, withTrigger }) =>
-				h.div(
-					[h.Class("contents")],
-					withTrigger(
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "icon-sm",
-								attributes: [
-									h.AriaLabel("More dashboard actions"),
-									...trigger,
-									h.DataAttribute("slot", "row-actions-trigger"),
-								],
-							},
-							[icon(h, "DotsVerticalIcon", { className: rowActionsMenuIconStyles })],
-						),
-					),
-				),
-		},
+		entries: moreEntries(isEditing(model)),
+		label: "More dashboard actions",
 		toParentMessage: (message) => Message.GotMoreMenuMessage({ message }),
 	})
 

@@ -15,12 +15,16 @@ export const skeleton = <M>(
 	className?: string,
 	/** Inline style the call site passes (`style={{ width }}`). */
 	style?: Readonly<Record<string, string>>,
-): Html =>
-	h.div([
+	/** `"span"` for a bar inside phrasing content (a text line, a stat value). */
+	element: "div" | "span" = "div",
+): Html => {
+	const attributes = [
 		h.Class(cn(skeletonStyles, className)),
 		h.DataAttribute("slot", "skeleton"),
 		...(style === undefined ? [] : [h.Style(style)]),
-	])
+	]
+	return element === "span" ? h.span(attributes) : h.div(attributes)
+}
 
 /** A muted line that appears once a skeleton has been up for 8s (`.skeleton-slow-note`), so a
  * stalled read stops reading as a normal load. It restarts whenever the skeleton remounts. */

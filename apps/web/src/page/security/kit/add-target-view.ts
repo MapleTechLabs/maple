@@ -12,6 +12,7 @@ import { formDialog } from "../../../ui/form-dialog"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
+import { label } from "../../../ui/label"
 import * as RadioGroup from "../../../ui/radio-group"
 import * as SelectView from "../../../ui/select-view"
 import {
@@ -175,17 +176,21 @@ const profileField = (h: H, model: Model): Html => {
 				{ label: "Profile", className: "grid grid-cols-2 gap-2" },
 				PROFILES.map((profile) => {
 					const isChecked = Option.contains(model.profile.maybeValue, profile.value)
-					return h.label(
-						[
-							h.Key(profile.value),
-							h.Id(RadioGroup.labelId(`${DIALOG_ID}-profile-${profile.value}-input`)),
-							h.Class(
-								cn(
-									"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
-									isChecked ? "border-border-strong bg-surface-strong" : "hover:bg-surface-sunken active:bg-surface-sunken",
-								),
+					return label(
+						h,
+						{
+							// A card: the kit label's centring and medium weight stay off.
+							className: cn(
+								"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
+								isChecked
+									? "border-border-strong bg-surface-strong"
+									: "hover:bg-surface-sunken active:bg-surface-sunken",
 							),
-						],
+							attributes: [
+								h.Key(profile.value),
+								h.Id(RadioGroup.labelId(`${DIALOG_ID}-profile-${profile.value}-input`)),
+							],
+						},
 						[
 							...RadioGroup.radio(h, config, profile.value, "mt-0.5"),
 							h.span(
@@ -345,8 +350,9 @@ const modelsField = (h: H, model: Model, error?: string): Html => {
 
 const startNowToggle = (h: H, model: Model): Html => {
 	const inputId = `${DIALOG_ID}-start-now`
-	return h.label(
-		[h.Id(Checkbox.labelId(inputId)), h.Class("flex items-center gap-2 text-sm")],
+	return label(
+		h,
+		{ className: "flex items-center gap-2 text-sm font-normal", attributes: [h.Id(Checkbox.labelId(inputId))] },
 		[
 			...Checkbox.view(h, {
 				model: { isChecked: model.startNow },

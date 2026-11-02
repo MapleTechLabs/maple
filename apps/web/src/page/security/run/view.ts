@@ -4,6 +4,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
+import { cardButton } from "../../../ui/card-button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { errorState } from "../../../ui/error-state"
@@ -109,15 +110,13 @@ const runDetails = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: s
 	return h.section(
 		[h.AriaLabel("How the run ran"), h.Class("flex flex-col gap-4")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.AriaExpanded(isOpen),
-					h.OnClick(Message.ToggledDetails()),
-					h.Class(
-						"flex w-full items-center gap-2.5 rounded-md border bg-card p-4 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-					),
-				],
+			cardButton(
+				h,
+				{
+					onClick: Message.ToggledDetails(),
+					className: "flex w-full items-center gap-2.5 p-4",
+					attributes: [h.AriaExpanded(isOpen)],
+				},
 				[
 					icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
 						size: 14,

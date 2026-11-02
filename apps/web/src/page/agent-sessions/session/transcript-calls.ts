@@ -3,9 +3,9 @@ import { callMetaLine, callMetaParts, spanModel, type TranscriptRow } from "@map
 import { formatDuration } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { truncatedText } from "../../../ui/truncated-text"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -86,13 +86,13 @@ const assistantHeader = (
 	const model = spanModel(assistant.span)
 	const timing = callMetaParts(assistant.span, { usage: false }).slice(model === undefined ? 0 : 1)
 	const { isContinued, isSelected } = state
-	return h.button(
-		[
-			h.AriaPressed(String(isSelected)),
-			h.Class("flex min-w-0 grow cursor-pointer items-center gap-2 text-left"),
-			h.Type("button"),
-			h.OnClick(Message.ClickedSpan({ spanId: isSelected ? undefined : assistant.span.spanId })),
-		],
+	return pressable(
+		h,
+		{
+			onClick: Message.ClickedSpan({ spanId: isSelected ? undefined : assistant.span.spanId }),
+			isSelected,
+			className: "flex min-w-0 grow items-center gap-2 text-left",
+		},
 		[
 			// A continued call keeps a quieter speaker label, so its clock never sits alone over the text.
 			h.span(
@@ -265,20 +265,15 @@ export const structureRow = (
 		h.div(
 			[h.Class("flex items-center gap-2.5")],
 			[
-				h.button(
-					[
-						h.AriaPressed(String(isSelected)),
-						h.Class(
-							cn(
-								"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-								rowSelectedClass(isSelected),
-							),
-						),
-						h.Type("button"),
-						h.OnClick(
-							Message.ClickedSpan({ spanId: isSelected ? undefined : structure.span.spanId }),
-						),
-					],
+				pressable(
+					h,
+					{
+						onClick: Message.ClickedSpan({ spanId: isSelected ? undefined : structure.span.spanId }),
+						isSelected,
+						selectedLane: isSelected,
+						className:
+							"-mx-1.5 flex min-w-0 grow items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+					},
 					[
 						icon(h, STRUCTURE_ICON[category], {
 							size: 14,

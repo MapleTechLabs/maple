@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, ClickOptions, Html, HtmlBuilder } from "foldkit/html"
 
 // `TextLink`: an inline action that reads as a link inside running text or a card footer, with no
 // button box. `primary` is a call to action ("View all →"), `muted` a quiet secondary action
@@ -24,7 +24,13 @@ export type TextLinkOptions<M> = Readonly<
 		attributes?: ReadonlyArray<Attribute<M> | ChildAttribute>
 	} & (
 		| { href: string; onClick?: never; isDisabled?: never }
-		| { onClick: M; isDisabled?: boolean; href?: never }
+		| {
+				onClick: M
+				isDisabled?: boolean
+				/** `h.OnClick` options, for a link inside another click target (stop, prevent). */
+				clickOptions?: ClickOptions
+				href?: never
+		  }
 	)
 >
 
@@ -43,7 +49,7 @@ export const textLink = <M>(
 		[
 			h.Type("button"),
 			className,
-			h.OnClick(options.onClick),
+			h.OnClick(options.onClick, options.clickOptions),
 			...((options.isDisabled ?? false) ? [h.Disabled(true)] : []),
 			...extra,
 		],

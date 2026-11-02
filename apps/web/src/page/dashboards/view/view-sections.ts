@@ -6,8 +6,10 @@ import { button } from "../../../ui/button"
 import { emptyMessage } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
+import { inlineRenameInput } from "../../../ui/inline-rename-input"
 import * as Menu from "../../../ui/menu"
 import type * as MenuView from "../../../ui/menu-view"
+import { pressable } from "../../../ui/pressable"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { countLabel } from "@maple/ui/lib/format"
@@ -37,26 +39,23 @@ export const inlineEditableText = (
 ): Html => {
 	const rename = model.rename
 	if (options.isEditable && rename !== null && rename.sectionId === options.sectionId && rename.tabId === options.tabId)
-		return h.input([
-			h.Value(rename.draft),
-			h.AriaLabel(options.ariaLabel),
-			h.Class(
-				cn(
-					"min-w-0 border-b border-foreground/20 bg-transparent outline-none focus:border-foreground/50",
-					options.className,
+		return inlineRenameInput(h, {
+			className: options.className,
+			attributes: [
+				h.Value(rename.draft),
+				h.AriaLabel(options.ariaLabel),
+				h.Autofocus(true),
+				h.OnInput((value) => Message.ChangedRenameDraft({ value })),
+				h.OnBlur(Message.SubmittedRename()),
+				h.OnKeyDownPreventDefault((key) =>
+					key === "Enter"
+						? Option.some(Message.SubmittedRename())
+						: key === "Escape"
+							? Option.some(Message.CancelledRename())
+							: Option.none(),
 				),
-			),
-			h.Autofocus(true),
-			h.OnInput((value) => Message.ChangedRenameDraft({ value })),
-			h.OnBlur(Message.SubmittedRename()),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter"
-					? Option.some(Message.SubmittedRename())
-					: key === "Escape"
-						? Option.some(Message.CancelledRename())
-						: Option.none(),
-			),
-		])
+			],
+		})
 	const start = Message.StartedRename({ sectionId: options.sectionId, tabId: options.tabId })
 	const keyboardRename = options.isEditable && options.isFocusable
 	return h.span(
@@ -99,24 +98,26 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 						),
 					],
 					[
-						h.button(
-							[
-								h.Type("button"),
-								h.Role("tab"),
-								h.AriaSelected(isActive),
-								h.OnClick(Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id })),
-								...(isEditable
-									? [
-											h.AriaKeyshortcuts("F2"),
-											h.OnKeyDownPreventDefault((key) =>
-												key === "F2"
-													? Option.some(Message.StartedRename({ sectionId: section.id, tabId: tab.id }))
-													: Option.none(),
-											),
-										]
-									: []),
-								h.Class("min-w-0 max-w-48 cursor-pointer font-medium outline-none"),
-							],
+						pressable(
+							h,
+							{
+								onClick: Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id }),
+								className: "min-w-0 max-w-48 cursor-pointer font-medium outline-none",
+								attributes: [
+									h.Role("tab"),
+									h.AriaSelected(isActive),
+									...(isEditable
+										? [
+												h.AriaKeyshortcuts("F2"),
+												h.OnKeyDownPreventDefault((key) =>
+													key === "F2"
+														? Option.some(Message.StartedRename({ sectionId: section.id, tabId: tab.id }))
+														: Option.none(),
+												),
+											]
+										: []),
+								],
+							},
 							[
 								inlineEditableText(h, model, {
 									sectionId: section.id,

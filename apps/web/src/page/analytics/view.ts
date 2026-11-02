@@ -2,13 +2,13 @@ import { activeFilterChips } from "../../components/analytics/filters"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
+import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
 import { statusDot } from "../../ui/status-dot"
 import type { PageViewInputs } from "../contract"
@@ -123,24 +123,16 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 			[h.Class("flex flex-wrap items-center gap-1.5")],
 			[
 				...chips.map((chip) =>
-					h.button(
-						[
-							h.Key(`${chip.key}:${chip.value}`),
-							h.Type("button"),
-							h.Class(
-								cn(
-									badgeVariants({
-										variant: "meta",
-										size: "xs",
-										mono: true,
-										className:
-											"h-auto px-1.5 py-0.5 hover:text-foreground active:text-foreground",
-									}),
-								),
-							),
-							h.DataAttribute("slot", "badge"),
-							h.OnClick(Message.ChangedFilter({ key: chip.key, value: undefined })),
-						],
+					badge(
+						h,
+						{
+							variant: "meta",
+							size: "xs",
+							mono: true,
+							className: "h-auto px-1.5 py-0.5 hover:text-foreground active:text-foreground",
+							onClick: Message.ChangedFilter({ key: chip.key, value: undefined }),
+							attributes: [h.Key(`${chip.key}:${chip.value}`)],
+						},
 						[chip.label, " ✕"],
 					),
 				),

@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton as sharedCopyButton } from "../../../../ui/copy-button"
 import type { IconName } from "../../../../ui/icon"
+import { pressable } from "../../../../ui/pressable"
 import { Message } from "./message"
 import type { CopyStatus, PanelState as Model } from "./model"
 
@@ -50,22 +51,22 @@ export const copyableValue = (
 	children?: ReadonlyArray<Html | string>,
 ): Html => {
 	const status = statusOf(model, options.id)
-	return h.button(
-		[
-			h.AriaLabel(`Copy ${options.label ?? "value"}`),
-			h.Class(
-				cn(
-					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
-					status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
-					status === "copied" && "bg-severity-info-a3",
-					status === "error" && "bg-severity-error-a3",
-					options.className,
-				),
+	return pressable(
+		h,
+		{
+			label: `Copy ${options.label ?? "value"}`,
+			className: cn(
+				"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+				status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+				status === "copied" && "bg-severity-info-a3",
+				status === "error" && "bg-severity-error-a3",
+				options.className,
 			),
-			h.Title("Click to copy"),
-			h.Type("button"),
-			h.OnClick(Message.ClickedCopy({ id: options.id, text: options.value }), { propagation: "Stop" }),
-		],
+			attributes: [
+				h.Title("Click to copy"),
+				h.OnClick(Message.ClickedCopy({ id: options.id, text: options.value }), { propagation: "Stop" }),
+			],
+		},
 		children ?? [options.value],
 	)
 }

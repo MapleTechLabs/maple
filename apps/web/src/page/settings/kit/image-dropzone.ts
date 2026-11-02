@@ -3,6 +3,7 @@ import { Effect, Option } from "effect"
 import { File } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { fileInput } from "../../../ui/file-input"
 import { icon } from "../../../ui/icon"
 import { input } from "../../../ui/input"
 import { label } from "../../../ui/label"
@@ -149,13 +150,12 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 						),
 						...(isReadOnly ? [] : [actions]),
 					]),
-			h.input([
-				h.Id(options.inputId),
-				h.Type("file"),
-				h.Accept(ACCEPT),
-				h.Class("hidden"),
-				h.OnFileChange(options.onFiles),
-			]),
+			fileInput(h, {
+				id: options.inputId,
+				label: options.targetLabel,
+				accept: ACCEPT,
+				onChange: options.onFiles,
+			}),
 		],
 	)
 }

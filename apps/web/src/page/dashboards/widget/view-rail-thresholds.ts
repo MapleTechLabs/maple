@@ -1,8 +1,7 @@
-import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { colorInput } from "../../../ui/color-input"
+import { field, fieldGroupLabel, type FieldState } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
@@ -11,17 +10,15 @@ import { Message } from "./message"
 
 type H = HtmlBuilder<Message>
 
-const RAIL_LABEL_CLASS = cn(eyebrowVariants({ variant: "label" }), "sm:text-2xs sm:leading-normal")
+const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
 
 /** `Thresholds`: a colour, a value and a remove button per line, then "+ Add threshold". */
 export const thresholds = (h: H, state: EditorState): Html =>
-	h.div(
-		[h.Class(cn(fieldStyles, "items-stretch gap-1.5")), h.DataAttribute("slot", "field")],
+	field(
+		h,
+		{ className: "items-stretch gap-1.5", state: IDLE },
 		[
-			h.label(
-				[h.Class(cn(fieldLabelStyles, RAIL_LABEL_CLASS)), h.DataAttribute("slot", "field-label")],
-				["Thresholds"],
-			),
+			fieldGroupLabel(h, { isEyebrow: true }, "Thresholds"),
 			h.div(
 				[h.Class("flex flex-col gap-1.5")],
 				[
@@ -29,15 +26,11 @@ export const thresholds = (h: H, state: EditorState): Html =>
 						h.div(
 							[h.Class("flex items-center gap-1.5")],
 							[
-								h.input([
-									h.Type("color"),
-									h.Value(threshold.color.startsWith("#") ? threshold.color : "#ef4444"),
-									h.OnInput((color) => Message.ChangedThresholdColor({ index, color })),
-									h.Class(
-										"h-8 w-8 shrink-0 cursor-pointer rounded-sm border bg-transparent p-0.5",
-									),
-									h.AriaLabel("Threshold color"),
-								]),
+								colorInput(h, {
+									value: threshold.color.startsWith("#") ? threshold.color : "#ef4444",
+									label: "Threshold color",
+									onInput: (color) => Message.ChangedThresholdColor({ index, color }),
+								}),
 								input(h, {
 									id: `widget-editor-threshold-${index}`,
 									type: "number",

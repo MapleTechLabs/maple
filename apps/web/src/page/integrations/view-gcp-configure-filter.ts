@@ -1,9 +1,9 @@
 import type { GcpLogRuntime } from "@maple/domain/primitives"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { GCP_LOG_RUNTIMES, gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
+import { collapsible } from "../../ui/collapsible"
 import { type FieldState, field, fieldLabel } from "../../ui/field"
 import { icon } from "../../ui/icon"
 import { DOCS, OTEL_DOCS } from "./gcp-configure-copy"
@@ -39,64 +39,29 @@ export const logFilter = (
 	options: Readonly<{ sinkExists: boolean; logRouter?: string }>,
 ): Html => {
 	const isOpen = configure.isFilterOpen
-	const state = h.DataAttribute(isOpen ? "open" : "closed", "")
-	return h.div(
-		[
-			h.Class("rounded-md border border-border-subtle bg-surface-sunken"),
-			state,
-			h.DataAttribute("slot", "collapsible"),
-		],
-		[
-			h.button(
-				[
-					...(isOpen ? [h.AriaControls(PANEL_ID)] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class(
-						"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-					),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ClickedGcpLogFilter()),
-				],
-				[
-					h.span([h.Class("text-foreground")], ["Log filter"]),
-					h.span(
-						[h.Class("truncate text-muted-foreground")],
-						[filterShort(gcpLogFilterChoice(configure.filter, options.sinkExists))],
-					),
-					icon(h, "ChevronDownIcon", {
-						size: 12,
-						className:
-							"ml-auto shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180",
-					}),
-				],
-			),
-			...(isOpen
-				? [
-						h.div(
-							[
-								h.Class(collapsiblePanelStyles),
-								state,
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id(PANEL_ID),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-								}),
-							],
-							[
-								h.div(
-									[h.Class("border-t border-border-subtle p-3")],
-									[filterField(h, configure, options)],
-								),
-							],
-						),
-					]
-				: []),
-		],
+	return collapsible(
+		h,
+		{
+			isOpen,
+			onToggle: Message.ClickedGcpLogFilter(),
+			panelId: PANEL_ID,
+			triggerClassName:
+				"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+			trigger: [
+				h.span([h.Class("text-foreground")], ["Log filter"]),
+				h.span(
+					[h.Class("truncate text-muted-foreground")],
+					[filterShort(gcpLogFilterChoice(configure.filter, options.sinkExists))],
+				),
+				icon(h, "ChevronDownIcon", {
+					size: 12,
+					className:
+						"ml-auto shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180",
+				}),
+			],
+			attributes: [h.Class("rounded-md border border-border-subtle bg-surface-sunken")],
+		},
+		[h.div([h.Class("border-t border-border-subtle p-3")], [filterField(h, configure, options)])],
 	)
 }
 

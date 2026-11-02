@@ -2,13 +2,12 @@ import { peekPosition } from "./peek"
 import { MountPeekRows } from "./command"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { tableBodyStyles } from "@maple/ui/styles/ui/table"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "../../../ui/error-state"
 import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
 import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
-import { ariaSort, sortButton, table, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { ariaSort, sortButton, table, tableBody, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
@@ -128,8 +127,8 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 	const activeIndex = isMobile ? null : (peekPosition(model)?.index ?? null)
 	const first = model.virtualRows[0]
 	const last = model.virtualRows.at(-1)
-	return h.tbody(
-		[h.Class(tableBodyStyles), h.DataAttribute("slot", "table-body")],
+	return tableBody(
+		h,
 		[
 			...(first === undefined ? [] : [spacer(h, "spacer-before", first.start)]),
 			...model.virtualRows.flatMap((item) => {

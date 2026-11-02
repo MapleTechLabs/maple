@@ -8,6 +8,7 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
@@ -23,7 +24,7 @@ import { gcpConnectors } from "./update-gcp"
 import { gcpConnection } from "./view-gcp-connection"
 import { gcpConfigure } from "./view-gcp-configure"
 import { gcpDialogs } from "./view-gcp-dialogs"
-import { copyScriptButton, GCP_TITLE, openCloudShellButton } from "./view-gcp-parts"
+import { copyScriptButton, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
 
 // `GcpIntegrationCard` and `GcpHeaderStatus`.
@@ -37,8 +38,9 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 			h.div(
 				[],
 				[
-					h.h3(
-						[h.Class(GCP_TITLE)],
+					heading(
+						h,
+						{ level: 3, variant: "subsection" },
 						[
 							entry.label,
 							" ",

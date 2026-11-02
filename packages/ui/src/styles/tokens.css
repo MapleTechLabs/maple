@@ -90,6 +90,43 @@
 	/* Data-residency region identity (onboarding region picker). */
 	--region-us: oklch(0.628 0.193 17.9);
 	--region-eu: oklch(0.631 0.198 269.4);
+	/* Vendor brand colours (logo tints, `db.system` accents), the same in both themes. */
+	--brand-claude: #d97757;
+	--brand-vscode: #2b9fef;
+	--brand-cloudflare: #f38020;
+	--brand-postgresql: #336791;
+	--brand-mysql: #00758f;
+	--brand-mariadb: #1f7a8c;
+	--brand-clickhouse: #f5b400;
+	--brand-redis: #dc382d;
+	--brand-mongodb: #13aa52;
+	--brand-elastic: #00bfb3;
+	--brand-cassandra: #1287b1;
+	--brand-cockroachdb: #6933ff;
+	--brand-sqlite: #0f80cc;
+	--brand-oracle: #c74634;
+	--brand-mssql: #cc2927;
+	--brand-dynamodb: #4053d6;
+	--brand-redshift: #8c4fff;
+	--brand-snowflake: #29b5e8;
+	/* macOS window-chrome dots (the replay player's browser frame), both themes. */
+	--window-dot-close: #ff5f57;
+	--window-dot-minimize: #febc2e;
+	--window-dot-zoom: #28c840;
+	/* HTTP method badges (HTTP_METHOD_HEX in lib/http.ts) and cache operation dots, both themes. */
+	--http-get: #4a9eff;
+	--http-post: #e8872b;
+	--http-put: #4aa865;
+	--http-patch: #8a7f72;
+	--http-delete: #e85d4a;
+	--http-head: #8a7f72;
+	--http-options: #5a5248;
+	--cache-get: #e8872b;
+	--cache-set: #4a9eff;
+	--cache-delete: #e85d4a;
+	/* The tinted chat bubble: a pale wash of the primary hue, and its hover. */
+	--bubble-tinted: oklch(from var(--primary) 0.93 calc(c * 0.4) h);
+	--bubble-tinted-hover: oklch(from var(--primary) 0.88 calc(c * 0.5) h);
 	--severity-trace: oklch(0.552 0.016 285.938); /* zinc-500 */
 	--severity-debug: oklch(0.623 0.214 259.815); /* blue-500 */
 	--severity-info: oklch(0.696 0.17 162.48); /* emerald-500 */
@@ -243,6 +280,8 @@
 	/* Preserves the original dark-canvas core (slightly darker than --background
 	   for a recessed "depth" groove). */
 	--service-map-edge-core: oklch(0.141 0.005 285.823);
+	--bubble-tinted: oklch(from var(--primary) 0.3 calc(c * 0.4) h);
+	--bubble-tinted-hover: oklch(from var(--primary) 0.35 calc(c * 0.5) h);
 	--severity-trace: oklch(0.603 0.023 72); /* warm gray #8A7F72 */
 	--severity-debug: oklch(0.693 0.165 254); /* blue #4A9EFF */
 	--severity-info: oklch(0.658 0.134 151); /* green #4AA865 */
@@ -430,6 +469,10 @@
 	/* Dense body (13px) and sheet/detail titles (15px). */
 	--text-ui: 0.8125rem;
 	--text-title: 0.9375rem;
+	/* The large stat figure (26px), between text-2xl and text-3xl. */
+	--text-figure: 1.625rem;
+	/* Inline code inside prose: a touch under the surrounding text, whatever its size. */
+	--text-code: 0.9em;
 	/* Motion curves. Tailwind's stock `ease-out` is too weak for UI; `ease-move` is for on-screen
 	   movement (sidebar collapse), `ease-drawer` for sheets sliding in from an edge. */
 	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -474,6 +517,39 @@
 	--color-avatar-5: var(--avatar-5);
 	--color-region-us: var(--region-us);
 	--color-region-eu: var(--region-eu);
+	--color-brand-claude: var(--brand-claude);
+	--color-brand-vscode: var(--brand-vscode);
+	--color-brand-cloudflare: var(--brand-cloudflare);
+	--color-brand-postgresql: var(--brand-postgresql);
+	--color-brand-mysql: var(--brand-mysql);
+	--color-brand-mariadb: var(--brand-mariadb);
+	--color-brand-clickhouse: var(--brand-clickhouse);
+	--color-brand-redis: var(--brand-redis);
+	--color-brand-mongodb: var(--brand-mongodb);
+	--color-brand-elastic: var(--brand-elastic);
+	--color-brand-cassandra: var(--brand-cassandra);
+	--color-brand-cockroachdb: var(--brand-cockroachdb);
+	--color-brand-sqlite: var(--brand-sqlite);
+	--color-brand-oracle: var(--brand-oracle);
+	--color-brand-mssql: var(--brand-mssql);
+	--color-brand-dynamodb: var(--brand-dynamodb);
+	--color-brand-redshift: var(--brand-redshift);
+	--color-brand-snowflake: var(--brand-snowflake);
+	--color-window-dot-close: var(--window-dot-close);
+	--color-window-dot-minimize: var(--window-dot-minimize);
+	--color-window-dot-zoom: var(--window-dot-zoom);
+	--color-http-get: var(--http-get);
+	--color-http-post: var(--http-post);
+	--color-http-put: var(--http-put);
+	--color-http-patch: var(--http-patch);
+	--color-http-delete: var(--http-delete);
+	--color-http-head: var(--http-head);
+	--color-http-options: var(--http-options);
+	--color-cache-get: var(--cache-get);
+	--color-cache-set: var(--cache-set);
+	--color-cache-delete: var(--cache-delete);
+	--color-bubble-tinted: var(--bubble-tinted);
+	--color-bubble-tinted-hover: var(--bubble-tinted-hover);
 	/* Tone alpha steps: -a1 a faint wash, -a2 a toned box's fill, -a3 its edge, -a4 a strong edge.
 	   Use these instead of `/NN` modifiers on a tone (design/tone-alpha-steps). */
 	--color-primary-a1: color-mix(in oklab, var(--color-primary) 6%, transparent);

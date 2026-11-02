@@ -25,18 +25,19 @@ export const pageTitle = <M>(
 		readonly className?: string
 		/** Behaviour on the heading itself (an inline-editable title's click to rename). */
 		readonly attributes?: ReadonlyArray<Attribute<M>>
+		/** `2` when the page title sits under another page's `h1` (a flow in a drawer). */
+		readonly level?: 1 | 2
 	},
 	children: Children,
-): Html =>
-	h.h1(
-		[
-			h.DataAttribute("slot", "page-title"),
-			h.Class(cn(pageTitleStyles, options.className)),
-			...(options.title === undefined ? [] : [h.Title(options.title)]),
-			...(options.attributes ?? []),
-		],
-		children,
-	)
+): Html => {
+	const attributes = [
+		h.DataAttribute("slot", "page-title"),
+		h.Class(cn(pageTitleStyles, options.className)),
+		...(options.title === undefined ? [] : [h.Title(options.title)]),
+		...(options.attributes ?? []),
+	]
+	return options.level === 2 ? h.h2(attributes, children) : h.h1(attributes, children)
+}
 
 export const pageDescription = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.p(

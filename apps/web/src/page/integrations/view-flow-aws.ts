@@ -2,6 +2,7 @@ import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import * as Field from "../../ui/field"
 import { icon } from "../../ui/icon"
@@ -202,7 +203,7 @@ const waitingForRole = (
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
 				[
-					h.h3([h.Class("text-sm")], [`Run the role stack in ${connection.account_id}`]),
+					heading(h, { level: 3, variant: "subsection" }, [`Run the role stack in ${connection.account_id}`]),
 					methodSelect(h, model, "role"),
 				],
 			),

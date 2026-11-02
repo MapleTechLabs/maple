@@ -11,7 +11,7 @@ import {
 } from "@maple/ui/styles/ui/context-menu"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
-import { type Html, type HtmlBuilder } from "foldkit/html"
+import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"
 import {
 	itemId,
 	Message,
@@ -265,8 +265,24 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 	)
 }
 
+/** The trigger area before a menu Submodel exists (rows that mount one lazily); the caller wires
+ *  the pointer and contextmenu events that create it. */
+export const idleTrigger = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ className?: string; attributes?: ReadonlyArray<Attribute<M>> }>,
+	children: ReadonlyArray<Html>,
+): Html =>
+	h.div(
+		[
+			h.Class(cn(contextMenuTriggerStyles, options.className)),
+			h.DataAttribute("slot", "context-menu-trigger"),
+			...(options.attributes ?? []),
+		],
+		children,
+	)
+
 /** The trigger area, with the menu's portal as its last child while open (moved to `<body>`). */
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
+export const view =Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	h.div(
 		[
 			h.Class(cn(contextMenuTriggerStyles, inputs.triggerClassName)),

@@ -4,8 +4,10 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
 import { button } from "../../../ui/button"
 import { badge } from "../../../ui/display"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { serviceDot } from "../../../ui/values"
 import { Message } from "./message"
 import type { ProductEvent } from "./model"
@@ -92,14 +94,12 @@ const productEventRow = (h: HtmlBuilder<Message>, event: ProductEvent): Html => 
 		: h.li(
 				[],
 				[
-					h.button(
-						[
-							h.Class(
-								`${rowClassName} hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none`,
-							),
-							h.Type("button"),
-							h.OnClick(Message.ClickedProductEvent({ spanId: event.spanId })),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedProductEvent({ spanId: event.spanId }),
+							className: `${rowClassName} hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none`,
+						},
 						content,
 					),
 				],
@@ -118,8 +118,9 @@ export const productEvents = (h: HtmlBuilder<Message>, events: ReadonlyArray<Pro
 						h.div(
 							[h.Class("flex items-baseline gap-2.5")],
 							[
-								h.h2(
-									[h.Class("text-sm font-medium text-foreground")],
+								heading(
+									h,
+									{ level: 2, variant: "subsection" },
 									[
 										"Product events",
 										h.span(

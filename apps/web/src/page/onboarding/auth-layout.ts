@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 
 // `<AuthLayout>`: the centred brand card of the signed-out and interstitial screens (CLI login, MCP consent,
 // unsubscribe, org required).
@@ -47,7 +48,7 @@ export const authTitle = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html | string>,
 	className?: string,
-): Html => h.h1([h.Class(cn("text-xl font-semibold", className))], children)
+): Html => heading(h, { level: 1, variant: "title", className }, children)
 
 /** `AuthLayout.Description`. */
 export const authDescription = <M>(

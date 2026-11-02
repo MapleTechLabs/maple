@@ -1,4 +1,3 @@
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,6 +9,7 @@ import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { relativeTime } from "../../kit/relative-time"
@@ -35,18 +35,16 @@ const versionItem = (
 	h.li(
 		[h.Class("relative")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ClickedVersion({ versionId: version.id })),
-					h.Class(
-						cn(
-							"group relative w-full pl-7 pr-3 py-2.5 text-left transition-colors",
-							"hover:bg-surface-sunken active:bg-surface-sunken",
-							rowSelectedClass(isPreviewing),
-						),
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedVersion({ versionId: version.id }),
+					selectedLane: isPreviewing,
+					className: cn(
+						"group relative w-full pl-7 pr-3 py-2.5 text-left transition-colors",
+						"hover:bg-surface-sunken active:bg-surface-sunken",
 					),
-				],
+				},
 				[
 					statusDot(h, {
 						tone: "custom",

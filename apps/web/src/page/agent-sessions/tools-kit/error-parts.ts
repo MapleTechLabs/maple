@@ -9,6 +9,7 @@ import type {
 } from "../../../lib/agent-sessions/tool-error-display"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../../ui/heading"
 import { inlineCodeClassName } from "../../../ui/inline-code"
 import { statusDot } from "../../../ui/status-dot"
 
@@ -72,12 +73,18 @@ const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-tight text
 export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>): Html => {
 	const pathIndex = tokens.findIndex((token) => token.kind === "path")
 	if (pathIndex < 0)
-		return h.h2([h.Class(cn(HEADING, "line-clamp-3 break-words"))], headingTokens(h, tokens))
+		return heading(
+			h,
+			{ level: 2, variant: "code", className: "line-clamp-3 break-words" },
+			headingTokens(h, tokens),
+		)
+
 	const path = tokens[pathIndex]
 	const atIndex = tokens[pathIndex - 1]?.kind === "at" ? pathIndex - 1 : pathIndex
 	const tail = tokens.slice(pathIndex + 1)
-	return h.h2(
-		[h.Class("flex min-w-0 flex-col gap-0.5")],
+	return heading(
+		h,
+		{ level: 2, variant: "code", className: "flex min-w-0 flex-col gap-0.5" },
 		[
 			h.span(
 				[h.Class(cn(HEADING, "line-clamp-2 break-words"))],

@@ -6,6 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
+import { label } from "../../../../ui/label"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import { switchControl } from "../../../../ui/switch"
 import type { PageViewInputs } from "../../../contract"
@@ -144,11 +145,12 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						ariaLabel: "Metric",
 					}),
 					// The label wraps the switch's hidden input, so a click on the text toggles too.
-					h.label(
-						[
-							h.Id("workload-group-by-pod-label"),
-							h.Class("inline-flex cursor-pointer items-center gap-2 text-2xs text-muted-foreground"),
-						],
+					label(
+						h,
+						{
+							className: "cursor-pointer font-normal text-2xs text-muted-foreground sm:text-2xs",
+							attributes: [h.Id("workload-group-by-pod-label")],
+						},
 						[
 							...switchControl(h, {
 								id: "workload-group-by-pod",

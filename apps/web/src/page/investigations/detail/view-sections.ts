@@ -20,6 +20,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { panel } from "../../../ui/panel"
+import { pressable } from "../../../ui/pressable"
 import { skeleton } from "../../../ui/skeleton"
 import { serviceDot } from "../../../ui/values"
 import { sectionHeading } from "../../kit/section-heading"
@@ -434,14 +435,13 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 
 /** `FollowUpComposer`: hands the question to the Chat tab. */
 export const followUpComposer = (h: H): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedFollowUp()),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedFollowUp(),
+			className:
 				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left hover:border-ring active:border-ring hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-		],
+		},
 		[
 			icon(h, "ChatBubbleSparkleIcon", { size: 14, className: "shrink-0 text-primary" }),
 			h.span(

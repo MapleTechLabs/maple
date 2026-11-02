@@ -1,10 +1,10 @@
 import type { McpToolCatalogEntry } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { groupMcpTools, type McpToolGroup } from "../../../components/mcp/mcp-tool-groups"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { collapsible } from "../../../ui/collapsible"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { searchInput } from "../../../ui/search-input"
@@ -46,90 +46,48 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 	const hidden = isShowingAll ? 0 : Math.max(0, group.tools.length - PREVIEW_ROWS)
 	const rows = hidden === 0 ? group.tools : group.tools.slice(0, PREVIEW_ROWS)
 	const panelId = `mcp-tools-${group.id}-panel`
-	return h.div(
+	return collapsible(
+		h,
+		{
+			isOpen,
+			onToggle: Message.ToggledToolGroup({ groupId: group.id }),
+			panelId,
+			attributes: [h.Key(group.id)],
+			triggerClassName:
+				"flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-sunken active:bg-surface-sunken",
+			trigger: [
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className: cn("shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-90"),
+				}),
+				h.span([h.Class("font-medium")], [group.label]),
+				h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(group.tools.length)]),
+			],
+		},
 		[
-			h.Key(group.id),
-			h.DataAttribute(isOpen ? "open" : "closed", ""),
-			h.DataAttribute("slot", "collapsible"),
-		],
-		[
-			h.button(
+			h.div(
+				[h.Class("px-4 pb-3 pl-10")],
 				[
-					...(isOpen ? [h.AriaControls(panelId)] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class(
-						"flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-sunken active:bg-surface-sunken",
+					h.ul(
+						[],
+						rows.map((tool) => toolRow(h, tool)),
 					),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ToggledToolGroup({ groupId: group.id })),
-				],
-				[
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className: cn(
-							"shrink-0 text-muted-foreground transition-transform",
-							isOpen && "rotate-90",
-						),
-					}),
-					h.span([h.Class("font-medium")], [group.label]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground tabular-nums")],
-						[String(group.tools.length)],
-					),
+					...(hidden > 0
+						? [
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "xs",
+										className: "-ml-2 mt-1 text-muted-foreground",
+										attributes: [h.OnClick(Message.ClickedShowAllTools({ groupId: group.id }))],
+									},
+									["Show ", String(hidden), " more"],
+								),
+							]
+						: []),
 				],
 			),
-			...(isOpen
-				? [
-						h.div(
-							[
-								h.Class(collapsiblePanelStyles),
-								h.DataAttribute("open", ""),
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id(panelId),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-									"animation-name": "none",
-								}),
-							],
-							[
-								h.div(
-									[h.Class("px-4 pb-3 pl-10")],
-									[
-										h.ul(
-											[],
-											rows.map((tool) => toolRow(h, tool)),
-										),
-										...(hidden > 0
-											? [
-													button(
-														h,
-														{
-															variant: "ghost",
-															size: "xs",
-															className: "-ml-2 mt-1 text-muted-foreground",
-															attributes: [
-																h.OnClick(
-																	Message.ClickedShowAllTools({
-																		groupId: group.id,
-																	}),
-																),
-															],
-														},
-														["Show ", String(hidden), " more"],
-													),
-												]
-											: []),
-									],
-								),
-							],
-						),
-					]
-				: []),
 		],
 	)
 }

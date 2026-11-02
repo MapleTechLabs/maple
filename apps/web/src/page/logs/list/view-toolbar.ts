@@ -1,15 +1,13 @@
-import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { toggleVariants } from "@maple/ui/styles/ui/toggle"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../../ui/button"
 import { badge } from "../../../ui/display"
 import { filterSection } from "../../../ui/filters/filter-section"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { icon } from "../../../ui/icon"
 import { triggerId } from "../../../ui/overlay/popup-state"
 import * as Popover from "../../../ui/popover"
-import { togglePrimitive } from "../../../ui/toggle"
+import { toggle } from "../../../ui/toggle"
 import * as Tooltip from "../../../ui/tooltip"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -81,15 +79,18 @@ const columnsPicker = (h: HtmlBuilder<Message>, model: Model, tip: Tip): Html =>
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.AriaLabel("Pin attributes as columns"),
-								h.Class(cn(buttonVariants({ variant: "outline", size: "sm" }))),
-								...trigger,
-								...tip(COLUMNS_TRIGGER),
-								h.DataAttribute("slot", "tooltip-trigger"),
-							],
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [
+									h.AriaLabel("Pin attributes as columns"),
+									...trigger,
+									...tip(COLUMNS_TRIGGER),
+									h.DataAttribute("slot", "tooltip-trigger"),
+								],
+							},
 							[
 								icon(h, "ThumbtackIcon", { size: 14, className: "text-muted-foreground" }),
 								"Columns",
@@ -125,14 +126,18 @@ const viewToggle = (
 		iconName: "TextWrapIcon" | "LineHeightIcon"
 	}>,
 ): Html =>
-	togglePrimitive(
+	toggle(
 		h,
 		{
+			variant: "outline",
+			size: "sm",
 			isPressed: options.isPressed,
 			onClick: options.onClick,
-			className: cn(toggleVariants({ variant: "outline", size: "sm" })),
-			slot: "tooltip-trigger",
-			attributes: [h.AriaLabel(options.label), ...tip(options.id)],
+			attributes: [
+				h.AriaLabel(options.label),
+				...tip(options.id),
+				h.DataAttribute("slot", "tooltip-trigger"),
+			],
 		},
 		[icon(h, options.iconName, { size: 14 })],
 	)

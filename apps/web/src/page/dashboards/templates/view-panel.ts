@@ -4,8 +4,6 @@ import type { VariableValues } from "@maple/query-engine"
 import { pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { fieldDescriptionStyles, fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
-import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
 import { CANONICAL_COLS, colsForWidth } from "../../../components/dashboard-builder/canvas/grid-breakpoints"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,8 +11,11 @@ import * as Chart from "../../../charts/chart"
 import { button, linkButton } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
+import { field, fieldDescription, type FieldIds, fieldLabel, type FieldState } from "../../../ui/field"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { input } from "../../../ui/input"
+import { skeleton } from "../../../ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
 import { dataStateOf } from "../kit/data-state"
 import { widgetTile } from "../kit/tiles"
@@ -36,6 +37,20 @@ import { MAX_PREVIEW_WIDGETS } from "./update"
 // `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
 
 type H = HtmlBuilder<Message>
+
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
+
+const paramIds = (key: string): FieldIds => ({
+	control: `template-param-${key}`,
+	label: `template-param-${key}-label`,
+	error: `template-param-${key}-error`,
+})
 
 /** `PanelRestState`: nothing selected yet. */
 export const panelRestState = (h: H): Html =>
@@ -73,20 +88,8 @@ const previewSkeleton = (h: H): Html => {
 	return h.div(
 		[h.Class("grid gap-2"), h.Style({ "grid-template-columns": `repeat(${CANONICAL_COLS}, 1fr)` })],
 		[
-			...[0, 1, 2].map(() =>
-				h.div([
-					h.Class(cn(skeletonStyles, "col-span-4 rounded-md")),
-					h.DataAttribute("slot", "skeleton"),
-					h.Style({ height: statHeight }),
-				]),
-			),
-			...[0, 1].map(() =>
-				h.div([
-					h.Class(cn(skeletonStyles, "col-span-6 rounded-md")),
-					h.DataAttribute("slot", "skeleton"),
-					h.Style({ height: `${MIN_HEIGHT_DEFAULT}px` }),
-				]),
-			),
+			...[0, 1, 2].map(() => skeleton(h, "col-span-4 rounded-md", { height: statHeight })),
+			...[0, 1].map(() => skeleton(h, "col-span-6 rounded-md", { height: `${MIN_HEIGHT_DEFAULT}px` })),
 		],
 	)
 }
@@ -328,23 +331,21 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 						h.div(
 							[h.Class("flex max-w-95 flex-col gap-4")],
 							template.parameters.map((parameter) =>
-								h.keyed("div")(
-									parameter.key,
-									[
-										h.Class(cn(fieldStyles, "items-stretch gap-1.75")),
-										h.DataAttribute("slot", "field"),
-									],
+								field(
+									h,
+									{
+										className: "items-stretch gap-1.75",
+										state: IDLE,
+										attributes: [h.Key(parameter.key)],
+									},
 									[
 										h.div(
 											[h.Class("flex items-baseline gap-2")],
 											[
-												h.label(
-													[
-														h.Class(cn(fieldLabelStyles)),
-														h.DataAttribute("slot", "field-label"),
-														h.For(`template-param-${parameter.key}`),
-													],
-													[parameter.label],
+												fieldLabel(
+													h,
+													{ ids: paramIds(parameter.key), state: IDLE },
+													parameter.label,
 												),
 												h.span(
 													[h.Class("text-muted-foreground text-2xs")],
@@ -370,12 +371,14 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 										parameter.description === ""
 											? []
 											: [
-													h.p(
-														[
-															h.Class(cn(fieldDescriptionStyles, "text-2xs")),
-															h.DataAttribute("slot", "field-description"),
-														],
-														[parameter.description],
+													fieldDescription(
+														h,
+														{
+															ids: paramIds(parameter.key),
+															className: "text-2xs",
+															state: IDLE,
+														},
+														parameter.description,
 													),
 												]),
 									],
@@ -486,7 +489,7 @@ export const detailPanel = (
 							h.div(
 								[h.Class("flex min-w-0 flex-col gap-1")],
 								[
-									h.h2([h.Class("text-lg font-semibold tracking-tight")], [template.name]),
+									heading(h, { level: 2, variant: "title" }, [template.name]),
 									h.div(
 										[h.Class("text-muted-foreground flex items-center gap-2 text-2xs")],
 										[

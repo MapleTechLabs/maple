@@ -4,6 +4,7 @@ import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { investigationKindKey, type InvestigationKindKey } from "@maple/web-data/investigations/display"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { bareInput } from "../../ui/bare-input"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { icon, type IconName } from "../../ui/icon"
@@ -144,17 +145,17 @@ export const investigateBar = <M>(
 		],
 		[
 			icon(h, "ChatBubbleSparkleIcon", { size: 14, className: "shrink-0 text-primary" }),
-			h.input([
-				h.Value(options.value),
-				h.OnInput(options.onInput),
-				h.Placeholder(
-					options.placeholder ?? "Ask Maple to investigate a service, a symptom or a question",
-				),
-				h.AriaLabel("What should Maple investigate?"),
-				h.Class(
-					"min-w-0 flex-1 bg-transparent font-prose text-sm text-foreground outline-none placeholder:text-muted-foreground",
-				),
-			]),
+			bareInput(h, {
+				className: "flex-1 font-prose text-sm text-foreground placeholder:text-muted-foreground",
+				attributes: [
+					h.Value(options.value),
+					h.OnInput(options.onInput),
+					h.Placeholder(
+						options.placeholder ?? "Ask Maple to investigate a service, a symptom or a question",
+					),
+					h.AriaLabel("What should Maple investigate?"),
+				],
+			}),
 			button(
 				h,
 				{

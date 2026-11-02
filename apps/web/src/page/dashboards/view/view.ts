@@ -1,7 +1,6 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -14,6 +13,7 @@ import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
+import { inlineRenameInput } from "../../../ui/inline-rename-input"
 import { pageTitle } from "../../../ui/page-layout"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageContext, PageViewInputs } from "../../contract"
@@ -45,21 +45,19 @@ const title = (h: H, model: Model, name: string): Html => {
 		return h.form(
 			[h.OnSubmit(Message.SubmittedTitle())],
 			[
-				h.input([
-					h.Value(model.titleDraft),
-					h.OnInput((value) => Message.ChangedTitleDraft({ value })),
-					h.OnBlur(Message.SubmittedTitle()),
-					h.OnKeyDownPreventDefault((key) =>
-						key === "Escape" ? Option.some(Message.CancelledTitle()) : Option.none(),
-					),
-					h.Autofocus(true),
-					h.Class(
-						cn(
-							pageTitleStyles,
-							"bg-transparent border-b border-foreground/20 outline-none focus:border-foreground/50 w-full",
+				inlineRenameInput(h, {
+					isPageTitle: true,
+					className: "w-full",
+					attributes: [
+						h.Value(model.titleDraft),
+						h.OnInput((value) => Message.ChangedTitleDraft({ value })),
+						h.OnBlur(Message.SubmittedTitle()),
+						h.OnKeyDownPreventDefault((key) =>
+							key === "Escape" ? Option.some(Message.CancelledTitle()) : Option.none(),
 						),
-					),
-				]),
+						h.Autofocus(true),
+					],
+				}),
 			],
 		)
 	const isBlank = name.trim() === ""

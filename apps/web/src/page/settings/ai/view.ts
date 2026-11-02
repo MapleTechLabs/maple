@@ -1,7 +1,6 @@
 import type { AiTriageSettingsDocument, OpenRouterKeyDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import {
 	PASSES_PER_DAY_LIMITS,
 	parseDailyLimit,
@@ -11,6 +10,7 @@ import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
+import { collapsible } from "../../../ui/collapsible"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
@@ -26,6 +26,7 @@ import {
 } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import { input as plainInput } from "../../../ui/input"
+import { label } from "../../../ui/label"
 import { meter } from "../../../ui/meter"
 import { panel } from "../../../ui/panel"
 import * as RadioGroup from "../../../ui/radio-group"
@@ -98,11 +99,13 @@ const providerCard = (
 			),
 		],
 		[
-			h.label(
-				[
-					h.Id(RadioGroup.labelId(radioInputId(options.value))),
-					h.Class("flex cursor-pointer flex-col gap-2"),
-				],
+			label(
+				h,
+				{
+					// Stacked like a block: the kit label's centring and medium weight stay off.
+					className: "flex cursor-pointer flex-col items-stretch gap-2 font-normal",
+					attributes: [h.Id(RadioGroup.labelId(radioInputId(options.value)))],
+				},
 				[
 					h.span(
 						[h.Class("flex items-center gap-2.5")],
@@ -477,76 +480,43 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 				isDisabled: model.isSavingLimits,
 				onInput: (value) => Message.ChangedLimit({ field: "maxRunsPerDay", value }),
 			}),
-			h.div(
+			collapsible(
+				h,
+				{
+					isOpen: isAdvancedOpen,
+					onToggle: Message.ToggledAdvanced(),
+					panelId: "ai-triage-advanced",
+					triggerClassName: "group flex w-full items-center gap-2 px-4 py-3 text-left",
+					trigger: [
+						icon(h, "ChevronRightIcon", {
+							size: 14,
+							className:
+								"shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90",
+						}),
+						h.span([h.Class("text-xs font-medium text-foreground")], ["Advanced limits"]),
+						h.span(
+							[h.Class("truncate text-2xs text-muted-foreground")],
+							["Model passes per day, reserve for high and critical incidents"],
+						),
+					],
+				},
 				[
-					h.DataAttribute(isAdvancedOpen ? "open" : "closed", ""),
-					h.DataAttribute("slot", "collapsible"),
-				],
-				[
-					h.button(
+					h.div(
+						[],
 						[
-							...(isAdvancedOpen ? [h.AriaControls("ai-triage-advanced")] : []),
-							h.AriaDisabled(false),
-							h.AriaExpanded(isAdvancedOpen),
-							h.Class("group flex w-full items-center gap-2 px-4 py-3 text-left"),
-							...(isAdvancedOpen ? [h.DataAttribute("panel-open", "")] : []),
-							h.DataAttribute("slot", "collapsible-trigger"),
-							h.Tabindex(0),
-							h.Type("button"),
-							h.OnClick(Message.ToggledAdvanced()),
-						],
-						[
-							icon(h, "ChevronRightIcon", {
-								size: 14,
-								className:
-									"shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90",
+							limitRow(h, {
+								id: "ai-triage-max-passes",
+								label: "Model passes per day",
+								help: "The spend ceiling. An investigation is one model pass. Three tenths of it is reserved for high and critical incidents.",
+								value: draft.maxPassesPerDay,
+								error: passes.ok ? null : passes.message,
+								limit: current.maxPassesPerDay,
+								spent: current.usage.passes,
+								isDisabled: model.isSavingLimits,
+								onInput: (value) => Message.ChangedLimit({ field: "maxPassesPerDay", value }),
 							}),
-							h.span([h.Class("text-xs font-medium text-foreground")], ["Advanced limits"]),
-							h.span(
-								[h.Class("truncate text-2xs text-muted-foreground")],
-								["Model passes per day, reserve for high and critical incidents"],
-							),
 						],
 					),
-					...(isAdvancedOpen
-						? [
-								h.div(
-									[
-										h.Class(collapsiblePanelStyles),
-										h.DataAttribute("open", ""),
-										h.DataAttribute("slot", "collapsible-panel"),
-										h.Id("ai-triage-advanced"),
-										h.Style({
-											"--collapsible-panel-height": "auto",
-											"--collapsible-panel-width": "auto",
-											"animation-name": "none",
-										}),
-									],
-									[
-										h.div(
-											[],
-											[
-												limitRow(h, {
-													id: "ai-triage-max-passes",
-													label: "Model passes per day",
-													help: "The spend ceiling. An investigation is one model pass. Three tenths of it is reserved for high and critical incidents.",
-													value: draft.maxPassesPerDay,
-													error: passes.ok ? null : passes.message,
-													limit: current.maxPassesPerDay,
-													spent: current.usage.passes,
-													isDisabled: model.isSavingLimits,
-													onInput: (value) =>
-														Message.ChangedLimit({
-															field: "maxPassesPerDay",
-															value,
-														}),
-												}),
-											],
-										),
-									],
-								),
-							]
-						: []),
 				],
 			),
 		]),

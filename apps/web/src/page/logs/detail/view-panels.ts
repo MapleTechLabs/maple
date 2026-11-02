@@ -13,7 +13,9 @@ import { separator } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { errorSectionView } from "../../../ui/error-section"
 import { errorState } from "../../../ui/error-state"
+import { heading } from "../../../ui/heading"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
+import { pressable } from "../../../ui/pressable"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import { serviceDot } from "../../../ui/values"
@@ -169,17 +171,15 @@ const contextList = (
 				[
 					isCurrent
 						? h.div([h.Class(cn(ROW_CLASS, "bg-primary-a1"))], cells)
-						: h.button(
-								[
-									h.Type("button"),
-									h.Class(
-										cn(
-											ROW_CLASS,
-											"cursor-pointer text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:outline-none",
-										),
+						: pressable(
+								h,
+								{
+									onClick: Message.ClickedLog({ log: row }),
+									className: cn(
+										ROW_CLASS,
+										"cursor-pointer text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:outline-none",
 									),
-									h.OnClick(Message.ClickedLog({ log: row })),
-								],
+								},
 								cells,
 							),
 				],
@@ -207,8 +207,9 @@ export const contextPanel = (
 			h.div(
 				[h.Class("flex shrink-0 items-center gap-2")],
 				[
-					h.h4(
-						[h.Class("text-xs font-medium text-muted-foreground")],
+					heading(
+						h,
+						{ level: 4, variant: "label" },
 						[
 							"Surrounding logs",
 							h.span(
@@ -372,8 +373,9 @@ export const traceTimeline = (h: H, model: Model, log: LogRecord): Html | null =
 	return h.div(
 		[h.Class("space-y-1.5")],
 		[
-			h.h4(
-				[h.Class("text-xs font-medium text-muted-foreground")],
+			heading(
+				h,
+				{ level: 4, variant: "label" },
 				[
 					"Trace Timeline",
 					...(count > 1

@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { label } from "../../ui/label"
 import * as RadioGroup from "../../ui/radio-group"
 import * as ToggleGroup from "../../ui/toggle-group"
 import type { ConfigureModel, SetupMethod } from "./gcp-configure-schema"
@@ -97,12 +98,15 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 								[h.Class("flex items-start gap-3")],
 								[
 									...RadioGroup.radio(h, config, option.value, "mt-0.5"),
-									h.label(
-										[
-											h.Id(RadioGroup.labelId(`gcp-method-${option.value}-input`)),
-											h.For(`gcp-method-${option.value}-input`),
-											h.Class("flex min-w-0 cursor-pointer flex-col gap-0.5"),
-										],
+									label(
+										h,
+										{
+											className: "flex min-w-0 cursor-pointer flex-col items-stretch gap-0.5 font-normal",
+											attributes: [
+												h.Id(RadioGroup.labelId(`gcp-method-${option.value}-input`)),
+												h.For(`gcp-method-${option.value}-input`),
+											],
+										},
 										[
 											h.span(
 												[h.Class("flex items-baseline gap-2 text-sm font-medium")],

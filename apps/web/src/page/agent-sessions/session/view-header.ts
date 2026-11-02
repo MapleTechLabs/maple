@@ -7,6 +7,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { keyValue, keyValueList } from "../../../ui/key-value"
+import { pressable } from "../../../ui/pressable"
 import { moreChip } from "../kit/more-chip"
 import { sessionIdentity } from "../kit/session-name"
 import { vendorColor, vendorIcon } from "../kit/vendor"
@@ -41,22 +42,20 @@ const copyableId = (
 	label: string,
 	children: ReadonlyArray<Html | string>,
 ): Html =>
-	h.button(
-		[
-			h.AriaLabel(`Copy ${label}`),
-			h.Class(
-				cn(
-					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
-					model.copy.status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
-					model.copy.status === "copied" && "bg-severity-info-a3",
-					model.copy.status === "error" && "bg-severity-error-a3",
-					"inline-flex min-w-0 max-w-full items-center gap-1 font-mono",
-				),
+	pressable(
+		h,
+		{
+			onClick: Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: value }) }),
+			label: `Copy ${label}`,
+			className: cn(
+				"-mx-0.5 rounded-sm px-0.5 text-left transition-colors",
+				model.copy.status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+				model.copy.status === "copied" && "bg-severity-info-a3",
+				model.copy.status === "error" && "bg-severity-error-a3",
+				"inline-flex min-w-0 max-w-full items-center gap-1 font-mono",
 			),
-			h.Title("Click to copy"),
-			h.Type("button"),
-			h.OnClick(Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: value }) })),
-		],
+			attributes: [h.Title("Click to copy")],
+		},
 		children,
 	)
 

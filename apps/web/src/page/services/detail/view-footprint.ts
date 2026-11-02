@@ -18,6 +18,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
 import { item, itemActions, itemContent, itemDescription, itemTitle } from "../../../ui/item"
 import { meter } from "../../../ui/meter"
+import { pressable } from "../../../ui/pressable"
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
 import { pickTimeSearch } from "../../infra/kit/view-tabs"
@@ -246,13 +247,9 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 				],
 				[serviceDot(h, { serviceName: target.name }), h.span([h.Class("truncate")], [target.name])],
 			)
-		: h.button(
-				[
-					h.Key(target.id),
-					h.Type("button"),
-					h.OnClick(onClick),
-					h.Class(cn(CHIP, "text-muted-foreground")),
-				],
+		: pressable(
+				h,
+				{ onClick, className: cn(CHIP, "text-muted-foreground"), attributes: [h.Key(target.id)] },
 				[
 					icon(h, KIND_ICON.get(target.kind) ?? "GlobeIcon", { size: 12 }),
 					truncatedText(h, { text: target.name }),

@@ -2,6 +2,7 @@ import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { label } from "../../../ui/label"
 import { refreshButton } from "../../../ui/refresh-button"
 import { switchControl } from "../../../ui/switch"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
@@ -75,11 +76,12 @@ export const toolbar = (
 									[count(h, options.sessionCount, options.totalCount)],
 								),
 							]),
-					h.label(
-						[
-							h.Class("inline-flex cursor-pointer items-center gap-2 text-xs font-medium"),
-							...tooltipTrigger(h, ERRORS_LABEL_ID),
-						],
+					label(
+						h,
+						{
+							className: "cursor-pointer text-xs sm:text-xs",
+							attributes: tooltipTrigger(h, ERRORS_LABEL_ID),
+						},
 						[
 							...switchControl(h, {
 								id: "agent-sessions-errors-switch",

@@ -11,6 +11,7 @@ import { kbd } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { formDialog } from "../../../ui/form-dialog"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { textarea } from "../../../ui/textarea"
 import { autocompleteOf, isSuggesting } from "./advanced"
 import { ADVANCED_TEXTAREA_ID, MountSuggestions, MountWhereEditor } from "./command"
@@ -40,21 +41,21 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 			],
 			suggestions.map((suggestion, index) => {
 				const isActive = index === model.advanced.activeIndex
-				return h.button(
-					[
-						h.Key(suggestion.id),
-						h.Type("button"),
-						h.Role("option"),
-						h.AriaSelected(isActive),
-						h.Class(
-							cn(
-								"flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-xs",
-								isActive ? "bg-accent text-accent-foreground" : "hover:bg-surface-sunken active:bg-surface-sunken",
-							),
+				return pressable(
+					h,
+					{
+						onClick: Message.ClickedAdvancedSuggestion({ index }),
+						className: cn(
+							"flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-xs",
+							isActive ? "bg-accent text-accent-foreground" : "hover:bg-surface-sunken active:bg-surface-sunken",
 						),
-						h.OnMouseDown(Message.CompletedPlaceAdvancedCursor()),
-						h.OnClick(Message.ClickedAdvancedSuggestion({ index })),
-					],
+						attributes: [
+							h.Key(suggestion.id),
+							h.Role("option"),
+							h.AriaSelected(isActive),
+							h.OnMouseDown(Message.CompletedPlaceAdvancedCursor()),
+						],
+					},
 					[
 						h.span(
 							[h.Class("min-w-0 truncate font-mono"), h.Title(suggestion.label)],

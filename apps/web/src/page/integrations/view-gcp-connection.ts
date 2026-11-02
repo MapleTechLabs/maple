@@ -17,6 +17,7 @@ import {
 	gcpSetupRunning,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "../../ui/heading"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
@@ -356,7 +357,11 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 	const name = h.div(
 		[h.Class("flex min-w-0 items-center gap-2.5")],
 		[
-			h.h3([h.Class("truncate font-mono text-sm font-medium"), h.Title(label)], [connector.scope_id]),
+			heading(
+				h,
+				{ level: 3, variant: "subsection", className: "truncate font-mono", attributes: [h.Title(label)] },
+				[connector.scope_id],
+			),
 			badge(h, { variant: "meta", size: "xs" }, [GCP_SCOPE_NAMES[connector.scope_type]]),
 		],
 	)

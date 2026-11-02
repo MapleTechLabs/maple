@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Struct } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
+import { bareInput } from "../../../ui/bare-input"
 import { badge } from "../../../ui/display"
 import { button } from "../../../ui/button"
 import { card } from "../../../ui/card"
@@ -53,23 +54,23 @@ const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 					),
 				]),
 			),
-			h.input([
-				h.Id("rule-tags"),
-				...(available.length > 0 ? [h.Attribute("list", TAG_LIST_ID)] : []),
-				h.Value(model.tagDraft),
-				h.OnInput((value) => Message.ChangedTagDraft({ value })),
-				// Backspace on an empty draft removes the last chip; otherwise it edits the draft.
-				h.OnKeyDownPreventDefault((key) =>
-					key === "Enter" || key === "," || (key === "Backspace" && model.tagDraft.length === 0)
-						? Option.some(Message.PressedTagKey({ key }))
-						: Option.none(),
-				),
-				h.OnBlur(Message.BlurredTagInput()),
-				...(form.tags.length === 0 ? [h.Placeholder("prod, payments, team-checkout…")] : []),
-				h.Class(
-					"min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-foreground-subtle",
-				),
-			]),
+			bareInput(h, {
+				id: "rule-tags",
+				className: "min-w-[80px] flex-1 leading-6",
+				attributes: [
+					...(available.length > 0 ? [h.Attribute("list", TAG_LIST_ID)] : []),
+					h.Value(model.tagDraft),
+					h.OnInput((value) => Message.ChangedTagDraft({ value })),
+					// Backspace on an empty draft removes the last chip; otherwise it edits the draft.
+					h.OnKeyDownPreventDefault((key) =>
+						key === "Enter" || key === "," || (key === "Backspace" && model.tagDraft.length === 0)
+							? Option.some(Message.PressedTagKey({ key }))
+							: Option.none(),
+					),
+					h.OnBlur(Message.BlurredTagInput()),
+					...(form.tags.length === 0 ? [h.Placeholder("prod, payments, team-checkout…")] : []),
+				],
+			}),
 			...(available.length > 0
 				? [
 						h.datalist(

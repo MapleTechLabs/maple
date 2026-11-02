@@ -19,6 +19,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
 import { card } from "../../../ui/card"
 import { icon } from "../../../ui/icon"
+import { pressable } from "../../../ui/pressable"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { alertsHref } from "../shared/links"
 import { Message } from "./message"
@@ -80,12 +81,12 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 	return card(
 		h,
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.Class("flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"),
-					h.OnClick(Message.ClickedDiagnosisHeader({ isOpen })),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedDiagnosisHeader({ isOpen }),
+					className: "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left",
+				},
 				[
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-2.5")],
@@ -191,12 +192,12 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 				[h.Class("flex items-center gap-2.5")],
 				[
 					stageIcon(h, stage.status, 14),
-					h.button(
-						[
-							h.Type("button"),
-							h.Class("flex min-w-0 flex-1 items-baseline gap-2 text-left"),
-							h.OnClick(Message.ClickedStage({ stageId: stage.id, isOpen: !isOpen })),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedStage({ stageId: stage.id, isOpen: !isOpen }),
+							className: "flex min-w-0 flex-1 items-baseline gap-2 text-left",
+						},
 						[
 							h.span([h.Class("shrink-0 text-xs font-medium")], [stage.label]),
 							h.span(

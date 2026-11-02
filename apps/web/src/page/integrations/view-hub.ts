@@ -1,5 +1,4 @@
 import { cn } from "@maple/ui/lib/utils"
-import { pageDescriptionStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
@@ -8,7 +7,8 @@ import { errorState } from "../../ui/error-state"
 import { badge } from "../../ui/display"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
-import { pageTitle } from "../../ui/page-layout"
+import { pageDescription, pageTitle } from "../../ui/page-layout"
+import { pressable } from "../../ui/pressable"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
@@ -61,14 +61,13 @@ const connectedRow = (
 	onSelect: Select,
 ): Html => {
 	const connected = overview.kind === "connected" ? overview : null
-	return h.button(
-		[
-			h.Type("button"),
-			h.OnClick(onSelect(entry.id)),
-			h.Class(
+	return pressable(
+		h,
+		{
+			onClick: onSelect(entry.id),
+			className:
 				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
-			),
-		],
+		},
 		[
 			entryPlate(h, entry, { plateClassName: "size-8 rounded-lg", size: 18 }),
 			h.span(
@@ -214,8 +213,8 @@ export const hubTitle = (h: H): Html =>
 		[h.Class("flex flex-col gap-1")],
 		[
 			pageTitle(h, { className: "leading-8" }, ["Integrations"]),
-			h.p(
-				[h.Class(cn(pageDescriptionStyles, "text-sm"))],
+			pageDescription(
+				h,
 				[
 					"Where Maple sends alerts and chat. Data sources like Cloudflare, Prometheus and GitHub are under ",
 					h.a(
@@ -227,6 +226,7 @@ export const hubTitle = (h: H): Html =>
 					),
 					".",
 				],
+				"text-sm",
 			),
 		],
 	)

@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
 import { linkButton } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
+import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { keyValue, keyValueList } from "../../../ui/key-value"
 import { skeleton } from "../../../ui/skeleton"
@@ -46,7 +47,7 @@ const missingState = (h: H, options: Readonly<{ title: string; description: stri
 			h.div(
 				[h.Class("max-w-md space-y-1")],
 				[
-					h.h2([h.Class("font-prose text-sm font-medium text-foreground")], [options.title]),
+					heading(h, { level: 2, variant: "subsection", className: "font-prose" }, [options.title]),
 					h.p(
 						[h.Class("font-prose text-ui text-balance text-muted-foreground")],
 						[options.description],
