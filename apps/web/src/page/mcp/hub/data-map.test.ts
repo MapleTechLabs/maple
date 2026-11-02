@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { coverageRows, failureKinds } from "./data-map"
+import { coverageRows, failureKinds, sessionsScreen } from "./data-map"
 
 const coverage = {
 	toolCalls: 100,
@@ -51,5 +51,30 @@ describe("failureKinds", () => {
 		])
 		expect(tool?.count).toBe(7)
 		expect(rpc).toMatchObject({ codes: ["-32603"], count: 2 })
+	})
+})
+
+describe("sessionsScreen", () => {
+	const screen = (sessions: number, toolCalls: number, withSession: number, withUser = 0) =>
+		sessionsScreen({ totals: { sessions }, toolCalls, withSession, withUser })
+
+	it("lists sessions whose requests were only initialize and tools/list", () => {
+		expect(screen(2, 0, 0)).toBe("list")
+	})
+
+	it("is quiet when the window holds no session and no tool call", () => {
+		expect(screen(0, 0, 0)).toBe("quiet")
+	})
+
+	it("asks for instrumentation when tool calls carry no session id", () => {
+		expect(screen(0, 12, 0)).toBe("noSessions")
+	})
+
+	it("lists when calls name their user, though none carries a session id", () => {
+		expect(screen(0, 12, 0, 3)).toBe("list")
+	})
+
+	it("lists an empty match when calls carry sessions the filters hide", () => {
+		expect(screen(0, 12, 5)).toBe("list")
 	})
 })

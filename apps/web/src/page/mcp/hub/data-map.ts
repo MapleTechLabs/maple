@@ -149,3 +149,22 @@ export const toolOf = (response: Tool): McpToolDetail => ({
 	failed: response.failed,
 	recent: response.recent,
 })
+
+export type McpSessionsScreen = "quiet" | "noSessions" | "list"
+
+/** What the Sessions tab shows: any session lists, even one of only protocol requests. */
+export const sessionsScreen = (
+	response: Readonly<{
+		totals: Readonly<{ sessions: number }>
+		toolCalls: number
+		withSession: number
+		withUser: number
+	}>,
+): McpSessionsScreen =>
+	response.totals.sessions > 0
+		? "list"
+		: response.toolCalls === 0
+			? "quiet"
+			: response.withSession === 0 && response.withUser === 0
+				? "noSessions"
+				: "list"

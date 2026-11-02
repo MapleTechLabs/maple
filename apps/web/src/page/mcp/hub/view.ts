@@ -33,7 +33,7 @@ import {
 	sessionsLoading,
 } from "../view-states"
 import { toolBody } from "../view-tool"
-import { overviewOf, serverRows, toolOf } from "./data-map"
+import { overviewOf, serverRows, sessionsScreen, toolOf } from "./data-map"
 import { Message } from "./message"
 import { DEFAULT_MCP_PRESET, type Model } from "./model"
 import { bucketSecondsOf, hrefOfView, shownPreset, tabSearch, widerPreset } from "./update"
@@ -388,15 +388,15 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 			}),
 		onData: (response) => {
 			if (window === undefined) return sessionsLoading(h)
-			// Sessions of only protocol requests (`initialize`, `tools/list`) still list.
-			if (response.totals.sessions === 0 && response.toolCalls === 0)
+			const screen = sessionsScreen(response)
+			if (screen === "quiet")
 				return quietWindow(h, {
 					service,
 					window: windowWords(window),
 					hasOtherSpans: response.otherRequests > 0,
 					widen: widenOf(model),
 				})
-			if (response.totals.sessions === 0 && response.withSession === 0 && response.withUser === 0)
+			if (screen === "noSessions")
 				return noSessionsState(h, { service, onInstrument: openInstrumentDocs })
 			return chartsReady(h, model, (theme) =>
 				sessionsBody(h, response, {
