@@ -375,7 +375,7 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 	const window = windowOf(model)
 	const filters = filtersOf(model)
 	const description =
-		data === undefined || data.withSession === 0
+		data === undefined || data.totals.sessions === 0
 			? "MCP sessions"
 			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} ${data.totals.calls === 1 ? "tool call" : "tool calls"}`
 	const body = AsyncData.matchData(sessions, {
@@ -398,18 +398,21 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 				})
 			if (screen === "noSessions")
 				return noSessionsState(h, { service, onInstrument: openInstrumentDocs })
-			return sessionsBody(h, response, {
-				toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(sessions), {
-					inputId: "mcp-sessions-search",
-					placeholder: "Session id…",
+			return chartsReady(h, model, (theme) =>
+				sessionsBody(h, response, {
+					env: chartEnv(model, theme, timeZone),
+					toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(sessions), {
+						inputId: "mcp-sessions-search",
+						placeholder: "Session id or user id…",
+					}),
+					scope: scopeText("all sessions", filters),
+					isWaiting: AsyncData.isRefreshing(sessions),
+					isFailingOnly: filters.isFailingOnly,
+					onOpenSession: (sessionId) => Message.ClickedOpenSession({ sessionId }),
+					nowMs: model.nowMs,
+					timeZone,
 				}),
-				scope: scopeText("all sessions", filters),
-				isWaiting: AsyncData.isRefreshing(sessions),
-				isFailingOnly: filters.isFailingOnly,
-				onOpenSession: (sessionId) => Message.ClickedOpenSession({ sessionId }),
-				nowMs: model.nowMs,
-				timeZone,
-			})
+			)
 		},
 	})
 	return dashboardPage(
@@ -436,11 +439,22 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 	const data = AsyncData.getOrElse(session, () => undefined)
 	const window = windowOf(model)
 	const first = data?.requests[0]
+	const userLabel = data?.userName ?? data?.user ?? undefined
+	const isUserSession = data?.source === "user"
+	// A user session's id is a key the page reads back: until its read lands, it is just "User session".
+	const title =
+		isUserSession && userLabel !== undefined
+			? `${userLabel} on ${data.client}`
+			: data === undefined && sessionId.startsWith("user:")
+				? "User session"
+				: sessionId
 	const description =
 		data === undefined || first === undefined
 			? `MCP session on ${service}`
 			: [
-					data.client,
+					...(isUserSession
+						? ["User session, no session id: split after 30 idle minutes"]
+						: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
 					callCountText(sessionCalls(data.requests).length, data.isTruncated),
 					`started ${formatClock(first.timeMs, timeZone)}`,
 					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
@@ -471,9 +485,7 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 			titleContent: h.div(
 				[h.Class("flex min-w-0 flex-col gap-1")],
 				[
-					pageTitle(h, { title: sessionId, className: "truncate font-mono leading-8" }, [
-						sessionId,
-					]),
+					pageTitle(h, { title, className: "truncate font-mono leading-8" }, [title]),
 					pageDescription(h, [description], "text-sm"),
 				],
 			),

@@ -1,6 +1,6 @@
 import type { McpSessionRequestItem } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
-import { linkedAgentSessions, sessionToolsOf } from "./view-sessions"
+import { linkedAgentSessions, medianLengthMs, sessionToolsOf } from "./view-sessions"
 
 const request = (overrides: Partial<McpSessionRequestItem>): McpSessionRequestItem => ({
 	timeMs: 0,
@@ -46,5 +46,31 @@ describe("sessionToolsOf", () => {
 			{ tool: "list_services", calls: 1, errors: 0, durationNs: 1_000_000 },
 			{ tool: null, calls: 1, errors: 0, durationNs: 1_000_000 },
 		])
+	})
+})
+
+describe("medianLengthMs", () => {
+	const session = (lengthMs: number) => ({
+		sessionId: String(lengthMs),
+		source: "issued" as const,
+		user: null,
+		userName: null,
+		client: "Cursor",
+		kind: "agent" as const,
+		requests: 1,
+		calls: 1,
+		errors: 0,
+		tools: 1,
+		firstSeenMs: 1_000,
+		lastSeenMs: 1_000 + lengthMs,
+	})
+
+	it("takes the middle session's length, or the mean of the middle two", () => {
+		expect(medianLengthMs([session(30), session(10), session(20)])).toBe(20)
+		expect(medianLengthMs([session(40), session(10), session(20), session(30)])).toBe(25)
+	})
+
+	it("has no median without sessions", () => {
+		expect(medianLengthMs([])).toBeUndefined()
 	})
 })

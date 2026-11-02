@@ -16,11 +16,17 @@ const RPC_SERVER_SPAN = /^McpServer\.@effect\/mcp\/([^/]+)\/(.+)$/
 export interface McpCaller {
 	readonly userAgent: string | undefined
 	readonly clientAddress: string | undefined
+	/** The signed-in user the request's credential belongs to: the hub builds sessions from it. */
+	readonly userId: string | undefined
 }
 
-export const mcpCaller = (request: HttpServerRequest.HttpServerRequest): McpCaller => ({
+export const mcpCaller = (
+	request: HttpServerRequest.HttpServerRequest,
+	userId: string | undefined,
+): McpCaller => ({
 	userAgent: request.headers["user-agent"],
 	clientAddress: Option.getOrUndefined(request.remoteAddress),
+	userId,
 })
 
 const stringField = (value: unknown, key: string): string | undefined => {
@@ -68,6 +74,7 @@ export const mcpServerSpan = (
 	])
 	if (caller.userAgent !== undefined) attributes.set("user_agent.original", caller.userAgent)
 	if (caller.clientAddress !== undefined) attributes.set("client.address", caller.clientAddress)
+	if (caller.userId !== undefined) attributes.set("user.id", caller.userId)
 
 	const payload = message.payload
 	let target: string | undefined

@@ -731,6 +731,7 @@ describe("MCP server spans", () => {
 				errorType: span.attributes.get("error.type"),
 				requestId: span.attributes.get("jsonrpc.request.id"),
 				userAgent: span.attributes.get("user_agent.original"),
+				user: span.attributes.get("user.id"),
 			})),
 		).toEqual([
 			{
@@ -743,6 +744,7 @@ describe("MCP server spans", () => {
 				errorType: undefined,
 				requestId: "1",
 				userAgent: "claude-code/2.1.312 (cli)",
+				user: "user_test",
 			},
 			{
 				name: "tools/call inspect_trace",
@@ -754,6 +756,7 @@ describe("MCP server spans", () => {
 				errorType: "tool_error",
 				requestId: "2",
 				userAgent: "claude-code/2.1.312 (cli)",
+				user: "user_test",
 			},
 		])
 

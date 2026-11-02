@@ -87,7 +87,18 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 			detail:
 				coverage.withSession > 0
 					? every(coverage.withSession, "tool call")
-					: "Not sent: without a session id there is no sessions view.",
+					: coverage.withUser > 0
+						? "Not sent: sessions are built from each user's calls instead."
+						: "Not sent: send it, or the user below, for a sessions view.",
+		},
+		{
+			isPresent: coverage.withUser > 0,
+			label: "Users",
+			attributes: ["user.id"],
+			detail:
+				coverage.withUser > 0
+					? every(coverage.withUser, "tool call")
+					: "Not sent: calls can't be counted or grouped by who made them.",
 		},
 		{
 			isPresent: coverage.withCallerTrace > 0,
@@ -143,12 +154,17 @@ export type McpSessionsScreen = "quiet" | "noSessions" | "list"
 
 /** What the Sessions tab shows: any session lists, even one of only protocol requests. */
 export const sessionsScreen = (
-	response: Readonly<{ totals: Readonly<{ sessions: number }>; toolCalls: number; withSession: number }>,
+	response: Readonly<{
+		totals: Readonly<{ sessions: number }>
+		toolCalls: number
+		withSession: number
+		withUser: number
+	}>,
 ): McpSessionsScreen =>
 	response.totals.sessions > 0
 		? "list"
 		: response.toolCalls === 0
 			? "quiet"
-			: response.withSession === 0
+			: response.withSession === 0 && response.withUser === 0
 				? "noSessions"
 				: "list"

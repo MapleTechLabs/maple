@@ -2154,6 +2154,49 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 	{
+		module: "mcp",
+		name: "mcpUserSessionRequestsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpUserSessionRequestsQuery(), {
+				...window,
+				serviceName: "maple-ai",
+				userId: "user_2abc",
+				client: "Claude Code",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpUserActivityQuery",
+		label: "searchAgents",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpUserActivityQuery({ kind: "agent", search: "ada" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpUserActivityQuery",
+		label: "oneUser",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpUserActivityQuery({ user: "user_2abc", client: "Claude Code" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpSessionActivityQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpSessionActivityQuery(), {
+				...window,
+				serviceName: "maple-ai",
+				bucketSeconds: 3_600,
+			}),
+	},
+	{
 		module: "ci-runs",
 		name: "ciRunSeriesQuery",
 		label: "sixHourly",

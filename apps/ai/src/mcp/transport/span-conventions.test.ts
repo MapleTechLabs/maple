@@ -5,7 +5,7 @@ import { mcpServerSpan, withMetaTraceContext } from "./span-conventions"
 const request = (tag: string, payload: unknown) =>
 	({ _tag: "Request", id: "7", tag, payload, headers: [] }) as const
 
-const caller = { userAgent: undefined, clientAddress: undefined }
+const caller = { userAgent: undefined, clientAddress: undefined, userId: undefined }
 
 describe("mcpServerSpan", () => {
 	it("names a prompt span after the prompt", () => {
@@ -23,6 +23,19 @@ describe("mcpServerSpan", () => {
 		)
 		expect(span.name).toBe("resources/read")
 		expect(span.attributes.get("mcp.resource.uri")).toBe("maple://instructions")
+	})
+
+	it("names the signed-in user, so a stateless server's calls still group into sessions", () => {
+		const span = mcpServerSpan(request("tools/call", { name: "run_sql" }), "2025-06-18", {
+			...caller,
+			userId: "user_2abc",
+		})
+		expect(span.attributes.get("user.id")).toBe("user_2abc")
+		expect(
+			mcpServerSpan(request("tools/call", { name: "run_sql" }), "2025-06-18", caller).attributes.has(
+				"user.id",
+			),
+		).toBe(false)
 	})
 
 	it("falls back to the method when a tool call has no name", () => {

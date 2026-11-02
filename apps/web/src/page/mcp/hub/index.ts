@@ -33,7 +33,8 @@ export const page = definePage(
 						servers,
 						{ label: view.service, href: server },
 						{ label: "Sessions", href: `${server}/sessions` },
-						{ label: view.sessionId },
+						// A user session's id is a key the page reads back, not a name to show.
+						{ label: view.sessionId.startsWith("user:") ? "User session" : view.sessionId },
 					]
 			}
 		},

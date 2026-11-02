@@ -2,7 +2,7 @@
 /**
  * Seed MCP server spans with sessions into a Tinybird `traces` datasource, for `/mcp-servers`.
  *
- *   bun scripts/seed-mcp-sessions.ts --org <orgId> [--dry-run]
+ *   bun scripts/seed-mcp-sessions.ts --org <orgId> [--service billing-mcp ...] [--dry-run]
  *
  * `docs-mcp` follows the OpenTelemetry MCP conventions with `mcp.session.id`: a Claude Code session
  * whose calls carry the agent's trace in `params._meta` (so the agent's spans, stamped the way the
@@ -13,7 +13,11 @@
 import { parseArgs } from "node:util"
 
 const { values } = parseArgs({
-	options: { org: { type: "string" }, "dry-run": { type: "boolean", default: false } },
+	options: {
+		org: { type: "string" },
+		service: { type: "string", multiple: true },
+		"dry-run": { type: "boolean", default: false },
+	},
 })
 if (values.org === undefined) {
 	console.error("Pass --org <orgId>")
@@ -94,7 +98,13 @@ type Request = Readonly<{
 /** One request as a spec-following server records it: an HTTP span, and the MCP span under it or under the caller. */
 const request = (
 	server: string,
-	options: Readonly<{ sessionId?: string; userAgent: string; startMs: number; id: number }>,
+	options: Readonly<{
+		sessionId?: string
+		user?: Readonly<{ id: string; name?: string }>
+		userAgent: string
+		startMs: number
+		id: number
+	}>,
 	req: Request,
 ) => {
 	const httpTrace = hex(32)
@@ -117,6 +127,8 @@ const request = (
 			["network.transport", "tcp"],
 			["user_agent.original", options.userAgent],
 			["mcp.session.id", options.sessionId],
+			["user.id", options.user?.id],
+			["user.name", options.user?.name],
 			["gen_ai.tool.name", req.tool],
 			["gen_ai.operation.name", req.tool === undefined ? undefined : "execute_tool"],
 			["error.type", req.errorType],
@@ -140,7 +152,13 @@ const request = (
 
 const session = (
 	server: string,
-	options: Readonly<{ sessionId?: string; userAgent: string; startMs: number; gapMs: number }>,
+	options: Readonly<{
+		sessionId?: string
+		user?: Readonly<{ id: string; name?: string }>
+		userAgent: string
+		startMs: number
+		gapMs: number
+	}>,
 	requests: ReadonlyArray<Request>,
 ) =>
 	requests.forEach((req, index) =>
@@ -209,6 +227,7 @@ session(
 	"docs-mcp",
 	{
 		sessionId: "3f6c1d2a-8b4e-4f7a-9c21-5d0e7b9a4c11",
+		user: { id: "user_2ada", name: "Ada Lovelace" },
 		userAgent: "claude-code/2.1.314 (cli)",
 		startMs: claudeStart,
 		gapMs: 40_000,
@@ -275,15 +294,62 @@ session("docs-mcp", { userAgent: "curl/8.7.1", startMs: now - 10 * MIN, gapMs: 5
 	{ method: "tools/call", tool: "list_sections", durationMs: 44 },
 ])
 
+// A stateless server naming its users: Ada's calls split into two sessions by an hour's quiet,
+// Grace's one session fails a call, and an anonymous script belongs to no session.
+const ada = { id: "user_2ada", name: "Ada Lovelace" }
+session(
+	"billing-mcp",
+	{ user: ada, userAgent: "claude-code/2.1.314 (cli)", startMs: now - 150 * MIN, gapMs: 3 * MIN },
+	[
+		{ method: "tools/call", tool: "list_invoices", durationMs: 120 },
+		{ method: "tools/call", tool: "get_invoice", durationMs: 64 },
+		{ method: "tools/call", tool: "get_invoice", durationMs: 71 },
+	],
+)
+session(
+	"billing-mcp",
+	{ user: ada, userAgent: "claude-code/2.1.314 (cli)", startMs: now - 80 * MIN, gapMs: 2 * MIN },
+	[
+		{ method: "tools/call", tool: "refund_invoice", durationMs: 410 },
+		{ method: "tools/call", tool: "get_invoice", durationMs: 58 },
+	],
+)
+session(
+	"billing-mcp",
+	{ user: { id: "user_2grace" }, userAgent: "cursor/1.7.2", startMs: now - 35 * MIN, gapMs: 90_000 },
+	[
+		{ method: "tools/call", tool: "list_invoices", durationMs: 95 },
+		{
+			method: "tools/call",
+			tool: "refund_invoice",
+			durationMs: 33,
+			errorType: "tool_error",
+			message: "Invoice inv_8812 is already refunded",
+		},
+	],
+)
+session("billing-mcp", { userAgent: "curl/8.7.1", startMs: now - 12 * MIN, gapMs: 4_000 }, [
+	{ method: "tools/call", tool: "list_invoices", durationMs: 88 },
+])
+
 // A server that issues no sessions at all.
 session("notes-mcp", { userAgent: "claude-code/2.1.314 (cli)", startMs: now - 30 * MIN, gapMs: 20_000 }, [
 	{ method: "tools/call", tool: "create_note", durationMs: 66 },
 	{ method: "tools/call", tool: "list_notes", durationMs: 23 },
 ])
 
-console.log(`${rows.length} spans for ${org}`)
+// `--service` seeds only those servers (and the agents calling them), e.g. after adding one.
+const only = values.service === undefined ? undefined : new Set(values.service)
+const seeded = rows.filter(
+	(row) =>
+		only === undefined ||
+		only.has(String(row.service_name)) ||
+		(row.service_name === "claude-code" && only.has("docs-mcp")),
+)
+
+console.log(`${seeded.length} spans for ${org}`)
 if (values["dry-run"]) {
-	console.log(JSON.stringify(rows.slice(0, 2), null, 2))
+	console.log(JSON.stringify(seeded.slice(0, 2), null, 2))
 	process.exit(0)
 }
 
@@ -296,7 +362,7 @@ if (!host || !token) {
 const response = await fetch(`${host.replace(/\/+$/, "")}/v0/events?name=traces&wait=true`, {
 	method: "POST",
 	headers: { Authorization: `Bearer ${token}` },
-	body: rows.map((row) => JSON.stringify(row)).join("\n"),
+	body: seeded.map((row) => JSON.stringify(row)).join("\n"),
 })
 if (!response.ok) {
 	console.error(`Tinybird answered ${response.status}: ${await response.text()}`)

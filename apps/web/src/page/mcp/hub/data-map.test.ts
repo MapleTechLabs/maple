@@ -8,6 +8,7 @@ const coverage = {
 	toolErrors: 4,
 	errorsWithMessage: 0,
 	withSession: 0,
+	withUser: 40,
 	withCallerTrace: 1,
 	protocolVersion: "2025-06-18",
 	transport: "tcp",
@@ -29,6 +30,14 @@ describe("coverageRows", () => {
 		})
 	})
 
+	it("builds sessions from users when the server issues no session id", () => {
+		expect(row("Sessions")).toMatchObject({
+			isPresent: false,
+			detail: "Not sent: sessions are built from each user's calls instead.",
+		})
+		expect(row("Users")).toMatchObject({ isPresent: true, detail: "On 40 of 100 tool calls." })
+	})
+
 	it("says failures can't be grouped when no failed call carries a message", () => {
 		expect(row("Why a tool failed")?.isPresent).toBe(false)
 	})
@@ -46,8 +55,8 @@ describe("failureKinds", () => {
 })
 
 describe("sessionsScreen", () => {
-	const screen = (sessions: number, toolCalls: number, withSession: number) =>
-		sessionsScreen({ totals: { sessions }, toolCalls, withSession })
+	const screen = (sessions: number, toolCalls: number, withSession: number, withUser = 0) =>
+		sessionsScreen({ totals: { sessions }, toolCalls, withSession, withUser })
 
 	it("lists sessions whose requests were only initialize and tools/list", () => {
 		expect(screen(2, 0, 0)).toBe("list")
@@ -59,6 +68,10 @@ describe("sessionsScreen", () => {
 
 	it("asks for instrumentation when tool calls carry no session id", () => {
 		expect(screen(0, 12, 0)).toBe("noSessions")
+	})
+
+	it("lists when calls name their user, though none carries a session id", () => {
+		expect(screen(0, 12, 0, 3)).toBe("list")
 	})
 
 	it("lists an empty match when calls carry sessions the filters hide", () => {

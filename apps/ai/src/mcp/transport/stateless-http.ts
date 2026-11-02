@@ -36,6 +36,8 @@ import {
 	type RequestEncoded,
 } from "effect/rpc/RpcMessage"
 import type { McpToolsUnavailableError } from "../executor-loader"
+import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
+import { INTERNAL_SERVICE_USER_ID } from "../lib/resolve-tenant"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
 
@@ -191,7 +193,14 @@ export const layerStatelessMcpHttp = (options: {
 				Effect.gen(function* () {
 					const scope = yield* Scope.Scope
 					const tracer = yield* Effect.tracer
-					const caller = mcpCaller(request)
+					const tenant = yield* CurrentMcpRequestTenant
+					// Internal services share one user id, so it names no one and is left off.
+					const caller = mcpCaller(
+						request,
+						tenant === undefined || tenant.userId === INTERNAL_SERVICE_USER_ID
+							? undefined
+							: tenant.userId,
+					)
 					// No session id is ever issued, so a client's leftover one is dropped: the server
 					// would look the session up by that id instead of by this request's client.
 					const requestHeaders = Object.entries(request.headers).filter(
