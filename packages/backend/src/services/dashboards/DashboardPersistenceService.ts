@@ -34,6 +34,7 @@ import { timestampMs } from "@maple/backend/platform/time"
 const decodeDashboardIdSync = Schema.decodeUnknownSync(DashboardId)
 const decodeDashboardVersionIdSync = Schema.decodeUnknownSync(DashboardVersionId)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const COALESCE_WINDOW_MS = 5_000
 
@@ -120,7 +121,7 @@ const validatePayload = Effect.fnUntraced(function* (dashboard: DashboardDocumen
 
 	return yield* Effect.try({
 		try: () => {
-			JSON.stringify(dashboard)
+			encodeJsonSync(dashboard)
 			// Repair the section invariants here — the single choke point for every
 			// jsonb write — so v1 upsert, v2 PATCH, MCP, template instantiate,
 			// Perses import and version restore all get it, and every reader can
@@ -801,7 +802,8 @@ export class DashboardPersistenceService extends Context.Service<
 			})
 			const detail = yield* getVersion(orgId, dashboardId, versionId)
 
-			const nowIso = decodeIsoDateTimeStringSync(new Date(yield* Clock.currentTimeMillis).toISOString())
+			const nowMs = yield* Clock.currentTimeMillis
+			const nowIso = decodeIsoDateTimeStringSync(new Date(nowMs).toISOString())
 			const restored = new DashboardDocument({
 				...detail.snapshot,
 				updatedAt: nowIso,

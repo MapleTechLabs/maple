@@ -505,9 +505,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				// An organization that predates regions has data on US already, plan or not.
-				if (
-					!organizationRegionOpen(org.publicMetadata, org.createdAt, yield* Clock.currentTimeMillis)
-				) {
+				const nowMs = yield* Clock.currentTimeMillis
+				if (!organizationRegionOpen(org.publicMetadata, org.createdAt, nowMs)) {
 					return yield* new OrganizationRegionLockedError({
 						message: "Only a new organization can choose its data region.",
 					})

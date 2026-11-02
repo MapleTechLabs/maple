@@ -10,9 +10,12 @@
 // fan-out that overlaps in time and so lands as concurrent CHAPTERS.
 
 import type { AiSessionGenAiValues, AiSessionSpan } from "@maple/domain/http"
+import { Schema } from "effect"
 
 import { spanStartMs } from "./session-turns"
 import { agentSpan, llmSpan, T0, toolSpan, userMessages } from "./span-test-support"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -515,13 +518,13 @@ function buildTranscriptTurns(startMs: number): readonly AiSessionSpan[] {
  *  transcript renders these as JSON: `{"a":1}` set as markdown is one paragraph
  *  with the structure collapsed. */
 function jsonBodiesTurn(t: number): readonly AiSessionSpan[] {
-	const event = JSON.stringify({
+	const event = encodeJson({
 		event: "invoice.payment_failed",
 		attempt: 3,
 		invoice: { id: "in_1PxK2m", amount_due: 4900, currency: "usd" },
 		customer: { id: "cus_9f2K", email: "billing@acme.dev" },
 	})
-	const verdict = JSON.stringify({
+	const verdict = encodeJson({
 		action: "retry",
 		delay_seconds: 3600,
 		reason: "card_declined is retryable and the customer has no dunning hold",

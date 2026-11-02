@@ -3,10 +3,11 @@
  * AWS credential. One RSA key signs them; its public half is the JWKS the API serves.
  */
 import { AWS_OIDC_AUDIENCE } from "@maple/domain/aws"
-import { Effect, Redacted } from "effect"
+import { Effect, Redacted, Schema } from "effect"
 import { AwsOidcKeyError } from "./errors"
 
 /** STS accepts a token only while it is valid; Maple mints one right before each call. */
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const TOKEN_SECONDS = 300
 const ALGORITHM = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const
 
@@ -68,11 +69,11 @@ export const makeAwsOidcSigner = Effect.fn("makeAwsOidcSigner")(function* (
 	}
 	const thumbprint = yield* Effect.tryPromise({
 		try: () =>
-			crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ e, kty: "RSA", n }))),
+			crypto.subtle.digest("SHA-256", new TextEncoder().encode(encodeJson({ e, kty: "RSA", n }))),
 		catch: failed("Hashing the AWS OIDC key failed"),
 	})
 	const jwk: AwsOidcJwk = { kty: "RSA", n, e, kid: base64url(thumbprint), alg: "RS256", use: "sig" }
-	const encode = (value: unknown) => base64url(new TextEncoder().encode(JSON.stringify(value)))
+	const encode = (value: unknown) => base64url(new TextEncoder().encode(encodeJson(value)))
 	const header = encode({ alg: "RS256", typ: "JWT", kid: jwk.kid })
 
 	const mint = (subject: string, nowMs: number) =>

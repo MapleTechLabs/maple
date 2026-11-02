@@ -100,7 +100,8 @@ export const step = <A, E, R>(
 		const draw = Effect.gen(function* () {
 			const now = yield* Clock.currentTimeMillis
 			const frame = SPINNER[Math.floor(now / FRAME_MS) % SPINNER.length] ?? SPINNER[0]
-			const suffixes = Option.match(yield* Ref.get(transfer), {
+			const current = yield* Ref.get(transfer)
+			const suffixes = Option.match(current, {
 				onNone: () => [""],
 				onSome: (t) => transferSuffixes(t, now - startedAt),
 			})
@@ -109,11 +110,10 @@ export const step = <A, E, R>(
 		})
 
 		const ticker = live
-			? Option.some(
-					yield* write(HIDE_CURSOR).pipe(
-						Effect.andThen(Effect.repeat(draw, Schedule.spaced(FRAME_MS))),
-						Effect.forkChild,
-					),
+			? yield* write(HIDE_CURSOR).pipe(
+					Effect.andThen(Effect.repeat(draw, Schedule.spaced(FRAME_MS))),
+					Effect.forkChild,
+					Effect.map(Option.some),
 				)
 			: Option.none()
 
@@ -122,7 +122,8 @@ export const step = <A, E, R>(
 				if (Option.isSome(ticker)) yield* Fiber.interrupt(ticker.value)
 				const prefix = live ? CLEAR_LINE : ""
 				const now = yield* Clock.currentTimeMillis
-				const detail = Option.match(yield* Ref.get(transfer), {
+				const finished = yield* Ref.get(transfer)
+				const detail = Option.match(finished, {
 					onNone: () => "",
 					onSome: (t) =>
 						` ${dim(`${formatBytes(t.total ?? t.received)} in ${((now - startedAt) / 1000).toFixed(1)}s`)}`,

@@ -50,13 +50,14 @@ export function encodeLogKey(log: EncodableLog): string {
 		log.traceId ?? "",
 		log.spanId ?? "",
 	]
-	return toBase64Url(JSON.stringify(payload))
+	return toBase64Url(encodeTuple(payload))
 }
 
 const LogKeyTuple = Schema.fromJsonString(
 	Schema.Tuple([Schema.NonEmptyString, Schema.NonEmptyString, Schema.String, Schema.String]),
 )
 const decodeTuple = Schema.decodeUnknownOption(LogKeyTuple)
+const encodeTuple = Schema.encodeSync(Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String, Schema.String])))
 const decodeBase64Url = Option.liftThrowable(fromBase64Url)
 
 /** Decode a `$logId` token back into a LogKey, or `null` if it is malformed. */

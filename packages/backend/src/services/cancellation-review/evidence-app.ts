@@ -421,7 +421,8 @@ export class CancellationAppEvidenceReader extends Context.Service<
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 				)
-				return integrationHealthOf(listed, sources, gcp, atMs, yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
+				return integrationHealthOf(listed, sources, gcp, atMs, now)
 			})
 
 		const readOnboarding = ({ orgId, atMs }: CancellationEvidenceInput) =>
@@ -688,7 +689,8 @@ export class CancellationAppEvidenceReader extends Context.Service<
 					),
 				)
 				// Checks are kept 24 hours: a late review finds the day before the cancellation pruned.
-				const pruned = !knownAtCancel(atMs, yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
+				const pruned = !knownAtCancel(atMs, now)
 				const checks = pruned
 					? null
 					: ids.length === 0

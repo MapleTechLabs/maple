@@ -359,7 +359,11 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 const SESSION_TOKEN_TIMEOUT = Duration.seconds(10)
 
 const sessionToken = (skipCache: boolean): Effect.Effect<Option.Option<string>> =>
-	Effect.tryPromise(() => window.Clerk?.session?.getToken({ skipCache }) ?? Promise.resolve(null)).pipe(
+	// Object form, not `clerkTry`: this runs at module load, before `clerkTry` is defined.
+	Effect.tryPromise({
+		try: () => window.Clerk?.session?.getToken({ skipCache }) ?? Promise.resolve(null),
+		catch: (cause) => new ClerkActionError({ message: "Could not read the session token", cause }),
+	}).pipe(
 		Effect.map(Option.fromNullishOr),
 		// Runs before the request deadline starts, so a stalled token refresh must not hang every request.
 		Effect.timeoutOrElse({ duration: SESSION_TOKEN_TIMEOUT, orElse: () => Effect.succeedNone }),
@@ -520,12 +524,16 @@ export const switchAwayFrom = (orgId: string): Effect.Effect<void> =>
 		const memberships =
 			user === null || user === undefined
 				? []
-				: yield* Effect.tryPromise(() => user.getOrganizationMemberships()).pipe(
+				: yield* clerkTry("Could not list organization memberships", () =>
+						user.getOrganizationMemberships(),
+					).pipe(
 						Effect.map((page) => page.data),
 						Effect.orElseSucceed(() => []),
 					)
 		const next =
 			memberships.find((membership) => membership.organization.id !== orgId)?.organization.id ?? null
 		// A failed switch falls through to navigation; Clerk's session refreshes on next load.
-		yield* Effect.tryPromise(() => clerk.setActive({ organization: next })).pipe(Effect.ignore)
+		yield* clerkTry("Could not switch organization", () => clerk.setActive({ organization: next })).pipe(
+			Effect.ignore,
+		)
 	})

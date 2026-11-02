@@ -307,11 +307,12 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 		make: Effect.gen(function* () {
 			// Provided on every later call, so it must not carry this build's request (its Postgres
 			// scope, Scope, span or tenant): those would override the calling request's own.
+			const buildContext = yield* Effect.context<McpToolRuntimeRequirements>()
 			const runtimeServices = Context.omit(
 				CurrentMcpRequestTenant,
 				CurrentMcpTenant,
 				Cloudflare.WorkerExecutionContext,
-			)(withoutInvocationContext(yield* Effect.context<McpToolRuntimeRequirements>()))
+			)(withoutInvocationContext(buildContext))
 			const sandbox = yield* RepoSandboxService
 			const source = yield* VcsSourceService
 

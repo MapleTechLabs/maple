@@ -8,9 +8,10 @@
  * shape here — pure, testable, no React — and let the component paint it.
  */
 
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 
-import { trySync } from "./try-sync"
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 export type ErrorBodyFormat = "json" | "text"
 
@@ -36,9 +37,9 @@ export function parseErrorBody(message: string): ErrorBody {
 		// grammar admits nothing else between those braces — so a parse that
 		// succeeds is a parse worth pretty-printing. A truncated or otherwise
 		// malformed body decodes to `None` and falls through to text.
-		const parsed = trySync<unknown>(() => JSON.parse(trimmed))
+		const parsed = decodeJson(trimmed)
 		if (Option.isSome(parsed)) {
-			return { format: "json", full: JSON.stringify(parsed.value, null, 2) }
+			return { format: "json", full: encodePrettyJson(parsed.value) }
 		}
 	}
 

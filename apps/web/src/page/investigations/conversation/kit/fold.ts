@@ -17,12 +17,14 @@ import {
 	type UIMessagePart,
 } from "./ui-message"
 
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 // The transcript reducer: durable history to
 // `UIMessage`s, and every live `ChatEvent` folded in. Pure; the stream lives in a Subscription.
 
 /** A tool's error output as the text a card renders. */
 export const errorTextOf = (output: unknown): string =>
-	Predicate.isString(output) ? output : (JSON.stringify(output) ?? String(output))
+	Predicate.isString(output) ? output : Option.getOrElse(encodeJsonOption(output), () => String(output))
 
 const PromptFields = Schema.Struct({
 	prompt: Schema.optionalKey(Schema.Unknown),

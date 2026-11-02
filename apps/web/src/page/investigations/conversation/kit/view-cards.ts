@@ -3,7 +3,7 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon, type IconName } from "@maple/views/ui/icon"
@@ -14,10 +14,14 @@ import { inputRecord } from "./tool-output"
 import { dashboardSummary } from "./view-approval"
 import { typography } from "@maple/views/ui/typography"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 // `ApprovalCard` and `TaskCard`: a proposal waiting on the user, and
 // a sub-agent run as a line.
 
-const stringify = (input: unknown): string => JSON.stringify(input, null, 2) ?? String(input)
+const stringify = (input: unknown): string =>
+	Option.getOrElse(encodePrettyJsonOption(input), () => String(input))
 
 type Formatted =
 	| { readonly kind: "scalar"; readonly text: string }
@@ -50,7 +54,7 @@ const formatValue = (value: unknown, timeZone: string): Formatted => {
 				withYear: true,
 			}),
 		}
-	const text = typeof value === "string" ? value : JSON.stringify(value)
+	const text = typeof value === "string" ? value : encodeJson(value)
 	return text.length > 200 ? { kind: "blob", chars: text.length } : { kind: "scalar", text }
 }
 
@@ -131,7 +135,8 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 						{
 							variant: "link",
 							size: "xs",
-							className: "mt-3 text-muted-foreground hover:text-foreground active:text-foreground",
+							className:
+								"mt-3 text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(options.onToggleRaw)],
 						},
 						[

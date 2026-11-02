@@ -16,6 +16,7 @@ import { Schema } from "effect"
 import { NonEmptyString, NonNegativeSafeInt, Sha256Lower } from "./schemas"
 import { parseArchiveActivePointer } from "./manifest"
 import { archiveSignal } from "./signals"
+import { decodeJsonSync } from "../json"
 
 // Crash-recovery journal for archive generation. Each entry records the last
 // fsync-complete boundary before the next destructive step, so it may trail the
@@ -539,7 +540,7 @@ const readIntent = (
 	const path = intentPath(archiveDir, operationId)
 	assertNoSymlinkSync(archiveDir, path, "archive operation intent")
 	assertRealFileSync(path, "archive operation intent")
-	const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown
+	const parsed = decodeJsonSync(readFileSync(path, "utf8"))
 	return parseArchiveOperationIntent(archiveDir, parsed, expectedDataDir, expectedScratchRoot)
 }
 
@@ -852,7 +853,7 @@ export const inspectActiveOperation = (
 	try {
 		assertNoSymlinkSync(archiveDir, path, "archive operation intent")
 		assertRealFileSync(path, "archive operation intent")
-		raw = JSON.parse(readFileSync(path, "utf8")) as unknown
+		raw = decodeJsonSync(readFileSync(path, "utf8"))
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
 		return { kind: "fail-closed", reason: `active operation intent is unreadable/unsafe: ${reason}` }
@@ -948,7 +949,7 @@ export const readActiveGenerationId = (
 	if (!existsSync(pointerPath)) return null
 	assertNoSymlinkSync(archiveDir, pointerPath, "archive active pointer")
 	assertRealFileSync(pointerPath, "archive active pointer")
-	const parsed = JSON.parse(readFileSync(pointerPath, "utf8")) as unknown
+	const parsed = decodeJsonSync(readFileSync(pointerPath, "utf8"))
 	const pointer = parseArchiveActivePointer(parsed, signal, rangeDate)
 	return pointer.generationId
 }

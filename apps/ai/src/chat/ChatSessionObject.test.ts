@@ -28,13 +28,11 @@ const activateOn = (state: ReturnType<typeof makeFakeDurableObjectState>) =>
 		// SAFETY: the fake carries the `storage.sql` and `waitUntil` the class reads, and nothing else.
 		const raw = state as unknown as import("@cloudflare/workers-types").DurableObjectState
 		const build = yield* activateChatSession.pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(raw)),
-					Layer.succeed(Cloudflare.WorkerEnvironment, {}),
-					Layer.succeed(WorkersAiGateway, Option.none()),
-				),
-			),
+			Effect.provide([
+				Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(raw)),
+				Layer.succeed(Cloudflare.WorkerEnvironment, {}),
+				Layer.succeed(WorkersAiGateway, Option.none()),
+			]),
 		)
 		return { rpc: yield* build, state }
 	})
@@ -49,13 +47,11 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			// SAFETY: that is alchemy's own mock, reproduced here.
 			const mock = { storage: {} } as unknown as import("@cloudflare/workers-types").DurableObjectState
 			const build = yield* activateChatSession.pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(mock)),
-						Layer.succeed(Cloudflare.WorkerEnvironment, {}),
-						Layer.succeed(WorkersAiGateway, Option.none()),
-					),
-				),
+				Effect.provide([
+					Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(mock)),
+					Layer.succeed(Cloudflare.WorkerEnvironment, {}),
+					Layer.succeed(WorkersAiGateway, Option.none()),
+				]),
 			)
 			assert.isTrue(Effect.isEffect(build))
 		}),

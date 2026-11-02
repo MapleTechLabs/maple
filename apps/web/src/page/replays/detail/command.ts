@@ -86,8 +86,7 @@ export const FetchTraceSummaries = Command.define("FetchReplayTraceSummaries", {
 	messages: [Message.CompletedFetchTraceSummaries],
 	execute: ({ key, traceIds, windowStart, windowEnd }) =>
 		getSessionTraceSummaries({ data: { traceIds, windowStart, windowEnd } }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTraceSummaries({ key, result })),
 		),
@@ -107,13 +106,14 @@ export const FetchRange = Command.define("FetchReplayRange", {
 	messages: [Message.CompletedFetchRange],
 	execute: ({ key, ...data }) =>
 		getReplayEvents({ data }).pipe(
-			Effect.map((response) =>
-				response.chunks.map((chunk) => ({
-					chunk_seq: chunk.chunk_seq,
-					events: Option.getOrElse(decodeChunk(chunk.events), () => []),
-				})),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					response.chunks.map((chunk) => ({
+						chunk_seq: chunk.chunk_seq,
+						events: Option.getOrElse(decodeChunk(chunk.events), () => []),
+					})),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchRange({ key, result })),
 		),
@@ -128,35 +128,36 @@ export const FetchSpans = Command.define("FetchReplayTraceSpans", {
 	execute: ({ traceId, timestamp }) =>
 		Option.match(decodeTraceId(traceId), {
 			onNone: () =>
-				Effect.succeed(
-					Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) }),
-				),
+				Effect.succeed(Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) })),
 			onSome: (id) =>
 				getSpanHierarchy({ data: { traceId: id, timestamp } }).pipe(
-					Effect.map((response) =>
-						response.spans.map((span) => ({
-							spanId: span.spanId,
-							spanName: span.spanName,
-							serviceName: span.serviceName,
-							startTime: span.startTime,
-							durationMs: span.durationMs,
-							statusCode: span.statusCode,
-							spanAttributes: span.spanAttributes,
-							spanKind: span.spanKind,
-						})),
-					),
-					Effect.mapError(toLoadFailure),
+					Effect.mapBoth({
+						onSuccess: (response) =>
+							response.spans.map((span) => ({
+								spanId: span.spanId,
+								spanName: span.spanName,
+								serviceName: span.serviceName,
+								startTime: span.startTime,
+								durationMs: span.durationMs,
+								statusCode: span.statusCode,
+								spanAttributes: span.spanAttributes,
+								spanKind: span.spanKind,
+							})),
+						onFailure: toLoadFailure,
+					}),
 					Effect.result,
 					Effect.map((result) => Message.CompletedFetchSpans({ traceId, result })),
 				),
 		}),
 })
 
-type EngineMessage =
-	| typeof Message.ReadiedEngine.Type
-	| typeof Message.TickedEngine.Type
-	| typeof Message.FinishedEngine.Type
-	| typeof Message.StarvedEngine.Type
+const EngineMessage = Schema.Union([
+	Message.ReadiedEngine,
+	Message.TickedEngine,
+	Message.FinishedEngine,
+	Message.StarvedEngine,
+])
+type EngineMessage = typeof EngineMessage.Type
 
 /** The engine for one seed; the element is keyed by `seedVersion`, so a new seed is a new engine. */
 export const MountEngine = Mount.defineStream("MountReplayEngine", {
@@ -184,7 +185,9 @@ export const MountEngine = Mount.defineStream("MountReplayEngine", {
 /** Hands one range to the engine; false while no engine has taken it yet (it is still starting). */
 const offerEvents = (element: Element, events: ReadonlyArray<unknown>): boolean =>
 	!element.isConnected ||
-	!element.dispatchEvent(new CustomEvent(REPLAY_EVENTS, { detail: events, bubbles: true, cancelable: true }))
+	!element.dispatchEvent(
+		new CustomEvent(REPLAY_EVENTS, { detail: events, bubbles: true, cancelable: true }),
+	)
 
 /**
  * A range loaded after the seed: handed to the live engine beside it, then done. The engine listens
@@ -218,7 +221,13 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					const onKey = (event: KeyboardEvent) => {
-						if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target) || isDialogOpen())
+						if (
+							event.metaKey ||
+							event.ctrlKey ||
+							event.altKey ||
+							isEditableTarget(event.target) ||
+							isDialogOpen()
+						)
 							return
 						if (event.code === "Space") {
 							event.preventDefault()
@@ -227,14 +236,18 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 							event.preventDefault()
 							Queue.offerUnsafe(
 								queue,
-								Message.RequestedSeekBy({ deltaMs: event.code === "ArrowLeft" ? -5000 : 5000 }),
+								Message.RequestedSeekBy({
+									deltaMs: event.code === "ArrowLeft" ? -5000 : 5000,
+								}),
 							)
 						}
 					}
 					const onFullscreen = () =>
 						Queue.offerUnsafe(
 							queue,
-							Message.ChangedFullscreen({ isFullscreen: isFigureFullscreen(document.fullscreenElement) }),
+							Message.ChangedFullscreen({
+								isFullscreen: isFigureFullscreen(document.fullscreenElement),
+							}),
 						)
 					window.addEventListener("keydown", onKey)
 					document.addEventListener("fullscreenchange", onFullscreen)
@@ -247,7 +260,6 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
 })
-
 
 /** Where a press landed along a scrub surface (`msFromClientX`), as a 0 to 1 share. */
 export const MeasureScrub = Command.define("MeasureReplayScrub", {

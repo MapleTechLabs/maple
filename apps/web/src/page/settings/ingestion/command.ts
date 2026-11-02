@@ -12,7 +12,8 @@ import { IngestKeyKind } from "./model"
 
 const PAGE_LIMIT = 100
 
-const settle = <A, B>(toMessage: (result: Result.Result<A, LoadFailure>) => B) =>
+const settle =
+	<A, B>(toMessage: (result: Result.Result<A, LoadFailure>) => B) =>
 	<E, R>(effect: Effect.Effect<A, E, R>) =>
 		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
@@ -29,7 +30,10 @@ export const FetchIngestOverview = Command.define("FetchIngestOverview", {
 			const response = yield* getServiceOverview({
 				data: pinnedNamespace === null ? range : { ...range, namespaces: [pinnedNamespace] },
 			})
-			return response.data.map((row) => ({ serviceName: String(row.serviceName), spanCount: row.spanCount ?? 0 }))
+			return response.data.map((row) => ({
+				serviceName: String(row.serviceName),
+				spanCount: row.spanCount ?? 0,
+			}))
 		}).pipe(settle((result) => Message.CompletedFetchOverview({ result }))),
 })
 
@@ -84,6 +88,7 @@ export const FetchMappings = Command.define("FetchAttributeMappings", {
 const quickStartKey = (orgKey: string) => `maple-onboarding-v6-${orgKey}`
 const QuickStart = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
 const decodeQuickStart = Schema.decodeUnknownOption(QuickStart)
+const encodeQuickStart = Schema.encodeSync(QuickStart)
 const DEFAULT_QUICK_START = {
 	completedSteps: {},
 	dismissed: false,
@@ -103,7 +108,9 @@ export const ReadFramework = Command.define("ReadQuickStartFramework", {
 	execute: ({ orgKey }) =>
 		Effect.sync(() => {
 			const selected = Option.flatMap(readQuickStart(orgKey), (state) =>
-				typeof state.selectedFramework === "string" ? Option.some(state.selectedFramework) : Option.none(),
+				typeof state.selectedFramework === "string"
+					? Option.some(state.selectedFramework)
+					: Option.none(),
 			)
 			return Message.ReadFramework({ framework: Option.getOrNull(selected) })
 		}),
@@ -115,7 +122,10 @@ export const SaveFramework = Command.define("SaveQuickStartFramework", {
 	execute: ({ orgKey, framework }) =>
 		Effect.sync(() => {
 			const current = Option.getOrElse(readQuickStart(orgKey), () => DEFAULT_QUICK_START)
-			localStorage.setItem(quickStartKey(orgKey), JSON.stringify({ ...current, selectedFramework: framework }))
+			localStorage.setItem(
+				quickStartKey(orgKey),
+				encodeQuickStart({ ...current, selectedFramework: framework }),
+			)
 		}).pipe(Effect.ignore, Effect.as(Message.CompletedSaveFramework())),
 })
 
@@ -138,7 +148,12 @@ export const ApplyRecommendation = Command.define("ApplyRecommendation", {
 		).pipe(
 			Effect.asVoid,
 			settle((result) =>
-				Message.CompletedRecommendationAction({ id, action: "apply", label: `${sourceKey} → ${canonicalKey}`, result }),
+				Message.CompletedRecommendationAction({
+					id,
+					action: "apply",
+					label: `${sourceKey} → ${canonicalKey}`,
+					result,
+				}),
 			),
 		),
 })
@@ -173,7 +188,9 @@ export const DeleteMapping = Command.define("DeleteAttributeMapping", {
 	args: { id: AttributeMappingPublicId },
 	messages: [Message.CompletedDelete],
 	execute: ({ id }) =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.attributeMappings.delete({ params: { id } })).pipe(
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			client.attributeMappings.delete({ params: { id } }),
+		).pipe(
 			Effect.asVoid,
 			settle((result) => Message.CompletedDelete({ result })),
 		),

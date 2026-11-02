@@ -6,7 +6,7 @@
  * losing a guild unlinks a workspace. Everything else the intents deliver is
  * dropped here rather than carried further.
  */
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import type { ConnectorRequest, InboundEvent } from "../../ingress.ts"
 import { API_BASE } from "./api.ts"
 import {
@@ -51,11 +51,13 @@ const stripMention = (text: string, botUserId: string): string =>
  * its own URL, and `onFrame` is a pure function that cannot reach an Effect
  * transport. The two halves share the base URL and nothing else here.
  */
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const acknowledgeInteraction = (id: string, token: string): ConnectorRequest => ({
 	method: "POST",
 	url: `${API_BASE}/interactions/${id}/${encodeURIComponent(token)}/callback`,
 	headers: new Map([["content-type", "application/json"]]),
-	body: JSON.stringify({ type: CALLBACK_DEFERRED_UPDATE_MESSAGE }),
+	body: encodeJson({ type: CALLBACK_DEFERRED_UPDATE_MESSAGE }),
 })
 
 /**

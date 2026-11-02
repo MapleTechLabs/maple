@@ -14,6 +14,8 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { Schema } from "effect"
 
+const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+
 const root = join(import.meta.dir, "..")
 const webSrc = join(root, "apps/web/src")
 const baselineFile = join(root, "scripts/ui-class-patterns.json")
@@ -55,12 +57,16 @@ for (const file of walk(webSrc)) {
 	}
 }
 const current = new Map(
-	[...filesByPattern].filter(([, files]) => files.size >= MIN_FILES).map(([pattern, files]) => [pattern, files.size]),
+	[...filesByPattern]
+		.filter(([, files]) => files.size >= MIN_FILES)
+		.map(([pattern, files]) => [pattern, files.size]),
 )
 
 const Baseline = Schema.Record(Schema.String, Schema.Number)
 const previous = new Map(
-	Object.entries(Schema.decodeUnknownSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8"))),
+	Object.entries(
+		Schema.decodeUnknownSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8")),
+	),
 )
 
 const hint = (pattern: string) =>
@@ -83,7 +89,8 @@ const report = (title: string, rows: ReadonlyArray<{ pattern: string; count: num
 	console.error(title)
 	for (const { pattern, count, was } of rows.slice(0, 40)) {
 		console.error(`  "${pattern}": ${was} -> ${count} files. Use ${hint(pattern)}.`)
-		for (const file of [...(filesByPattern.get(pattern) ?? [])].slice(0, 5)) console.error(`      ${file}`)
+		for (const file of [...(filesByPattern.get(pattern) ?? [])].slice(0, 5))
+			console.error(`      ${file}`)
 	}
 	if (rows.length > 40) console.error(`  ... and ${rows.length - 40} more`)
 }
@@ -98,13 +105,16 @@ if (grew.length > 0 && !process.argv.includes("--allow-increase")) {
 
 if (process.argv.includes("--check")) {
 	if (shrank.length > 0) {
-		report("Fewer files repeat these class strings. Lower the baseline: run `bun run ui:patterns`.\n", shrank)
+		report(
+			"Fewer files repeat these class strings. Lower the baseline: run `bun run ui:patterns`.\n",
+			shrank,
+		)
 		process.exit(1)
 	}
 	console.log(`ui-class-patterns: OK (${current.size} patterns)`)
 } else {
 	const sorted = Object.fromEntries([...current].sort(([a], [b]) => a.localeCompare(b)))
-	writeFileSync(baselineFile, `${JSON.stringify(sorted, null, "\t")}\n`)
+	writeFileSync(baselineFile, `${encodeJsonTabbed(sorted)}\n`)
 	const total = (counts: Iterable<number>) => [...counts].reduce((sum, count) => sum + count, 0)
 	console.log(
 		`ui-class-patterns: ${previous.size} -> ${current.size} patterns, ${total(previous.values())} -> ${total(current.values())} file uses`,

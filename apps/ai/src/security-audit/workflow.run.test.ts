@@ -335,20 +335,18 @@ describe("auditWithAgents", () => {
 				},
 			)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-					SecurityAuditCredits.unmetered,
-					BillingCustomerResolver.standalone,
-					Layer.succeed(HttpClient.HttpClient, recording),
-					ConfigProvider.layer(
-						ConfigProvider.fromUnknown({
-							AUTUMN_SECRET_KEY: "am_sk_test",
-							SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
-						}),
-					),
+			Effect.provide([
+				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+				SecurityAuditCredits.unmetered,
+				BillingCustomerResolver.standalone,
+				Layer.succeed(HttpClient.HttpClient, recording),
+				ConfigProvider.layer(
+					ConfigProvider.fromUnknown({
+						AUTUMN_SECRET_KEY: "am_sk_test",
+						SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
+					}),
 				),
-			),
+			]),
 		)
 	})
 
@@ -387,20 +385,18 @@ describe("auditWithAgents", () => {
 				{ status: "complete", charges: 0, runSandboxUsd: Option.some(0), modelUsd: true },
 			)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-					noCredits,
-					BillingCustomerResolver.standalone,
-					Layer.succeed(HttpClient.HttpClient, recording),
-					ConfigProvider.layer(
-						ConfigProvider.fromUnknown({
-							AUTUMN_SECRET_KEY: "am_sk_test",
-							SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
-						}),
-					),
+			Effect.provide([
+				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+				noCredits,
+				BillingCustomerResolver.standalone,
+				Layer.succeed(HttpClient.HttpClient, recording),
+				ConfigProvider.layer(
+					ConfigProvider.fromUnknown({
+						AUTUMN_SECRET_KEY: "am_sk_test",
+						SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
+					}),
 				),
-			),
+			]),
 		)
 	})
 
@@ -475,17 +471,15 @@ describe("auditWithAgents", () => {
 				{ status: "incomplete", agents: 3, reason: Option.some(true) },
 			)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-					runningOut,
-					BillingCustomerResolver.standalone,
-					Layer.succeed(
-						HttpClient.HttpClient,
-						HttpClient.make(() => Effect.die("no network in tests")),
-					),
+			Effect.provide([
+				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+				runningOut,
+				BillingCustomerResolver.standalone,
+				Layer.succeed(
+					HttpClient.HttpClient,
+					HttpClient.make(() => Effect.die("no network in tests")),
 				),
-			),
+			]),
 		)
 	})
 
@@ -524,17 +518,15 @@ describe("auditWithAgents", () => {
 				{ extraChecks: 5, unavailable: Option.some(false), ran: true },
 			)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-					flaky,
-					BillingCustomerResolver.standalone,
-					Layer.succeed(
-						HttpClient.HttpClient,
-						HttpClient.make(() => Effect.die("no network in tests")),
-					),
+			Effect.provide([
+				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+				flaky,
+				BillingCustomerResolver.standalone,
+				Layer.succeed(
+					HttpClient.HttpClient,
+					HttpClient.make(() => Effect.die("no network in tests")),
 				),
-			),
+			]),
 		)
 	})
 

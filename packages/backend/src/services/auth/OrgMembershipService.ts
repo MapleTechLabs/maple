@@ -171,10 +171,7 @@ const make = Effect.gen(function* () {
 						limit: MEMBERSHIP_PAGE_SIZE,
 						offset,
 					}),
-			).pipe(
-				Effect.map((response) => response.data),
-				Effect.mapError(unavailable),
-			)
+			).pipe(Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: unavailable }))
 		})
 
 	const readShared = (userId: UserId) =>

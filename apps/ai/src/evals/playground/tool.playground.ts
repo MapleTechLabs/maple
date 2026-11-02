@@ -56,9 +56,13 @@ afterAll(async () => {
 	await rt?.dispose()
 })
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const log = (entry: Record<string, unknown>) => {
 	if (env.PLAYGROUND_LOG)
-		appendFileSync(env.PLAYGROUND_LOG, `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`)
+		appendFileSync(env.PLAYGROUND_LOG, `${encodeJson({ at: new Date().toISOString(), ...entry })}\n`)
 }
 
 it("playground", async () => {
@@ -70,15 +74,13 @@ it("playground", async () => {
 			const entry = publicTools.find((candidate) => candidate.name === tool)
 			return writeFileSync(
 				out,
-				entry === undefined
-					? `Unknown tool "${tool}".`
-					: JSON.stringify(inputSchemaOf(entry), null, 2),
+				entry === undefined ? `Unknown tool "${tool}".` : encodePrettyJson(inputSchemaOf(entry)),
 			)
 		}
 		case "call": {
 			if (rt === undefined) return writeFileSync(out, "The playground runtime did not start.")
 			const started = Date.now()
-			const params: unknown = JSON.parse(env.PLAYGROUND_ARGS ?? "{}")
+			const params: unknown = decodeJson(env.PLAYGROUND_ARGS ?? "{}")
 			const result = await runToolDirect(rt, tool, params).then(
 				(value) => ({ text: markdown(value), ok: value?.isError !== true }),
 				(error: unknown) => ({ text: `Tool failed: ${String(error)}`, ok: false }),

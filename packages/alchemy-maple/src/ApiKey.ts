@@ -134,12 +134,14 @@ export const ApiKeyProvider = () =>
 					// The secret is returned once, then retained in Alchemy state.
 					if (observed === undefined || output === undefined) {
 						const created = yield* api.post("/v2/api_keys", createBody(news))
-						return fromSecretResponse(yield* decodeWireApiKeyWithSecret(created))
+						const decoded = yield* decodeWireApiKeyWithSecret(created)
+						return fromSecretResponse(decoded)
 					}
 
 					if (olds !== undefined && olds.rotate !== news.rotate) {
 						const rolled = yield* api.post(`/v2/api_keys/${observed.id}/roll`)
-						return fromSecretResponse(yield* decodeWireApiKeyWithSecret(rolled))
+						const decoded = yield* decodeWireApiKeyWithSecret(rolled)
+						return fromSecretResponse(decoded)
 					}
 
 					// Preserve the stored secret because GET never returns it.

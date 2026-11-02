@@ -196,7 +196,8 @@ export const getPlanetScaleInfraTimeseries = Effect.fn("QueryEngine.getPlanetSca
 			data,
 			"getPlanetScaleInfraTimeseries",
 		)
-		const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+		const now = yield* Clock.currentTimeMillis
+		const fallback = defaultTimeRange(now)
 
 		const result = yield* runWarehouseQuery("planetscaleInfraTimeseries", () =>
 			Effect.gen(function* () {

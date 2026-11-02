@@ -1,5 +1,6 @@
 import { Option, Predicate, Record, Schema, SchemaGetter } from "effect"
 
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 const decodeFullJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))
 
 /** JSON text opens with one of these after whitespace; any other string skips the throwing parse. */
@@ -21,10 +22,10 @@ const stringifyValue = (value: unknown): Option.Option<string> => {
 	}
 
 	if (Predicate.isString(value)) {
-		return Option.some(isJson(value) ? JSON.stringify(value) : value)
+		return isJson(value) ? encodeJson(value) : Option.some(value)
 	}
 
-	return Option.some(JSON.stringify(value))
+	return encodeJson(value)
 }
 
 const parseSearch = (record: Readonly<Record<string, string>>) => ({ search: Record.map(record, parseValue) })
