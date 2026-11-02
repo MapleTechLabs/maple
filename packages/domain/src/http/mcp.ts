@@ -6,7 +6,7 @@ import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { warehouseReadHttpErrors } from "./warehouse"
 
-// MCP hub endpoint schemas (`/mcp-servers`, a server's overview and its tool page).
+// MCP hub endpoint schemas (`/mcp-servers`, a server's overview, its tool page and its sessions).
 //
 // Backed by MCP server spans that follow the OpenTelemetry MCP conventions
 // (`docs/mcp-hub-plan.md`), read raw from `traces` by `ch/queries/mcp.ts`.
@@ -206,6 +206,88 @@ export class McpToolResponse extends Schema.Class<McpToolResponse>("McpToolRespo
 	recent: Schema.Array(McpCallItem),
 }) {}
 
+// ---------------------------------------------------------------------------
+// /mcp/:service/sessions
+// ---------------------------------------------------------------------------
+
+export class McpSessionsRequest extends Schema.Class<McpSessionsRequest>("McpSessionsRequest")({
+	service: selectionText,
+	...windowFields,
+	...selectionFields,
+	/** Case-insensitive session-id substring. */
+	search: Schema.optionalKey(selectionText),
+	failingOnly: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export const McpSessionItem = Schema.Struct({
+	sessionId: Schema.String,
+	client: Schema.String,
+	kind: McpClientKind,
+	/** Requests of every method, `initialize` and `tools/list` included. */
+	requests: Schema.Number,
+	calls: Schema.Number,
+	errors: Schema.Number,
+	tools: Schema.Number,
+	firstSeenMs: Schema.Number,
+	lastSeenMs: Schema.Number,
+})
+export type McpSessionItem = typeof McpSessionItem.Type
+
+export class McpSessionsResponse extends Schema.Class<McpSessionsResponse>("McpSessionsResponse")({
+	service: Schema.String,
+	/** Under the selection, failing-only aside. */
+	totals: Schema.Struct({
+		sessions: Schema.Number,
+		failingSessions: Schema.Number,
+		calls: Schema.Number,
+		errors: Schema.Number,
+	}),
+	/** The window's tool calls, and those carrying `mcp.session.id`: none means no sessions view. */
+	toolCalls: Schema.Number,
+	withSession: Schema.Number,
+	/** The latest sessions under the selection, at most the list's limit. */
+	sessions: Schema.Array(McpSessionItem),
+	/** Every client in the window, for the client and kind facets. */
+	allClients: Schema.Array(McpClientItem),
+}) {}
+
+// ---------------------------------------------------------------------------
+// /mcp/:service/sessions/:sessionId
+// ---------------------------------------------------------------------------
+
+export class McpSessionRequest extends Schema.Class<McpSessionRequest>("McpSessionRequest")({
+	service: selectionText,
+	sessionId: selectionText,
+	...windowFields,
+}) {}
+
+export const McpSessionRequestItem = Schema.Struct({
+	timeMs: Schema.Number,
+	method: Schema.String,
+	tool: Schema.NullOr(Schema.String),
+	requestId: Schema.String,
+	durationNs: Schema.Number,
+	errorType: Schema.NullOr(Schema.String),
+	message: Schema.NullOr(Schema.String),
+	traceId: Schema.String,
+	spanId: Schema.String,
+	/** The Agent Session whose trace made this request, when the caller propagated one. */
+	agentSessionId: Schema.NullOr(Schema.String),
+})
+export type McpSessionRequestItem = typeof McpSessionRequestItem.Type
+
+export class McpSessionResponse extends Schema.Class<McpSessionResponse>("McpSessionResponse")({
+	service: Schema.String,
+	sessionId: Schema.String,
+	client: Schema.String,
+	kind: McpClientKind,
+	protocolVersion: Schema.String,
+	/** The session's requests in the window, in order, at most the read's limit. */
+	requests: Schema.Array(McpSessionRequestItem),
+	/** More requests matched than `requests` holds. */
+	isTruncated: Schema.Boolean,
+}) {}
+
 export class McpInternalApiGroup extends HttpApiGroup.make("mcpInternal")
 	.add(
 		HttpApiEndpoint.post("servers", "/servers", {
@@ -225,6 +307,20 @@ export class McpInternalApiGroup extends HttpApiGroup.make("mcpInternal")
 		HttpApiEndpoint.post("tool", "/tool", {
 			payload: McpToolRequest,
 			success: McpToolResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("sessions", "/sessions", {
+			payload: McpSessionsRequest,
+			success: McpSessionsResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("session", "/session", {
+			payload: McpSessionRequest,
+			success: McpSessionResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

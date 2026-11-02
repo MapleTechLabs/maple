@@ -2127,6 +2127,33 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 	{
+		module: "mcp",
+		name: "mcpSessionListQuery",
+		label: "failingAgents",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpSessionListQuery({ kind: "agent", search: "7f3c", failingOnly: true }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpSessionTotalsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpSessionTotalsQuery(), { ...window, serviceName: "maple-ai" }),
+	},
+	{
+		module: "mcp",
+		name: "mcpSessionRequestsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpSessionRequestsQuery(), {
+				...window,
+				serviceName: "maple-ai",
+				sessionId: "7f3c9a2e",
+			}),
+	},
+	{
 		module: "ci-runs",
 		name: "ciRunSeriesQuery",
 		label: "sixHourly",

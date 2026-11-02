@@ -908,6 +908,20 @@ SELECT
         OFFSET 25) AS ranked_sessions
         FORMAT JSON
 
+-- builder:ai-sessions:aiSessionsOfTracesQuery:default
+SELECT
+          ai_trace_index.TraceId AS traceId,
+          if(max(ai_trace_index.SessionId) = '', concat('trace:', ai_trace_index.TraceId), max(ai_trace_index.SessionId)) AS sessionId
+        FROM ai_trace_index
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef')
+        GROUP BY traceId
+        HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0
+        LIMIT 1
+        FORMAT JSON
+
 -- builder:ai-sessions:aiSessionSpansQuery:ai-scope-after-cursor
 SELECT
           traces.TraceId AS traceId,

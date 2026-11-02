@@ -38,6 +38,8 @@ const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 			"McpServers",
 			"McpServer",
 			"McpServerTool",
+			"McpServerSessions",
+			"McpServerSession",
 			"Infra",
 			"InfraCloudflare",
 			"InfraCloudflareZone",

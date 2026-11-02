@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
-import { init, update, widerPreset } from "./update"
+import { hrefOfView, init, routeChanged, tabSearch, update, viewOfRoute, widerPreset } from "./update"
 import { bucketLabel } from "./view"
 
 const context: PageContext = {
@@ -68,6 +68,67 @@ describe("the server page keeps its filters in the URL", () => {
 				update(onTool, Message.ElapsedSearchDebounce({ version: typed.searchVersion }), context),
 			),
 		).toBeUndefined()
+	})
+})
+
+describe("the sessions views", () => {
+	const sessionsPage = (search: Parameters<typeof AppRoute.McpServerSessions>[0]["search"]) =>
+		init(AppRoute.McpServerSessions({ serviceName: "docs-mcp", search }), context).model
+
+	it("round-trips a session id that needs encoding", () => {
+		const route = AppRoute.McpServerSession({ serviceName: "docs-mcp", sessionId: "a/b c", search: {} })
+		const href = hrefOfView(viewOfRoute(route), {})
+		expect(href).toBe("/mcp-servers/docs-mcp/sessions/a%2Fb%20c")
+	})
+
+	it("opens a session with only the time range", () => {
+		const model = sessionsPage({ client: "Cursor", q: "7f3c", failing: true, timePreset: "1w" })
+		expect(
+			navigatedTo(update(model, Message.ClickedOpenSession({ sessionId: "7f3c9a2e" }), context)),
+		).toBe("/mcp-servers/docs-mcp/sessions/7f3c9a2e?timePreset=1w")
+	})
+
+	it("debounces the session-id search into the URL", () => {
+		const typed = update(sessionsPage({}), Message.ChangedSearchInput({ value: " 7f3c " }), context).model
+		expect(
+			navigatedTo(
+				update(typed, Message.ElapsedSearchDebounce({ version: typed.searchVersion }), context),
+			),
+		).toBe("/mcp-servers/docs-mcp/sessions?q=7f3c")
+	})
+
+	it("opens the Agent Session that made a request", () => {
+		const session = init(
+			AppRoute.McpServerSession({ serviceName: "docs-mcp", sessionId: "7f3c", search: {} }),
+			context,
+		).model
+		expect(
+			navigatedTo(
+				update(session, Message.ClickedOpenAgentSession({ sessionId: "trace:abc" }), context),
+			),
+		).toBe("/agent-sessions/trace%3Aabc")
+	})
+
+	it("drops a tool search still being typed when the Sessions tab opens", () => {
+		const typed = update(serverPage({}), Message.ChangedSearchInput({ value: "run" }), context).model
+		const onSessions = routeChanged(
+			typed,
+			AppRoute.McpServerSessions({ serviceName: "maple-ai", search: {} }),
+			context,
+		).model
+		expect(onSessions.searchInput).toBe("")
+		expect(
+			navigatedTo(
+				update(onSessions, Message.ElapsedSearchDebounce({ version: typed.searchVersion }), context),
+			),
+		).toBeUndefined()
+	})
+
+	it("carries the window and client selection between a server's tabs, not the search box", () => {
+		const search = { timePreset: "1w", client: "Cursor", q: "run", metric: "duration" as const }
+		expect(hrefOfView({ _tag: "Sessions", service: "docs-mcp" }, tabSearch(search))).toBe(
+			"/mcp-servers/docs-mcp/sessions?timePreset=1w&client=Cursor",
+		)
 	})
 })
 

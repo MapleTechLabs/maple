@@ -4,30 +4,38 @@ import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view } from "./view"
 
-/** `/mcp-servers`, a server's overview and its tool pages, as one instance: the time range carries across. */
+/** `/mcp-servers`, a server's overview, its tool pages and its sessions, as one instance: the time range carries across. */
 export const page = definePage(
 	"McpServers",
 	{ Model, Message },
 	{
-		routes: ["McpServers", "McpServer", "McpServerTool"],
+		routes: ["McpServers", "McpServer", "McpServerTool", "McpServerSessions", "McpServerSession"],
 		key: () => "mcp-servers",
 		init,
 		update,
 		routeChanged,
 		contextChanged,
 		view,
-		breadcrumbs: (model) =>
-			model.view._tag === "Servers"
-				? [{ label: "MCP servers", isPageHeading: true }]
-				: model.view._tag === "Server"
-					? [{ label: "MCP servers", href: "/mcp-servers" }, { label: model.view.service }]
-					: [
-							{ label: "MCP servers", href: "/mcp-servers" },
-							{
-								label: model.view.service,
-								href: `/mcp-servers/${encodeURIComponent(model.view.service)}`,
-							},
-							{ label: model.view.tool },
-						],
+		breadcrumbs: (model) => {
+			const { view } = model
+			const servers = { label: "MCP servers", href: "/mcp-servers" }
+			if (view._tag === "Servers") return [{ label: "MCP servers", isPageHeading: true }]
+			const server = `/mcp-servers/${encodeURIComponent(view.service)}`
+			switch (view._tag) {
+				case "Server":
+					return [servers, { label: view.service }]
+				case "Tool":
+					return [servers, { label: view.service, href: server }, { label: view.tool }]
+				case "Sessions":
+					return [servers, { label: view.service, href: server }, { label: "Sessions" }]
+				case "Session":
+					return [
+						servers,
+						{ label: view.service, href: server },
+						{ label: "Sessions", href: `${server}/sessions` },
+						{ label: view.sessionId },
+					]
+			}
+		},
 	},
 )
