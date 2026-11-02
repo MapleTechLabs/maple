@@ -1,7 +1,7 @@
 import { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import type { SpanNodeData } from "../trace-data"
+import type { SpanNodeData } from "@maple/views/traces/trace-data"
 import { flatTreeOf } from "./tree"
 
 const traceId = Schema.decodeSync(TraceId)("6843a8853182b32339b2dd5120d423f2")
