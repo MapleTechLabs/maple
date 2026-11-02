@@ -23,7 +23,17 @@ type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
 const value = (h: H, text: string, mono = false): Html =>
-	h.span([h.Class(mono ? typographyClass({ size: "xs", mono: true, truncate: true }) : typographyClass({ size: "sm", truncate: true })), h.Title(text)], [text])
+	h.span(
+		[
+			h.Class(
+				mono
+					? typographyClass({ size: "xs", mono: true, truncate: true })
+					: typographyClass({ size: "sm", truncate: true }),
+			),
+			h.Title(text),
+		],
+		[text],
+	)
 
 const at = (h: H, sha: string, epochMs: number, clock: Clock): Html =>
 	h.span(
@@ -55,7 +65,13 @@ const production = (h: H, finding: DependencyFindingView): ReadonlyArray<Html> =
 							h.span(
 								[h.Class("flex min-w-0 items-center justify-end gap-1.5 text-xs")],
 								[
-									typography(h, { size: "sm", truncate: true, attributes: [h.Title(service.serviceName)] },
+									typography(
+										h,
+										{
+											size: "sm",
+											truncate: true,
+											attributes: [h.Title(service.serviceName)],
+										},
 										[service.serviceName],
 									),
 									h.span(
@@ -65,9 +81,9 @@ const production = (h: H, finding: DependencyFindingView): ReadonlyArray<Html> =
 										],
 										[shortSha(service.commitSha)],
 									),
-									typography(h, { tone: "muted", numeric: true, className: "shrink-0" },
-										[`${formatRate(service.spanCount)} spans/day`],
-									),
+									typography(h, { tone: "muted", numeric: true, className: "shrink-0" }, [
+										`${formatRate(service.spanCount)} spans/day`,
+									]),
 								],
 							),
 						]),
@@ -150,78 +166,74 @@ const triage = (h: H, model: Model, finding: DependencyFindingView, clock: Clock
 		])
 	if (finding.status !== "open")
 		return detailRailGroup(h, "Triage", [
-			vstack(h, { gap: "3" },
-				[
-					h.p(
-						[h.Class("text-sm")],
-						[
-							`${STATUS_FILTER_LABEL[finding.status]}`,
-							...(finding.statusChangedAt === null
-								? []
-								: [
-										" ",
-										relativeTime(h, {
-											value: finding.statusChangedAt,
-											nowMs: clock.nowMs,
-											timeZone: clock.timeZone,
-											variant: "orDate",
-											tooltip: "title",
-											className: "text-muted-foreground",
-										}),
-									]),
-						],
-					),
-					...(finding.statusReason === null
-						? []
-						: [
-								typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" },
-									[finding.statusReason],
-								),
+			vstack(h, { gap: "3" }, [
+				h.p(
+					[h.Class("text-sm")],
+					[
+						`${STATUS_FILTER_LABEL[finding.status]}`,
+						...(finding.statusChangedAt === null
+							? []
+							: [
+									" ",
+									relativeTime(h, {
+										value: finding.statusChangedAt,
+										nowMs: clock.nowMs,
+										timeZone: clock.timeZone,
+										variant: "orDate",
+										tooltip: "title",
+										className: "text-muted-foreground",
+									}),
+								]),
+					],
+				),
+				...(finding.statusReason === null
+					? []
+					: [
+							typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
+								finding.statusReason,
 							]),
+						]),
+				button(
+					h,
+					{
+						variant: "outline",
+						isLoading: model.savingStatus === "open",
+						className: "self-start",
+						attributes: [h.OnClick(Message.ClickedTriage({ status: "open" }))],
+					},
+					["Reopen"],
+				),
+			]),
+		])
+	return detailRailGroup(h, "Triage", [
+		vstack(h, { gap: "3" }, [
+			reasonField(h, model),
+			h.div(
+				[h.Class("flex gap-2")],
+				[
 					button(
 						h,
 						{
 							variant: "outline",
-							isLoading: model.savingStatus === "open",
-							className: "self-start",
-							attributes: [h.OnClick(Message.ClickedTriage({ status: "open" }))],
+							isLoading: model.savingStatus === "dismissed",
+							isDisabled: model.savingStatus !== null,
+							attributes: [h.OnClick(Message.ClickedTriage({ status: "dismissed" }))],
 						},
-						["Reopen"],
+						["Dismiss"],
+					),
+					button(
+						h,
+						{
+							variant: "outline",
+							isLoading: model.savingStatus === "accepted_risk",
+							isDisabled: model.savingStatus !== null,
+							attributes: [h.OnClick(Message.ClickedTriage({ status: "accepted_risk" }))],
+						},
+						["Accept risk"],
 					),
 				],
 			),
-		])
-	return detailRailGroup(h, "Triage", [
-		vstack(h, { gap: "3" },
-			[
-				reasonField(h, model),
-				h.div(
-					[h.Class("flex gap-2")],
-					[
-						button(
-							h,
-							{
-								variant: "outline",
-								isLoading: model.savingStatus === "dismissed",
-								isDisabled: model.savingStatus !== null,
-								attributes: [h.OnClick(Message.ClickedTriage({ status: "dismissed" }))],
-							},
-							["Dismiss"],
-						),
-						button(
-							h,
-							{
-								variant: "outline",
-								isLoading: model.savingStatus === "accepted_risk",
-								isDisabled: model.savingStatus !== null,
-								attributes: [h.OnClick(Message.ClickedTriage({ status: "accepted_risk" }))],
-							},
-							["Accept risk"],
-						),
-					],
-				),
-			],
-		),
+		]),
 	])
 }
 

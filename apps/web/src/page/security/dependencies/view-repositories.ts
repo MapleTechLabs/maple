@@ -293,7 +293,11 @@ const repositoryRow = (
 											h.AriaLabel(`Open ${repository.fullName} on GitHub`),
 											h.Class(
 												cn(
-													typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
+													typographyClass({
+														tone: "muted",
+														hoverTone: "foreground",
+														className: "shrink-0",
+													}),
 													ROW_LINK_LIFT,
 												),
 											),
@@ -336,9 +340,10 @@ const repositoryRow = (
 			tableCell(
 				h,
 				[
-					hstack(h, { gap: "2", justify: "end" },
-						[...scanState(h, scan), scanButton(h, model, repository)],
-					),
+					hstack(h, { gap: "2", justify: "end" }, [
+						...scanState(h, scan),
+						scanButton(h, model, repository),
+					]),
 				],
 				cn("align-top text-right", WIDE_COLUMN),
 			),
@@ -359,9 +364,9 @@ export const repositoriesPanel = (
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Repositories",
-			action: typography(h, { size: "xs", tone: "muted" },
-				["Select a repository for its upgrade plan"],
-			),
+			action: typography(h, { size: "xs", tone: "muted" }, [
+				"Select a repository for its upgrade plan",
+			]),
 		}),
 		table(h, { variant: "bare", ariaLabel: "Repositories" }, [
 			tableHeader(h, [

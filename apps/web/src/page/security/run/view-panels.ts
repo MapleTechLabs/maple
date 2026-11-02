@@ -54,22 +54,37 @@ const unitRow = (h: H, unit: SecurityAuditUnit): Html =>
 			tableCell(
 				h,
 				[
-					vstack(h, { shrink: true, as: "span", attributes: [h.Title(
-								[unit.coverageId, unit.surface, unit.boundary, unit.agentId]
-									.filter((part) => part !== null)
-									.join("\n"),
-							)] },
+					vstack(
+						h,
+						{
+							shrink: true,
+							as: "span",
+							attributes: [
+								h.Title(
+									[unit.coverageId, unit.surface, unit.boundary, unit.agentId]
+										.filter((part) => part !== null)
+										.join("\n"),
+								),
+							],
+						},
 						[
 							h.span(
-								[h.Class(cn(typographyClass({ size: "sm", truncate: true }), unit.stale && typographyClass({ size: "xs", mono: true })))],
+								[
+									h.Class(
+										cn(
+											typographyClass({ size: "sm", truncate: true }),
+											unit.stale && typographyClass({ size: "xs", mono: true }),
+										),
+									),
+								],
 								[unitName(unit)],
 							),
 							...(unit.stale || unitContext(unit) === ""
 								? []
 								: [
-										typography(h, { size: "xs", tone: "muted", truncate: true },
-											[unitContext(unit)],
-										),
+										typography(h, { size: "xs", tone: "muted", truncate: true }, [
+											unitContext(unit),
+										]),
 									]),
 							// Phones drop the results column, so the result rides under the unit.
 							h.span(
@@ -168,13 +183,11 @@ export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Ht
 	])
 
 const ledgerToggle = (h: H, label: string): Html =>
-	strip(h, { kind: "foot" },
-		[
-			textLink(h, { tone: "muted", className: "text-xs underline", onClick: Message.ToggledLedger() }, [
-				label,
-			]),
-		],
-	)
+	strip(h, { kind: "foot" }, [
+		textLink(h, { tone: "muted", className: "text-xs underline", onClick: Message.ToggledLedger() }, [
+			label,
+		]),
+	])
 
 /** Every gap status, as `gapCount` adds them up, so the header and the cells agree. */
 const GAP_SUMMARY = [
@@ -187,9 +200,7 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 	return panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Gaps",
-			action: typography(h, { size: "xs", tone: "muted" },
-				[`${gapCount(run)} units not covered`],
-			),
+			action: typography(h, { size: "xs", tone: "muted" }, [`${gapCount(run)} units not covered`]),
 		}),
 		h.div(
 			[h.Class("grid grid-cols-3 divide-x border-b")],
@@ -217,23 +228,24 @@ const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string): Html => {
 		[h.Key(event.id), h.Class("grid grid-cols-[4.5rem_1fr_auto] gap-3 px-4 py-3 text-xs")],
 		[
 			h.time(
-				[h.Class(typographyClass({ tone: "muted", mono: true, numeric: true })), h.Title(isoOf(event.at))],
+				[
+					h.Class(typographyClass({ tone: "muted", mono: true, numeric: true })),
+					h.Title(isoOf(event.at)),
+				],
 				[formatClock(event.at, timeZone)],
 			),
-			vstack(h, { gap: "0.5", shrink: true, as: "span" },
-				[
-					h.span(
-						[h.Class(cn("text-sm break-words", line.isProblem && "text-severity-warn"))],
-						[line.sentence],
-					),
-					...(line.meta === null || line.meta === ""
-						? []
-						: [typography(h, { tone: "muted", mono: true }, [line.meta])]),
-				],
-			),
-			typography(h, { tone: "muted", mono: true, numeric: true },
-				[event.costUsd === null ? "" : formatUsd(event.costUsd)],
-			),
+			vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
+				h.span(
+					[h.Class(cn("text-sm break-words", line.isProblem && "text-severity-warn"))],
+					[line.sentence],
+				),
+				...(line.meta === null || line.meta === ""
+					? []
+					: [typography(h, { tone: "muted", mono: true }, [line.meta])]),
+			]),
+			typography(h, { tone: "muted", mono: true, numeric: true }, [
+				event.costUsd === null ? "" : formatUsd(event.costUsd),
+			]),
 		],
 	)
 }
@@ -276,9 +288,9 @@ export const eventsPanel = (
 	panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Events",
-			action: typography(h, { size: "xs", tone: "muted" },
-				[isLive(run) ? "Newest first · refreshes every 5 s" : "Newest first"],
-			),
+			action: typography(h, { size: "xs", tone: "muted" }, [
+				isLive(run) ? "Newest first · refreshes every 5 s" : "Newest first",
+			]),
 		}),
 		AsyncData.matchData(model.events.data, {
 			onEmpty: () => placeholderRows(h, 6),
@@ -317,20 +329,18 @@ export const eventsPanel = (
 		}),
 		...(AsyncData.hasData(model.events.data) && model.hasMoreOlder && events.length >= EVENTS_PAGE
 			? [
-					strip(h, { kind: "foot" },
-						[
-							textLink(
-								h,
-								{
-									tone: "muted",
-									className: "text-xs underline",
-									onClick: Message.ClickedLoadOlder(),
-									isDisabled: model.isLoadingOlder,
-								},
-								[model.isLoadingOlder ? "Loading older events…" : "Load older events"],
-							),
-						],
-					),
+					strip(h, { kind: "foot" }, [
+						textLink(
+							h,
+							{
+								tone: "muted",
+								className: "text-xs underline",
+								onClick: Message.ClickedLoadOlder(),
+								isDisabled: model.isLoadingOlder,
+							},
+							[model.isLoadingOlder ? "Loading older events…" : "Load older events"],
+						),
+					]),
 				]
 			: []),
 	])

@@ -379,17 +379,19 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 				// The name is the row's link, stretched over the whole row.
 				rowLink(h, { href, className: hstackClass({ gap: "2.5", shrink: true }) }, [
 					icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-					vstack(h, { shrink: true, as: "span" },
-						[
-							repositoryName(h, target.repository, typographyClass({ size: "sm", weight: "medium" })),
-							metaLine(h, parts, meta),
-							// Phones drop the run and leads columns, so their gist rides here.
-							h.span(
-								[h.Class("mt-1.5 flex flex-wrap items-center gap-2 sm:hidden")],
-								[...(run === undefined ? [] : [runStatusBadge(h, run)]), leads],
-							),
-						],
-					),
+					vstack(h, { shrink: true, as: "span" }, [
+						repositoryName(
+							h,
+							target.repository,
+							typographyClass({ size: "sm", weight: "medium" }),
+						),
+						metaLine(h, parts, meta),
+						// Phones drop the run and leads columns, so their gist rides here.
+						h.span(
+							[h.Class("mt-1.5 flex flex-wrap items-center gap-2 sm:hidden")],
+							[...(run === undefined ? [] : [runStatusBadge(h, run)]), leads],
+						),
+					]),
 				]),
 			]),
 			tableCell(h, [lastRunCell(h, model, run)], WIDE_COLUMN),
@@ -574,20 +576,16 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 							h,
 							runHref(run),
 							[
-								vstack(h, { shrink: true, grow: true, as: "span" },
-									[
-										repositoryName(h, repository, "text-sm"),
-										typography(h, { size: "xs", tone: "muted", truncate: true },
-											[
-												[
-													RUN_KIND_LABEL[run.kind].toLowerCase(),
-													PROFILE_LABEL[run.profile],
-													note,
-												].join(" · "),
-											],
-										),
-									],
-								),
+								vstack(h, { shrink: true, grow: true, as: "span" }, [
+									repositoryName(h, repository, "text-sm"),
+									typography(h, { size: "xs", tone: "muted", truncate: true }, [
+										[
+											RUN_KIND_LABEL[run.kind].toLowerCase(),
+											PROFILE_LABEL[run.profile],
+											note,
+										].join(" · "),
+									]),
+								]),
 								h.span([h.Class("shrink-0")], [runStatusBadge(h, run)]),
 								h.span(
 									[h.Class("w-20 text-right font-mono text-sm tabular-nums")],

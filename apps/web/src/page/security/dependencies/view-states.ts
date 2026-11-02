@@ -4,7 +4,15 @@ import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyFrameClass, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { textLink } from "../../../ui/text-link"
 import { statRail, statRailItem } from "../../kit/stat-rail"

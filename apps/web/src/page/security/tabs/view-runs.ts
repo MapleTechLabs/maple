@@ -58,24 +58,25 @@ const statusCell = (h: H, run: SecurityAuditRun): Html => {
 			: run.status === "failed"
 				? (run.error ?? "could not finish")
 				: stopSummaryOf(run.incompleteReason)
-	return vstack(h, { gap: "1", align: "start", shrink: true },
-		[
-			runStatusBadge(h, run),
-			...(reason === null
-				? []
-				: [
-						h.span(
-							[h.Class("max-w-48 truncate text-xs text-muted-foreground"), h.Title(reason)],
-							[reason],
-						),
-					]),
-		],
-	)
+	return vstack(h, { gap: "1", align: "start", shrink: true }, [
+		runStatusBadge(h, run),
+		...(reason === null
+			? []
+			: [
+					h.span(
+						[h.Class("max-w-48 truncate text-xs text-muted-foreground"), h.Title(reason)],
+						[reason],
+					),
+				]),
+	])
 }
 
 const muted = (h: H, text: string, title?: string): Html =>
 	h.span(
-		[h.Class(typographyClass({ size: "xs", tone: "muted" })), ...(title === undefined ? [] : [h.Title(title)])],
+		[
+			h.Class(typographyClass({ size: "xs", tone: "muted" })),
+			...(title === undefined ? [] : [h.Title(title)]),
+		],
 		[text],
 	)
 
@@ -111,21 +112,19 @@ const findingsCell = (
 const coverageCell = (h: H, run: SecurityAuditRun, detail: SecurityAuditRunDetail | null): Html => {
 	if (detail === null || detail.unitTotal === 0) return muted(h, "")
 	const { closed, total } = coverageOf(detail)
-	return hstack(h, { gap: "2", justify: "end" },
-		[
-			meter(h, {
-				value: closed,
-				max: total,
-				tone: runToneOf(run),
-				className: "w-10",
-				label: `${closed} of ${total} units closed`,
-			}),
-			h.span(
-				[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
-				[`${closed} / ${total}`],
-			),
-		],
-	)
+	return hstack(h, { gap: "2", justify: "end" }, [
+		meter(h, {
+			value: closed,
+			max: total,
+			tone: runToneOf(run),
+			className: "w-10",
+			label: `${closed} of ${total} units closed`,
+		}),
+		h.span(
+			[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
+			[`${closed} / ${total}`],
+		),
+	])
 }
 
 const runRow = (
@@ -148,15 +147,13 @@ const runRow = (
 						[h.Href(href), h.Class(vstackClass({ shrink: true }))],
 						[
 							typography(h, { size: "sm", mono: true }, [`Run ${shortId(run.id)}`]),
-							typography(h, { size: "xs", tone: "muted", truncate: true },
+							typography(h, { size: "xs", tone: "muted", truncate: true }, [
 								[
-									[
-										RUN_KIND_LABEL[run.kind].toLowerCase(),
-										PROFILE_LABEL[run.profile],
-										scopeLabel(run.scopePaths),
-									].join(" · "),
-								],
-							),
+									RUN_KIND_LABEL[run.kind].toLowerCase(),
+									PROFILE_LABEL[run.profile],
+									scopeLabel(run.scopePaths),
+								].join(" · "),
+							]),
 							// Phones drop the target and cost columns, so they ride under the run.
 							h.span(
 								[h.Class("truncate text-xs text-muted-foreground sm:hidden")],
@@ -170,14 +167,12 @@ const runRow = (
 			tableCell(
 				h,
 				[
-					vstack(h, { shrink: true, as: "span" },
-						[
-							repositoryName(h, repository, "text-sm"),
-							typography(h, { size: "xs", tone: "muted", mono: true, truncate: true },
-								[refLabel(run.sourceRef)],
-							),
-						],
-					),
+					vstack(h, { shrink: true, as: "span" }, [
+						repositoryName(h, repository, "text-sm"),
+						typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
+							refLabel(run.sourceRef),
+						]),
+					]),
 				],
 				WIDE_COLUMN,
 			),
@@ -188,7 +183,11 @@ const runRow = (
 				[coverageCell(h, run, latestDetailOf(model, run.id))],
 				cn("text-right", ROOMY_COLUMN),
 			),
-			tableCell(h, [formatUsd(runTotalUsd(run))], cn(typographyClass({ mono: true, numeric: true, className: "text-right" }), WIDE_COLUMN)),
+			tableCell(
+				h,
+				[formatUsd(runTotalUsd(run))],
+				cn(typographyClass({ mono: true, numeric: true, className: "text-right" }), WIDE_COLUMN),
+			),
 			tableCell(
 				h,
 				[

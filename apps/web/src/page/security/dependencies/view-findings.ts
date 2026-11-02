@@ -8,14 +8,30 @@ import { countLabel, formatRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
 import { heading } from "../../../ui/heading"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
 import { pressable } from "../../../ui/pressable"
 import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
-import { clickableRowClass, laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	clickableRowClass,
+	laneTableCell,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "../../../ui/table"
 import { textLink } from "../../../ui/text-link"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
@@ -194,9 +210,9 @@ const productionCell = (
 	return h.span(
 		[h.Class("flex min-w-0 max-w-48 flex-col")],
 		[
-			typography(h, { size: "sm", truncate: true, attributes: [h.Title(busiest.serviceName)] },
-				[others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName],
-			),
+			typography(h, { size: "sm", truncate: true, attributes: [h.Title(busiest.serviceName)] }, [
+				others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName,
+			]),
 			muted(h, `${formatRate(productionSpans(finding))} spans/day`, "tabular-nums"),
 		],
 	)
@@ -241,7 +257,14 @@ const findingRow = (
 						attributes: [h.OnClick(open, { propagation: "Stop" })],
 					},
 					[
-						typography(h, { size: "sm", mono: true, truncate: true, attributes: [h.Title(versionsLabel(finding))] },
+						typography(
+							h,
+							{
+								size: "sm",
+								mono: true,
+								truncate: true,
+								attributes: [h.Title(versionsLabel(finding))],
+							},
 							[finding.packageName],
 						),
 						muted(
@@ -266,7 +289,13 @@ const findingRow = (
 					h.span(
 						[h.Class("flex min-w-0 max-w-64 flex-col")],
 						[
-							typography(h, { size: "sm", truncate: true, attributes: [h.Title(finding.repositoryFullName)] },
+							typography(
+								h,
+								{
+									size: "sm",
+									truncate: true,
+									attributes: [h.Title(finding.repositoryFullName)],
+								},
 								[repositoryName(h, finding.repositoryFullName)],
 							),
 							middleTruncate(h, {
@@ -296,7 +325,11 @@ const findingRow = (
 						timeZone: clock.timeZone,
 						variant: "orDate",
 						tooltip: "title",
-						className: typographyClass({ size: "xs", tone: "muted", className: "whitespace-nowrap" }),
+						className: typographyClass({
+							size: "xs",
+							tone: "muted",
+							className: "whitespace-nowrap",
+						}),
 					}),
 				],
 				cn("whitespace-nowrap text-right", WIDE_COLUMN),

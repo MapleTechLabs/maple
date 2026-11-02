@@ -1,7 +1,15 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyFrameClass, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
 import { activeRepositoriesOf } from "./derive"

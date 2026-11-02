@@ -4,7 +4,14 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyFrameClass,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
@@ -71,12 +78,10 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 	panel(h, { className: "overflow-hidden border-severity-error-a3" }, [
 		panelHeader(h, {
 			className: "bg-severity-error-a1",
-			title: hstack(h, { gap: "2", as: "span" },
-				[
-					icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
-					`${rows.length}${capped ? "+" : ""} probe ${rows.length === 1 && !capped ? "path" : "paths"} answered with a success`,
-				],
-			),
+			title: hstack(h, { gap: "2", as: "span" }, [
+				icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
+				`${rows.length}${capped ? "+" : ""} probe ${rows.length === 1 && !capped ? "path" : "paths"} answered with a success`,
+			]),
 		}),
 		h.p([h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")], [EXPOSED_COPY]),
 		table(h, { ariaLabel: "Probe paths answered with a success" }, [
@@ -145,7 +150,10 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 							tableCell(
 								h,
 								[count(row.requests)],
-								cn(typographyClass({ mono: true, numeric: true, className: "text-right" }), WIDE_COLUMN),
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
+								),
 							),
 							tableCell(h, [lastSeen(h, clock, row.lastSeen)], WIDE_COLUMN),
 							tableCell(
@@ -228,31 +236,29 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 					[h.Class("flex items-center justify-between gap-4 py-2")],
 					[
 						h.span([h.Class("font-medium")], [entry.service]),
-						hstack(h, { gap: "4", as: "span" },
-							[
-								typography(h, { size: "xs", tone: "muted", mono: true, numeric: true },
-									[`${entry.answered} of ${entry.probed} sensitive probe paths answered`],
-								),
-								...(entry.sampleTraceId === ""
-									? []
-									: [
-											textLink(
-												h,
-												{
-													tone: "muted",
-													className: "whitespace-nowrap text-xs",
-													href: hrefOf(
-														AppRoute.Trace({
-															traceId: entry.sampleTraceId,
-															search: {},
-														}),
-													),
-												},
-												["Sample trace"],
-											),
-										]),
-							],
-						),
+						hstack(h, { gap: "4", as: "span" }, [
+							typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+								`${entry.answered} of ${entry.probed} sensitive probe paths answered`,
+							]),
+							...(entry.sampleTraceId === ""
+								? []
+								: [
+										textLink(
+											h,
+											{
+												tone: "muted",
+												className: "whitespace-nowrap text-xs",
+												href: hrefOf(
+													AppRoute.Trace({
+														traceId: entry.sampleTraceId,
+														search: {},
+													}),
+												),
+											},
+											["Sample trace"],
+										),
+									]),
+						]),
 					],
 				),
 			),
@@ -281,9 +287,9 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Categories",
-			action: typography(h, { size: "xs", tone: "muted" },
-				["Answered counts 2xx responses, catch-all routes left out"],
-			),
+			action: typography(h, { size: "xs", tone: "muted" }, [
+				"Answered counts 2xx responses, catch-all routes left out",
+			]),
 		}),
 		table(h, { ariaLabel: "Probe categories" }, [
 			tableHeader(h, [
@@ -302,17 +308,26 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 						h,
 						[
 							tableCell(h, [row.label], "font-medium max-sm:whitespace-normal"),
-							tableCell(h, [count(row.requests)], typographyClass({ mono: true, numeric: true, className: "text-right" })),
+							tableCell(
+								h,
+								[count(row.requests)],
+								typographyClass({ mono: true, numeric: true, className: "text-right" }),
+							),
 							tableCell(h, [answeredCell(h, row)], "text-right"),
 							tableCell(
 								h,
 								[String(row.services)],
-								cn(typographyClass({ mono: true, numeric: true, className: "text-right" }), WIDE_COLUMN),
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
+								),
 							),
 							tableCell(
 								h,
 								[
-									hstack(h, { gap: "1.5", wrap: true, as: "span" },
+									hstack(
+										h,
+										{ gap: "1.5", wrap: true, as: "span" },
 										row.topSignatures.map((signature) =>
 											h.span(
 												[
@@ -379,11 +394,18 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 								],
 								WIDE_COLUMN,
 							),
-							tableCell(h, [count(source.requests)], typographyClass({ mono: true, numeric: true, className: "text-right" })),
+							tableCell(
+								h,
+								[count(source.requests)],
+								typographyClass({ mono: true, numeric: true, className: "text-right" }),
+							),
 							tableCell(
 								h,
 								[String(source.signatures)],
-								cn(typographyClass({ mono: true, numeric: true, className: "text-right" }), WIDE_COLUMN),
+								cn(
+									typographyClass({ mono: true, numeric: true, className: "text-right" }),
+									WIDE_COLUMN,
+								),
 							),
 							tableCell(h, [lastSeen(h, clock, source.lastSeen)], WIDE_COLUMN),
 						],
