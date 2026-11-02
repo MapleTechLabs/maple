@@ -634,7 +634,7 @@
 					{
 						"patterns": [
 							{
-								"regex": "(^|/)(dispatcher|mcp-service-graph)$",
+								"regex": "(^|/)(dispatcher|mcp-service-graph|mcp-tool-graph)$",
 								"allowTypeImports": true,
 								"message": "The tool graph loads lazily through McpToolExecutorLoader; import its types only."
 							}

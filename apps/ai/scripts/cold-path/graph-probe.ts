@@ -14,7 +14,7 @@ export const buildTools = () =>
 	Effect.runPromise(
 		Effect.gen(function* () {
 			const { McpServicesLive } = yield* Effect.promise(
-				() => import("../../src/runtime/mcp-service-graph"),
+				() => import("../../src/runtime/mcp-tool-graph"),
 			)
 			return yield* Layer.build(
 				McpServicesLive.pipe(
