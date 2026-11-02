@@ -9,6 +9,7 @@ import { defineLab } from "../../define"
 import { separator } from "@maple/views/ui/display"
 import { alertSection, cardAndPanelSection, emptySection, itemSection } from "../../kit/display-sections"
 import {
+	errorStateSection,
 	keyValueSection,
 	meterSection,
 	skeletonSection,
@@ -47,6 +48,7 @@ const Message = defineMessageUnion({
 	GotDefaultTabsMessage: { message: Tabs.Message },
 	GotUnderlineTabsMessage: { message: Tabs.Message },
 	GotCopyMessage: { message: CopyButton.Message },
+	ClickedRetry: {},
 })
 type Message = typeof Message.Type
 
@@ -72,6 +74,7 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 				),
 			}
 		},
+		ClickedRetry: () => ({ model }),
 		GotCopyMessage: ({ message }) => {
 			const next = CopyButton.update(model.traceIdCopy, message)
 			return {
@@ -131,6 +134,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			cardAndPanelSection(h),
 			alertSection(h),
 			emptySection(h),
+			errorStateSection(h, Message.ClickedRetry()),
 			itemSection(h),
 			keyValueSection(
 				h,
