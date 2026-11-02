@@ -81,6 +81,24 @@ const servicesPage = (instance: number, isSettled: boolean): PageSlot | null => 
 	].reduce(send, windowed)
 }
 
+describe("a page step that changes nothing", () => {
+	test("keeps the open slot and the parked list", () => {
+		const open = servicesPage(1, true)
+		const ignored = updatePage(
+			open,
+			stamp(
+				Option.getOrThrow(Option.fromNullishOr(open)),
+				Message.UpdatedIncidents({ orgId: otherContext.orgId, incidents: [] }),
+			),
+			context,
+		)
+		expect(ignored.slot).toBe(open)
+		const overview = enterRoute(open, home, context, 2).slot
+		const parked = parkPages([], open, overview)
+		expect(parkPages(parked, overview, overview)).toBe(parked)
+	})
+})
+
 describe("reviving a page left earlier", () => {
 	test("back on the services list, the last rows show at once while it reloads", () => {
 		const left = servicesPage(1, true)

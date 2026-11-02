@@ -282,10 +282,14 @@ export const parkPages = (
 		Array.some(pages, (page) => page.id === left._tag && page.isRevivable) &&
 		!hasLoadInFlight(left.model)
 	const sameSlot = (a: PageSlotBase, b: PageSlotBase) => a._tag === b._tag && a.key === b.key
-	return [...(isLeft ? [left] : []), ...parked]
+	const next = [...(isLeft ? [left] : []), ...parked]
 		.filter((slot) => entered === null || (slot.orgId === entered.orgId && !sameSlot(slot, entered)))
 		.filter((slot, index, all) => all.findIndex((other) => sameSlot(other, slot)) === index)
 		.slice(0, PARKED_PAGES_MAX)
+	// Nothing parked or taken out: the same array, so the root Model can stay the same reference.
+	return next.length === parked.length && next.every((slot, index) => slot === parked[index])
+		? parked
+		: next
 }
 
 /** Link intent (`page/preload.ts`): the route's page's preload Commands, or none. */

@@ -57,6 +57,29 @@ describe("command palette", () => {
 		expect(tracesFor("explore")).toHaveLength(1)
 	})
 
+	test("a re-render with the same inputs reuses the ranked entries; a new query ranks again", () => {
+		const model = typed(loadedWith(["storefront"]), "store").model
+		const first = shownEntries(model, { ...context }, [...ALL_FLAGGED])
+		expect(shownEntries(model, { ...context }, [...ALL_FLAGGED])).toBe(first)
+		const retyped = typed(model, "logs").model
+		expect(shownEntries(retyped, context, ALL_FLAGGED).entries.map((entry) => entry.title)).toContain(
+			"Logs",
+		)
+	})
+
+	test("hovering the row that is already highlighted keeps the palette model", () => {
+		const model = typed(loadedWith([]), "logs").model
+		const hover = (from: Model) =>
+			update(
+				from,
+				Message.GotListMessage({ message: Combobox.Message.HighlightedItem({ index: 1 }) }),
+				context,
+			).model
+		const hovered = hover(model)
+		expect(hovered.list.highlighted).toBe(1)
+		expect(hover(hovered)).toBe(hovered)
+	})
+
 	test("opening reads the services; typing sends nothing", () => {
 		expect(commandNames(open())).toEqual(["LoadPaletteServices"])
 		expect(commandNames(typed(open().model, "logs"))).toEqual([])

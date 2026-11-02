@@ -76,7 +76,7 @@ export const paletteStep = (model: Model, message: PaletteModel.Message): Update
 	// A closing palette only waits for its delay; nothing else reaches it.
 	if (model.palette.isClosing && message._tag !== "ElapsedCloseDelay") return { model }
 	const next = Palette.update(model.palette, message, paletteContextOf(model))
-	const stepped: Model = { ...model, palette: next.model }
+	const stepped: Model = next.model === model.palette ? model : { ...model, palette: next.model }
 	const commands = (next.commands ?? []).map(toPalette)
 	const out = next.outMessage
 	if (out === undefined) return { model: stepped, commands }
