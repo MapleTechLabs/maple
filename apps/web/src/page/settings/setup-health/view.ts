@@ -325,8 +325,7 @@ const passingDisclosure = (
 						}),
 						icon(h, "CircleCheckIcon", { size: 16, className: cn("shrink-0", TONE_TEXT.info) }),
 						typography(h, { size: "sm", weight: "medium" }, [label]),
-						h.span(
-							[h.Class("text-muted-foreground min-w-0 flex-1 text-xs")],
+						typography(h, { size: "xs", tone: "muted", className: "min-w-0 flex-1" },
 							["Checks are skipped only when telemetry could not be read"],
 						),
 					],

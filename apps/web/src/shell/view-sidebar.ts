@@ -71,8 +71,9 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 						],
 						[icon(h, "ServerIcon", { size: 16 })],
 					),
-					h.div(
-						[h.Class("grid flex-1 text-left text-sm leading-tight")],
+					typography(
+						h,
+						{ size: "sm", as: "div", className: "grid text-left leading-tight flex-1" },
 						[
 							typography(h, { weight: "medium", truncate: true }, ["Self Hosted"]),
 							...Option.match(pinnedNamespaceOf(model), {
@@ -164,8 +165,13 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 											onSome: (org) => org.imageUrl,
 										}),
 									),
-									h.div(
-										[h.Class("grid flex-1 text-left text-sm leading-tight")],
+									typography(
+										h,
+										{
+											size: "sm",
+											as: "div",
+											className: "grid text-left leading-tight flex-1",
+										},
 										[
 											typography(
 												h,

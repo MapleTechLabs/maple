@@ -40,6 +40,7 @@ import { CONTROL_GUTTER, fitScale, graphOf, HEADING_GUTTER } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack, hstackClass } from "../../../ui/stack"
+import { typography } from "../../../ui/typography"
 
 // `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
 
@@ -592,7 +593,7 @@ const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 	return hstack(h, { gap: "2.5" },
 		[
 			eyebrow(h, {}, ["Provenance"]),
-			h.span([h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")], [PROVENANCE_HINT]),
+			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [PROVENANCE_HINT]),
 			...(graph.caption
 				? [
 						h.span(
@@ -833,8 +834,7 @@ export const provenanceLoading = (h: H): Html =>
 			hstack(h, { gap: "2.5" },
 				[
 					eyebrow(h, {}, ["Provenance"]),
-					h.span(
-						[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
+					typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" },
 						[PROVENANCE_HINT],
 					),
 					eyebrow(h, { variant: "mono", className: hstackClass({ gap: "1.5", className: "shrink-0" }) }, [

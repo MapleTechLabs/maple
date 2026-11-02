@@ -323,8 +323,13 @@ const clientsCard = (h: H, detail: EndpointDetail, spanCount: number): Html => {
 						.slice(0, 5)
 						.map((agent) =>
 							hstack(h, { gap: "2", attributes: [h.Key(agent.value)] }, [
-								h.span(
-									[h.Class("min-w-0 flex-1 truncate"), h.Title(agent.value)],
+								typography(
+									h,
+									{
+										truncate: true,
+										className: "min-w-0 flex-1",
+										attributes: [h.Title(agent.value)],
+									},
 									[agent.value === "" ? "(no user agent)" : agent.value],
 								),
 								...(agent.count === null || total === 0

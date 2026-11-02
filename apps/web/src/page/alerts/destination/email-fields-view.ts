@@ -42,7 +42,7 @@ const avatar = <M>(h: HtmlBuilder<M>, option: MemberOption | undefined): Html =>
 const memberItem = (h: H, option: MemberOption | undefined, value: string): ReadonlyArray<Html> => [
 	hstack(h, { gap: "2", shrink: true, as: "span" }, [
 		avatar(h, option),
-		h.span([h.Class("min-w-0 flex-1 truncate")], [option?.label ?? value]),
+		typography(h, { truncate: true, className: "min-w-0 flex-1" }, [option?.label ?? value]),
 		...(option?.meta == null
 			? []
 			: [

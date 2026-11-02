@@ -190,15 +190,12 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 			hstack(h, { gap: "2.5" }, [
 				icon(h, "CircleInfoIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 				h.span([h.Class(cn(LABEL, "text-muted-foreground"))], ["Capture changes here"]),
-				h.span(
-					[h.Class("min-w-0 text-muted-foreground text-xs")],
-					[
-						"spans below come from ",
-						note.serviceName ?? "",
-						", which records ",
-						CAPTURES_LABEL[note.captures],
-					],
-				),
+				typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [
+					"spans below come from ",
+					note.serviceName ?? "",
+					", which records ",
+					CAPTURES_LABEL[note.captures],
+				]),
 				h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], []),
 			]),
 		])

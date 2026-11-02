@@ -78,7 +78,11 @@ const stepNode = (h: H, node: FlowNode, isSelected: boolean): ReadonlyArray<Html
 						node.isErrored ? "text-severity-error" : CATEGORY_TEXT[node.category],
 					),
 				}),
-				h.span([h.Class("min-w-0 truncate text-xs"), h.Title(node.title)], [shortTarget(node.title)]),
+				typography(
+					h,
+					{ size: "xs", truncate: true, className: "min-w-0", attributes: [h.Title(node.title)] },
+					[shortTarget(node.title)],
+				),
 				...(node.count > 1
 					? [
 							h.span(

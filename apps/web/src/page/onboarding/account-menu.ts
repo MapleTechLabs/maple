@@ -68,8 +68,9 @@ export const userMenuEntries = (
 					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
 					[
 						userAvatar(h, name),
-						h.div(
-							[h.Class("grid flex-1 text-left text-sm leading-tight")],
+						typography(
+							h,
+							{ size: "sm", as: "div", className: "grid text-left leading-tight flex-1" },
 							[
 								typography(
 									h,

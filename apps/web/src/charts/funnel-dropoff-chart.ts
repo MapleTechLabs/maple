@@ -67,7 +67,7 @@ const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 										[
 											h.Class(
 												cn(
-													"min-w-0 flex-1 truncate",
+													typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
 													entry.ended ? "text-muted-foreground" : "text-foreground-soft",
 												),
 											),

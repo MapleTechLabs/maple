@@ -333,10 +333,9 @@ const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming 
 					ariaLabel: "Query mode",
 					size: "sm",
 				}),
-				h.p(
-					[h.Class("min-w-0 flex-1 text-xs text-muted-foreground")],
-					[model.kindNotice ?? KIND_HINT.get(kind) ?? ""],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "min-w-0 flex-1" }, [
+					model.kindNotice ?? KIND_HINT.get(kind) ?? "",
+				]),
 			]),
 			kind === "builtin"
 				? builtinForm(h, model, form)

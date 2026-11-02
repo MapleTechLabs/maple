@@ -185,7 +185,7 @@ const failedCallRow = (h: H, model: Model, event: SessionToolCall, sessionStartM
 			typography(h, { size: "xs", tone: "muted", mono: true }, [callWhen(event, sessionStartMs)]),
 			...(event.errorDetail === undefined
 				? []
-				: [h.span([h.Class("min-w-0 text-muted-foreground text-xs")], [event.errorDetail])]),
+				: [typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [event.errorDetail])]),
 			button(
 				h,
 				{

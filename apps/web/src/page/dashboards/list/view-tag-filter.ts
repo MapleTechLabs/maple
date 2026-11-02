@@ -7,6 +7,7 @@ import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { isMounted } from "../../../ui/overlay/transition"
 import { hstack } from "../../../ui/stack"
+import { typography } from "../../../ui/typography"
 
 // `TagFilterMenu`'s `MultiSelectCombobox` in `mode="trigger"`: the Tags button, and its popup with
 // the tag search, the tag list and "Clear tags".
@@ -73,7 +74,7 @@ const popup = (
 		anchorSelector: `#${triggerId}`,
 		className: "w-64",
 		renderItem: (tag) => [
-			hstack(h, { gap: "2", shrink: true, as: "span" }, [h.span([h.Class("min-w-0 flex-1 truncate")], [tag])]),
+			hstack(h, { gap: "2", shrink: true, as: "span" }, [typography(h, { truncate: true, className: "min-w-0 flex-1" }, [tag])]),
 		],
 		trigger: {
 			returnFocusId: triggerId,

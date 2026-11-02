@@ -275,10 +275,10 @@ export const signalsCard = (h: H, model: Model, investigation: V2Investigation):
 				[service],
 			),
 			window.label
-				? h.span(
-						[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
-						["· ", window.label],
-					)
+				? typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [
+						"· ",
+						window.label,
+					])
 				: h.span([h.Class("flex-1")]),
 			link(
 				h,

@@ -118,8 +118,7 @@ export const emptyTurnRow = (h: H, chapter: Extract<TranscriptRow, { kind: "empt
 			[
 				icon(h, "DotsIcon", { size: 14, className: "shrink-0" }),
 				h.span([h.Class("shrink-0 font-semibold text-xs")], [turnOrdinal(chapter.turn)]),
-				h.span(
-					[h.Class("min-w-0 truncate text-xs")],
+				typography(h, { size: "xs", truncate: true, className: "min-w-0" },
 					["no agent activity (HTTP/DB work only, see Traces)"],
 				),
 				h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], []),

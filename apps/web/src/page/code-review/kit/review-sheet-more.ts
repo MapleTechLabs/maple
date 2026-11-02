@@ -141,8 +141,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 									],
 									[
 										ciResultBadge(h, run.result, run.attempt, "w-32 shrink-0"),
-										h.span(
-											[h.Class("min-w-0 flex-1 truncate"), h.Title(run.pipeline)],
+										typography(h, { truncate: true, className: "min-w-0 flex-1", attributes: [h.Title(run.pipeline)] },
 											[run.pipeline],
 										),
 										truncatedId(h, {

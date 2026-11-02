@@ -76,7 +76,7 @@ const suggestingInput = (
 							[
 								h.Class(
 									cn(
-										"min-w-0 flex-1 truncate",
+										typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
 										inputs.isMono && typographyClass({ size: "xs", mono: true }),
 									),
 								),

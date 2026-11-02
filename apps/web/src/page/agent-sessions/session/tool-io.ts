@@ -11,7 +11,7 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
 import { clampedBody, payloadCopyButton } from "./transcript-kit"
-import { typographyClass } from "../../../ui/typography"
+import { typography, typographyClass } from "../../../ui/typography"
 import { hstack } from "../../../ui/stack"
 
 // Tool input and output, and its summary: one invocation, both halves, joined by a spine.
@@ -235,7 +235,7 @@ const missingHalf = (h: H, label: string, note: string): Html =>
 				],
 			),
 			eyebrow(h, { variant: "mono", className: "shrink-0 pr-2.5 text-muted-foreground" }, [label]),
-			h.span([h.Class("min-w-0 text-muted-foreground text-xs")], [note]),
+			typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [note]),
 		],
 	)
 
@@ -269,10 +269,9 @@ export const toolIo = (
 						],
 						[icon(h, "ArrowDownIcon", { size: 10 }), icon(h, "ArrowUpIcon", { size: 10 })],
 					),
-					h.span(
-						[h.Class("min-w-0 text-muted-foreground text-xs")],
-						["Payloads not captured. This span records the call's timing and identity only."],
-					),
+					typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [
+						"Payloads not captured. This span records the call's timing and identity only.",
+					]),
 				],
 			),
 		]

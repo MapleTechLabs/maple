@@ -121,7 +121,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 			h.span([h.Class("shrink-0 text-foreground-subtle")], [finding.turnText]),
 			...(finding.detail === undefined
 				? []
-				: [h.span([h.Class("min-w-0 truncate text-muted-foreground")], [finding.detail])]),
+				: [typography(h, { tone: "muted", truncate: true, className: "min-w-0" }, [finding.detail])]),
 			h.span(
 				[
 					h.Class(

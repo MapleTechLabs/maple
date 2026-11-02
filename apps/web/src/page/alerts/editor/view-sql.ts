@@ -270,8 +270,7 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm, timing: Ale
 								["Reduce each window by"],
 							),
 							...parts,
-							h.p(
-								[h.Class("min-w-0 flex-1 text-xs text-muted-foreground")],
+							typography(h, { size: "xs", tone: "muted", as: "p", className: "min-w-0 flex-1" },
 								[
 									"Return a numeric ",
 									inlineCode(h, {}, ["value"]),

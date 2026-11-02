@@ -58,8 +58,7 @@ const selectedRow = (h: H, model: NotifyView, tier: Tier, destination: AlertDest
 		[
 			logo(h, model, destination.type, destination.chatConnector ?? undefined, "flex shrink-0", logoError(destination.type)),
 			middleTruncate(h, { text: primary, tail: 16, className: typographyClass({ size: "sm", weight: "medium" }) }),
-			h.span(
-				[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
+			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" },
 				[...(paused === null ? [] : [h.span([h.Class("text-severity-error")], [paused, " · "])]), secondary],
 			),
 			iconButton(

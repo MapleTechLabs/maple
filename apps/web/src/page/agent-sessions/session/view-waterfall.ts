@@ -39,7 +39,7 @@ import type { Model } from "./model"
 import { CATEGORY_FILL, CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 import { failedBadge } from "./view-kit"
 import { rowHeight, spanHeading, spanTarget, type WaterfallRow, waterfallRowsOf } from "./waterfall-rows"
-import { typographyClass } from "../../../ui/typography"
+import { typography, typographyClass } from "../../../ui/typography"
 import { hstackClass } from "../../../ui/stack"
 
 // The session waterfall: turns, spans and idle gaps on one axis.
@@ -145,14 +145,11 @@ const turnToggle = (h: H, row: Extract<WaterfallRow, { kind: "turn" }>, isCollap
 			eyebrow(h, { className: "shrink-0 text-primary" }, [
 				`${row.turn.anchorKind === "trace" ? "Segment" : "Turn"} ${row.turn.index}`,
 			]),
-			h.span(
-				[h.Class("min-w-0 truncate text-muted-foreground")],
-				[
-					row.turn.label === undefined
-						? h.span([h.Class("italic")], ["no captured message"])
-						: row.turn.label,
-				],
-			),
+			typography(h, { tone: "muted", truncate: true, className: "min-w-0" }, [
+				row.turn.label === undefined
+					? h.span([h.Class("italic")], ["no captured message"])
+					: row.turn.label,
+			]),
 			...(row.turn.failed ? [failedBadge(h)] : []),
 			...(isCollapsed
 				? [
@@ -302,7 +299,11 @@ const spanCell = (
 				: [h.span([h.Class("max-w-[60%] shrink-0 truncate font-medium")], [heading.subject])]),
 			...(span.statusMessage === ""
 				? []
-				: [h.span([h.Class("min-w-0 truncate text-muted-foreground")], [span.statusMessage])]),
+				: [
+						typography(h, { tone: "muted", truncate: true, className: "min-w-0" }, [
+							span.statusMessage,
+						]),
+					]),
 			...(isErrored ? [failedBadge(h, span.genAi.errorType ?? "Error")] : []),
 			...(isDelegated ? [badge(h, { variant: "tag" }, ["Subagent"])] : []),
 		],

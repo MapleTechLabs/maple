@@ -14,7 +14,7 @@ import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
 import { confidenceMeter } from "../kit"
 import { elapsedBetween } from "./derive"
-import { typography } from "../../../ui/typography"
+import { typography, typographyClass } from "../../../ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "../../../ui/stack"
 
 // `VerdictCard` and `RunProgress`: the verdict and the run's progress.
@@ -305,7 +305,7 @@ const runProgress = <M>(
 								[
 									h.Class(
 										cn(
-											"min-w-0 flex-1 truncate",
+											typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
 											isLast && isRunning ? "text-foreground" : "text-muted-foreground",
 										),
 									),

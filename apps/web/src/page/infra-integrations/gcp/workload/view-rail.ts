@@ -37,7 +37,8 @@ const FACT_TONE = {
 const RAIL_LINK =
 	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground-soft hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground"
 
-const label = (h: H, text: string): Html => h.span([h.Class("min-w-0 flex-1 truncate")], [text])
+const label = (h: H, text: string): Html =>
+	typography(h, { truncate: true, className: "min-w-0 flex-1" }, [text])
 
 const chevron = (h: H): Html =>
 	icon(h, "ChevronRightIcon", {

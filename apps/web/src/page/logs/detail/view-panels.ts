@@ -31,6 +31,7 @@ import {
 } from "./panels"
 import { copyStatusOf } from "./update"
 import { hstack } from "../../../ui/stack"
+import { typographyClass } from "../../../ui/typography"
 
 // The log's error banner, context panel and trace timeline.
 
@@ -150,7 +151,7 @@ const contextList = (
 					[
 						h.Class(
 							cn(
-								"min-w-0 flex-1 truncate",
+								typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
 								isCurrent
 									? "text-foreground"
 									: QUIET_SEVERITIES.has(row.severityText.toUpperCase())

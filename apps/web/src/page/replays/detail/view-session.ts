@@ -283,7 +283,7 @@ const envFact = (
 				[
 					h.Class(
 						cn(
-							"min-w-0 truncate text-xs",
+							typographyClass({ size: "xs", truncate: true, className: "min-w-0" }),
 							options.value ? "text-foreground" : "text-muted-foreground",
 							options.className,
 						),

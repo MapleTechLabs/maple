@@ -70,7 +70,7 @@ const groupsSection = <M>(
 									[row.group_key],
 								)
 							: h.span(
-									[h.Class(cn("min-w-0 flex-1 truncate", current && "font-medium"))],
+									[h.Class(cn(typographyClass({ truncate: true, className: "min-w-0 flex-1" }), current && "font-medium"))],
 									[row.group_key],
 								),
 						h.span(
