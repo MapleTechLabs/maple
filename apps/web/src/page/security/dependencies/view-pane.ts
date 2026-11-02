@@ -17,7 +17,7 @@ type H = HtmlBuilder<Message>
 const switcherItem = (h: H, name: string, worst: AdvisorySeverity | null, open: number): Html =>
 	hstack(h, { gap: "2", className: "w-full min-w-0" }, [
 		advisoryDot(h, worst),
-		h.span([h.Class("min-w-0 flex-1 truncate")], [name]),
+		typography(h, { truncate: true, className: "min-w-0 flex-1" }, [name]),
 		typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [String(open)]),
 	])
 

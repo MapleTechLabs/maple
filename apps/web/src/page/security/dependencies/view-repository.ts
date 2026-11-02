@@ -39,57 +39,67 @@ const advisoryNames = (findings: ReadonlyArray<DependencyFindingView>): string =
 		.join(", ")
 
 const bumpCell = (h: H, step: UpgradeStep): Html =>
-	h.span(
-		[h.Class("flex min-w-0 max-w-72 flex-col")],
-		[
+	vstack(h, { gap: "0", shrink: true, as: "span", className: "max-w-72" }, [
+		typography(h, { size: "sm", mono: true, truncate: true, attributes: [h.Title(step.packageName)] }, [
+			step.packageName,
+		]),
+		hstack(h, { gap: "1.5", shrink: true, as: "span" }, [
 			typography(
 				h,
-				{ size: "sm", mono: true, truncate: true, attributes: [h.Title(step.packageName)] },
-				[step.packageName],
+				{
+					size: "xs",
+					mono: true,
+					numeric: true,
+					tone: "muted",
+					truncate: true,
+					attributes: [h.Title(step.installed.join(", "))],
+				},
+				[step.installed.join(", ")],
 			),
-			h.span(
-				[h.Class("flex min-w-0 items-center gap-1.5 font-mono text-xs tabular-nums")],
-				[
-					typography(
-						h,
-						{ tone: "muted", truncate: true, attributes: [h.Title(step.installed.join(", "))] },
-						[step.installed.join(", ")],
-					),
-					...(step.target === null
-						? []
-						: [
-								h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["→"]),
-								h.span([h.Class("shrink-0 text-foreground")], [step.target]),
-							]),
-				],
-			),
-		],
-	)
+			...(step.target === null
+				? []
+				: [
+						typography(h, { size: "xs", tone: "faint", attributes: [h.AriaHidden(true)] }, ["→"]),
+						typography(
+							h,
+							{
+								size: "xs",
+								mono: true,
+								numeric: true,
+								tone: "foreground",
+								className: "shrink-0",
+							},
+							[step.target],
+						),
+					]),
+		]),
+	])
 
 const clearsCell = (h: H, step: UpgradeStep): Html =>
-	h.span(
-		[h.Class("flex flex-col")],
-		[
-			h.span(
-				[h.Class("whitespace-nowrap text-sm"), h.Title(advisoryNames(step.fixes))],
-				[
-					step.target === null
-						? "No fix yet"
-						: countLabel(step.fixes.length, "advisory", "advisories"),
-				],
-			),
-			...(step.unfixed.length === 0 || step.target === null
-				? []
-				: [muted(h, `${step.unfixed.length} with no fix yet`)]),
-		],
-	)
+	vstack(h, { gap: "0", as: "span" }, [
+		typography(
+			h,
+			{ size: "sm", className: "whitespace-nowrap", attributes: [h.Title(advisoryNames(step.fixes))] },
+			[step.target === null ? "No fix yet" : countLabel(step.fixes.length, "advisory", "advisories")],
+		),
+		...(step.unfixed.length === 0 || step.target === null
+			? []
+			: [muted(h, `${step.unfixed.length} with no fix yet`)]),
+	])
 
 const runningCell = (h: H, step: UpgradeStep, notRunning: string): Html => {
 	const [busiest] = step.services
 	return busiest === undefined
 		? muted(h, notRunning)
-		: h.span(
-				[h.Class("flex min-w-0 max-w-48 flex-col"), h.Title(step.services.join(", "))],
+		: vstack(
+				h,
+				{
+					gap: "0",
+					shrink: true,
+					as: "span",
+					className: "max-w-48",
+					attributes: [h.Title(step.services.join(", "))],
+				},
 				[
 					typography(h, { size: "sm", truncate: true }, [
 						step.services.length > 1 ? `${busiest} +${step.services.length - 1}` : busiest,
@@ -128,8 +138,9 @@ const stepAdvisories = (h: H, step: UpgradeStep): Html =>
 			tableCell(
 				h,
 				[
-					h.ul(
-						[h.Class("flex w-0 min-w-full flex-col gap-0.5 py-1 pl-28")],
+					vstack(
+						h,
+						{ gap: "0.5", as: "ul", className: "w-0 min-w-full py-1 pl-28" },
 						[...step.fixes, ...step.unfixed].map((finding) =>
 							h.li(
 								[h.Key(finding.id)],

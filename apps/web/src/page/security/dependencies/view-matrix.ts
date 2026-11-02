@@ -68,15 +68,18 @@ const cell = (h: H, row: PackageRow, repository: DependencyScanRepository, reach
 		step === undefined
 			? []
 			: [
-					h.a(
-						[
-							h.Href(dependenciesHref(repository.id)),
-							h.AriaLabel(cellLabel(row, repository, step)),
-							h.Title(cellLabel(row, repository, step)),
-							h.Class(
-								"inline-flex size-6 items-center justify-center rounded-sm hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
-							),
-						],
+					textLink(
+						h,
+						{
+							href: dependenciesHref(repository.id),
+							tone: "muted",
+							className:
+								"size-6 justify-center rounded-sm hover:bg-surface-sunken active:bg-surface-sunken",
+							attributes: [
+								h.AriaLabel(cellLabel(row, repository, step)),
+								h.Title(cellLabel(row, repository, step)),
+							],
+						},
 						[dotOf(h, step, reachKnown)],
 					),
 				],
@@ -199,16 +202,15 @@ const columnHead = (h: H, repository: DependencyScanRepository): Html =>
 	tableHead(
 		h,
 		[
-			h.a(
-				[
-					h.Href(dependenciesHref(repository.id)),
-					h.AriaLabel(repository.fullName),
-					h.Title(repository.fullName),
-					h.Class(
-						"inline-block max-w-20 truncate align-bottom hover:text-foreground active:text-foreground",
-					),
-				],
-				[shortName(repository.fullName)],
+			textLink(
+				h,
+				{
+					href: dependenciesHref(repository.id),
+					tone: "muted",
+					className: "max-w-20 align-bottom",
+					attributes: [h.AriaLabel(repository.fullName), h.Title(repository.fullName)],
+				},
+				[typography(h, { truncate: true }, [shortName(repository.fullName)])],
 			),
 		],
 		"w-20 text-center",
