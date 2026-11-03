@@ -123,10 +123,17 @@ export const makeAuditAgents = (
 				// Counted per invocation: an answer given without one tool call read nothing.
 				const calls = yield* Ref.make(0)
 				const counted = Ref.update(calls, (n) => n + 1)
-				const executes = execution !== undefined && EXECUTING_ROLES.has(invocation.role)
+				// What the parent promoted during this invocation: the only artifacts a `local` check may cite.
+				const promoted = yield* Ref.make<ReadonlyArray<string>>([])
+				// A retried attempt gets its own uid and scratch: it never sees the failed attempt's files.
+				const attempt = crypto.randomUUID().slice(0, 8)
+				const sandbox: AuditExecutionApi | undefined =
+					execution !== undefined && EXECUTING_ROLES.has(invocation.role)
+						? { run: (agentId, command) => execution.run(`${agentId}-${attempt}`, command) }
+						: undefined
 				const options = { estimateCostMicrousd: reportedCost }
 				// Each invocation is an entry point: one agent run with its own tools and empty history.
-				const result = yield* executes
+				const result = yield* sandbox !== undefined
 					? AgentRuntime.run(
 							executingAgent(invocation.role, model),
 							invocation.prompt,
@@ -135,8 +142,13 @@ export const makeAuditAgents = (
 							// oxlint-disable-next-line effecttsgo/strict-effect-provide
 							Effect.provide(
 								Layer.merge(
-									executionToolHandlers(source, execution, invocation.agentId, counted)
-										.layer,
+									executionToolHandlers(
+										source,
+										sandbox,
+										invocation.agentId,
+										counted,
+										(paths) => Ref.update(promoted, (all) => [...all, ...paths]),
+									).layer,
 									InMemory.layer,
 								),
 							),
@@ -147,9 +159,11 @@ export const makeAuditAgents = (
 								Layer.merge(auditToolHandlers(source, counted).layer, InMemory.layer),
 							),
 						)
+				const promotedPaths = yield* Ref.get(promoted)
 				return {
 					text: result.output,
 					toolCalls: yield* Ref.get(calls),
+					...(promotedPaths.length === 0 ? undefined : { promoted: promotedPaths }),
 					...(result.usage === undefined
 						? undefined
 						: {

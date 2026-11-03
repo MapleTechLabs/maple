@@ -149,6 +149,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const variant = flag("variant")
 	// An override without a variant name would overwrite the default run's results.
 	if (variant === undefined && (profile !== undefined || flag("budget") !== undefined)) return usage()
+	// Executing runs measure something else: they never take the source-only baseline's key.
+	if (variant === undefined && flag("executor") !== undefined) return usage()
 	return {
 		caseFiles: parsed.positional.map((path) => resolve(path)),
 		results,

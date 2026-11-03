@@ -237,6 +237,68 @@ describe("runAudit, execution mode", () => {
 	})
 })
 
+describe("runAudit, local checks", () => {
+	/** A hunter whose checks are all `local`, citing `artifact`, and whose host promoted `promoted`. */
+	const localHunter =
+		(artifact: (agentId: string) => string, promoted: (agentId: string) => ReadonlyArray<string>) =>
+		(i: AgentInvocation) => {
+			if (i.role !== "hunter") return happy()(i)
+			const answer = hunterAnswer(i, ALL)
+			return {
+				text: json({
+					...answer,
+					units: answer.units.map((unit) => ({
+						...unit,
+						checks: unit.checks.map((check) => ({
+							...check,
+							method: "local",
+							artifact: artifact(i.agentId),
+						})),
+					})),
+				}),
+				promoted: promoted(i.agentId),
+			}
+		}
+
+	const available = { execution: { _tag: "Available" as const, limits: "no network" } }
+
+	it("accepts a local check that cites a file the parent promoted for that agent", async () => {
+		const { result, recorded } = await runScripted(
+			baseInput(available),
+			localHunter(
+				(id) => `agents/${id}/artifacts/poc/out.txt`,
+				(id) => [`agents/${id}/artifacts/poc/out.txt`],
+			),
+		)
+		const keys = recorded.ledger.find((unit) => unit.coverage_id === idOf(KEYS))
+		expect([
+			keys?.status,
+			keys?.local_checks[0]?.method,
+			ledgerErrors(Schema.decodeUnknownSync(Ledger)(recorded.ledger)),
+		]).toEqual(["candidate", "local", []])
+		expect(result.findings.map((f) => f.verdict)).toEqual(["confirmed"])
+		expect(
+			recorded.events.some(
+				(e) =>
+					e._tag === "Note" &&
+					e.message.endsWith("promoted agents/hunter-w1-1/artifacts/poc/out.txt"),
+			),
+		).toBe(true)
+	})
+
+	it("reverts a unit whose local check cites anything the parent did not promote", async () => {
+		const { recorded } = await runScripted(
+			baseInput({ ...available, profile: "quick" }),
+			localHunter(
+				(id) => `agents/${id}/artifacts/poc/claimed.txt`,
+				(id) => [`agents/${id}/artifacts/poc/out.txt`],
+			),
+		)
+		expect(recorded.ledger.find((unit) => unit.coverage_id === idOf(KEYS))?.status).not.toBe("candidate")
+		expect(recorded.findings).toEqual([])
+	})
+})
+
 describe("runAudit, record verification", () => {
 	it("applies a material replacement only after a fresh verifier agrees", async () => {
 		const { result, recorded } = await runScripted(

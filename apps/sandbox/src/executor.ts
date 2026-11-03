@@ -28,8 +28,11 @@ export class RegistryGateway extends WorkerEntrypoint<unknown, GatewayProps> {
 
 const REPORT_KEY = `probe:v${EXECUTOR_PROBE_VERSION}`
 
-/** An audit's agents pause between commands to think; this outlasts the longest pause. */
-const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000
+/**
+ * Outlasts reconnaissance and synthesis (no commands, up to 30 minutes after prepare) and agents'
+ * pauses; the run destroys its executor when it ends.
+ */
+const INACTIVITY_TIMEOUT_MS = 90 * 60 * 1000
 
 /** Commands from one run's agents at once. The instance has one vCPU; the rest queue. */
 const CONCURRENT_COMMANDS = 3

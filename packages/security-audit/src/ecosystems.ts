@@ -417,5 +417,5 @@ export const executionProfile = (
 /** The one line a report or the run page shows, e.g. "Source-only review: no execution sandbox for Go yet". */
 export const executionModeLine = (profile: ExecutionProfile): string =>
 	profile.mode === "executable"
-		? `Executable review: target code ran in the execution sandbox${profile.reasons.length === 0 ? "" : ` (${profile.reasons.join("; ")})`}`
+		? `Executable review: hunters and verifiers could run target code in the execution sandbox${profile.reasons.length === 0 ? "" : ` (${profile.reasons.join("; ")})`}`
 		: `Source-only review: ${profile.reasons.join("; ") || "target code was not executed"}`

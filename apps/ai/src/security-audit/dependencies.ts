@@ -67,14 +67,14 @@ export const inspectDependencies = (
 				config.text === undefined ? [] : [[config.path, config.text]],
 			),
 		)
-		// A cut read is a prefix, so its file is uninspected rather than scanned as whole.
+		// A cut read is a prefix, so its file is uninspected rather than scanned as whole. Like a private
+		// dependency, it only says an install may fail, not that nothing can run.
 		const cut = configs.filter((config) => config.cut).map((config) => config.path)
 		const profile = executionProfile(scanDependencies(paths, texts), hasSandbox)
 		return cut.length === 0
 			? profile
 			: {
 					...profile,
-					mode: "source_only" as const,
 					reasons: [
 						...profile.reasons,
 						`config files too large to inspect in full (${cut.join(", ").slice(0, 300)})`,

@@ -106,12 +106,17 @@ const applyHunterResult = (
 		(candidate) => listed.has(candidate.fingerprint) && candidateErrors(candidate).length === 0,
 	)
 	const known = new Set([...valid.map((c) => c.fingerprint), ...s.suppressed.keys()])
+	// A `local` check is evidence only through a file the parent promoted for this agent.
+	const promoted = s.promoted.get(agentId) ?? new Set<string>()
 	const good = result.units.filter(
 		(unit) =>
 			unit.checks.length > 0 &&
-			// Without a parent-promoted artifact a `local` check is not evidence; this run has none.
 			unit.checks.every(
-				(check) => check.agent_id === agentId && check.method === "source" && check.artifact === null,
+				(check) =>
+					check.agent_id === agentId &&
+					(check.method === "source"
+						? check.artifact === null
+						: check.artifact !== null && promoted.has(check.artifact)),
 			) &&
 			unit.candidate_fingerprints.every((fp) => known.has(fp)),
 	)

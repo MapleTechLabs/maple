@@ -259,7 +259,7 @@ describe("executionProfile", () => {
 		]).toEqual([
 			"executable",
 			"executable",
-			"Executable review: target code ran in the execution sandbox (no execution sandbox for Go yet)",
+			"Executable review: hunters and verifiers could run target code in the execution sandbox (no execution sandbox for Go yet)",
 			"source_only",
 		])
 	})

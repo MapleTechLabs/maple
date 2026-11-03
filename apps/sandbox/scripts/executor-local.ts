@@ -177,16 +177,9 @@ execFileSync("docker", ["network", "connect", "--alias", GATEWAY_HOST, NETWORK, 
 Bun.serve({
 	port,
 	idleTimeout: 0,
-	fetch: async (request) => {
-		const route = routes[new URL(request.url).pathname]
-		if (route === undefined || request.method !== "POST")
-			return new Response("Not found", { status: 404 })
-		const body: unknown = await request.json()
-		return Effect.runPromise(
-			route(body).pipe(
-				Effect.catch((error) => Effect.succeed(new Response(String(error), { status: 400 }))),
-			),
-		)
-	},
+	fetch: async (request) =>
+		request.method === "POST"
+			? Effect.runPromise(answer(new URL(request.url).pathname, await request.json()))
+			: new Response("Not found", { status: 404 }),
 })
 console.log(`executor:local serving ${repoDir} on http://127.0.0.1:${port}`)

@@ -5,6 +5,7 @@
  * a prepare in progress, and prepares again when the executor lost its container.
  */
 import {
+	EXECUTOR_LIMITS,
 	type ExecutorCommandInput,
 	ExecutorDestroyRequest,
 	type ExecutorInstall,
@@ -22,7 +23,7 @@ export class ExecutorServiceError extends Schema.TaggedError<ExecutorServiceErro
 	"@maple/backend/sandbox/ExecutorServiceError",
 	{
 		message: Schema.String,
-		reason: Schema.Literals(["no_executor", "prepare_failed", "unavailable"]),
+		reason: Schema.Literals(["no_executor", "prepare_failed", "unavailable", "invalid_command"]),
 	},
 ) {}
 
@@ -83,8 +84,13 @@ export interface ExecutorDeps {
 /** How long a prepare (fetch and installs) may take before the run gives up on executing. */
 export const PREPARE_WAIT = Duration.minutes(22)
 const PREPARE_POLL = Duration.seconds(5)
-/** Headroom over a command's own deadline for the call that carries it. */
-const RUN_HEADROOM = Duration.minutes(2)
+/**
+ * Headroom over a command's own deadline for the call that carries it: the executor runs a few
+ * commands at once, so one may first wait out a full-length command in each slot.
+ */
+const RUN_HEADROOM = Duration.sum(Duration.millis(EXECUTOR_LIMITS.maxTimeoutMs), Duration.minutes(2))
+
+const decodeRunRequest = Schema.decodeUnknownEffect(ExecutorRunRequest)
 
 const unavailable = (message: string) => new ExecutorServiceError({ message, reason: "unavailable" })
 const noExecutor = new ExecutorServiceError({
@@ -94,9 +100,18 @@ const noExecutor = new ExecutorServiceError({
 
 export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 	const { transport } = deps
-	const call = <A>(effect: Effect.Effect<Option.Option<A>, { readonly message: string }>) =>
+	const call = <A>(
+		effect: Effect.Effect<Option.Option<A>, { readonly message: string; readonly cause?: unknown }>,
+	) =>
 		effect.pipe(
-			Effect.mapError((error) => unavailable(error.message)),
+			// The cause carries the decode or HTTP detail the message only names.
+			Effect.mapError((error) =>
+				unavailable(
+					error.cause === undefined
+						? error.message
+						: `${error.message}: ${String(error.cause).slice(0, 300)}`,
+				),
+			),
 			Effect.flatMap(Option.match({ onNone: () => Effect.fail(noExecutor), onSome: Effect.succeed })),
 		)
 
@@ -110,6 +125,11 @@ export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 			const checkout = yield* deps.checkout(orgId, target)
 			const request = new ExecutorPrepareRequest({ executorKey: executorKey(runId), checkout })
 			const answer = yield* call(transport.prepare(request)).pipe(
+				// A transient failure of one poll is waited out like a prepare still running.
+				Effect.retry({
+					while: (error) => error.reason === "unavailable",
+					schedule: Schedule.spaced(deps.preparePoll ?? PREPARE_POLL),
+				}),
 				Effect.repeat({
 					while: (answer) => answer._tag === "ExecutorPreparing",
 					schedule: Schedule.spaced(deps.preparePoll ?? PREPARE_POLL),
@@ -155,14 +175,23 @@ export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 
 	const run: ExecutorServiceApi["run"] = Effect.fn("ExecutorService.run")(
 		function* (orgId, runId, target, command) {
-			const request = new ExecutorRunRequest({
+			// Decoded, not constructed: a command the wire refuses (too long, a NUL) is the agent's to fix.
+			const request = yield* decodeRunRequest({
 				executorKey: executorKey(runId),
 				agentId: executorAgentId(command.agentId),
 				command: command.command,
 				cwd: command.cwd,
 				timeoutMs: command.timeoutMs,
 				promote: command.promote,
-			})
+			}).pipe(
+				Effect.mapError(
+					(error) =>
+						new ExecutorServiceError({
+							message: `the command was not run: ${error.message.slice(0, 300)}`,
+							reason: "invalid_command",
+						}),
+				),
+			)
 			yield* Effect.annotateCurrentSpan({
 				"maple.security_audit.run_id": runId,
 				"maple.security_audit.agent_id": request.agentId,

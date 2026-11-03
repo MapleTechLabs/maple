@@ -36,6 +36,11 @@ export interface AgentAnswer {
 	readonly usage?: AgentUsage
 	/** Tool calls the agent made; absent from answers recorded before it was counted. */
 	readonly toolCalls?: number
+	/**
+	 * Files the parent promoted out of the agent's scratch, as run-relative paths beneath
+	 * `agents/<agent-id>/artifacts/`. Only these back a `local` check.
+	 */
+	readonly promoted?: ReadonlyArray<string>
 }
 
 export class AuditAgentError extends Schema.TaggedError<AuditAgentError>()(

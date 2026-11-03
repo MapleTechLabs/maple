@@ -318,6 +318,8 @@ export const auditWithAgents = <E, R>(
 		const self = yield* store.getRun(payload.runId)
 		// Settled already (by its own settle step, or failed by its starter): a replay must not redo it.
 		if (Option.isSome(self) && self.value.finishedAt !== null) {
+			// An eviction between settle and destroy lands here; destroying again is a no-op.
+			yield* (yield* ExecutorService).destroy(payload.runId)
 			return {
 				status: self.value.status === "complete" ? ("complete" as const) : ("incomplete" as const),
 				invocations: self.value.invocationsSpent,
@@ -390,31 +392,36 @@ export const auditWithAgents = <E, R>(
 		)
 		const executorTarget = { repository: payload.repository, sha }
 		// Prepared once per run before any agent; a failure leaves the run source-only, with why.
-		const prepared =
-			scanned.mode !== "executable"
-				? undefined
-				: yield* durableStep(
-						"prepare-executor",
-						executor.prepare(orgId, payload.runId, executorTarget).pipe(
-							Effect.map((installs) => ({
-								ok: true as const,
-								installs: installs.map(({ dir, manager, outcome, detail }) => ({
-									dir,
-									manager,
-									outcome,
-									detail,
-								})),
+		// A transient one fails the step, so the Workflow retries it before giving up on execution.
+		const prepareAttempted = scanned.mode === "executable"
+		const prepared = !prepareAttempted
+			? undefined
+			: yield* durableStep(
+					"prepare-executor",
+					executor.prepare(orgId, payload.runId, executorTarget).pipe(
+						Effect.map((installs) => ({
+							ok: true as const,
+							installs: installs.map(({ dir, manager, outcome, detail }) => ({
+								dir,
+								manager,
+								outcome,
+								detail,
 							})),
-							Effect.catch((error) =>
-								Effect.succeed({ ok: false as const, error: error.message }),
-							),
+						})),
+						Effect.catchIf(
+							(error) => error.reason !== "unavailable",
+							(error) => Effect.succeed({ ok: false as const, error: error.message }),
 						),
-						PREPARE_STEP,
-					).pipe(
-						Effect.catchCause((cause) =>
+					),
+					PREPARE_STEP,
+				).pipe(
+					// An interrupt is an eviction: the replay prepares again, so it must not read as a failure.
+					Effect.catchCauseIf(
+						(cause) => !Cause.hasInterruptsOnly(cause),
+						(cause) =>
 							Effect.succeed({ ok: false as const, error: Cause.pretty(cause).slice(0, 300) }),
-						),
-					)
+					),
+				)
 		const executionProfile =
 			prepared === undefined || prepared.ok ? scanned : preparedNothing(scanned, prepared.error)
 		const execution: ExecutionPolicy =

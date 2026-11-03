@@ -63,7 +63,10 @@ describe("run_in_sandbox", () => {
 				}),
 			),
 		)
-		const { handlers } = executionToolHandlers(source, execution, "hunter-2")
+		const promoted: Array<string> = []
+		const { handlers } = executionToolHandlers(source, execution, "hunter-2", Effect.void, (paths) =>
+			Effect.sync(() => void promoted.push(...paths)),
+		)
 		const result = await run(
 			handlers.run_in_sandbox({ command: "node poc.js", promote: [{ path: "poc/out.txt" }] }),
 		)
@@ -84,11 +87,14 @@ describe("run_in_sandbox", () => {
 			},
 		])
 		expect(result._tag).toBe("Success")
+		expect(promoted).toEqual(["agents/hunter-2/artifacts/poc/out.txt"])
 		const text = result._tag === "Success" ? result.success : ""
 		expect(text).toContain("exit 1")
 		expect(text).toContain("tenant-b row")
 		expect(text).toContain("--- stderr (90000 bytes, first 32 KiB shown) ---")
-		expect(text).toContain(`poc/out.txt: 13 bytes, sha256 ${"ab".repeat(32)}`)
+		expect(text).toContain(
+			`poc/out.txt: 13 bytes, sha256 ${"ab".repeat(32)}; cite it in a local check as agents/hunter-2/artifacts/poc/out.txt`,
+		)
 	})
 
 	it("clamps the wall clock and promotion limits to the sandbox's own", async () => {

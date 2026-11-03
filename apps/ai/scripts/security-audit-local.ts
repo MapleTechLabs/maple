@@ -390,19 +390,29 @@ const main = async () => {
 							),
 					})
 		const target = { repository: repo, sha }
+		// Every run its own executor: run directories share the name `run` across eval cases.
+		const executorRun = `${repo}-${sha.slice(0, 8)}-${Date.now()}`
+		// A failed prepare leaves the run source-only, as a deployed run does.
 		const installs =
-			executor === undefined ? undefined : yield* executor.prepare(LOCAL_ORG, runId, target)
+			executor === undefined
+				? undefined
+				: yield* executor.prepare(LOCAL_ORG, executorRun, target).pipe(
+						Effect.tapError((error) =>
+							Console.log(`executor not prepared, running source-only: ${error.message}`),
+						),
+						Effect.orElseSucceed(() => undefined),
+					)
 		if (installs !== undefined)
 			yield* Console.log(
 				`executor prepared: ${installs.map((install) => `${install.dir} ${install.manager} ${install.outcome}`).join(", ") || "no lockfile"}`,
 			)
 		const execution: AuditExecutionApi | undefined =
-			executor === undefined
+			executor === undefined || installs === undefined
 				? undefined
 				: {
 						run: (agentId, command) =>
 							executor
-								.run(LOCAL_ORG, runId, target, { ...command, agentId })
+								.run(LOCAL_ORG, executorRun, target, { ...command, agentId })
 								.pipe(
 									Effect.mapError(
 										(error) => new AuditExecutionError({ message: error.message }),
@@ -442,7 +452,7 @@ const main = async () => {
 		return yield* runAudit(input).pipe(
 			// The script composes the engine with its host here, at its entry point.
 			Effect.provide([Layer.succeed(AuditAgents, agents), Layer.succeed(AuditStore, fileStore(out))]),
-			Effect.ensuring(executor === undefined ? Effect.void : executor.destroy(runId)),
+			Effect.ensuring(executor === undefined ? Effect.void : executor.destroy(executorRun)),
 		)
 	})
 	const result = await Effect.runPromise(

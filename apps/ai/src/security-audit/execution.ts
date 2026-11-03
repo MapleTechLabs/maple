@@ -13,7 +13,7 @@ import {
 	ExecutorScratchPath,
 	type ExecutorRunExited,
 } from "@maple/domain/executor"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Semaphore } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import { AUDIT_TOOLKIT, type SourceReaderApi, sourceHandlers, ToolFailure } from "./source"
@@ -95,8 +95,11 @@ const stream = (name: string, text: string, bytes: number) =>
 				text,
 			]
 
+/** Where the run keeps an agent's promoted file, as a `local` check cites it. */
+export const artifactPath = (agentId: string, path: string) => `agents/${agentId}/artifacts/${path}`
+
 /** The command's answer as the model reads it. */
-export const renderRun = (result: ExecutorRunExited): string =>
+export const renderRun = (agentId: string, result: ExecutorRunExited): string =>
 	[
 		`exit ${result.exitCode}${result.timedOut ? " (killed at its wall clock)" : ""}, ${result.wallTimeMs} ms`,
 		...stream("stdout", result.stdout, result.stdoutBytes),
@@ -107,7 +110,7 @@ export const renderRun = (result: ExecutorRunExited): string =>
 					"--- promoted ---",
 					...result.promoted.map(
 						(artifact) =>
-							`${artifact.path}: ${artifact.bytes} bytes, sha256 ${artifact.sha256}\n${artifact.preview}`,
+							`${artifact.path}: ${artifact.bytes} bytes, sha256 ${artifact.sha256}; cite it in a local check as ${artifactPath(agentId, artifact.path)}\n${artifact.preview}`,
 					),
 				]),
 		...(result.rejected.length === 0
@@ -120,15 +123,18 @@ export const renderRun = (result: ExecutorRunExited): string =>
 
 /**
  * The read tools plus `run_in_sandbox` for one agent. `onCall` counts every tool call, as for
- * the read-only toolkit.
+ * the read-only toolkit; `onPromoted` receives each file the parent promoted, as a check cites it.
  */
 export const executionToolHandlers = (
 	source: SourceReaderApi,
 	execution: AuditExecutionApi,
 	agentId: string,
 	onCall: Effect.Effect<void> = Effect.void,
-) =>
-	toolHandlersWithContent(
+	onPromoted: (paths: ReadonlyArray<string>) => Effect.Effect<void> = () => Effect.void,
+) => {
+	// One command at a time per agent: parallel tool calls would only queue in the executor's slots.
+	const oneAtATime = Semaphore.makeUnsafe(1)
+	return toolHandlersWithContent(
 		EXECUTION_TOOLKIT,
 		EXECUTION_TOOLKIT.of({
 			...sourceHandlers(source, onCall),
@@ -157,20 +163,24 @@ export const executionToolHandlers = (
 						return yield* Effect.fail<ToolFailure>({
 							message: `promote at most ${EXECUTOR_LIMITS.promotedFiles} files per command`,
 						})
-					const result = yield* execution
-						.run(agentId, {
-							command,
-							cwd: cwd ?? "checkout",
-							timeoutMs:
-								clamp(
-									timeout_seconds ?? EXECUTOR_LIMITS.defaultTimeoutMs / 1000,
-									1,
-									EXECUTOR_LIMITS.maxTimeoutMs / 1000,
-								) * 1000,
-							promote: promotions,
-						})
+					const result = yield* oneAtATime
+						.withPermits(1)(
+							execution.run(agentId, {
+								command,
+								cwd: cwd ?? "checkout",
+								timeoutMs:
+									clamp(
+										timeout_seconds ?? EXECUTOR_LIMITS.defaultTimeoutMs / 1000,
+										1,
+										EXECUTOR_LIMITS.maxTimeoutMs / 1000,
+									) * 1000,
+								promote: promotions,
+							}),
+						)
 						.pipe(Effect.mapError((error): ToolFailure => ({ message: error.message })))
-					return renderRun(result)
+					yield* onPromoted(result.promoted.map((artifact) => artifactPath(agentId, artifact.path)))
+					return renderRun(agentId, result)
 				}),
 		}),
 	)
+}

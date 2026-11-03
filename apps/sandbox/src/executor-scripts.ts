@@ -69,6 +69,22 @@ const cgroup = (name: string, limits: ReadonlyArray<readonly [string, string]>) 
 	].join("\n")
 
 /**
+ * Every world-writable directory outside the run's own trees (`/run/lock` in today's image, besides
+ * `/tmp` and `/var/tmp`), found once per container so a directory the platform adds is covered
+ * too. Written whole or not at all, so an interrupted scan is redone rather than trusted.
+ */
+const SHARED_WRITABLE = "/run/maple-shared-writable"
+const FIND_SHARED_WRITABLE = `[ -e ${SHARED_WRITABLE} ] || { find / \\( -path /proc -o -path /sys -o -path /dev -o -path /work -o -path /audit \\) -prune -o -type d -perm -0002 -print 2>/dev/null > ${SHARED_WRITABLE}.tmp && mv ${SHARED_WRITABLE}.tmp ${SHARED_WRITABLE}; } || exit 3`
+/** What a jailed process sees in place of each shared writable directory. */
+const SHARED_DIRS = `/tmp /var/tmp /dev/shm $(cat ${SHARED_WRITABLE})`
+
+/** Kills every process left in a cgroup and waits until none is. */
+const reap = (name: string) =>
+	`echo 1 > ${CGROUP}/${name}/cgroup.kill 2>/dev/null; for _ in $(seq 100); do [ -z "$(cat ${CGROUP}/${name}/cgroup.procs 2>/dev/null)" ] && break; sleep 0.1; done`
+
+const drained = (name: string) => `[ -z "$(cat ${CGROUP}/${name}/cgroup.procs 2>/dev/null)" ]`
+
+/**
  * One line per lockfile directory, `depth<TAB>dir<TAB>manager`, from `git ls-files` output. A
  * directory with several lockfiles installs with the first of bun, pnpm, npm, yarn; anything under
  * `node_modules` is vendored and skipped.
@@ -120,17 +136,21 @@ export const prepareScript = (sha: string): string => {
 		`NPM_CONFIG_REGISTRY=${GATEWAY_NPM}`,
 		`BUN_CONFIG_REGISTRY=${GATEWAY_NPM}`,
 	].join(" ")
-	const asPrepare = `prlimit --fsize=${2 * 1024 * 1024 * 1024} --nofile=8192 --core=0 -- ${dropTo(String(PREPARE_UID))} env -i ${environment}`
+	// Each command that reads target-controlled input: in the prepare cgroup, its own pid and mount
+	// namespaces (private temporary directories; nothing it starts outlives it), then unprivileged.
+	const jail = `${CGROUP}/maple-prepare/cgroup.procs`
+	const inner = `for d in ${SHARED_DIRS}; do mount -t tmpfs -o size=1g,mode=1777 tmpfs "$d" || exit 1; done; exec "$@"`
+	const asPrepare = `sh -c 'echo $$ > ${jail} && exec "$@"' sh unshare --mount --pid --fork --kill-child --mount-proc -- sh -c ${shellQuote(inner)} sh prlimit --fsize=${2 * 1024 * 1024 * 1024} --nofile=8192 --core=0 -- ${dropTo(String(PREPARE_UID))} env -i ${environment}`
 	const registry = shellQuote(GATEWAY_NPM)
 	return [
 		"set -u",
 		"umask 022",
 		CGROUP_SETUP,
+		FIND_SHARED_WRITABLE,
 		cgroup("maple-prepare", [
 			["memory.max", String(4 * 1024 * 1024 * 1024)],
 			["pids.max", "1024"],
 		]),
-		`echo $$ > ${CGROUP}/maple-prepare/cgroup.procs || exit 3`,
 		`mkdir -p ${CHECKOUT_DIR} ${CACHE_DIR}/home || exit 4`,
 		`chown ${PREPARE_UID}:${PREPARE_UID} ${CHECKOUT_DIR} ${CACHE_DIR} ${CACHE_DIR}/home || exit 4`,
 		`cd ${CHECKOUT_DIR} || exit 4`,
@@ -144,13 +164,15 @@ export const prepareScript = (sha: string): string => {
 		`  log=${PREPARE_STATE_DIR}/install.log; : > "$log"; outcome=failed`,
 		'  case "$manager" in',
 		`    npm) (cd "$dir" && ${asPrepare} npm ci --ignore-scripts --no-audit --no-fund --registry=${registry}) >"$log" 2>&1 && outcome=installed ;;`,
-		`    pnpm) (cd "$dir" && ${asPrepare} pnpm install --frozen-lockfile --ignore-scripts --registry=${registry} --store-dir=${CACHE_DIR}/pnpm --config.manage-package-manager-versions=false) >"$log" 2>&1 && outcome=installed ;;`,
+		`    pnpm) (cd "$dir" && ${asPrepare} pnpm install --frozen-lockfile --ignore-scripts --registry=${registry} --ignore-pnpmfile --store-dir=${CACHE_DIR}/pnpm --config.manage-package-manager-versions=false) >"$log" 2>&1 && outcome=installed ;;`,
 		`    bun) (cd "$dir" && ${asPrepare} bun install --frozen-lockfile --ignore-scripts) >"$log" 2>&1 && outcome=installed ;;`,
 		'    *) echo "yarn lockfiles are not installed yet" >"$log"; outcome=skipped ;;',
 		"  esac",
 		`  ${INSTALL_LINE}`,
 		`done < ${PREPARE_STATE_DIR}/plan`,
 		// From here on nothing the target controls may change the checkout or what it installed.
+		reap("maple-prepare"),
+		`${drained("maple-prepare")} || exit 15`,
 		`chown -R 0:0 ${CHECKOUT_DIR} && chmod -R a+rX,go-w ${CHECKOUT_DIR} || exit 14`,
 		`rm -rf ${CACHE_DIR}`,
 		`echo ${shellQuote(sha)} > ${PREPARE_STATE_DIR}/sha`,
@@ -240,14 +262,6 @@ const agentDir = (agentId: string) => `${AUDIT_DIR}/agents/${agentId}`
 export const agentScratch = (agentId: string) => `${agentDir(agentId)}/scratch`
 const agentArtifacts = (agentId: string) => `${agentDir(agentId)}/artifacts`
 
-/**
- * Every world-writable directory outside the run's own trees (`/tmp`, `/var/tmp`, `/run/lock` in
- * today's image), found once per container so a directory the platform adds is covered too. Each
- * is bound to the agent's scratch inside its mount namespace.
- */
-const SHARED_WRITABLE = "/run/maple-shared-writable"
-const FIND_SHARED_WRITABLE = `[ -s ${SHARED_WRITABLE} ] || find / \\( -path /proc -o -path /sys -o -path /dev -o -path /work -o -path /audit \\) -prune -o -type d -perm -0002 -print 2>/dev/null > ${SHARED_WRITABLE}`
-
 export interface RunScriptInput {
 	readonly agentId: string
 	readonly callId: string
@@ -282,7 +296,7 @@ export const runScript = (input: RunScriptInput): string => {
 	const cwd = input.cwd === "checkout" ? CHECKOUT_DIR : scratch
 	const inner = [
 		"ip link set lo up || exit 1",
-		`for d in /dev/shm $(cat ${SHARED_WRITABLE}); do mount --bind ${scratch}/.tmp "$d" || exit 1; done`,
+		`for d in ${SHARED_DIRS}; do mount --bind ${scratch}/.tmp "$d" || exit 1; done`,
 		`mount --bind ${CHECKOUT_DIR} ${CHECKOUT_DIR} && mount -o remount,bind,ro ${CHECKOUT_DIR} || exit 1`,
 		`cd ${cwd} || exit 1`,
 		`: > ${c}/started`,
@@ -296,17 +310,19 @@ export const runScript = (input: RunScriptInput): string => {
 		`mkdir -p ${AUDIT_DIR}/agents ${AUDIT_DIR}/calls && chmod 711 ${AUDIT_DIR} ${AUDIT_DIR}/agents && chmod 700 ${AUDIT_DIR}/calls || exit 2`,
 		// The agent's uid is its position in creation order, claimed under a lock.
 		`exec 9> ${AUDIT_DIR}/agents.lock && flock 9 || exit 2`,
+		// A counter, never a count of directories: a uid is never handed out twice.
 		`if [ ! -s ${a}/uid ]; then`,
 		`  mkdir -p -m 711 ${a} || exit 2`,
-		`  u=$((${AGENT_UID_BASE} + $(ls -1 ${AUDIT_DIR}/agents | wc -l)))`,
+		`  n=$(( $(cat ${AUDIT_DIR}/next-uid 2>/dev/null || echo ${AGENT_UID_BASE}) + 1 )) && echo "$n" > ${AUDIT_DIR}/next-uid && echo "$n" > ${a}/uid || exit 2`,
+		"fi",
+		`u=$(cat ${a}/uid)`,
+		`if ! mountpoint -q ${scratch}; then`,
 		`  mkdir -p -m 700 ${scratch} ${agentArtifacts(input.agentId)} || exit 2`,
 		`  mount -t tmpfs -o size=${EXECUTOR_LIMITS.scratchBytes},mode=0700,uid=$u,gid=$u tmpfs ${scratch} || exit 2`,
 		`  install -d -m 700 -o "$u" -g "$u" ${scratch}/.home ${scratch}/.tmp ${scratch}/.cache || exit 2`,
-		`  echo "$u" > ${a}/uid`,
 		"fi",
 		FIND_SHARED_WRITABLE,
 		"flock -u 9; exec 9>&-",
-		`u=$(cat ${a}/uid)`,
 		CGROUP_SETUP,
 		cgroup(`maple-agent-${input.agentId}`, [
 			["memory.max", String(EXECUTOR_LIMITS.memoryBytes)],
@@ -316,9 +332,8 @@ export const runScript = (input: RunScriptInput): string => {
 		`(echo $BASHPID > ${g}/cgroup.procs && exec timeout --kill-after=5 ${seconds} unshare --net --mount --pid --ipc --uts --fork --kill-child --mount-proc -- sh -c ${shellQuote(inner)} sh "$u") > ${c}/out 2> ${c}/err < /dev/null`,
 		"rc=$?",
 		// Nothing the command started may outlive it: promotion reads scratch only after this.
-		`echo 1 > ${g}/cgroup.kill 2>/dev/null`,
-		`for _ in $(seq 50); do [ -z "$(cat ${g}/cgroup.procs 2>/dev/null)" ] && break; sleep 0.1; done`,
-		`if [ -e ${c}/started ]; then state=started; else state=setup-failed; fi`,
+		reap(`maple-agent-${input.agentId}`),
+		`if [ ! -e ${c}/started ]; then state=setup-failed; elif ${drained(`maple-agent-${input.agentId}`)}; then state=started; else state=unreaped; fi`,
 		`ob=$(wc -c < ${c}/out) && eb=$(wc -c < ${c}/err)`,
 		`head -c ${limit} ${c}/out`,
 		`head -c ${limit} ${c}/err >&2`,
@@ -328,7 +343,8 @@ export const runScript = (input: RunScriptInput): string => {
 }
 
 export interface RunTrailer {
-	readonly state: "started" | "setup-failed" | "not-prepared"
+	/** `unreaped`: it ran, but a process of it could not be stopped, so nothing may be promoted. */
+	readonly state: "started" | "unreaped" | "setup-failed" | "not-prepared"
 	readonly exitCode: number
 	readonly stdoutBytes: number
 	readonly stderrBytes: number
@@ -346,7 +362,10 @@ export const parseRunOutput = (
 		.split(/\s+/u)
 	const [exitCode, stdoutBytes, stderrBytes] = numbers.map(Number)
 	if (
-		(state !== "started" && state !== "setup-failed" && state !== "not-prepared") ||
+		(state !== "started" &&
+			state !== "unreaped" &&
+			state !== "setup-failed" &&
+			state !== "not-prepared") ||
 		exitCode === undefined ||
 		stdoutBytes === undefined ||
 		stderrBytes === undefined ||
