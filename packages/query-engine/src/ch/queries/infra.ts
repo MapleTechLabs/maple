@@ -18,7 +18,7 @@
 
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { inSubquery, param } from "@maple-dev/effect-orm/clickhouse"
+import { defineUntypedFn, inSubquery, param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, fromUnion, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
@@ -52,8 +52,21 @@ const hostCpuPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
 		CH.lit(0),
 	)
 
-// Read-only and virtual mounts (snap squashfs, container overlays) always report ~100%.
-const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs", "erofs"] as const
+// Read-only and virtual mounts (snap squashfs, container overlays, macOS devfs, optical
+// drives) always report ~100%.
+const PSEUDO_FS_TYPES = [
+	"squashfs",
+	"overlay",
+	"tmpfs",
+	"devtmpfs",
+	"iso9660",
+	"ramfs",
+	"erofs",
+	"devfs",
+	"autofs",
+	"CDFS",
+	"UDF",
+] as const
 
 interface AttributeMap {
 	get(key: string): CH.Expr<string>
@@ -134,9 +147,14 @@ function filesystemUsedFractionPoints(hosts: HostFilter) {
 	return fromUnion(unionAll(fromUsage, fromUtilization), "filesystem_points")
 }
 
+// A host's mounts are scraped together, so a mount whose newest reading is older than the
+// host's newest by more than this stopped reporting (detached, unmounted, a second shipper).
+const STALE_MOUNT_SECONDS = 60
+
 /**
  * Headline disk %: the fullest real mount per host, at its latest reading. Each mount keeps
- * only its latest value per state, so the cost stays at hosts × mounts however wide the window.
+ * only its newest reading across both metrics, so the cost stays at hosts × mounts however
+ * wide the window, and mounts that stopped reporting before the host's last scrape drop out.
  */
 function hostDiskPctQuery(hosts: HostFilter) {
 	const latestUsage = from(MetricsSum)
@@ -144,6 +162,7 @@ function hostDiskPctQuery(hosts: HostFilter) {
 			...mountKey($),
 			state: filesystemAttr($.Attributes, "state"),
 			bytes: CH.argMax($.Value, $.TimeUnix),
+			sampleTime: CH.max_($.TimeUnix),
 		}))
 		.where(($) => usageFilters($, hosts))
 		.groupBy("hostName", "mountpoint", "device", "state")
@@ -153,17 +172,44 @@ function hostDiskPctQuery(hosts: HostFilter) {
 			hostName: $.hostName,
 			mountpoint: $.mountpoint,
 			device: $.device,
+			sampleTime: CH.max_($.sampleTime),
 			usedFraction: finiteOrZero(CH.sumIf($.bytes, $.state.eq("used")).div(CH.sum($.bytes))),
 		}))
 		.groupBy("hostName", "mountpoint", "device")
 
 	const fromUtilization = from(MetricsGauge)
-		.select(($) => ({ ...mountKey($), usedFraction: CH.argMax($.Value, $.TimeUnix) }))
+		.select(($) => ({
+			...mountKey($),
+			sampleTime: CH.max_($.TimeUnix),
+			usedFraction: CH.argMax($.Value, $.TimeUnix),
+		}))
 		.where(($) => utilizationFilters($, hosts))
 		.groupBy("hostName", "mountpoint", "device")
 
-	return fromUnion(unionAll(fromUsage, fromUtilization), "latest_mounts")
-		.select(($) => ({ hostName: $.hostName, diskPct: CH.max_($.usedFraction) }))
+	const latestMounts = fromUnion(unionAll(fromUsage, fromUtilization), "mount_readings")
+		.select(($) => ({
+			hostName: $.hostName,
+			mountpoint: $.mountpoint,
+			device: $.device,
+			sampleTime: CH.max_($.sampleTime),
+			usedFraction: CH.argMax($.usedFraction, $.sampleTime),
+		}))
+		.groupBy("hostName", "mountpoint", "device")
+
+	const withHostLatest = fromQuery(latestMounts, "latest_mounts").select(($) => ({
+		hostName: $.hostName,
+		usedFraction: $.usedFraction,
+		sampleTime: $.sampleTime,
+		hostLatest: CH.over(CH.max_($.sampleTime), CH.windowSpec({ partitionBy: [$.hostName] })),
+	}))
+
+	return fromQuery(withHostLatest, "current_mounts")
+		.select(($) => ({
+			hostName: $.hostName,
+			diskPct: finiteOrZero(
+				CH.maxIf($.usedFraction, $.sampleTime.gte(CH.intervalSub($.hostLatest, STALE_MOUNT_SECONDS))),
+			),
+		}))
 		.groupBy("hostName")
 }
 
@@ -213,7 +259,7 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 			),
 		])
 		.groupBy("hostName")
-		.orderBy(["lastSeen", "desc"])
+		.orderBy(["lastSeen", "desc"], ["hostName", "asc"])
 		.limit(opts.limit ?? 200)
 		.offset(opts.offset ?? 0)
 
@@ -234,7 +280,7 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 			diskPct: finiteOrZero($.disk.diskPct),
 			load15: $.load15,
 		}))
-		.orderBy(["lastSeen", "desc"])
+		.orderBy(["lastSeen", "desc"], ["hostName", "asc"])
 		.format("JSON")
 }
 
@@ -384,17 +430,17 @@ export interface HostNetworkTimeseriesOutput {
 
 const LOOPBACK_DEVICES = ["lo", "lo0"] as const
 
+const mapSort = defineUntypedFn<[CH.Expr<unknown>]>("mapSort")
+
 // Reaches the sample before the range at the default 60s scrape and a few missed scrapes.
 const NETWORK_LOOKBACK_SECONDS = 600
 
 export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 	const deltas = from(MetricsSum)
 		.select(($) => {
-			const attributesHash = CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes))
-			const resourceHash = CH.cityHash64(
-				CH.mapKeys($.ResourceAttributes),
-				CH.mapValues($.ResourceAttributes),
-			)
+			// Sorted, so a sender that reorders a point's attributes keeps one series.
+			const attributesHash = CH.cityHash64(mapSort($.Attributes))
+			const resourceHash = CH.cityHash64(mapSort($.ResourceAttributes))
 			const previousSample = CH.windowSpec({
 				partitionBy: [$.ServiceName, attributesHash, resourceHash],
 				orderBy: [[$.TimeUnix, "asc"]],
@@ -490,11 +536,11 @@ export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
 	return filesystemUsedFractionPoints((hostName) => hostName.eq(opts.hostName))
 		.select(($) => ({
 			mountpoint: $.mountpoint,
-			device: CH.any_($.device),
+			device: $.device,
 			usedAvg: finiteOrZero(CH.avg($.usedFraction)),
 			usedMax: CH.ifNotFinite(CH.max_($.usedFraction), 0),
 		}))
-		.groupBy("mountpoint")
+		.groupBy("mountpoint", "device")
 		.orderBy(["usedMax", "desc"])
 		.limit(opts.limit ?? 20)
 		.format("JSON")

@@ -63,6 +63,7 @@ const usage = (
 
 const rootFs = { device: "/dev/sda1", mountpoint: "/", type: "ext4", mode: "rw" }
 const snapFs = { device: "/dev/loop0", mountpoint: "/snap/core", type: "squashfs", mode: "ro" }
+const dataFs = { mountpoint: "/data", type: "ext4", mode: "rw" }
 const semconvFs = {
 	"system.device": "/dev/sdb1",
 	"system.filesystem.mountpoint": "/data",
@@ -84,6 +85,43 @@ const filesystemPoints: ReadonlyArray<Point> = [
 		free: 70,
 		reserved: 5,
 	}),
+	// /data moved from sdc1 (95% at the first scrape) to sdd1; only the current mounts count.
+	...usage("remount-host", scrapeA, { ...dataFs, device: "/dev/sdc1" }, "state", {
+		used: 95,
+		free: 5,
+		reserved: 0,
+	}),
+	...usage("remount-host", scrapeB, { ...dataFs, device: "/dev/sdd1" }, "state", {
+		used: 10,
+		free: 90,
+		reserved: 0,
+	}),
+	...usage("remount-host", scrapeB, rootFs, "state", { used: 20, free: 80, reserved: 0 }),
+	// Utilization stopped at 95% after the first scrape; usage still reports 40%.
+	...usage("mixed-host", scrapeB, rootFs, "state", { used: 40, free: 60, reserved: 0 }),
+	// macOS reports devfs with nothing free next to the real APFS volume.
+	...usage(
+		"mac-host",
+		scrapeB,
+		{ device: "devfs", mountpoint: "/dev", type: "devfs", mode: "rw" },
+		"state",
+		{
+			used: 100,
+			free: 0,
+			reserved: 0,
+		},
+	),
+	...usage(
+		"mac-host",
+		scrapeB,
+		{ device: "/dev/disk3s1", mountpoint: "/", type: "apfs", mode: "rw" },
+		"state",
+		{
+			used: 30,
+			free: 70,
+			reserved: 0,
+		},
+	),
 	// Another tenant's full disk on the same host name must not leak in.
 	...usage("receiver-host", scrapeB, rootFs, "state", { used: 99, free: 1, reserved: 0 }, "org_other"),
 ]
@@ -149,15 +187,29 @@ const deltaNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 60 }, (_, 
 		delta: true,
 	}))
 
+// A sender that flips the order of eth0's attributes every scrape: still one 100 B/s series.
+const reorderedNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_, index) => ({
+	host: "reorder-host",
+	metric: "system.network.io",
+	ms: START_MS - 10 * MINUTE_MS + 30_000 + index * MINUTE_MS,
+	value: 6000 * index,
+	attrs:
+		index % 2 === 0
+			? { device: "eth0", direction: "transmit" }
+			: { direction: "transmit", device: "eth0" },
+}))
+
 // Every host reports CPU, which is what lists it; utilization-host sends the opt-in gauge.
 const gaugePoints: ReadonlyArray<Point> = [
-	...["receiver-host", "semconv-host", "utilization-host"].map((host) => ({
-		host,
-		metric: "system.cpu.utilization",
-		ms: scrapeB,
-		value: 0.9,
-		attrs: { cpu: "cpu0", state: "idle" },
-	})),
+	...["receiver-host", "semconv-host", "utilization-host", "remount-host", "mixed-host", "mac-host"].map(
+		(host) => ({
+			host,
+			metric: "system.cpu.utilization",
+			ms: scrapeB,
+			value: 0.9,
+			attrs: { cpu: "cpu0", state: "idle" },
+		}),
+	),
 	{
 		host: "utilization-host",
 		metric: "system.filesystem.utilization",
@@ -165,6 +217,7 @@ const gaugePoints: ReadonlyArray<Point> = [
 		value: 0.42,
 		attrs: rootFs,
 	},
+	{ host: "mixed-host", metric: "system.filesystem.utilization", ms: scrapeA, value: 0.95, attrs: rootFs },
 ]
 
 const sumRow = (point: Point) => {
@@ -187,7 +240,7 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
 		await clickhouseExec(
-			`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic, Attributes, ResourceAttributes) VALUES\n${[...filesystemPoints, ...networkPoints, ...semconvNetworkPoints, ...deltaNetworkPoints].map(sumRow).join(",\n")}`,
+			`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic, Attributes, ResourceAttributes) VALUES\n${[...filesystemPoints, ...networkPoints, ...semconvNetworkPoints, ...deltaNetworkPoints, ...reorderedNetworkPoints].map(sumRow).join(",\n")}`,
 			database,
 		)
 		await clickhouseExec(
@@ -225,6 +278,24 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			compileUnsafe(CH.hostDetailSummaryQuery({ hostName: "receiver-host" }), window),
 		)
 		assert.closeTo(detail!.diskPct, 60 / 90, 1e-9)
+	})
+
+	it("reads disk % from each host's current mounts and their newest reading", async () => {
+		const rows = await run(compileUnsafe(CH.listHostsQuery(), window))
+		const disk = Object.fromEntries(rows.map((row) => [row.hostName, row.diskPct]))
+		assert.closeTo(disk["remount-host"]!, 0.2, 1e-9)
+		assert.closeTo(disk["mixed-host"]!, 0.4, 1e-9)
+		assert.closeTo(disk["mac-host"]!, 0.3, 1e-9)
+	})
+
+	it("lists a remounted mountpoint once per device", async () => {
+		const rows = await run(compileUnsafe(CH.hostFilesystemsQuery({ hostName: "remount-host" }), window))
+		const usedMax = Object.fromEntries(
+			rows.map((row) => [`${row.mountpoint} ${row.device}`, row.usedMax]),
+		)
+		assert.closeTo(usedMax["/data /dev/sdc1"]!, 0.95, 1e-9)
+		assert.closeTo(usedMax["/data /dev/sdd1"]!, 0.1, 1e-9)
+		assert.closeTo(usedMax["/ /dev/sda1"]!, 0.2, 1e-9)
 	})
 
 	it("reads disk % for every host on the page and only those", async () => {
@@ -307,6 +378,19 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 		)
 		assert.strictEqual(rows.length, 40)
 		assert.deepEqual([...new Set(rows.map((row) => Math.round(row.rateValue)))], [100])
+	})
+
+	it("keeps one series when a sender reorders its attributes", async () => {
+		const rows = await run(
+			compileUnsafe(CH.hostNetworkTimeseriesQuery({ hostName: "reorder-host" }), {
+				...window,
+				bucketSeconds: 600,
+			}),
+		)
+		assert.deepEqual(
+			rows.map((row) => Math.round(row.rateValue)),
+			[100, 100, 100, 100, 100, 100],
+		)
 	})
 
 	it("keeps the true rate in buckets narrower than the scrape interval", async () => {

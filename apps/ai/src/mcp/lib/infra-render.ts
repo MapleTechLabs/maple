@@ -330,7 +330,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 
 /** The metrics behind each kind, and how to chart them: query_data or create_dashboard on source=metrics. */
 export const KIND_METRICS = {
-	hosts: "Metrics: system.cpu.utilization (by state; busy = 1 - idle), system.memory.utilization, system.filesystem.usage (bytes by state; used share = used / (used + free)), system.cpu.load_average.15m. Chart per host with group_by resource.host.name.",
+	hosts: "Metrics: system.cpu.utilization (by state; busy = 1 - idle), system.memory.utilization, system.filesystem.utilization (used share per mountpoint, opt-in) or system.filesystem.usage (bytes by state, on by default; used share = used / (used + free)), system.cpu.load_average.15m. Chart per host with group_by resource.host.name.",
 	pods: "Metrics: k8s.pod.cpu.usage (cores), k8s.pod.cpu_limit_utilization, k8s.pod.memory_limit_utilization. Chart per pod with group_by resource.k8s.pod.name.",
 	nodes: "Metrics: k8s.node.cpu.usage (cores). Chart per node with group_by resource.k8s.node.name.",
 	workloads:
