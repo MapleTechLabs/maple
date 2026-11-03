@@ -180,12 +180,9 @@ const runSqlSchema = Schema.Struct({
 	),
 	show_sql: P.optionalFlag("Also return the macro-expanded SQL that ran (default false)."),
 	reason: P.optionalText(
-		"Why you are running this query, in a sentence. Recorded for usage review; does not change the query.",
+		"Why you are running this query, in a sentence. Optional; does not change the query.",
 	),
 })
-
-/** Longest `reason` kept on the span. */
-const MAX_REASON_CHARS = 200
 
 const runSqlDescription =
 	"Run one read-only ClickHouse SELECT against the org's warehouse and return its rows: " +
@@ -320,12 +317,8 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Running a query", "Running SQL", "Querying the warehouse"],
 		handler: Effect.fn("McpTool.runSql")(function* (params) {
-			if (params.reason !== undefined) {
-				yield* Effect.annotateCurrentSpan(
-					"maple.mcp.run_sql.reason",
-					params.reason.slice(0, MAX_REASON_CHARS),
-				)
-			}
+			// Only that one was given: the text comes from the conversation and can name people.
+			yield* Effect.annotateCurrentSpan("maple.mcp.run_sql.has_reason", params.reason !== undefined)
 			const tenant = yield* CurrentMcpTenant
 			const { st, et } = yield* WINDOW.resolve(params, "run_sql")
 			const granularitySeconds = params.granularity_seconds ?? autoBucketSeconds(st, et)
