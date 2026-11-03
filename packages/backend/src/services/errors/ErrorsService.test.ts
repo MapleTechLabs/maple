@@ -2130,7 +2130,7 @@ describe("ErrorsService.runTick", () => {
 	})
 
 	it.effect("lands a merged-in fingerprint on the issue that owns it", () => {
-		const OWNER_FINGERPRINT = "22222222222222222222"
+		const OWNER_FINGERPRINT = "2222222222222222222"
 		const rows = [
 			scanRow({ count: 3, serviceName: "billing-worker", exceptionType: "OtherError" }),
 			scanRow({ fingerprintHash: OWNER_FINGERPRINT, count: 2 }),
@@ -2176,7 +2176,7 @@ describe("ErrorsService.runTick", () => {
 	})
 
 	it.effect("an issue's own occurrence keeps its fresh title when a merged-in hash comes after it", () => {
-		const OWNER_FINGERPRINT = "22222222222222222222"
+		const OWNER_FINGERPRINT = "2222222222222222222"
 		// The owner's own row first, the merged-in hash after it: scan order is not guaranteed.
 		const rows = [
 			scanRow({
@@ -2259,9 +2259,9 @@ describe("ErrorsService.runTick", () => {
 
 	it.effect("one batched window applies new, ongoing, regressed and snoozed fingerprints", () => {
 		const ONGOING = "11111111111111111111"
-		const REGRESSED = "22222222222222222222"
-		const SNOOZED = "33333333333333333333"
-		const FRESH = "44444444444444444444"
+		const REGRESSED = "2222222222222222222"
+		const SNOOZED = "3333333333333333333"
+		const FRESH = "4444444444444444444"
 		let rows: ReadonlyArray<Record<string, unknown>> = [scanRow({ fingerprintHash: ONGOING, count: 3 })]
 		return Effect.gen(function* () {
 			const errors = yield* ErrorsService
@@ -2593,7 +2593,7 @@ describe("ErrorsService.runTick", () => {
 				db.run(
 					PG.insertInto(ErrorFingerprintCandidates).values([
 						candidate("11111111111111111111", RETENTION_TICK_MS - DAY_MS - 60_000),
-						candidate("22222222222222222222", RETENTION_TICK_MS - DAY_MS + 60_000),
+						candidate("2222222222222222222", RETENTION_TICK_MS - DAY_MS + 60_000),
 					]),
 				),
 			)
@@ -2609,7 +2609,7 @@ describe("ErrorsService.runTick", () => {
 			)
 			assert.deepStrictEqual(
 				Arr.map(left, (row) => row.fingerprintHash),
-				["22222222222222222222"],
+				["2222222222222222222"],
 			)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
@@ -2693,7 +2693,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			const owner = asIssueId(randomUUID())
 			const mergedAway = asIssueId(randomUUID())
-			yield* seedIssue(owner, { fingerprintHash: "22222222222222222222" })
+			yield* seedIssue(owner, { fingerprintHash: "2222222222222222222" })
 			yield* seedIssue(mergedAway, {
 				fingerprintHash: SCAN_FINGERPRINT,
 				archivedAt: TICK_MS - 1_000,
