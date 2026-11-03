@@ -8,6 +8,7 @@ import {
 	IssueSeverity,
 	IssueSeveritySource,
 	WorkflowState,
+	MAX_ISSUE_MERGE_SOURCES,
 } from "../errors"
 import { SpanId, TraceId, UserId } from "../../primitives"
 import { AuditedRead } from "../audit-log"
@@ -242,7 +243,10 @@ export const V2ErrorIssueSeverityParams = Schema.Struct({
 
 export const V2ErrorIssueMergeParams = Schema.Struct({
 	// Archived into the issue in the path; their fingerprints land on it from now on.
-	source_issue_ids: Schema.Array(ErrorIssuePublicId).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
+	source_issue_ids: Schema.Array(ErrorIssuePublicId).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_ISSUE_MERGE_SOURCES),
+	),
 }).annotate({ identifier: "ErrorIssueMergeParams", title: "Error issue merge parameters" })
 
 export const V2ErrorIssueTransitionConflict = defineV2Error({
